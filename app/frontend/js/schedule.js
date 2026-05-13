@@ -24,10 +24,16 @@ const state = {
 
 const drag = {
   active: false,
+  pending: false,
+  suppressClick: false,
   sourceTd: null,
   sourceActivityId: null,
   sourceRow: -1,
   sourceCol: -1,
+  currentRow: -1,
+  currentCol: -1,
+  startX: 0,
+  startY: 0,
 };
 
 
@@ -61,6 +67,13 @@ function buildHeader() {
 
 function activityById(id) {
   return state.activities.find((a) => a.id === id);
+}
+
+function focusNameFilter() {
+  const input = document.getElementById("nameFilter");
+  if (!input) return;
+  input.focus();
+  input.select();
 }
 
 function refreshPersons() {
@@ -153,13 +166,6 @@ function setCellVisual(td, activityId, version) {
     td.classList.remove("scheduled-empty", "base-value");
   }
 
-  // Drag-handle på alla celler (även tomma → dra för att tömma andra)
-  if (!td.querySelector(".drag-handle")) {
-    const h = document.createElement("span");
-    h.className = "drag-handle";
-    h.title = "Dra för att fylla flera celler";
-    td.appendChild(h);
-  }
 }
 
 function buildRows() {
@@ -410,25 +416,68 @@ function updateDragTargets() {
   });
 }
 
-async function finishDrag() {
-  if (!drag.active) return;
-  drag.active = false;
+function resetDragState() {
   document.body.classList.remove("dragging");
   drag.sourceTd?.classList.remove("drag-source-cell");
-
-  const targets = Array.from(document.querySelectorAll("#scheduleBody td.drag-target"));
   document.querySelectorAll("#scheduleBody td.drag-target").forEach((t) => t.classList.remove("drag-target"));
+  drag.active = false;
+  drag.pending = false;
+  drag.sourceTd = null;
+  drag.sourceActivityId = null;
+  drag.sourceRow = -1;
+  drag.sourceCol = -1;
+  drag.currentRow = -1;
+  drag.currentCol = -1;
+  drag.startX = 0;
+  drag.startY = 0;
+}
 
-  if (targets.length === 0 || (targets.length === 1 && targets[0] === drag.sourceTd)) return;
+function startPendingDrag(td, event) {
+  drag.pending = true;
+  drag.sourceTd = td;
+  drag.sourceActivityId = effectiveActivityId(td);
+  drag.sourceRow = Number(td.dataset.rowIndex);
+  drag.sourceCol = Number(td.dataset.colIndex);
+  drag.currentRow = drag.sourceRow;
+  drag.currentCol = drag.sourceCol;
+  drag.startX = event.clientX;
+  drag.startY = event.clientY;
+}
+
+function activateDrag() {
+  if (!drag.pending || drag.active || !drag.sourceTd) return;
+  drag.pending = false;
+  drag.active = true;
+  document.body.classList.add("dragging");
+  drag.sourceTd.classList.add("drag-source-cell");
+  if (document.activeElement?.tagName === "SELECT") {
+    document.activeElement.blur();
+  }
+  updateDragTargets();
+}
+
+function scheduleCellFromPoint(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  return el?.closest("#scheduleBody td[data-hour]") || null;
+}
+
+async function finishDrag() {
+  if (!drag.active) return;
+  const sourceTd = drag.sourceTd;
+  const sourceActivityId = drag.sourceActivityId;
+  const targets = Array.from(document.querySelectorAll("#scheduleBody td.drag-target"));
+  resetDragState();
+
+  if (targets.length === 0 || (targets.length === 1 && targets[0] === sourceTd)) return;
   if (targets.length > 200) { showToast("För många celler (max 200)", "error"); return; }
 
   const cells = targets
-    .filter((td) => td !== drag.sourceTd)
+    .filter((td) => td !== sourceTd)
     .map((td) => ({
       year: state.year, week: state.week, weekday: state.weekday,
       hour: Number(td.dataset.hour),
       person_id: Number(td.dataset.personId),
-      activity_id: drag.sourceActivityId,
+      activity_id: sourceActivityId,
       expected_version: Number(td.dataset.version) || 0,
     }));
 
@@ -459,36 +508,47 @@ function setupDrag() {
   const body = document.getElementById("scheduleBody");
 
   body.addEventListener("mousedown", (e) => {
-    const handle = e.target.closest(".drag-handle");
-    if (!handle) return;
-    const td = handle.parentElement;
-    e.preventDefault();
-    e.stopPropagation();
-    drag.active = true;
-    drag.sourceTd = td;
-    drag.sourceActivityId = effectiveActivityId(td);
-    drag.sourceRow = Number(td.dataset.rowIndex);
-    drag.sourceCol = Number(td.dataset.colIndex);
-    drag.currentRow = drag.sourceRow;
-    drag.currentCol = drag.sourceCol;
-    document.body.classList.add("dragging");
-    td.classList.add("drag-source-cell");
-    updateDragTargets();
+    if (e.button !== 0) return;
+    const td = e.target.closest("td[data-hour]");
+    if (!td) return;
+    startPendingDrag(td, e);
   });
 
-  body.addEventListener("mouseover", (e) => {
-    if (!drag.active) return;
-    const td = e.target.closest("td[data-hour]");
+  document.addEventListener("mousemove", (e) => {
+    if (!drag.pending && !drag.active) return;
+    const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+    if (!drag.active) {
+      if (moved < 5) return;
+      activateDrag();
+    }
+    const td = scheduleCellFromPoint(e.clientX, e.clientY);
     if (!td) return;
     drag.currentRow = Number(td.dataset.rowIndex);
     drag.currentCol = Number(td.dataset.colIndex);
     updateDragTargets();
   });
 
-  document.addEventListener("mouseup", () => { if (drag.active) finishDrag(); });
+  document.addEventListener("mouseup", () => {
+    if (drag.active) {
+      drag.suppressClick = true;
+      void finishDrag();
+      setTimeout(() => { drag.suppressClick = false; }, 0);
+      return;
+    }
+    if (drag.pending) resetDragState();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!drag.suppressClick) return;
+    if (!e.target.closest("#scheduleBody td[data-hour]")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    drag.suppressClick = false;
+  }, true);
 
   // Klick på cell → focus (även när man klickar på själva td:n)
   body.addEventListener("click", (e) => {
+    if (drag.suppressClick) return;
     const td = e.target.closest("td[data-hour]");
     if (td) focusCell(td);
   });
@@ -641,7 +701,11 @@ async function loadSchedule() {
   });
 
   document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
-    th.addEventListener("click", () => {
+    th.addEventListener("click", (e) => {
+      if (th.dataset.filterTrigger && !e.shiftKey) {
+        focusNameFilter();
+        return;
+      }
       const key = th.dataset.sort;
       if (state.sortKey === key) state.sortAsc = !state.sortAsc;
       else { state.sortKey = key; state.sortAsc = true; }

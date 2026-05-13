@@ -23,8 +23,16 @@ const state = {
 
 const drag = {
   active: false,
+  pending: false,
+  suppressClick: false,
   sourceCell: null,    // {person_id, activity_id, date|weekday, year, week, weekday}
   sourceTd: null,
+  sourceRow: -1,
+  sourceCol: -1,
+  currentRow: -1,
+  currentCol: -1,
+  startX: 0,
+  startY: 0,
 };
 
 
@@ -60,6 +68,13 @@ function activityById(id) {
 function colorFor(activityId) {
   const a = activityById(activityId);
   return a ? a.color : "#ffffff";
+}
+
+function focusNameFilter() {
+  const input = document.getElementById("nameFilter");
+  if (!input) return;
+  input.focus();
+  input.select();
 }
 
 function refreshPersons() {
@@ -126,11 +141,6 @@ function styleCell(td, cell) {
   else info.textContent = `Schemalagd (${cell.template_hours}h)`;
   td.appendChild(info);
 
-  // Drag-handle på alla celler (utom is_off där cellen inte har select)
-  const h = document.createElement("span");
-  h.className = "ov-drag-handle";
-  h.title = "Dra för att fylla flera celler";
-  td.appendChild(h);
 }
 
 
@@ -259,57 +269,103 @@ async function onDayChange(td, sel, cell) {
   }
 }
 
+function updateDragTargets() {
+  document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
+  if (!drag.active) return;
+  const r0 = Math.min(drag.sourceRow, drag.currentRow);
+  const r1 = Math.max(drag.sourceRow, drag.currentRow);
+  const c0 = Math.min(drag.sourceCol, drag.currentCol);
+  const c1 = Math.max(drag.sourceCol, drag.currentCol);
+
+  document.querySelectorAll("#overviewBody td.day").forEach((td) => {
+    const r = td.parentElement.rowIndex;
+    const c = td.cellIndex;
+    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) td.classList.add("drag-target");
+  });
+}
+
+function resetDragState() {
+  document.body.classList.remove("dragging-ov");
+  document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
+  drag.active = false;
+  drag.pending = false;
+  drag.sourceCell = null;
+  drag.sourceTd = null;
+  drag.sourceRow = -1;
+  drag.sourceCol = -1;
+  drag.currentRow = -1;
+  drag.currentCol = -1;
+  drag.startX = 0;
+  drag.startY = 0;
+}
+
+function startPendingDrag(td, event) {
+  drag.pending = true;
+  drag.sourceTd = td;
+  drag.sourceCell = {
+    activity_id: td.dataset.activityId ? Number(td.dataset.activityId) : null,
+  };
+  drag.sourceRow = td.parentElement.rowIndex;
+  drag.sourceCol = td.cellIndex;
+  drag.currentRow = drag.sourceRow;
+  drag.currentCol = drag.sourceCol;
+  drag.startX = event.clientX;
+  drag.startY = event.clientY;
+}
+
+function activateDrag() {
+  if (!drag.pending || drag.active || !drag.sourceTd) return;
+  drag.pending = false;
+  drag.active = true;
+  document.body.classList.add("dragging-ov");
+  if (document.activeElement?.tagName === "SELECT") {
+    document.activeElement.blur();
+  }
+  updateDragTargets();
+}
+
+function overviewCellFromPoint(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY);
+  return el?.closest("#overviewBody td.day") || null;
+}
+
 
 // ---- Drag-to-fill på Översikt ----
 function setupDrag() {
   const body = document.getElementById("overviewBody");
 
   body.addEventListener("mousedown", (e) => {
-    const handle = e.target.closest(".ov-drag-handle");
-    if (!handle) return;
-    const td = handle.parentElement;
-    e.preventDefault();
-    e.stopPropagation();
-    drag.active = true;
-    drag.sourceTd = td;
-    drag.sourceCell = {
-      activity_id: td.dataset.activityId ? Number(td.dataset.activityId) : null,
-    };
-    document.body.classList.add("dragging-ov");
-    td.classList.add("drag-target");
+    if (e.button !== 0) return;
+    const td = e.target.closest("td.day");
+    if (!td || td.classList.contains("is-off")) return;
+    startPendingDrag(td, e);
   });
 
-  body.addEventListener("mouseover", (e) => {
-    if (!drag.active) return;
-    const td = e.target.closest("td.day");
+  document.addEventListener("mousemove", (e) => {
+    if (!drag.pending && !drag.active) return;
+    const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+    if (!drag.active) {
+      if (moved < 5) return;
+      activateDrag();
+    }
+    const td = overviewCellFromPoint(e.clientX, e.clientY);
     if (!td) return;
-    // Rektangulär markering med utgångspunkt i source
-    const srcRow = drag.sourceTd.parentElement.rowIndex;
-    const srcCol = drag.sourceTd.cellIndex;
-    const curRow = td.parentElement.rowIndex;
-    const curCol = td.cellIndex;
-    const r0 = Math.min(srcRow, curRow), r1 = Math.max(srcRow, curRow);
-    const c0 = Math.min(srcCol, curCol), c1 = Math.max(srcCol, curCol);
-
-    document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
-    document.querySelectorAll("#overviewBody td.day").forEach((t) => {
-      const r = t.parentElement.rowIndex;
-      const c = t.cellIndex;
-      if (r >= r0 && r <= r1 && c >= c0 && c <= c1) t.classList.add("drag-target");
-    });
+    drag.currentRow = td.parentElement.rowIndex;
+    drag.currentCol = td.cellIndex;
+    updateDragTargets();
   });
 
   document.addEventListener("mouseup", async () => {
+    if (drag.pending && !drag.active) {
+      resetDragState();
+      return;
+    }
     if (!drag.active) return;
-    drag.active = false;
-    document.body.classList.remove("dragging-ov");
-
+    drag.suppressClick = true;
     const targets = Array.from(document.querySelectorAll("#overviewBody td.day.drag-target"));
-    document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
-
-    const sourceActivityId = drag.sourceCell.activity_id;
-    drag.sourceTd = null;
-    drag.sourceCell = null;
+    const sourceActivityId = drag.sourceCell?.activity_id ?? null;
+    resetDragState();
+    setTimeout(() => { drag.suppressClick = false; }, 0);
 
     if (targets.length <= 1) return;
     if (targets.length > 100) { showToast("För många celler (max 100)", "error"); return; }
@@ -333,6 +389,14 @@ function setupDrag() {
     showToast(`Drag klar: skrev ${written} h, tog bort ${deleted} h${errors ? `, ${errors} fel` : ""}`);
     await load();
   });
+
+  document.addEventListener("click", (e) => {
+    if (!drag.suppressClick) return;
+    if (!e.target.closest("#overviewBody td.day")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    drag.suppressClick = false;
+  }, true);
 }
 
 
@@ -469,6 +533,10 @@ function updateViewVisibility() {
   document.addEventListener("click", (e) => {
     const th = e.target.closest("table.overview th[data-sort]");
     if (!th) return;
+    if (th.dataset.filterTrigger && !e.shiftKey) {
+      focusNameFilter();
+      return;
+    }
     const key = th.dataset.sort;
     if (state.sortKey === key) state.sortAsc = !state.sortAsc;
     else { state.sortKey = key; state.sortAsc = true; }
