@@ -590,6 +590,23 @@ function buildActivitySelect(includeActivityIds = []) {
   return select;
 }
 
+function scheduledActivityIdForHour(personId, hour) {
+  if (!isScheduledHour(personId, hour)) return null;
+  const person = personById(personId);
+  return person?.home_activity_id || null;
+}
+
+function effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd) {
+  const segment = currentSegment(personId, hour, minuteStart, minuteEnd);
+  if (segment.activity_id != null) return segment.activity_id;
+
+  const scheduledActivityId = scheduledActivityIdForHour(personId, hour);
+  if (scheduledActivityId != null && !segment.empty_override) {
+    return scheduledActivityId;
+  }
+  return null;
+}
+
 function clearFocusedCell() {
   if (!state.focusedCell?.focusEl) return;
   state.focusedCell.focusEl.classList.remove("focused");
@@ -620,25 +637,18 @@ function effectiveActivityIdForTd(td) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
   const segments = segmentsForHour(personId, hour);
-  if (isSplitHour(segments)) return null;
-  if (segments.length === 1 && segments[0].activity_id != null) return segments[0].activity_id;
-  if (td.dataset.isBase === "1") {
-    const person = personById(personId);
-    return person?.home_activity_id || null;
+  if (isSplitHour(segments)) {
+    const first = effectiveActivityIdForRange(personId, hour, 0, 30);
+    const second = effectiveActivityIdForRange(personId, hour, 30, 60);
+    return first != null && first === second ? first : null;
   }
-  return null;
+  return effectiveActivityIdForRange(personId, hour, 0, 60);
 }
 
 function effectiveActivityIdForFocus() {
   if (!state.focusedCell) return null;
-  const { personId, hour, minuteStart, minuteEnd, td } = state.focusedCell;
-  const segment = currentSegment(personId, hour, minuteStart, minuteEnd);
-  if (segment.activity_id != null) return segment.activity_id;
-  if (minuteStart === 0 && minuteEnd === 60 && td?.dataset.isBase === "1") {
-    const person = personById(personId);
-    return person?.home_activity_id || null;
-  }
-  return null;
+  const { personId, hour, minuteStart, minuteEnd } = state.focusedCell;
+  return effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd);
 }
 
 function handleFullHourContextMenu(e, td) {
@@ -673,13 +683,7 @@ function splitPartFromEvent(td, e) {
 function activityIdForDragSource(td, minuteStart, minuteEnd) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
-  const segment = currentSegment(personId, hour, minuteStart, minuteEnd);
-  if (segment.activity_id != null) return segment.activity_id;
-  if (minuteStart === 0 && minuteEnd === 60 && td?.dataset.isBase === "1") {
-    const person = personById(personId);
-    return person?.home_activity_id || null;
-  }
-  return null;
+  return effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd);
 }
 
 function armFullHourDrag(td, event) {
