@@ -71,6 +71,35 @@ def _hours_from_minutes(total_minutes: int) -> float:
     return round(float(total_minutes) / 60.0, 2)
 
 
+def _effective_minutes_by_activity(
+    *,
+    explicit_minutes: dict[int, int],
+    explicit_hours: set[int],
+    template: set[int] | None,
+    home_activity_id: int | None,
+) -> dict[int, int]:
+    minutes_by_activity = dict(explicit_minutes)
+    if template is None or home_activity_id is None:
+        return minutes_by_activity
+
+    for hour in template:
+        if hour in explicit_hours:
+            continue
+        minutes_by_activity[home_activity_id] = minutes_by_activity.get(home_activity_id, 0) + 60
+
+    return minutes_by_activity
+
+
+def _summarize_day(minutes_by_activity: dict[int, int]) -> tuple[int | None, bool, int]:
+    total_minutes = sum(minutes_by_activity.values())
+    if not minutes_by_activity:
+        return None, False, total_minutes
+
+    dominant = max(minutes_by_activity.items(), key=lambda item: item[1])[0]
+    mixed = len(minutes_by_activity) > 1
+    return dominant, mixed, total_minutes
+
+
 @router.get("", response_model=OverviewOut)
 def get_overview(
     year: int = Query(..., ge=2000, le=2100),
@@ -86,12 +115,14 @@ def get_overview(
     persons = db.execute(persons_q).scalars().all()
     person_ids = [p.id for p in persons]
 
-    counts: dict[tuple[int, int, int | None], int] = defaultdict(int)
+    explicit_minutes: dict[tuple[int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    explicit_hours: dict[tuple[int, int], set[int]] = defaultdict(set)
     if person_ids:
         rows = db.execute(
             select(
                 ScheduleCell.person_id,
                 ScheduleCell.weekday,
+                ScheduleCell.hour,
                 ScheduleCell.activity_id,
                 func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start),
             )
@@ -100,31 +131,25 @@ def get_overview(
                 ScheduleCell.week == week,
                 ScheduleCell.person_id.in_(person_ids),
             )
-            .group_by(ScheduleCell.person_id, ScheduleCell.weekday, ScheduleCell.activity_id)
+            .group_by(ScheduleCell.person_id, ScheduleCell.weekday, ScheduleCell.hour, ScheduleCell.activity_id)
         ).all()
-        for pid, wd, aid, cnt in rows:
-            counts[(pid, wd, aid)] = cnt
+        for pid, wd, hour, aid, cnt in rows:
+            explicit_hours[(pid, wd)].add(hour)
+            if aid is not None:
+                explicit_minutes[(pid, wd)][aid] += int(cnt)
 
     matrix: list[OverviewCell] = []
     for p in persons:
         for wd in range(1, 8):
-            # Hämta alla aktiviteter för denna dag
-            day_acts = [
-                (aid, cnt) for (pid, weekday, aid), cnt in counts.items()
-                if pid == p.id and weekday == wd and aid is not None
-            ]
-            total_minutes = sum(c for _, c in day_acts)
-            distinct = {aid for aid, _ in day_acts}
-            if not day_acts:
-                dominant = None
-                mixed = False
-            else:
-                # välj den med flest minuter
-                dominant = max(day_acts, key=lambda x: x[1])[0]
-                mixed = len(distinct) > 1
-
             template = get_template_hours(db, p.id, wd)
             template_hours = 0 if template is None else len(template)
+            minutes_by_activity = _effective_minutes_by_activity(
+                explicit_minutes=explicit_minutes.get((p.id, wd), {}),
+                explicit_hours=explicit_hours.get((p.id, wd), set()),
+                template=template,
+                home_activity_id=p.home_activity_id,
+            )
+            dominant, mixed, total_minutes = _summarize_day(minutes_by_activity)
 
             matrix.append(OverviewCell(
                 person_id=p.id, weekday=wd,
@@ -169,7 +194,8 @@ def get_month_overview(
     person_ids = [p.id for p in persons]
 
     # Hämta alla cells för ALLA dagar i månaden i ETT query
-    counts: dict[tuple[int, int, int, int, int | None], int] = defaultdict(int)
+    explicit_minutes: dict[tuple[int, int, int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    explicit_hours: dict[tuple[int, int, int, int], set[int]] = defaultdict(set)
     if person_ids and days_list:
         ywd_tuples = list({(d.year, d.week, d.weekday) for d in days_list})
         rows = db.execute(
@@ -178,6 +204,7 @@ def get_month_overview(
                 ScheduleCell.year,
                 ScheduleCell.week,
                 ScheduleCell.weekday,
+                ScheduleCell.hour,
                 ScheduleCell.activity_id,
                 func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start),
             )
@@ -190,29 +217,27 @@ def get_month_overview(
                 ScheduleCell.year,
                 ScheduleCell.week,
                 ScheduleCell.weekday,
+                ScheduleCell.hour,
                 ScheduleCell.activity_id,
             )
         ).all()
-        for pid, y, w, wd, aid, cnt in rows:
-            counts[(pid, y, w, wd, aid)] = cnt
+        for pid, y, w, wd, hour, aid, cnt in rows:
+            explicit_hours[(pid, y, w, wd)].add(hour)
+            if aid is not None:
+                explicit_minutes[(pid, y, w, wd)][aid] += int(cnt)
 
     matrix: list[MonthOverviewCell] = []
     for p in persons:
         for d_info in days_list:
-            day_acts = [
-                (aid, cnt) for (pid, y, w, wd, aid), cnt in counts.items()
-                if pid == p.id and y == d_info.year and w == d_info.week and wd == d_info.weekday and aid is not None
-            ]
-            total_minutes = sum(c for _, c in day_acts)
-            distinct = {aid for aid, _ in day_acts}
-            if not day_acts:
-                dominant = None
-                mixed = False
-            else:
-                dominant = max(day_acts, key=lambda x: x[1])[0]
-                mixed = len(distinct) > 1
             template = get_template_hours(db, p.id, d_info.weekday)
             template_hours = 0 if template is None else len(template)
+            minutes_by_activity = _effective_minutes_by_activity(
+                explicit_minutes=explicit_minutes.get((p.id, d_info.year, d_info.week, d_info.weekday), {}),
+                explicit_hours=explicit_hours.get((p.id, d_info.year, d_info.week, d_info.weekday), set()),
+                template=template,
+                home_activity_id=p.home_activity_id,
+            )
+            dominant, mixed, total_minutes = _summarize_day(minutes_by_activity)
             matrix.append(MonthOverviewCell(
                 person_id=p.id, date=d_info.date,
                 activity_id=dominant, mixed=mixed,

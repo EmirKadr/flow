@@ -66,9 +66,41 @@ function escapeHtml(s) {
 function activityById(id) {
   return state.activities.find((a) => a.id === id);
 }
+
+function personById(id) {
+  return state.persons.find((p) => p.id === id) || state.allPersons.find((p) => p.id === id) || null;
+}
+
 function colorFor(activityId) {
   const a = activityById(activityId);
   return a ? a.color : "#ffffff";
+}
+
+function buildActivitySelect(includeActivityIds = []) {
+  const select = document.createElement("select");
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "–";
+  select.appendChild(empty);
+
+  const seen = new Set();
+  const appendOption = (act) => {
+    if (!act || seen.has(act.id)) return;
+    seen.add(act.id);
+    const opt = document.createElement("option");
+    opt.value = String(act.id);
+    opt.textContent = act.label;
+    opt.style.background = act.color;
+    select.appendChild(opt);
+  };
+
+  state.activitiesActive.forEach(appendOption);
+  includeActivityIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id))
+    .forEach((id) => appendOption(activityById(id)));
+
+  return select;
 }
 
 function focusNameFilter() {
@@ -119,6 +151,8 @@ function styleCell(td, cell) {
   td.innerHTML = "";
   td.classList.remove("mixed", "is-off", "scheduled-empty");
   td.style.background = "#fff";
+  const person = personById(Number(td.dataset.personId));
+  const baseActivityId = cell.template_hours > 0 ? (person?.home_activity_id || null) : null;
 
   const isOff = cell.template_hours === 0;
   if (isOff) {
@@ -135,18 +169,7 @@ function styleCell(td, cell) {
     td.classList.add("scheduled-empty");
   }
 
-  const sel = document.createElement("select");
-  const empty = document.createElement("option");
-  empty.value = "";
-  empty.textContent = "–";
-  sel.appendChild(empty);
-  state.activitiesActive.forEach((act) => {
-    const opt = document.createElement("option");
-    opt.value = String(act.id);
-    opt.textContent = act.label;
-    opt.style.background = act.color;
-    sel.appendChild(opt);
-  });
+  const sel = buildActivitySelect([cell.activity_id, baseActivityId]);
   sel.value = cell.activity_id ? String(cell.activity_id) : "";
 
   sel.addEventListener("change", () => onDayChange(td, sel, cell));

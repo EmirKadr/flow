@@ -379,20 +379,32 @@ function setupCalculator() {
   renderCalculator();
 }
 
-function buildActivitySelect() {
-  const select = document.createElement("select");
-  const empty = document.createElement("option");
-  empty.value = "";
-  empty.textContent = "–";
-  select.appendChild(empty);
-
-  state.activitiesActive.forEach((act) => {
+function appendActivityOptions(select, includeActivityIds = []) {
+  const seen = new Set();
+  const appendOption = (act) => {
+    if (!act || seen.has(act.id)) return;
+    seen.add(act.id);
     const opt = document.createElement("option");
     opt.value = String(act.id);
     opt.textContent = act.label;
     opt.style.background = act.color;
     select.appendChild(opt);
-  });
+  };
+
+  state.activitiesActive.forEach(appendOption);
+  includeActivityIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id))
+    .forEach((id) => appendOption(activityById(id)));
+}
+
+function buildActivitySelect(includeActivityIds = []) {
+  const select = document.createElement("select");
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "–";
+  select.appendChild(empty);
+  appendActivityOptions(select, includeActivityIds);
   return select;
 }
 
@@ -525,7 +537,7 @@ function renderFullHourCell(td, segment, isScheduled) {
     td.classList.add("scheduled-empty");
   }
 
-  const select = buildActivitySelect();
+  const select = buildActivitySelect([explicitActivityId, scheduledActivityId]);
   select.className = "cell-select";
   select.value = explicitActivityId != null
     ? String(explicitActivityId)
@@ -574,6 +586,8 @@ function renderSplitHourCell(td, segments, isScheduled) {
 
   const wrapper = document.createElement("div");
   wrapper.className = "hour-split";
+  const person = personById(Number(td.dataset.personId));
+  const scheduledActivityId = isScheduled ? (person?.home_activity_id || null) : null;
 
   HALF_SEGMENTS.forEach(({ minute_start, minute_end }) => {
     const segment = currentSegment(Number(td.dataset.personId), Number(td.dataset.hour), minute_start, minute_end);
@@ -591,7 +605,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
       part.style.background = "#fff";
     }
 
-    const select = buildActivitySelect();
+    const select = buildActivitySelect([segment.activity_id, scheduledActivityId]);
     select.className = "half-select";
     select.value = segment.activity_id != null ? String(segment.activity_id) : "";
     select.dataset.minuteStart = String(minute_start);
