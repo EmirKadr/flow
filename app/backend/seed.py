@@ -119,10 +119,37 @@ def seed_admin(db: Session) -> None:
 
 def seed_persons(db: Session, areas: dict[str, Area]) -> None:
     gg = areas["GG"].id
+    gg_vm = db.query(Activity).filter_by(code="GG_VM").one_or_none()
+    gg_vm_id = gg_vm.id if gg_vm else None
     for i, name in enumerate(PERSONS, start=1):
         existing = db.query(Person).filter_by(name=name).one_or_none()
         if existing is None:
-            db.add(Person(name=name, home_area_id=gg, sort_order=i, competencies=[]))
+            db.add(Person(name=name, home_area_id=gg, home_activity_id=gg_vm_id, sort_order=i, competencies=[]))
+        elif existing.home_area_id == gg and existing.home_activity_id is None:
+            existing.home_activity_id = gg_vm_id
+
+
+def backfill_home_activities(db: Session) -> None:
+    activities_by_code = {
+        activity.code: activity
+        for activity in db.query(Activity).filter(Activity.is_active.is_(True)).all()
+    }
+    fallback_by_area: dict[int | None, Activity] = {}
+    for activity in sorted(activities_by_code.values(), key=lambda a: (a.sort_order, a.label)):
+        if activity.area_id is None or activity.category == "absence":
+            continue
+        fallback_by_area.setdefault(activity.area_id, activity)
+
+    areas = db.query(Area).all()
+    area_by_id = {area.id: area for area in areas}
+    for person in db.query(Person).filter(Person.home_activity_id.is_(None)).all():
+        home_area = area_by_id.get(person.home_area_id)
+        if home_area is None:
+            continue
+        preferred = activities_by_code.get(f"{home_area.code}_VM")
+        fallback = preferred or fallback_by_area.get(home_area.id)
+        if fallback is not None:
+            person.home_activity_id = fallback.id
 
 
 def run() -> None:
@@ -132,6 +159,7 @@ def run() -> None:
         seed_activities(db, areas)
         seed_admin(db)
         seed_persons(db, areas)
+        backfill_home_activities(db)
         db.commit()
         print("Seed OK")
     except Exception:
