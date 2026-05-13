@@ -176,6 +176,7 @@ class SplitCellRequest(BaseModel):
     hour: int
     person_id: int
     segments: list[SegmentVersionRef] = Field(default_factory=list)
+    merge_minute_start: int | None = None
 
 
 class SplitCellResponse(BaseModel):

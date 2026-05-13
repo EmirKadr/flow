@@ -204,18 +204,19 @@ table.matrix td.split-hour {
 
 .hour-split {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
 }
 
 .hour-segment {
   flex: 1 1 50%;
   min-height: 0;
+  min-width: 0;
   position: relative;
 }
 
 .hour-segment + .hour-segment {
-  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  border-left: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 .hour-segment select {

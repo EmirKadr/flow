@@ -291,13 +291,14 @@ function handleFullHourContextMenu(e, td) {
   e.preventDefault();
   e.stopPropagation();
   focusSegment(td, td, 0, 60);
-  void splitHourCell(td);
+  void toggleHourSplit(td, 0);
 }
 
 function handleSplitSegmentContextMenu(e, td, part, minuteStart, minuteEnd) {
   e.preventDefault();
   e.stopPropagation();
   focusSegment(td, part, minuteStart, minuteEnd);
+  void toggleHourSplit(td, minuteStart);
 }
 
 function renderFullHourCell(td, segment, isScheduled) {
@@ -533,14 +534,10 @@ function focusMatchingSegment(td, minuteStart, minuteEnd) {
   if (part) focusSegment(td, part, minuteStart, minuteEnd);
 }
 
-async function splitHourCell(td) {
+async function toggleHourSplit(td, mergeMinuteStart = 0) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
   const currentSegments = sortSegments(segmentsForHour(personId, hour));
-  if (isSplitHour(currentSegments)) {
-    showToast("Cellen är redan delad i två halvtimmar.", "warn");
-    return;
-  }
 
   try {
     const resp = await api.put("/api/schedule/cell/split", {
@@ -549,23 +546,30 @@ async function splitHourCell(td) {
       weekday: state.weekday,
       hour,
       person_id: personId,
+      merge_minute_start: mergeMinuteStart,
       segments: currentSegments.map((segment) => ({
         minute_start: segment.minute_start,
         minute_end: segment.minute_end,
         expected_version: segment.version,
       })),
     });
-    replaceHourSegments(personId, hour, resp.segments || []);
+    const updatedSegments = resp.segments || [];
+    replaceHourSegments(personId, hour, updatedSegments);
     renderHourCell(td);
-    focusMatchingSegment(td, 0, 30);
+    if (isSplitHour(updatedSegments)) {
+      focusMatchingSegment(td, 0, 30);
+      showToast("Cellen delades i två halvtimmar.");
+    } else {
+      focusMatchingSegment(td, 0, 60);
+      showToast("Cellen slogs ihop till en hel timme.");
+    }
     refreshSummary();
-    showToast("Cellen delades i två halvtimmar.");
   } catch (err) {
     if (err.status === 409) {
       showToast("Cellen ändrades av någon annan – läste in på nytt", "warn");
       await loadSchedule();
     } else {
-      showToast("Kunde inte dela cellen: " + err.message, "error");
+      showToast("Kunde inte ändra delningen: " + err.message, "error");
     }
   }
 }

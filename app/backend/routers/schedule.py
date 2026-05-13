@@ -264,7 +264,49 @@ def split_cell(
         return _conflict_response(person_id=payload.person_id, hour=payload.hour, current=hour_segments)
 
     if len(hour_segments) == 2 and {(cell.minute_start, cell.minute_end) for cell in hour_segments} == set(HALF_SEGMENTS):
-        return {"segments": _serialize_segments(hour_segments)}
+        preferred = next(
+            (
+                cell
+                for cell in hour_segments
+                if cell.minute_start == payload.merge_minute_start
+            ),
+            None,
+        )
+        if preferred is None:
+            preferred = next((cell for cell in hour_segments if cell.activity_id is not None), None) or hour_segments[0]
+        other = next(cell for cell in hour_segments if cell.id != preferred.id)
+
+        old_preferred = _cell_to_dict(preferred)
+        old_other = _cell_to_dict(other)
+
+        preferred.minute_start = 0
+        preferred.minute_end = 60
+        preferred.version += 1
+        preferred.updated_by = user.id
+        db.flush()
+        audit_log(
+            db,
+            entity_type="schedule_cell",
+            entity_id=preferred.id,
+            action="split_merge_update",
+            old_value=old_preferred,
+            new_value=_cell_to_dict(preferred),
+            user_id=user.id,
+        )
+
+        audit_log(
+            db,
+            entity_type="schedule_cell",
+            entity_id=other.id,
+            action="split_merge_delete",
+            old_value=old_other,
+            new_value=None,
+            user_id=user.id,
+        )
+        db.delete(other)
+        db.commit()
+        db.refresh(preferred)
+        return {"segments": [_cell_to_dict(preferred)]}
 
     if len(hour_segments) > 1:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Kan bara dela en tom timme eller en hel timcell.")
