@@ -83,6 +83,14 @@ function activityById(id) {
   return state.activities.find((a) => a.id === id);
 }
 
+function activityByCode(code) {
+  return state.activities.find((a) => a.code === code);
+}
+
+function areaById(id) {
+  return state.areas.find((a) => a.id === id);
+}
+
 function personById(id) {
   return state.persons.find((p) => p.id === id) || state.allPersons.find((p) => p.id === id) || null;
 }
@@ -95,6 +103,26 @@ function colorFor(activityId) {
 function activityLabel(activityId) {
   const a = activityById(activityId);
   return a ? a.label : "";
+}
+
+function defaultHomeActivityId(person) {
+  if (!person?.home_area_id) return null;
+  const homeArea = areaById(person.home_area_id);
+  const preferred = homeArea?.code ? activityByCode(`${homeArea.code}_VM`) : null;
+  if (preferred && preferred.is_active !== false) return preferred.id;
+
+  const fallback = state.activities
+    .filter((activity) =>
+      activity.is_active
+      && activity.area_id === person.home_area_id
+      && activity.category !== "absence"
+    )
+    .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))[0];
+  return fallback?.id || null;
+}
+
+function homeActivityIdForPerson(person) {
+  return person?.home_activity_id || defaultHomeActivityId(person);
 }
 
 function focusNameFilter() {
@@ -630,7 +658,7 @@ function buildDisplayLabel(text, className) {
 function scheduledActivityIdForHour(personId, hour) {
   if (!isScheduledHour(personId, hour)) return null;
   const person = personById(personId);
-  return person?.home_activity_id || null;
+  return homeActivityIdForPerson(person);
 }
 
 function effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd) {
@@ -749,7 +777,7 @@ function renderFullHourCell(td, segment, isScheduled) {
   const hasExplicitSegment = !!segment;
   const explicitActivityId = hasExplicitSegment ? segment.activity_id : null;
   const explicitEmptyOverride = !!segment?.empty_override;
-  const scheduledActivityId = isScheduled ? (person?.home_activity_id || null) : null;
+  const scheduledActivityId = isScheduled ? homeActivityIdForPerson(person) : null;
   const showScheduledDefault = explicitActivityId == null && !explicitEmptyOverride && scheduledActivityId != null;
 
   if (explicitActivityId != null) {
@@ -814,7 +842,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
   const wrapper = document.createElement("div");
   wrapper.className = "hour-split";
   const person = personById(Number(td.dataset.personId));
-  const scheduledActivityId = isScheduled ? (person?.home_activity_id || null) : null;
+  const scheduledActivityId = isScheduled ? homeActivityIdForPerson(person) : null;
 
   HALF_SEGMENTS.forEach(({ minute_start, minute_end }) => {
     const segment = currentSegment(Number(td.dataset.personId), Number(td.dataset.hour), minute_start, minute_end);

@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
-from ..models import Activity, Person, ScheduleCell, User
+from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
+from ..models import Activity, Area, Person, ScheduleCell, User
 from ..template_service import get_template_hours, get_template_hours_map
 from ..schemas import (
     BulkCellRequest,
@@ -186,12 +187,14 @@ def get_schedule(
         if hrs:
             scheduled_hours[p.id] = sorted(hrs)
 
+    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
+
     return ScheduleOut(
         year=year,
         week=week,
         weekday=weekday,
         area_id=area_id,
-        persons=[PersonOut.model_validate(p) for p in persons],
+        persons=[person_out_with_home_activity(p, home_activity_for(p)) for p in persons],
         cells=[CellOut(**_cell_to_dict(c)) for c in sorted(cells, key=lambda c: (c.person_id, c.hour, c.minute_start))],
         scheduled_hours=scheduled_hours,
     )
@@ -764,7 +767,9 @@ def get_summary(
     persons = db.execute(persons_q).scalars().all()
     person_ids = [person.id for person in persons]
 
-    activities = {activity.id: activity for activity in db.query(Activity).all()}
+    activity_rows = db.query(Activity).all()
+    activities = {activity.id: activity for activity in activity_rows}
+    home_activity_for = build_home_activity_resolver(activity_rows, db.query(Area).all())
     minutes_by_activity: dict[int, int] = {}
 
     if person_ids:
@@ -798,14 +803,15 @@ def get_summary(
         template_hours_map = get_template_hours_map(db, person_ids, [weekday])
         for person in persons:
             template_hours = template_hours_map.get((person.id, weekday))
-            if template_hours is None or person.home_activity_id is None:
+            home_activity_id = home_activity_for(person)
+            if template_hours is None or home_activity_id is None:
                 continue
             for hour in template_hours:
                 remaining = 60 - covered_minutes.get((person.id, hour), 0)
                 if remaining <= 0:
                     continue
-                minutes_by_activity[person.home_activity_id] = (
-                    minutes_by_activity.get(person.home_activity_id, 0) + remaining
+                minutes_by_activity[home_activity_id] = (
+                    minutes_by_activity.get(home_activity_id, 0) + remaining
                 )
 
     def resolve_summary_target(activity_id: int) -> Activity | None:

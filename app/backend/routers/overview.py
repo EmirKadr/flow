@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
-from ..models import Activity, Person, ScheduleCell, User
+from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
+from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schemas import PersonOut
 from ..template_service import get_template_hours_map
 
@@ -420,9 +421,11 @@ def get_overview(
                     covered_minutes[(pid, wd)].get(hour, 0) + int(cnt),
                 )
 
+    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
     template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
     matrix: list[OverviewCell] = []
     for person in persons:
+        home_activity_id = home_activity_for(person)
         for weekday in range(1, 8):
             template_hours = template_hours_map.get((person.id, weekday))
             template_count = 0 if template_hours is None else len(template_hours)
@@ -430,7 +433,7 @@ def get_overview(
                 explicit_minutes=explicit_minutes.get((person.id, weekday), {}),
                 covered_minutes=covered_minutes.get((person.id, weekday), {}),
                 template=template_hours,
-                home_activity_id=person.home_activity_id,
+                home_activity_id=home_activity_id,
             )
             dominant, mixed, total_minutes = _summarize_day(minutes_by_activity)
             matrix.append(
@@ -447,7 +450,7 @@ def get_overview(
     return OverviewOut(
         year=year,
         week=week,
-        persons=[PersonOut.model_validate(person) for person in persons],
+        persons=[person_out_with_home_activity(person, home_activity_for(person)) for person in persons],
         matrix=matrix,
     )
 
@@ -521,9 +524,11 @@ def get_month_overview(
                     covered_minutes[(pid, iso_year, iso_week, iso_weekday)].get(hour, 0) + int(cnt),
                 )
 
+    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
     template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
     matrix: list[MonthOverviewCell] = []
     for person in persons:
+        home_activity_id = home_activity_for(person)
         for day_info in days_list:
             template_hours = template_hours_map.get((person.id, day_info.weekday))
             template_count = 0 if template_hours is None else len(template_hours)
@@ -531,7 +536,7 @@ def get_month_overview(
                 explicit_minutes=explicit_minutes.get((person.id, day_info.year, day_info.week, day_info.weekday), {}),
                 covered_minutes=covered_minutes.get((person.id, day_info.year, day_info.week, day_info.weekday), {}),
                 template=template_hours,
-                home_activity_id=person.home_activity_id,
+                home_activity_id=home_activity_id,
             )
             dominant, mixed, total_minutes = _summarize_day(minutes_by_activity)
             matrix.append(
@@ -549,7 +554,7 @@ def get_month_overview(
         year=year,
         month=month,
         days=days_list,
-        persons=[PersonOut.model_validate(person) for person in persons],
+        persons=[person_out_with_home_activity(person, home_activity_for(person)) for person in persons],
         matrix=matrix,
     )
 
