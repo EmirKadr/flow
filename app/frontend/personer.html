@@ -17,14 +17,22 @@
   <main>
     <div class="section-title">Personregister</div>
     <div class="table-wrap">
-      <table>
+      <table id="persons-table">
         <thead>
-          <tr>
-            <th>Namn</th>
-            <th>Hemområde</th>
-            <th>Kommentar</th>
-            <th>Aktiv</th>
-            <th>Sortering</th>
+          <tr class="sort-row">
+            <th data-sort="name">Namn <span class="sort-ind"></span></th>
+            <th data-sort="home_area">Hemområde <span class="sort-ind"></span></th>
+            <th data-sort="home_activity">Huvudställe <span class="sort-ind"></span></th>
+            <th data-sort="is_active">Aktiv <span class="sort-ind"></span></th>
+            <th data-sort="sort_order">Sortering <span class="sort-ind"></span></th>
+            <th></th>
+          </tr>
+          <tr class="filter-row">
+            <th><input data-filter="name" placeholder="Sök…" /></th>
+            <th><input data-filter="home_area" placeholder="Sök…" /></th>
+            <th><input data-filter="home_activity" placeholder="Sök…" /></th>
+            <th><input data-filter="is_active" placeholder="ja / nej" /></th>
+            <th><input data-filter="sort_order" placeholder="Sök…" /></th>
             <th></th>
           </tr>
         </thead>

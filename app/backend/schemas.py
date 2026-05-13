@@ -66,6 +66,7 @@ class PersonOut(BaseModel):
     id: int
     name: str
     home_area_id: int | None
+    home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
     comment: str | None
     is_active: bool
@@ -75,6 +76,7 @@ class PersonOut(BaseModel):
 class PersonCreate(BaseModel):
     name: str
     home_area_id: int | None = None
+    home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
     comment: str | None = None
     is_active: bool = True
@@ -84,6 +86,7 @@ class PersonCreate(BaseModel):
 class PersonUpdate(BaseModel):
     name: str | None = None
     home_area_id: int | None = None
+    home_activity_id: int | None = None
     competencies: list[str] | None = None
     comment: str | None = None
     is_active: bool | None = None

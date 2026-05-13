@@ -49,6 +49,7 @@ class Person(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     home_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
+    home_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     competencies: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     comment: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -185,6 +185,23 @@ table.matrix td select {
 
 .note { color: #555; font-size: 13px; margin: 8px 0 0; }
 
+tr.sort-row th {
+  cursor: pointer;
+  user-select: none;
+}
+tr.sort-row th:hover { background: #333; }
+tr.sort-row .sort-ind { font-size: 10px; opacity: 0.6; margin-left: 4px; }
+
+tr.filter-row th {
+  background: #f0f0f0;
+  padding: 4px;
+}
+tr.filter-row input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
 .toast {
   position: fixed;
   bottom: 24px;
@@ -288,6 +305,12 @@ table.matrix td.scheduled-empty {
 table.matrix td.scheduled-empty select {
   background-color: transparent;
 }
+
+table.matrix td.base-value {
+  opacity: 0.65;
+  font-style: italic;
+}
+table.matrix td.base-value select { font-style: italic; opacity: 0.85; }
 
 .clipboard-flash {
   animation: clipFlash 0.5s ease;

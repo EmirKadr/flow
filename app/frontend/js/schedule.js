@@ -65,31 +65,48 @@ function colorFor(activityId) {
 }
 
 function setCellVisual(td, activityId, version) {
-  const sel = td.querySelector("select");
-  if (sel) {
-    sel.value = activityId ? String(activityId) : "";
-    sel.dataset.version = version || 0;
-    sel.dataset.activityId = activityId || "";
-    sel.style.background = activityId ? colorFor(activityId) : "transparent";
-  }
-  td.dataset.version = version || 0;
-  td.dataset.activityId = activityId || "";
-
-  // Bakgrundsfärg: aktivitet > schemalagd-grund > inget
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
   const scheduledSet = state.scheduledHours[personId];
   const isScheduled = scheduledSet && scheduledSet.has(hour);
 
+  // Effektiv aktivitet: faktisk värde > huvudställe-som-bas vid schemalagd tom > inget
+  let effectiveActivityId = activityId;
+  let isBase = false;
+  if (!activityId && isScheduled) {
+    const person = state.persons.find((p) => p.id === personId);
+    if (person && person.home_activity_id) {
+      effectiveActivityId = person.home_activity_id;
+      isBase = true;
+    }
+  }
+
+  const sel = td.querySelector("select");
+  if (sel) {
+    sel.value = activityId ? String(activityId) : "";
+    sel.dataset.version = version || 0;
+    sel.dataset.activityId = activityId || "";
+    sel.style.background = "transparent";
+  }
+  td.dataset.version = version || 0;
+  td.dataset.activityId = activityId || "";
+  td.dataset.isBase = isBase ? "1" : "";
+
   if (activityId) {
     td.style.background = colorFor(activityId);
+    td.classList.remove("scheduled-empty", "base-value");
+  } else if (effectiveActivityId) {
+    // Huvudställe som bas – samma färg som riktig men markeras med klass
+    td.style.background = colorFor(effectiveActivityId);
     td.classList.remove("scheduled-empty");
+    td.classList.add("base-value");
   } else if (isScheduled) {
     td.style.background = "";
     td.classList.add("scheduled-empty");
+    td.classList.remove("base-value");
   } else {
     td.style.background = "#fff";
-    td.classList.remove("scheduled-empty");
+    td.classList.remove("scheduled-empty", "base-value");
   }
 
   // Drag-handle på alla celler (även tomma → dra för att tömma andra)
