@@ -13,8 +13,9 @@ const state = {
   activitiesActive: [],
   persons: [],
   cells: new Map(),            // key = `${person_id}:${hour}` → {activity_id, version}
-  focusedCell: null,           // {td, personId, hour}
-  clipboard: null,             // {activity_id} | null
+  scheduledHours: {},          // {person_id: Set<hour>}
+  focusedCell: null,
+  clipboard: null,
 };
 
 const drag = {
@@ -69,10 +70,27 @@ function setCellVisual(td, activityId, version) {
     sel.value = activityId ? String(activityId) : "";
     sel.dataset.version = version || 0;
     sel.dataset.activityId = activityId || "";
-    sel.style.background = colorFor(activityId);
+    sel.style.background = activityId ? colorFor(activityId) : "transparent";
   }
   td.dataset.version = version || 0;
   td.dataset.activityId = activityId || "";
+
+  // Bakgrundsfärg: aktivitet > schemalagd-grund > inget
+  const personId = Number(td.dataset.personId);
+  const hour = Number(td.dataset.hour);
+  const scheduledSet = state.scheduledHours[personId];
+  const isScheduled = scheduledSet && scheduledSet.has(hour);
+
+  if (activityId) {
+    td.style.background = colorFor(activityId);
+    td.classList.remove("scheduled-empty");
+  } else if (isScheduled) {
+    td.style.background = "";
+    td.classList.add("scheduled-empty");
+  } else {
+    td.style.background = "#fff";
+    td.classList.remove("scheduled-empty");
+  }
 
   // Drag-handle – bara på celler med värde
   const existing = td.querySelector(".drag-handle");
@@ -114,6 +132,7 @@ function buildRows() {
       td.dataset.hour = hour;
       td.dataset.rowIndex = rowIndex;
       td.dataset.colIndex = colIndex;
+      td.tabIndex = -1;  // gör fokuserbart men inte tab-navigerat
 
       const select = document.createElement("select");
       select.dataset.personId = person.id;
@@ -203,6 +222,10 @@ function focusCell(td) {
     hour: Number(td.dataset.hour),
   };
   td.classList.add("focused");
+  // Tar bort fokus från select så Ctrl+C/V/X-events går till document, inte fångas av select
+  if (document.activeElement && document.activeElement.tagName === "SELECT") {
+    document.activeElement.blur();
+  }
 }
 
 function clipboardLabel(activityId) {
@@ -265,9 +288,16 @@ function setupKeyboard() {
     if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
-    if (key === "c") { e.preventDefault(); copyFocused(false); }
-    else if (key === "x") { e.preventDefault(); copyFocused(true); }
-    else if (key === "v") { e.preventDefault(); pasteFocused(); }
+    if (!["c", "x", "v"].includes(key)) return;
+
+    if (!state.focusedCell) {
+      showToast("Klicka först på en cell för att markera den", "warn");
+      return;
+    }
+    e.preventDefault();
+    if (key === "c") copyFocused(false);
+    else if (key === "x") copyFocused(true);
+    else if (key === "v") pasteFocused();
   });
 }
 
@@ -374,6 +404,15 @@ function setupDrag() {
     const td = e.target.closest("td[data-hour]");
     if (td) focusCell(td);
   });
+
+  // När dropdown stänger (blur), behåll fokus på td så Ctrl+C/V/X funkar
+  body.addEventListener("change", (e) => {
+    const td = e.target.closest("td[data-hour]");
+    if (td) {
+      focusCell(td);
+      setTimeout(() => td.focus(), 0);
+    }
+  });
 }
 
 
@@ -433,6 +472,10 @@ async function loadSchedule() {
   state.focusedCell = null;
   data.cells.forEach((c) => {
     state.cells.set(`${c.person_id}:${c.hour}`, { activity_id: c.activity_id, version: c.version });
+  });
+  state.scheduledHours = {};
+  Object.entries(data.scheduled_hours || {}).forEach(([pid, hours]) => {
+    state.scheduledHours[Number(pid)] = new Set(hours);
   });
 
   const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");

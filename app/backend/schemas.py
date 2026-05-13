@@ -107,6 +107,7 @@ class ScheduleOut(BaseModel):
     area_id: int | None
     persons: list[PersonOut]
     cells: list[CellOut]
+    scheduled_hours: dict[int, list[int]] = {}  # person_id → [7,8,9,...]
 
 
 class CellUpdate(BaseModel):

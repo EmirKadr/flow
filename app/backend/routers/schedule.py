@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
 from ..models import Activity, Person, ScheduleCell, User
+from ..template_service import get_template_hours
 from ..schemas import (
     BulkCellRequest,
     CellOut,
@@ -63,6 +64,12 @@ def get_schedule(
             .all()
         )
 
+    scheduled_hours: dict[int, list[int]] = {}
+    for p in persons:
+        hrs = get_template_hours(db, p.id, weekday)
+        if hrs:
+            scheduled_hours[p.id] = sorted(hrs)
+
     return ScheduleOut(
         year=year,
         week=week,
@@ -70,6 +77,7 @@ def get_schedule(
         area_id=area_id,
         persons=[PersonOut.model_validate(p) for p in persons],
         cells=[CellOut(**_cell_to_dict(c)) for c in cells],
+        scheduled_hours=scheduled_hours,
     )
 
 
