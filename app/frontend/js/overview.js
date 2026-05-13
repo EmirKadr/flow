@@ -12,9 +12,13 @@ const state = {
   areas: [],
   activities: [],
   activitiesActive: [],
-  persons: [],
-  cells: [],           // [{person_id, date|weekday, ...}, ...]
-  days: [],            // för månadsvy: lista med {date, year, week, weekday}
+  allPersons: [],      // rå från server
+  persons: [],         // filtrerad + sorterad
+  cells: [],
+  days: [],
+  nameFilter: "",
+  sortKey: "sort_order",
+  sortAsc: true,
 };
 
 const drag = {
@@ -56,6 +60,24 @@ function activityById(id) {
 function colorFor(activityId) {
   const a = activityById(activityId);
   return a ? a.color : "#ffffff";
+}
+
+function refreshPersons() {
+  const q = state.nameFilter.toLowerCase().trim();
+  let list = state.allPersons;
+  if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
+  const getSortVal = (p) => state.sortKey === "name" ? (p.name || "").toLowerCase() : p.sort_order;
+  list = [...list].sort((a, b) => {
+    const av = getSortVal(a), bv = getSortVal(b);
+    if (av < bv) return state.sortAsc ? -1 : 1;
+    if (av > bv) return state.sortAsc ? 1 : -1;
+    return 0;
+  });
+  state.persons = list;
+  document.querySelectorAll("table.overview th[data-sort]").forEach((th) => {
+    const ind = th.querySelector(".sort-ind");
+    if (ind) ind.textContent = th.dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
+  });
 }
 
 
@@ -346,7 +368,8 @@ async function load() {
       `/api/overview?year=${state.year}&week=${state.week}` +
         (state.areaId ? `&area_id=${state.areaId}` : "")
     );
-    state.persons = data.persons;
+    state.allPersons = data.persons;
+    refreshPersons();
     state.cells = data.matrix;
     state.days = [];
     const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
@@ -358,7 +381,8 @@ async function load() {
       `/api/overview/month?year=${state.year}&month=${state.month}` +
         (state.areaId ? `&area_id=${state.areaId}` : "")
     );
-    state.persons = data.persons;
+    state.allPersons = data.persons;
+    refreshPersons();
     state.cells = data.matrix;
     state.days = data.days;
     const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
@@ -432,5 +456,24 @@ function updateViewVisibility() {
     state.view = e.target.value;
     updateViewVisibility();
     load();
+  });
+
+  document.getElementById("nameFilter").addEventListener("input", (e) => {
+    state.nameFilter = e.target.value;
+    refreshPersons();
+    if (state.view === "week") buildWeekBody();
+    else buildMonthBody();
+  });
+
+  // Klick på Person-rubrik → sort
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest("table.overview th[data-sort]");
+    if (!th) return;
+    const key = th.dataset.sort;
+    if (state.sortKey === key) state.sortAsc = !state.sortAsc;
+    else { state.sortKey = key; state.sortAsc = true; }
+    refreshPersons();
+    if (state.view === "week") buildWeekBody();
+    else buildMonthBody();
   });
 })();

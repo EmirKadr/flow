@@ -11,11 +11,15 @@ const state = {
   areas: [],
   activities: [],
   activitiesActive: [],
-  persons: [],
+  allPersons: [],              // rå lista från server
+  persons: [],                 // filtrerad + sorterad
   cells: new Map(),            // key = `${person_id}:${hour}` → {activity_id, version}
   scheduledHours: {},          // {person_id: Set<hour>}
   focusedCell: null,
   clipboard: null,
+  nameFilter: "",
+  sortKey: "sort_order",
+  sortAsc: true,
 };
 
 const drag = {
@@ -57,6 +61,37 @@ function buildHeader() {
 
 function activityById(id) {
   return state.activities.find((a) => a.id === id);
+}
+
+function refreshPersons() {
+  const q = state.nameFilter.toLowerCase().trim();
+  let list = state.allPersons;
+  if (q) {
+    list = list.filter((p) => {
+      const areaName = state.areas.find((a) => a.id === p.home_area_id)?.name || "";
+      return p.name.toLowerCase().includes(q) || areaName.toLowerCase().includes(q);
+    });
+  }
+  const getSortVal = (p) => {
+    if (state.sortKey === "name") return (p.name || "").toLowerCase();
+    if (state.sortKey === "home_area") {
+      return (state.areas.find((a) => a.id === p.home_area_id)?.name || "").toLowerCase();
+    }
+    return p.sort_order;
+  };
+  list = [...list].sort((a, b) => {
+    const av = getSortVal(a), bv = getSortVal(b);
+    if (av < bv) return state.sortAsc ? -1 : 1;
+    if (av > bv) return state.sortAsc ? 1 : -1;
+    return 0;
+  });
+  state.persons = list;
+
+  // Uppdatera sort-indikator
+  document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
+    const ind = th.querySelector(".sort-ind");
+    if (ind) ind.textContent = th.dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
+  });
 }
 
 function colorFor(activityId) {
@@ -520,7 +555,8 @@ async function loadSchedule() {
     `/api/schedule?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
       (state.areaId ? `&area_id=${state.areaId}` : "")
   );
-  state.persons = data.persons;
+  state.allPersons = data.persons;
+  refreshPersons();
   state.cells = new Map();
   state.focusedCell = null;
   data.cells.forEach((c) => {
@@ -597,6 +633,22 @@ async function loadSchedule() {
   });
 
   document.getElementById("copyBtn").addEventListener("click", () => openCopyModal());
+
+  document.getElementById("nameFilter").addEventListener("input", (e) => {
+    state.nameFilter = e.target.value;
+    refreshPersons();
+    buildRows();
+  });
+
+  document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      if (state.sortKey === key) state.sortAsc = !state.sortAsc;
+      else { state.sortKey = key; state.sortAsc = true; }
+      refreshPersons();
+      buildRows();
+    });
+  });
 })();
 
 

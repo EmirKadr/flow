@@ -35,6 +35,9 @@
     table.overview td.day {
       position: relative;
     }
+    table.overview th[data-sort] { cursor: pointer; user-select: none; }
+    table.overview th[data-sort]:hover { background: #333; }
+    table.overview .sort-ind { font-size: 10px; opacity: 0.7; margin-left: 4px; }
     .ov-drag-handle {
       position: absolute;
       bottom: 0; right: 0;
@@ -78,13 +81,14 @@
     <button id="next">▶</button>
     <label>Område <select id="areaSelect"></select></label>
     <button id="reloadBtn">Uppdatera</button>
+    <label>Sök person <input id="nameFilter" placeholder="Sök…" style="width: 140px;" /></label>
   </section>
 
   <main>
     <div class="section-title" id="sectionTitle">Översikt</div>
     <div class="table-wrap">
       <table class="overview" id="overviewTable">
-        <thead><tr id="headerRow"><th class="name">Person</th></tr></thead>
+        <thead><tr id="headerRow"><th class="name" data-sort="name">Person <span class="sort-ind"></span></th></tr></thead>
         <tbody id="overviewBody"></tbody>
       </table>
     </div>
