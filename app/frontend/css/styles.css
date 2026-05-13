@@ -142,28 +142,30 @@ table.matrix th.name, table.matrix td.name {
   font-weight: bold;
 }
 .header-filter-cell {
-  padding: 6px !important;
+  padding: 4px 6px !important;
   white-space: normal !important;
-  vertical-align: top;
+  vertical-align: middle;
 }
 .header-filter {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
 }
 .header-filter-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
+  white-space: nowrap;
 }
 .header-filter-input {
   width: 100%;
   min-width: 0;
   font-size: 12px;
   font-weight: normal;
-  padding: 5px 6px;
+  padding: 2px 6px;
+  line-height: 1.2;
+  height: 28px;
 }
 table.matrix th[data-sort] { cursor: pointer; user-select: none; }
 table.matrix th[data-sort]:hover { background: #333; }
