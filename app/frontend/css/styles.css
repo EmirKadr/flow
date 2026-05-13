@@ -294,20 +294,23 @@ table.matrix td.split-hour {
 .calc-panel {
   border: 1px solid #d6d6d6;
   border-radius: 8px;
-  overflow: hidden;
   background: #fff;
 }
 
 .calc-panel-title {
-  background: var(--black);
-  color: var(--green);
+  display: inline-block;
+  background: #fff;
+  color: #111;
   font-weight: bold;
-  padding: 8px 10px;
-  border-bottom: 2px solid var(--green);
+  padding: 6px 10px;
+  margin: 10px 10px 6px;
+  border: 1px solid #d6d6d6;
+  border-radius: 6px;
 }
 
 .calc-table {
-  width: 100%;
+  width: calc(100% - 20px);
+  margin: 0 10px 10px;
 }
 
 .calc-table th,
