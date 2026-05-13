@@ -69,6 +69,7 @@ class Activity(Base):
     code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     label: Mapped[str] = mapped_column(String(60), nullable=False)
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
+    summary_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#ffffff")
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="work")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

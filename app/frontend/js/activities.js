@@ -1,6 +1,7 @@
 // Ställeregister – CRUD av aktiviteter.
 
 let areas = [];
+let activities = [];
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
@@ -13,9 +14,15 @@ function areaName(id) {
   return a ? a.name : "";
 }
 
+function activityLabel(id) {
+  const a = activities.find((x) => x.id === id);
+  return a ? a.label : "";
+}
+
 async function load() {
+  activities = await api.get("/api/activities?include_inactive=true");
   const includeInactive = document.getElementById("show-inactive").checked;
-  const acts = await api.get(`/api/activities?include_inactive=${includeInactive}`);
+  const acts = includeInactive ? activities : activities.filter((a) => a.is_active);
   const tbody = document.getElementById("acts-body");
   tbody.innerHTML = "";
   acts.forEach((a) => {
@@ -25,6 +32,7 @@ async function load() {
       <td>${escapeHtml(a.label)}</td>
       <td>${escapeHtml(a.code)}</td>
       <td>${escapeHtml(areaName(a.area_id))}</td>
+      <td>${escapeHtml(activityLabel(a.summary_activity_id) || "–")}</td>
       <td>${escapeHtml(a.category)}</td>
       <td>${a.sort_order}</td>
       <td>${a.is_active ? "Ja" : "Nej"}</td>
@@ -49,6 +57,10 @@ async function load() {
 
 function openModal(act) {
   const isEdit = !!act;
+  const summaryOptions = activities
+    .filter((item) => !isEdit || item.id !== act.id)
+    .map((item) => `<option value="${item.id}" ${act?.summary_activity_id === item.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`)
+    .join("");
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
@@ -62,6 +74,11 @@ function openModal(act) {
       <select id="m-area">
         <option value="">(inget)</option>
         ${areas.map((a) => `<option value="${a.id}" ${act?.area_id === a.id ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
+      </select>
+      <label>Summeras som i summering</label>
+      <select id="m-summary">
+        <option value="">Egen rad</option>
+        ${summaryOptions}
       </select>
       <label>Färg (hex)</label>
       <input id="m-color" type="color" value="${act?.color || "#ffffff"}" />
@@ -86,6 +103,7 @@ function openModal(act) {
       code: document.getElementById("m-code").value.trim(),
       label: document.getElementById("m-label").value.trim(),
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
+      summary_activity_id: document.getElementById("m-summary").value ? Number(document.getElementById("m-summary").value) : null,
       color: document.getElementById("m-color").value,
       category: document.getElementById("m-cat").value,
       sort_order: Number(document.getElementById("m-sort").value) || 0,

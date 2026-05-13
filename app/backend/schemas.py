@@ -32,6 +32,7 @@ class ActivityOut(BaseModel):
     code: str
     label: str
     area_id: int | None
+    summary_activity_id: int | None
     color: str
     category: str
     sort_order: int
@@ -43,6 +44,7 @@ class ActivityCreate(BaseModel):
     code: str
     label: str
     area_id: int | None = None
+    summary_activity_id: int | None = None
     color: str = "#ffffff"
     category: str = "work"
     sort_order: int = 0
@@ -54,6 +56,7 @@ class ActivityUpdate(BaseModel):
     code: str | None = None
     label: str | None = None
     area_id: int | None = None
+    summary_activity_id: int | None = None
     color: str | None = None
     category: str | None = None
     sort_order: int | None = None

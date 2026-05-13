@@ -631,6 +631,8 @@ def get_summary(
             Activity.code,
             Activity.label,
             Activity.color,
+            Activity.sort_order,
+            Activity.summary_activity_id,
             func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start).label("minutes"),
         )
         .join(ScheduleCell, ScheduleCell.activity_id == Activity.id)
@@ -639,21 +641,56 @@ def get_summary(
             ScheduleCell.week == week,
             ScheduleCell.weekday == weekday,
         )
-        .group_by(Activity.id, Activity.code, Activity.label, Activity.color, Activity.sort_order)
+        .group_by(
+            Activity.id,
+            Activity.code,
+            Activity.label,
+            Activity.color,
+            Activity.sort_order,
+            Activity.summary_activity_id,
+        )
         .order_by(Activity.sort_order)
     )
     if area_id is not None:
         q = q.join(Person, Person.id == ScheduleCell.person_id).where(Person.home_area_id == area_id)
 
     rows = db.execute(q).all()
+    activities = {activity.id: activity for activity in db.query(Activity).all()}
+
+    def resolve_summary_target(activity_id: int) -> Activity | None:
+        current = activities.get(activity_id)
+        visited: set[int] = set()
+        while current and current.summary_activity_id is not None and current.id not in visited:
+            visited.add(current.id)
+            current = activities.get(current.summary_activity_id)
+        return current
+
+    grouped: dict[int, dict] = {}
+    for row in rows:
+        target = resolve_summary_target(row.id) or activities.get(row.id)
+        if target is None:
+            continue
+        bucket = grouped.setdefault(
+            target.id,
+            {
+                "activity_id": target.id,
+                "activity_code": target.code,
+                "activity_label": target.label,
+                "color": target.color,
+                "sort_order": target.sort_order,
+                "minutes": 0,
+            },
+        )
+        bucket["minutes"] += int(row.minutes or 0)
+
     return [
         SummaryRow(
-            activity_id=r.id,
-            activity_code=r.code,
-            activity_label=r.label,
-            color=r.color,
-            hours=_hours_from_minutes(int(r.minutes or 0)),
-            persons_equiv=round(_hours_from_minutes(int(r.minutes or 0)) / HOURS_PER_PERSON_DAY, 1),
+            activity_id=item["activity_id"],
+            activity_code=item["activity_code"],
+            activity_label=item["activity_label"],
+            color=item["color"],
+            hours=_hours_from_minutes(item["minutes"]),
+            persons_equiv=round(_hours_from_minutes(item["minutes"]) / HOURS_PER_PERSON_DAY, 1),
         )
-        for r in rows
+        for item in sorted(grouped.values(), key=lambda x: (x["sort_order"], x["activity_label"]))
     ]

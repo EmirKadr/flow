@@ -732,7 +732,6 @@ function updateDragTargets() {
   document.querySelectorAll("#scheduleBody td[data-row-index]").forEach((td) => {
     const r = Number(td.dataset.rowIndex);
     const c = Number(td.dataset.colIndex);
-    if (drag.sourceMinuteStart === 0 && drag.sourceMinuteEnd === 60 && td.dataset.split === "1") return;
     if (r >= r0 && r <= r1 && c >= c0 && c <= c1) td.classList.add("drag-target");
   });
 }
@@ -793,64 +792,71 @@ async function finishDrag() {
   const sourceMinuteStart = drag.sourceMinuteStart;
   const sourceMinuteEnd = drag.sourceMinuteEnd;
   const targets = Array.from(document.querySelectorAll("#scheduleBody td.drag-target"));
+  const targetCount = targets.filter((td) => td !== sourceTd).length;
   resetDragState();
 
   if (targets.length === 0 || (targets.length === 1 && targets[0] === sourceTd)) return;
-  if (targets.length > 200) {
-    showToast("För många celler (max 200)", "error");
-    return;
-  }
 
   const cells = targets
     .filter((td) => td !== sourceTd)
-    .map((td) => {
+    .flatMap((td) => {
       const personId = Number(td.dataset.personId);
       const hour = Number(td.dataset.hour);
       const segments = sortSegments(segmentsForHour(personId, hour));
-      const matching = segments.find(
-        (segment) => segment.minute_start === sourceMinuteStart && segment.minute_end === sourceMinuteEnd
-      );
       const fullSegment = segments.length === 1
         && segments[0].minute_start === 0
         && segments[0].minute_end === 60
         ? segments[0]
         : null;
-      const expectedVersion = matching
-        ? Number(matching.version) || 0
-        : (fullSegment ? Number(fullSegment.version) || 0 : 0);
-      return {
-        year: state.year,
-        week: state.week,
-        weekday: state.weekday,
-        hour,
-        minute_start: sourceMinuteStart,
-        minute_end: sourceMinuteEnd,
-        person_id: personId,
-        activity_id: sourceActivityId,
-        expected_version: expectedVersion,
-      };
+      const targetSegments = (sourceMinuteStart === 0 && sourceMinuteEnd === 60 && td.dataset.split === "1")
+        ? HALF_SEGMENTS
+        : [{ minute_start: sourceMinuteStart, minute_end: sourceMinuteEnd }];
+
+      return targetSegments.map(({ minute_start, minute_end }) => {
+        const matching = segments.find(
+          (segment) => segment.minute_start === minute_start && segment.minute_end === minute_end
+        );
+        const expectedVersion = matching
+          ? Number(matching.version) || 0
+          : (fullSegment ? Number(fullSegment.version) || 0 : 0);
+        return {
+          year: state.year,
+          week: state.week,
+          weekday: state.weekday,
+          hour,
+          minute_start,
+          minute_end,
+          person_id: personId,
+          activity_id: sourceActivityId,
+          expected_version: expectedVersion,
+        };
+      });
     });
 
   if (cells.length === 0) return;
+  if (cells.length > 200) {
+    showToast("För många celler eller halvor (max 200)", "error");
+    return;
+  }
 
   try {
     const resp = await api.post("/api/schedule/cells", { cells, atomic: true, action: "drag_fill" });
     const updatedHours = new Map();
     resp.applied.forEach((segment) => {
       const key = `${segment.person_id}:${segment.hour}`;
-      if (!updatedHours.has(key)) updatedHours.set(key, []);
-      updatedHours.get(key).push(segment);
+      if (!updatedHours.has(key)) updatedHours.set(key, new Map());
+      updatedHours.get(key).set(`${segment.minute_start}:${segment.minute_end}`, segment);
     });
-    updatedHours.forEach((segments, key) => {
+    updatedHours.forEach((segmentMap, key) => {
       const [personId, hour] = key.split(":").map(Number);
-      replaceHourSegments(personId, hour, segments);
+      replaceHourSegments(personId, hour, Array.from(segmentMap.values()));
       const td = document.querySelector(
         `#scheduleBody td[data-person-id="${personId}"][data-hour="${hour}"]`
       );
       if (td) renderHourCell(td);
     });
     refreshSummary();
-    showToast(`Fyllde ${cells.length} celler`);
+    showToast(`Fyllde ${targetCount} celler`);
   } catch (e) {
     if (e.status === 409) {
       showToast(`${e.body?.conflicts?.length ?? 0} konflikter – läser om`, "warn");
@@ -906,7 +912,6 @@ function setupDrag() {
     }
     const td = scheduleCellFromPoint(e.clientX, e.clientY);
     if (!td) return;
-    if (drag.sourceMinuteStart === 0 && drag.sourceMinuteEnd === 60 && td.dataset.split === "1") return;
     drag.currentRow = Number(td.dataset.rowIndex);
     drag.currentCol = Number(td.dataset.colIndex);
     updateDragTargets();

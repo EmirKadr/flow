@@ -8,6 +8,37 @@ from ..schemas import ActivityCreate, ActivityOut, ActivityUpdate
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 
+def _validate_summary_activity(
+    db: Session,
+    *,
+    activity_id: int | None,
+    summary_activity_id: int | None,
+) -> int | None:
+    if summary_activity_id is None:
+        return None
+    if activity_id is not None and summary_activity_id == activity_id:
+        return None
+
+    target = db.get(Activity, summary_activity_id)
+    if not target:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Summeringsaktivitet hittades inte")
+
+    if activity_id is None:
+        return summary_activity_id
+
+    visited = {activity_id}
+    current = target
+    while current.summary_activity_id is not None:
+        if current.summary_activity_id in visited:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Summeringskoppling skapar en loop")
+        visited.add(current.id)
+        current = db.get(Activity, current.summary_activity_id)
+        if current is None:
+            break
+
+    return summary_activity_id
+
+
 @router.get("", response_model=list[ActivityOut])
 def list_activities(
     include_inactive: bool = False,
@@ -28,7 +59,13 @@ def create_activity(
 ) -> Activity:
     if db.query(Activity).filter_by(code=payload.code).first():
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Aktivitet med samma kod finns redan")
-    activity = Activity(**payload.model_dump())
+    data = payload.model_dump()
+    data["summary_activity_id"] = _validate_summary_activity(
+        db,
+        activity_id=None,
+        summary_activity_id=payload.summary_activity_id,
+    )
+    activity = Activity(**data)
     db.add(activity)
     db.commit()
     db.refresh(activity)
@@ -49,7 +86,14 @@ def update_activity(
         existing = db.query(Activity).filter(Activity.code == payload.code, Activity.id != activity_id).first()
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Aktivitet med samma kod finns redan")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if "summary_activity_id" in data:
+        data["summary_activity_id"] = _validate_summary_activity(
+            db,
+            activity_id=activity_id,
+            summary_activity_id=payload.summary_activity_id,
+        )
+    for key, value in data.items():
         setattr(activity, key, value)
     db.commit()
     db.refresh(activity)
