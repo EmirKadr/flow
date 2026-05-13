@@ -55,7 +55,7 @@
     </div>
 
     <div class="summary-grid">
-      <div class="card">
+      <div class="card summary-card">
         <h3>Summering per aktivitet</h3>
         <table class="small-table">
           <thead>
@@ -63,6 +63,15 @@
           </thead>
           <tbody id="summaryBody"></tbody>
         </table>
+      </div>
+      <div class="card calc-card">
+        <div class="calc-card-header">
+          <h3>Bemanningskalkyl</h3>
+          <label class="calc-area-picker">Avdelning
+            <select id="calcAreaSelect"></select>
+          </label>
+        </div>
+        <div id="calcPanels" class="calc-panels"></div>
       </div>
     </div>
   </main>

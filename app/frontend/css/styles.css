@@ -240,7 +240,7 @@ table.matrix td.split-hour {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   margin-top: 14px;
 }
@@ -254,6 +254,86 @@ table.matrix td.split-hour {
 }
 
 .card h3 { margin: 0 0 8px; font-size: 16px; }
+
+.summary-card,
+.calc-card {
+  min-width: 0;
+}
+
+.calc-card-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.calc-card-header h3 {
+  margin: 0;
+}
+
+.calc-area-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  min-width: 180px;
+}
+
+.calc-panels {
+  display: grid;
+  gap: 10px;
+}
+
+.calc-panel {
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.calc-panel-title {
+  background: var(--black);
+  color: var(--green);
+  font-weight: bold;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--green);
+}
+
+.calc-table {
+  width: 100%;
+}
+
+.calc-table th,
+.calc-table td {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.calc-table thead th {
+  background: #f2f2f2;
+  font-size: 12px;
+}
+
+.calc-table input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  font-weight: bold;
+}
+
+.calc-output {
+  font-weight: bold;
+}
+
+.calc-output.positive {
+  color: #2d7f16;
+}
+
+.calc-output.negative {
+  color: #b40000;
+}
 
 .note { color: #555; font-size: 13px; margin: 8px 0 0; }
 
@@ -309,6 +389,21 @@ table.matrix td.split-hour {
 @media (max-width: 640px) {
   .tips-popover {
     width: min(300px, calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 960px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calc-card-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calc-area-picker {
+    min-width: 0;
   }
 }
 

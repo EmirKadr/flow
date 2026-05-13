@@ -7,6 +7,7 @@ const HALF_SEGMENTS = [
   { minute_start: 0, minute_end: 30 },
   { minute_start: 30, minute_end: 60 },
 ];
+const CALC_AREA_KEYS = ["GG", "MG", "AS"];
 
 const state = {
   year: 0,
@@ -26,6 +27,14 @@ const state = {
   nameFilter: "",
   sortKey: "sort_order",
   sortAsc: true,
+  summaryRows: [],
+  allSummaryRows: [],
+  calcSelection: "",
+  calcInputs: {
+    GG: { rows: "", time: "", goal: "" },
+    MG: { rows: "", time: "", goal: "" },
+    AS: { rows: "", time: "", goal: "" },
+  },
 };
 
 const drag = {
@@ -219,6 +228,155 @@ function isScheduledHour(personId, hour) {
 function formatHours(value) {
   const num = Number(value) || 0;
   return Number.isInteger(num) ? String(num) : num.toFixed(1).replace(/\.0$/, "");
+}
+
+function areaCodeById(id) {
+  return state.areas.find((area) => area.id === id)?.code || null;
+}
+
+function areaNameByCode(code) {
+  return state.areas.find((area) => area.code === code)?.name
+    || ({ GG: "Granngården", MG: "Mestergruppen", AS: "Autostore" }[code] || code);
+}
+
+function sanitizeNumericInput(value) {
+  const cleaned = String(value || "").replace(/[^\d.,]/g, "");
+  const firstSep = cleaned.search(/[.,]/);
+  if (firstSep === -1) return cleaned;
+  return cleaned.slice(0, firstSep + 1) + cleaned.slice(firstSep + 1).replace(/[.,]/g, "");
+}
+
+function parseNumericInput(value) {
+  if (value == null || value === "") return null;
+  const normalized = String(value).replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function activityHoursByCode(code) {
+  const row = state.allSummaryRows.find((item) => item.activity_code === code);
+  return row ? Number(row.hours) || 0 : 0;
+}
+
+function calcMetrics(areaKey) {
+  const values = state.calcInputs[areaKey] || { rows: "", time: "", goal: "" };
+  const rows = parseNumericInput(values.rows);
+  const time = parseNumericInput(values.time);
+  const goal = parseNumericInput(values.goal);
+  const plockHours = activityHoursByCode(`${areaKey}_PLOCK`);
+
+  let need = null;
+  let hours = null;
+  let diff = null;
+  if (rows != null && time != null && goal != null && time > 0 && goal > 0) {
+    need = (rows / time) / goal;
+    hours = need * time;
+    diff = plockHours - hours;
+  }
+
+  return { plockHours, need, hours, diff };
+}
+
+function calcValueText(value) {
+  return value == null ? "–" : formatHours(value);
+}
+
+function updateCalcPanel(panel, areaKey) {
+  const { need, hours, diff } = calcMetrics(areaKey);
+  const outputs = {
+    need: calcValueText(need),
+    hours: calcValueText(hours),
+    diff: calcValueText(diff),
+  };
+  Object.entries(outputs).forEach(([name, text]) => {
+    const el = panel.querySelector(`[data-output="${name}"]`);
+    if (el) el.textContent = text;
+  });
+  const diffEl = panel.querySelector('[data-output="diff"]');
+  if (diffEl) {
+    diffEl.classList.remove("positive", "negative");
+    if (diff != null) {
+      if (diff > 0) diffEl.classList.add("positive");
+      if (diff < 0) diffEl.classList.add("negative");
+    }
+  }
+}
+
+function renderCalculator() {
+  const container = document.getElementById("calcPanels");
+  const select = document.getElementById("calcAreaSelect");
+  if (!container || !select) return;
+
+  const selectedKeys = state.calcSelection === "ALL" ? CALC_AREA_KEYS : [state.calcSelection];
+  container.innerHTML = selectedKeys.map((areaKey) => {
+    const values = state.calcInputs[areaKey];
+    const metrics = calcMetrics(areaKey);
+    return `
+      <div class="calc-panel" data-area-key="${areaKey}">
+        <div class="calc-panel-title">${escapeHtml(areaNameByCode(areaKey))}</div>
+        <table class="calc-table">
+          <thead>
+            <tr>
+              <th>Dagens rader</th>
+              <th>Tid kvar</th>
+              <th>Mål</th>
+              <th>Behov</th>
+              <th>Timmar</th>
+              <th>Diff</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="text" inputmode="decimal" data-field="rows" value="${escapeHtml(values.rows)}" /></td>
+              <td><input type="text" inputmode="decimal" data-field="time" value="${escapeHtml(values.time)}" /></td>
+              <td><input type="text" inputmode="decimal" data-field="goal" value="${escapeHtml(values.goal)}" /></td>
+              <td class="calc-output" data-output="need">${calcValueText(metrics.need)}</td>
+              <td class="calc-output" data-output="hours">${calcValueText(metrics.hours)}</td>
+              <td class="calc-output ${metrics.diff > 0 ? "positive" : metrics.diff < 0 ? "negative" : ""}" data-output="diff">${calcValueText(metrics.diff)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`;
+  }).join("");
+
+  container.querySelectorAll("input[data-field]").forEach((input) => {
+    input.addEventListener("input", (e) => {
+      const panel = e.target.closest(".calc-panel");
+      if (!panel) return;
+      const areaKey = panel.dataset.areaKey;
+      const field = e.target.dataset.field;
+      const sanitized = sanitizeNumericInput(e.target.value);
+      if (sanitized !== e.target.value) e.target.value = sanitized;
+      state.calcInputs[areaKey][field] = sanitized;
+      updateCalcPanel(panel, areaKey);
+    });
+  });
+}
+
+function setupCalculator() {
+  const select = document.getElementById("calcAreaSelect");
+  if (!select) return;
+
+  select.innerHTML = [
+    '<option value="ALL">Alla</option>',
+    ...CALC_AREA_KEYS.map((code) => `<option value="${code}">${escapeHtml(areaNameByCode(code))}</option>`),
+  ].join("");
+
+  if (!state.calcSelection) {
+    const currentAreaCode = areaCodeById(state.areaId);
+    state.calcSelection = CALC_AREA_KEYS.includes(currentAreaCode) ? currentAreaCode : "ALL";
+  }
+
+  select.value = state.calcSelection;
+  if (select.dataset.bound !== "1") {
+    select.addEventListener("change", (e) => {
+      state.calcSelection = e.target.value;
+      renderCalculator();
+    });
+    select.dataset.bound = "1";
+  }
+
+  renderCalculator();
 }
 
 function buildActivitySelect() {
@@ -979,10 +1137,12 @@ function setupDrag() {
 }
 
 async function refreshSummary() {
-  const rows = await api.get(
-    `/api/schedule/summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
-      (state.areaId ? `&area_id=${state.areaId}` : "")
-  );
+  const filteredUrl = `/api/schedule/summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
+    (state.areaId ? `&area_id=${state.areaId}` : "");
+  const allUrl = `/api/schedule/summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}`;
+  const [rows, allRows] = await Promise.all([api.get(filteredUrl), api.get(allUrl)]);
+  state.summaryRows = rows;
+  state.allSummaryRows = allRows;
   const tbody = document.getElementById("summaryBody");
   tbody.innerHTML = "";
   rows.forEach((r) => {
@@ -993,6 +1153,7 @@ async function refreshSummary() {
       <td>${Number(r.persons_equiv).toFixed(1)}</td>`;
     tbody.appendChild(tr);
   });
+  renderCalculator();
 }
 
 async function loadAreasAndActivities() {
@@ -1019,6 +1180,7 @@ async function loadAreasAndActivities() {
   });
   if (areas.length > 0) state.areaId = areas[0].id;
   sel.value = state.areaId == null ? "" : String(state.areaId);
+  setupCalculator();
 }
 
 async function loadSchedule() {
