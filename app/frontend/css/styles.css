@@ -292,25 +292,27 @@ table.matrix td.split-hour {
 }
 
 .calc-panel {
-  border: 1px solid #d6d6d6;
-  border-radius: 8px;
-  background: #fff;
+  background: transparent;
+}
+
+.calc-panel + .calc-panel {
+  padding-top: 10px;
+  border-top: 1px solid #e1e1e1;
 }
 
 .calc-panel-title {
-  display: inline-block;
-  background: #fff;
+  display: block;
+  background: transparent;
   color: #111;
   font-weight: bold;
-  padding: 6px 10px;
-  margin: 10px 10px 6px;
-  border: 1px solid #d6d6d6;
-  border-radius: 6px;
+  padding: 0;
+  margin: 0 0 6px;
+  border: 0;
 }
 
 .calc-table {
-  width: calc(100% - 20px);
-  margin: 0 10px 10px;
+  width: 100%;
+  margin: 0;
 }
 
 .calc-table th,
