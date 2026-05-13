@@ -294,8 +294,6 @@ function setupDrag() {
     if (targets.length <= 1) return;
     if (targets.length > 100) { showToast("För många celler (max 100)", "error"); return; }
 
-    if (!confirm(`Fylla ${targets.length} celler med samma aktivitet?`)) return;
-
     let written = 0, deleted = 0, errors = 0;
     for (const td of targets) {
       try {

@@ -7,14 +7,27 @@ from sqlalchemy.orm import Session
 from .models import PersonScheduleTemplate
 
 DEFAULT_START = 7
-DEFAULT_END = 16  # exklusiv → timslots 7..15
+DEFAULT_END = 16          # exklusiv → timslots 7..15
+LUNCH_OFFSET = 5          # lunchen sätts 5 timmar in i passet (start_hour + 5)
+
+
+def _hours_with_lunch_removed(start: int, end: int) -> set[int]:
+    """Returnera arbetstimmar inom [start, end) med lunchtimmen borttagen.
+
+    Lunch = en timme, placerad 5 timmar in i passet. Om passet är kortare
+    än så att lunchen inte ryms inom fönstret, ingen lunch dras av.
+    """
+    hours = set(range(start, end))
+    lunch_hour = start + LUNCH_OFFSET
+    hours.discard(lunch_hour)
+    return hours
 
 
 def get_template_hours(db: Session, person_id: int, weekday: int) -> set[int] | None:
     """Returnera set av timmar (6..23) som personen ska bemannas på den dagen.
 
     None = ledig.
-    Om ingen rad finns: default 07..15 (range(7, 16)).
+    Om ingen rad finns: default 07..15 minus lunch på 12.
     """
     row = db.execute(
         select(PersonScheduleTemplate).where(
@@ -24,10 +37,10 @@ def get_template_hours(db: Session, person_id: int, weekday: int) -> set[int] | 
     ).scalar_one_or_none()
 
     if row is None:
-        return set(range(DEFAULT_START, DEFAULT_END))
+        return _hours_with_lunch_removed(DEFAULT_START, DEFAULT_END)
     if row.is_off:
         return None
-    return set(range(row.start_hour, row.end_hour))
+    return _hours_with_lunch_removed(row.start_hour, row.end_hour)
 
 
 def get_all_default_days() -> list[dict]:
