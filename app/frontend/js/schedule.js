@@ -303,6 +303,21 @@ function handleSplitSegmentContextMenu(e, td, part, minuteStart, minuteEnd) {
   void toggleHourSplit(td, minuteStart);
 }
 
+function splitPartFromEvent(td, e) {
+  const directPart = e.target.closest?.(".hour-segment");
+  if (directPart && td.contains(directPart)) return directPart;
+
+  const pointEl = document.elementFromPoint(e.clientX, e.clientY);
+  const pointPart = pointEl?.closest?.(".hour-segment");
+  if (pointPart && td.contains(pointPart)) return pointPart;
+
+  const parts = Array.from(td.querySelectorAll(".hour-segment"));
+  if (parts.length <= 1) return parts[0] || null;
+
+  const rect = td.getBoundingClientRect();
+  return e.clientX >= rect.left + (rect.width / 2) ? parts[1] : parts[0];
+}
+
 function activityIdForDragSource(td, minuteStart, minuteEnd) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
@@ -384,7 +399,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
   td.classList.remove("scheduled-empty", "base-value");
   td.style.background = "#fff";
   td.oncontextmenu = (e) => {
-    const part = e.target.closest(".hour-segment") || td.querySelector(".hour-segment");
+    const part = splitPartFromEvent(td, e);
     if (!part) return;
     handleSplitSegmentContextMenu(
       e,
@@ -888,7 +903,7 @@ function setupDrag() {
     const td = e.target.closest("td[data-hour]");
     if (!td) return;
     if (td.dataset.split === "1") {
-      const part = e.target.closest(".hour-segment") || td.querySelector(".hour-segment");
+      const part = splitPartFromEvent(td, e);
       if (part) {
         handleSplitSegmentContextMenu(
           e,
