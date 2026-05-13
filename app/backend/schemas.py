@@ -103,6 +103,7 @@ class CellOut(BaseModel):
     minute_start: int
     minute_end: int
     activity_id: int | None
+    empty_override: bool = False
     version: int
     updated_at: datetime | None = None
     updated_by: int | None = None

@@ -74,7 +74,7 @@ def _hours_from_minutes(total_minutes: int) -> float:
 def _effective_minutes_by_activity(
     *,
     explicit_minutes: dict[int, int],
-    explicit_hours: set[int],
+    covered_minutes: dict[int, int],
     template: set[int] | None,
     home_activity_id: int | None,
 ) -> dict[int, int]:
@@ -83,9 +83,10 @@ def _effective_minutes_by_activity(
         return minutes_by_activity
 
     for hour in template:
-        if hour in explicit_hours:
+        remaining = 60 - covered_minutes.get(hour, 0)
+        if remaining <= 0:
             continue
-        minutes_by_activity[home_activity_id] = minutes_by_activity.get(home_activity_id, 0) + 60
+        minutes_by_activity[home_activity_id] = minutes_by_activity.get(home_activity_id, 0) + remaining
 
     return minutes_by_activity
 
@@ -116,7 +117,7 @@ def get_overview(
     person_ids = [p.id for p in persons]
 
     explicit_minutes: dict[tuple[int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    explicit_hours: dict[tuple[int, int], set[int]] = defaultdict(set)
+    covered_minutes: dict[tuple[int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
     if person_ids:
         rows = db.execute(
             select(
@@ -124,6 +125,7 @@ def get_overview(
                 ScheduleCell.weekday,
                 ScheduleCell.hour,
                 ScheduleCell.activity_id,
+                ScheduleCell.empty_override,
                 func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start),
             )
             .where(
@@ -131,12 +133,22 @@ def get_overview(
                 ScheduleCell.week == week,
                 ScheduleCell.person_id.in_(person_ids),
             )
-            .group_by(ScheduleCell.person_id, ScheduleCell.weekday, ScheduleCell.hour, ScheduleCell.activity_id)
+            .group_by(
+                ScheduleCell.person_id,
+                ScheduleCell.weekday,
+                ScheduleCell.hour,
+                ScheduleCell.activity_id,
+                ScheduleCell.empty_override,
+            )
         ).all()
-        for pid, wd, hour, aid, cnt in rows:
-            explicit_hours[(pid, wd)].add(hour)
+        for pid, wd, hour, aid, empty_override, cnt in rows:
             if aid is not None:
                 explicit_minutes[(pid, wd)][aid] += int(cnt)
+            if aid is not None or empty_override:
+                covered_minutes[(pid, wd)][hour] = min(
+                    60,
+                    covered_minutes[(pid, wd)].get(hour, 0) + int(cnt),
+                )
 
     matrix: list[OverviewCell] = []
     for p in persons:
@@ -145,7 +157,7 @@ def get_overview(
             template_hours = 0 if template is None else len(template)
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((p.id, wd), {}),
-                explicit_hours=explicit_hours.get((p.id, wd), set()),
+                covered_minutes=covered_minutes.get((p.id, wd), {}),
                 template=template,
                 home_activity_id=p.home_activity_id,
             )
@@ -195,7 +207,7 @@ def get_month_overview(
 
     # Hämta alla cells för ALLA dagar i månaden i ETT query
     explicit_minutes: dict[tuple[int, int, int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    explicit_hours: dict[tuple[int, int, int, int], set[int]] = defaultdict(set)
+    covered_minutes: dict[tuple[int, int, int, int], dict[int, int]] = defaultdict(lambda: defaultdict(int))
     if person_ids and days_list:
         ywd_tuples = list({(d.year, d.week, d.weekday) for d in days_list})
         rows = db.execute(
@@ -206,6 +218,7 @@ def get_month_overview(
                 ScheduleCell.weekday,
                 ScheduleCell.hour,
                 ScheduleCell.activity_id,
+                ScheduleCell.empty_override,
                 func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start),
             )
             .where(
@@ -219,12 +232,17 @@ def get_month_overview(
                 ScheduleCell.weekday,
                 ScheduleCell.hour,
                 ScheduleCell.activity_id,
+                ScheduleCell.empty_override,
             )
         ).all()
-        for pid, y, w, wd, hour, aid, cnt in rows:
-            explicit_hours[(pid, y, w, wd)].add(hour)
+        for pid, y, w, wd, hour, aid, empty_override, cnt in rows:
             if aid is not None:
                 explicit_minutes[(pid, y, w, wd)][aid] += int(cnt)
+            if aid is not None or empty_override:
+                covered_minutes[(pid, y, w, wd)][hour] = min(
+                    60,
+                    covered_minutes[(pid, y, w, wd)].get(hour, 0) + int(cnt),
+                )
 
     matrix: list[MonthOverviewCell] = []
     for p in persons:
@@ -233,7 +251,7 @@ def get_month_overview(
             template_hours = 0 if template is None else len(template)
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((p.id, d_info.year, d_info.week, d_info.weekday), {}),
-                explicit_hours=explicit_hours.get((p.id, d_info.year, d_info.week, d_info.weekday), set()),
+                covered_minutes=covered_minutes.get((p.id, d_info.year, d_info.week, d_info.weekday), {}),
                 template=template,
                 home_activity_id=p.home_activity_id,
             )
@@ -307,7 +325,38 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
     for hour in sorted(template):
         cells_for_hour = sorted(existing_by_hour.get(hour, []), key=lambda cell: (cell.minute_start, cell.minute_end))
         if payload.activity_id is None:
-            # Töm cellen / ta bort
+            if (
+                len(cells_for_hour) == 1
+                and cells_for_hour[0].minute_start == 0
+                and cells_for_hour[0].minute_end == 60
+            ):
+                cell = cells_for_hour[0]
+                old = {
+                    "minute_start": cell.minute_start,
+                    "minute_end": cell.minute_end,
+                    "activity_id": cell.activity_id,
+                    "empty_override": cell.empty_override,
+                    "version": cell.version,
+                }
+                cell.activity_id = None
+                cell.empty_override = True
+                cell.version += 1
+                cell.updated_by = user.id
+                db.flush()
+                audit_log(
+                    db, entity_type="schedule_cell", entity_id=cell.id,
+                    action="overview_day_clear", old_value=old,
+                    new_value={
+                        "minute_start": cell.minute_start,
+                        "minute_end": cell.minute_end,
+                        "activity_id": cell.activity_id,
+                        "empty_override": cell.empty_override,
+                        "version": cell.version,
+                    }, user_id=user.id,
+                )
+                written += 1
+                continue
+
             for cell in cells_for_hour:
                 audit_log(
                     db, entity_type="schedule_cell", entity_id=cell.id,
@@ -316,12 +365,33 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
                         "minute_start": cell.minute_start,
                         "minute_end": cell.minute_end,
                         "activity_id": cell.activity_id,
+                        "empty_override": cell.empty_override,
                         "version": cell.version,
                     },
                     new_value=None, user_id=user.id,
                 )
                 db.delete(cell)
                 deleted += 1
+
+            cell = ScheduleCell(
+                year=payload.year, week=payload.week, weekday=payload.weekday,
+                hour=hour, minute_start=0, minute_end=60, person_id=payload.person_id,
+                activity_id=None, empty_override=True, version=1, updated_by=user.id,
+            )
+            db.add(cell)
+            db.flush()
+            audit_log(
+                db, entity_type="schedule_cell", entity_id=cell.id,
+                action="overview_day_clear", old_value=None,
+                new_value={
+                    "minute_start": cell.minute_start,
+                    "minute_end": cell.minute_end,
+                    "activity_id": cell.activity_id,
+                    "empty_override": cell.empty_override,
+                    "version": 1,
+                }, user_id=user.id,
+            )
+            written += 1
             continue
 
         if (
@@ -335,9 +405,11 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
                     "minute_start": cell.minute_start,
                     "minute_end": cell.minute_end,
                     "activity_id": cell.activity_id,
+                    "empty_override": cell.empty_override,
                     "version": cell.version,
                 }
                 cell.activity_id = payload.activity_id
+                cell.empty_override = False
                 cell.version += 1
                 cell.updated_by = user.id
                 db.flush()
@@ -348,6 +420,7 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
                         "minute_start": cell.minute_start,
                         "minute_end": cell.minute_end,
                         "activity_id": cell.activity_id,
+                        "empty_override": cell.empty_override,
                         "version": cell.version,
                     },
                     user_id=user.id,
@@ -364,6 +437,7 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
                         "minute_start": cell.minute_start,
                         "minute_end": cell.minute_end,
                         "activity_id": cell.activity_id,
+                        "empty_override": cell.empty_override,
                         "version": cell.version,
                     },
                     new_value=None, user_id=user.id,
@@ -375,7 +449,7 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
             cell = ScheduleCell(
                 year=payload.year, week=payload.week, weekday=payload.weekday,
                 hour=hour, minute_start=0, minute_end=60, person_id=payload.person_id,
-                activity_id=payload.activity_id, version=1, updated_by=user.id,
+                activity_id=payload.activity_id, empty_override=False, version=1, updated_by=user.id,
             )
             db.add(cell)
             db.flush()
@@ -386,6 +460,7 @@ def _set_day_impl(payload: "OverviewDayRequest", db: Session, user: User) -> dic
                     "minute_start": cell.minute_start,
                     "minute_end": cell.minute_end,
                     "activity_id": cell.activity_id,
+                    "empty_override": cell.empty_override,
                     "version": 1,
                 },
                 user_id=user.id,

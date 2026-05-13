@@ -151,6 +151,7 @@ function setAllSegments(cells) {
       minute_start: Number(cell.minute_start),
       minute_end: Number(cell.minute_end),
       activity_id: cell.activity_id == null ? null : Number(cell.activity_id),
+      empty_override: !!cell.empty_override,
       version: Number(cell.version) || 0,
       updated_at: cell.updated_at || null,
       updated_by: cell.updated_by == null ? null : Number(cell.updated_by),
@@ -180,6 +181,7 @@ function replaceHourSegments(personId, hour, segments) {
     minute_start: Number(segment.minute_start),
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
+    empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
     updated_by: segment.updated_by == null ? null : Number(segment.updated_by),
@@ -206,6 +208,7 @@ function currentSegment(personId, hour, minuteStart, minuteEnd) {
     minute_start: minuteStart,
     minute_end: minuteEnd,
     activity_id: null,
+    empty_override: false,
     version: 0,
   };
 }
@@ -521,9 +524,10 @@ function renderFullHourCell(td, segment, isScheduled) {
   const person = personById(Number(td.dataset.personId));
   const hasExplicitSegment = !!segment;
   const explicitActivityId = hasExplicitSegment ? segment.activity_id : null;
+  const explicitEmptyOverride = !!segment?.empty_override;
   const scheduledActivityId = isScheduled ? (person?.home_activity_id || null) : null;
-  const showScheduledDefault = !hasExplicitSegment && scheduledActivityId != null;
-  const showExplicitEmptyOnSchedule = hasExplicitSegment && explicitActivityId == null && scheduledActivityId != null;
+  const showScheduledDefault = explicitActivityId == null && !explicitEmptyOverride && scheduledActivityId != null;
+  const showExplicitEmptyOnSchedule = explicitEmptyOverride && scheduledActivityId != null;
 
   if (explicitActivityId != null) {
     td.style.background = colorFor(explicitActivityId);
@@ -599,6 +603,8 @@ function renderSplitHourCell(td, segments, isScheduled) {
 
     if (segment.activity_id != null) {
       part.style.background = colorFor(segment.activity_id);
+    } else if (!segment.empty_override && scheduledActivityId != null) {
+      part.style.background = colorFor(scheduledActivityId);
     } else if (isScheduled) {
       part.classList.add("scheduled-empty-half");
     } else {
@@ -607,7 +613,9 @@ function renderSplitHourCell(td, segments, isScheduled) {
 
     const select = buildActivitySelect([segment.activity_id, scheduledActivityId]);
     select.className = "half-select";
-    select.value = segment.activity_id != null ? String(segment.activity_id) : "";
+    select.value = segment.activity_id != null
+      ? String(segment.activity_id)
+      : (!segment.empty_override && scheduledActivityId != null ? String(scheduledActivityId) : "");
     select.dataset.minuteStart = String(minute_start);
     select.dataset.minuteEnd = String(minute_end);
     select.dataset.version = String(segment.version || 0);

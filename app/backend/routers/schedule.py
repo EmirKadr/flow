@@ -33,6 +33,7 @@ def _cell_to_dict(cell: ScheduleCell) -> dict:
         "minute_start": cell.minute_start,
         "minute_end": cell.minute_end,
         "activity_id": cell.activity_id,
+        "empty_override": cell.empty_override,
         "version": cell.version,
         "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
         "updated_by": cell.updated_by,
@@ -46,6 +47,7 @@ def _empty_segment_dict(person_id: int, hour: int, minute_start: int, minute_end
         "minute_start": minute_start,
         "minute_end": minute_end,
         "activity_id": None,
+        "empty_override": False,
         "version": 0,
         "updated_at": None,
         "updated_by": None,
@@ -99,6 +101,22 @@ def _conflict_response(*, person_id: int, hour: int, current: list[ScheduleCell]
 
 def _hours_from_minutes(total_minutes: int) -> float:
     return round(float(total_minutes) / 60.0, 2)
+
+
+def _is_scheduled_hour(db: Session, person_id: int, weekday: int, hour: int) -> bool:
+    template = get_template_hours(db, person_id, weekday)
+    return bool(template and hour in template)
+
+
+def _empty_override_for(
+    db: Session,
+    *,
+    person_id: int,
+    weekday: int,
+    hour: int,
+    activity_id: int | None,
+) -> bool:
+    return activity_id is None and _is_scheduled_hour(db, person_id, weekday, hour)
 
 
 def _validate_segment(hour: int, minute_start: int, minute_end: int) -> None:
@@ -204,6 +222,13 @@ def update_cell(
             minute_end=payload.minute_end,
             person_id=payload.person_id,
             activity_id=payload.activity_id,
+            empty_override=_empty_override_for(
+                db,
+                person_id=payload.person_id,
+                weekday=payload.weekday,
+                hour=payload.hour,
+                activity_id=payload.activity_id,
+            ),
             version=1,
             updated_by=user.id,
         )
@@ -222,6 +247,13 @@ def update_cell(
         cell = matching
         old = _cell_to_dict(cell)
         cell.activity_id = payload.activity_id
+        cell.empty_override = _empty_override_for(
+            db,
+            person_id=payload.person_id,
+            weekday=payload.weekday,
+            hour=payload.hour,
+            activity_id=payload.activity_id,
+        )
         cell.version += 1
         cell.updated_by = user.id
         db.flush()
@@ -293,6 +325,7 @@ def split_cell(
 
         preferred.minute_start = 0
         preferred.minute_end = 60
+        preferred.empty_override = preferred.empty_override or other.empty_override
         preferred.version += 1
         preferred.updated_by = user.id
         db.flush()
@@ -324,6 +357,7 @@ def split_cell(
                 minute_end=minute_end,
                 person_id=payload.person_id,
                 activity_id=None,
+                empty_override=False,
                 version=1,
                 updated_by=user.id,
             )
@@ -370,6 +404,7 @@ def split_cell(
         minute_end=60,
         person_id=source.person_id,
         activity_id=source.activity_id,
+        empty_override=source.empty_override,
         version=1,
         updated_by=user.id,
     )
@@ -479,6 +514,7 @@ def bulk_update_cells(
                         minute_end=60,
                         person_id=item.person_id,
                         activity_id=original_activity_id,
+                        empty_override=full_segment.empty_override,
                         version=1,
                         updated_by=user.id,
                     )
@@ -523,6 +559,13 @@ def bulk_update_cells(
                             minute_end=minute_end,
                             person_id=item.person_id,
                             activity_id=item.activity_id if minute_start == item.minute_start else None,
+                            empty_override=_empty_override_for(
+                                db,
+                                person_id=item.person_id,
+                                weekday=item.weekday,
+                                hour=item.hour,
+                                activity_id=item.activity_id if minute_start == item.minute_start else None,
+                            ),
                             version=1,
                             updated_by=user.id,
                         )
@@ -571,6 +614,13 @@ def bulk_update_cells(
                     minute_end=item.minute_end,
                     person_id=item.person_id,
                     activity_id=item.activity_id,
+                    empty_override=_empty_override_for(
+                        db,
+                        person_id=item.person_id,
+                        weekday=item.weekday,
+                        hour=item.hour,
+                        activity_id=item.activity_id,
+                    ),
                     version=1,
                     updated_by=user.id,
                 )
@@ -589,6 +639,13 @@ def bulk_update_cells(
                 cell = matching
                 old = _cell_to_dict(cell)
                 cell.activity_id = item.activity_id
+                cell.empty_override = _empty_override_for(
+                    db,
+                    person_id=item.person_id,
+                    weekday=item.weekday,
+                    hour=item.hour,
+                    activity_id=item.activity_id,
+                )
                 cell.version += 1
                 cell.updated_by = user.id
                 db.flush()
@@ -641,6 +698,7 @@ def get_summary(
                 ScheduleCell.person_id,
                 ScheduleCell.hour,
                 ScheduleCell.activity_id,
+                ScheduleCell.empty_override,
                 ScheduleCell.minute_start,
                 ScheduleCell.minute_end,
             ).where(
@@ -651,23 +709,27 @@ def get_summary(
             )
         ).all()
 
-        explicit_hours = {(row.person_id, row.hour) for row in explicit_rows}
+        covered_minutes: dict[tuple[int, int], int] = {}
         for row in explicit_rows:
-            if row.activity_id is None:
-                continue
-            minutes_by_activity[row.activity_id] = (
-                minutes_by_activity.get(row.activity_id, 0) + int(row.minute_end - row.minute_start)
-            )
+            duration = int(row.minute_end - row.minute_start)
+            if row.activity_id is not None:
+                minutes_by_activity[row.activity_id] = (
+                    minutes_by_activity.get(row.activity_id, 0) + duration
+                )
+            if row.activity_id is not None or row.empty_override:
+                key = (row.person_id, row.hour)
+                covered_minutes[key] = min(60, covered_minutes.get(key, 0) + duration)
 
         for person in persons:
             template_hours = get_template_hours(db, person.id, weekday)
             if template_hours is None or person.home_activity_id is None:
                 continue
             for hour in template_hours:
-                if (person.id, hour) in explicit_hours:
+                remaining = 60 - covered_minutes.get((person.id, hour), 0)
+                if remaining <= 0:
                     continue
                 minutes_by_activity[person.home_activity_id] = (
-                    minutes_by_activity.get(person.home_activity_id, 0) + 60
+                    minutes_by_activity.get(person.home_activity_id, 0) + remaining
                 )
 
     def resolve_summary_target(activity_id: int) -> Activity | None:

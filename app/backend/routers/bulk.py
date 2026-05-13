@@ -102,6 +102,7 @@ def copy_schedule(
                     minute_end=src.minute_end,
                     person_id=src.person_id,
                     activity_id=src.activity_id,
+                    empty_override=src.empty_override,
                     version=1,
                     updated_by=user.id,
                 )
@@ -249,6 +250,7 @@ def fill_from_left(
                         minute_end=minute_end,
                         person_id=pid,
                         activity_id=activity_id,
+                        empty_override=False,
                         version=1,
                         updated_by=user.id,
                     )

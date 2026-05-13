@@ -94,6 +94,7 @@ class ScheduleCell(Base):
     minute_end: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=60)
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
     activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
+    empty_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
