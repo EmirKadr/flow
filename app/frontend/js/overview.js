@@ -20,6 +20,8 @@ const state = {
   nameFilter: "",
   sortKey: "sort_order",
   sortAsc: true,
+  undoStack: [],
+  redoStack: [],
 };
 
 const drag = {
@@ -437,6 +439,70 @@ async function postBulkDays(days, atomic = false) {
   return api.post("/api/overview/days/bulk", { days, atomic });
 }
 
+function updateUndoRedoButtons() {
+  const u = document.getElementById("undoBtn");
+  const r = document.getElementById("redoBtn");
+  if (u) u.disabled = state.undoStack.length === 0;
+  if (r) r.disabled = state.redoStack.length === 0;
+}
+
+function pushOverviewUndo(label, days) {
+  const filtered = days.filter((d) => d.before_activity_id !== d.after_activity_id);
+  if (!filtered.length) return;
+  state.undoStack.push({ label, days: filtered });
+  if (state.undoStack.length > 50) state.undoStack.shift();
+  state.redoStack = [];
+  updateUndoRedoButtons();
+}
+
+async function applyOverviewHistory(action, direction) {
+  const days = action.days.map((d) => ({
+    person_id: d.person_id,
+    year: d.year,
+    week: d.week,
+    weekday: d.weekday,
+    activity_id: direction === "undo" ? d.before_activity_id : d.after_activity_id,
+  }));
+  try {
+    const resp = await postBulkDays(days, false);
+    (resp.applied || []).forEach((result) => {
+      const td = findDayTd(result.person_id, result.year, result.week, result.weekday);
+      if (td) renderDayCell(td, result);
+    });
+    return true;
+  } catch (e) {
+    const detail = e.body?.detail || e.message;
+    showToast(`Kunde inte ${direction === "undo" ? "ångra" : "göra om"}: ` + detail, "error");
+    return false;
+  }
+}
+
+async function undoLastOverviewAction() {
+  const action = state.undoStack[state.undoStack.length - 1];
+  if (!action) { showToast("Inget att ångra.", "warn"); return; }
+  const ok = await applyOverviewHistory(action, "undo");
+  if (ok) {
+    state.undoStack.pop();
+    state.redoStack.push(action);
+    if (state.redoStack.length > 50) state.redoStack.shift();
+    showToast(`Ångrade: ${action.label}`);
+  }
+  updateUndoRedoButtons();
+}
+
+async function redoLastOverviewAction() {
+  const action = state.redoStack[state.redoStack.length - 1];
+  if (!action) { showToast("Inget att göra om.", "warn"); return; }
+  const ok = await applyOverviewHistory(action, "redo");
+  if (ok) {
+    state.redoStack.pop();
+    state.undoStack.push(action);
+    if (state.undoStack.length > 50) state.undoStack.shift();
+    showToast(`Gjorde om: ${action.label}`);
+  }
+  updateUndoRedoButtons();
+}
+
 async function onDayChange(td, sel, cell) {
   const newActivityId = sel.value ? Number(sel.value) : null;
   const previousCell = cellRecordForTd(td);
@@ -457,6 +523,14 @@ async function onDayChange(td, sel, cell) {
     );
     markDayPending(td, false);
     renderDayCell(td, resp.cell);
+    pushOverviewUndo("celländring", [{
+      person_id: Number(td.dataset.personId),
+      year: Number(td.dataset.year),
+      week: Number(td.dataset.week),
+      weekday: Number(td.dataset.weekday),
+      before_activity_id: previousCell.activity_id ?? null,
+      after_activity_id: newActivityId,
+    }]);
     showToast(`Bemannade ${resp.written} h, tog bort ${resp.deleted} h`);
   } catch (e) {
     const detail = e.body?.detail || e.message;
@@ -624,6 +698,19 @@ function setupDrag() {
       });
 
       const errorCount = resp.errors?.length || 0;
+      const undoDays = (resp.applied || []).map((result) => {
+        const key = dayRequestKey(result.person_id, result.year, result.week, result.weekday);
+        const before = snapshots.get(key);
+        return {
+          person_id: result.person_id,
+          year: result.year,
+          week: result.week,
+          weekday: result.weekday,
+          before_activity_id: before?.activity_id ?? null,
+          after_activity_id: sourceActivityId ?? null,
+        };
+      });
+      if (undoDays.length) pushOverviewUndo("drag-bemanning", undoDays);
       showToast(`Drag klar: skrev ${resp.written || 0} h, tog bort ${resp.deleted || 0} h${errorCount ? `, ${errorCount} fel` : ""}`);
     } catch (e) {
       targets.forEach((td) => {
@@ -815,6 +902,20 @@ function updateViewVisibility() {
   document.getElementById("reloadBtn").addEventListener("click", onControlChange);
   document.getElementById("prev").addEventListener("click", () => shiftPeriod(-1));
   document.getElementById("next").addEventListener("click", () => shiftPeriod(1));
+  document.getElementById("undoBtn").addEventListener("click", () => undoLastOverviewAction());
+  document.getElementById("redoBtn").addEventListener("click", () => redoLastOverviewAction());
+  updateUndoRedoButtons();
+
+  document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
+    e.preventDefault();
+    if (key === "y" || (key === "z" && e.shiftKey)) void redoLastOverviewAction();
+    else void undoLastOverviewAction();
+  });
 
   document.getElementById("viewMode").addEventListener("change", (e) => {
     state.view = e.target.value;

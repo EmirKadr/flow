@@ -342,6 +342,19 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   color: var(--text-muted);
 }
 .date-nav-btn:hover { color: var(--text); }
+
+button.icon-btn {
+  padding: 6px 10px;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+button.icon-btn:hover:not(:disabled) { color: var(--text); }
+button.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .date-display-wrap {
   position: relative;
   display: inline-flex;

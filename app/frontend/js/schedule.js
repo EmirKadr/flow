@@ -25,6 +25,7 @@ const state = {
   scheduledHours: {},          // {person_id: Set<hour>}
   scheduledDefaults: {},       // {person_id: Map<hour, activity_id>}
   undoStack: [],
+  redoStack: [],
   focusedCell: null,
   clipboard: null,
   nameFilter: "",
@@ -390,6 +391,15 @@ function pushScheduleUndo(label, snapshots) {
   if (!normalized.length) return;
   state.undoStack.push({ label, snapshots: normalized });
   if (state.undoStack.length > 50) state.undoStack.shift();
+  state.redoStack = [];
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  const undoBtn = document.getElementById("undoBtn");
+  const redoBtn = document.getElementById("redoBtn");
+  if (undoBtn) undoBtn.disabled = state.undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = state.redoStack.length === 0;
 }
 
 function segmentVersionRefs(segments) {
@@ -429,16 +439,16 @@ function actionMatchesCurrentDay(action) {
   );
 }
 
-async function undoLastScheduleAction() {
-  const action = state.undoStack[state.undoStack.length - 1];
-  if (!action) {
-    showToast("Inget att ångra.", "warn");
-    return;
-  }
+async function applyHistoryAction(action, { historyLabel, oppositeStack, oppositeLabel }) {
   if (!actionMatchesCurrentDay(action)) {
-    showToast("Byt tillbaka till dagen där ändringen gjordes för att ångra.", "warn");
-    return;
+    showToast(`Byt tillbaka till dagen där ändringen gjordes för att ${historyLabel}.`, "warn");
+    return false;
   }
+
+  // Capture current state of the affected hours so the opposite action can replay.
+  const inverseSnapshots = action.snapshots.map((snapshot) =>
+    snapshotHour(snapshot.personId, snapshot.hour)
+  );
 
   const hours = action.snapshots.map((snapshot) => ({
     year: snapshot.year,
@@ -453,19 +463,53 @@ async function undoLastScheduleAction() {
   action.snapshots.forEach((snapshot) => setHourPending(getHourTd(snapshot.personId, snapshot.hour), true));
   try {
     const resp = await api.put("/api/schedule/hours/restore", { action: "undo_restore", hours });
-    state.undoStack.pop();
     applyRestoredHours(resp.hours);
+    oppositeStack.push({ label: action.label, snapshots: inverseSnapshots });
+    if (oppositeStack.length > 50) oppositeStack.shift();
     scheduleSummaryRefresh(0);
-    showToast(`Ångrade: ${action.label}`);
+    showToast(`${oppositeLabel}: ${action.label}`);
+    updateUndoRedoButtons();
+    return true;
   } catch (e) {
     action.snapshots.forEach((snapshot) => setHourPending(getHourTd(snapshot.personId, snapshot.hour), false));
     if (e.status === 409) {
-      showToast("Kunde inte ångra eftersom dagen ändrats. Läser om.", "warn");
+      showToast(`Kunde inte ${historyLabel} eftersom dagen ändrats. Läser om.`, "warn");
       await loadSchedule();
     } else {
-      showToast("Kunde inte ångra: " + e.message, "error");
+      showToast(`Kunde inte ${historyLabel}: ` + e.message, "error");
     }
+    return false;
   }
+}
+
+async function undoLastScheduleAction() {
+  const action = state.undoStack[state.undoStack.length - 1];
+  if (!action) {
+    showToast("Inget att ångra.", "warn");
+    return;
+  }
+  const ok = await applyHistoryAction(action, {
+    historyLabel: "ångra",
+    oppositeStack: state.redoStack,
+    oppositeLabel: "Ångrade",
+  });
+  if (ok) state.undoStack.pop();
+  updateUndoRedoButtons();
+}
+
+async function redoLastScheduleAction() {
+  const action = state.redoStack[state.redoStack.length - 1];
+  if (!action) {
+    showToast("Inget att göra om.", "warn");
+    return;
+  }
+  const ok = await applyHistoryAction(action, {
+    historyLabel: "göra om",
+    oppositeStack: state.undoStack,
+    oppositeLabel: "Gjorde om",
+  });
+  if (ok) state.redoStack.pop();
+  updateUndoRedoButtons();
 }
 
 function setHourPending(td, pending) {
@@ -1543,11 +1587,16 @@ async function pasteFocused() {
 function handleSelectClipboardKeys(e) {
   if (!(e.ctrlKey || e.metaKey)) return;
   const key = e.key.toLowerCase();
-  if (!["c", "x", "v", "z"].includes(key)) return;
+  if (!["c", "x", "v", "z", "y"].includes(key)) return;
   e.preventDefault();
   e.stopPropagation();
   if (key === "z") {
-    void undoLastScheduleAction();
+    if (e.shiftKey) void redoLastScheduleAction();
+    else void undoLastScheduleAction();
+    return;
+  }
+  if (key === "y") {
+    void redoLastScheduleAction();
     return;
   }
   if (!state.focusedCell) return;
@@ -1560,14 +1609,21 @@ function setupKeyboard() {
   const handler = (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
-    if (!["c", "x", "v", "z"].includes(key)) return;
+    if (!["c", "x", "v", "z", "y"].includes(key)) return;
 
     const active = document.activeElement;
     if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
     if (key === "z") {
       e.preventDefault();
       e.stopPropagation();
-      void undoLastScheduleAction();
+      if (e.shiftKey) void redoLastScheduleAction();
+      else void undoLastScheduleAction();
+      return;
+    }
+    if (key === "y") {
+      e.preventDefault();
+      e.stopPropagation();
+      void redoLastScheduleAction();
       return;
     }
     if (!state.focusedCell) {
@@ -2088,6 +2144,9 @@ async function loadSchedule() {
   });
 
   document.getElementById("copyBtn").addEventListener("click", () => openCopyModal());
+  document.getElementById("undoBtn").addEventListener("click", () => undoLastScheduleAction());
+  document.getElementById("redoBtn").addEventListener("click", () => redoLastScheduleAction());
+  updateUndoRedoButtons();
 
   document.getElementById("nameFilter").addEventListener("input", (e) => {
     state.nameFilter = e.target.value;
