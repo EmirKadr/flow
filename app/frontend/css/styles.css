@@ -205,9 +205,12 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 }
 .sidebar-bottom .logout:hover { color: var(--danger); text-decoration: underline; }
 
-main {
+.app > main {
   padding: 28px 28px 60px;
   min-width: 0;
+}
+.app > main main {
+  padding: 0;
 }
 
 
@@ -1147,6 +1150,18 @@ tr.filter-row input {
   letter-spacing: 0.04em;
 }
 .modal input, .modal textarea, .modal select { width: 100%; }
+.modal label.modal-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text);
+  margin: 16px 0 4px;
+}
+.modal label.modal-checkbox input[type="checkbox"] { width: auto; }
 .modal-table-scroll {
   max-height: 320px;
   overflow: auto;

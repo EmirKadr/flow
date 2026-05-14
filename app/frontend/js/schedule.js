@@ -2032,7 +2032,7 @@ function openCopyModal() {
       <label>Till vecka</label><input id="cp-tw" type="number" value="${state.week}" />
       <label>Till dag</label>
       <select id="cp-td">${[1,2,3,4,5,6,7].map((d) => `<option value="${d}">${DAYS[d]}</option>`).join("")}</select>
-      <label><input id="cp-ow" type="checkbox" /> Skriv över befintliga celler i målet</label>
+      <label class="modal-checkbox"><input id="cp-ow" type="checkbox" /> Skriv över befintliga celler i målet</label>
       <div class="actions">
         <button id="cp-cancel">Avbryt</button>
         <button id="cp-go" class="primary">Kopiera</button>

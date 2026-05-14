@@ -89,7 +89,7 @@ function openModal(act) {
       </select>
       <label>Sortering</label>
       <input id="m-sort" type="number" value="${act?.sort_order ?? 0}" />
-      <label><input id="m-active" type="checkbox" ${act?.is_active !== false ? "checked" : ""} /> Aktiv</label>
+      <label class="modal-checkbox"><input id="m-active" type="checkbox" ${act?.is_active !== false ? "checked" : ""} /> Aktiv</label>
       <div class="actions">
         <button id="m-cancel">Avbryt</button>
         <button class="primary" id="m-save">Spara</button>
