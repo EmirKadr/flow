@@ -75,13 +75,6 @@ function renderSidebar(user, activePage) {
         <path d="M4 6h14M4 11h14M4 16h14"/>
       </svg>
     </button>
-    <div class="brand">
-      <div class="brand-dot">B</div>
-      <div>
-        <div class="brand-name">Bemanning</div>
-        <div class="brand-sub">Stigamo</div>
-      </div>
-    </div>
     <nav>
       <a href="/index.html" class="${activePage === "schedule" ? "active" : ""}"><span class="icon" aria-hidden="true">📋</span><span>Bemanning</span></a>
       <a href="/overblick.html" class="${activePage === "overview" ? "active" : ""}"><span class="icon" aria-hidden="true">📅</span><span>Översikt</span></a>
