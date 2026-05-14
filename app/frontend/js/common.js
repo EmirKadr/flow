@@ -108,21 +108,35 @@ function renderSidebar(user, activePage) {
     });
   }
 
-  // Toggle collapsed state – hamburger snurrar 90° och sidopanelen krymper till ikoner
+  // Toggle collapsed state – hamburger fortsätter rotera åt samma håll vid varje klick
   const toggleBtn = document.getElementById("sidebar-toggle");
   const app = document.querySelector(".app");
-  const setCollapsed = (collapsed) => {
+  let togglerRotation = 0;
+  const svgIcon = toggleBtn?.querySelector("svg");
+
+  const setCollapsed = (collapsed, animateIcon = false) => {
     sidebar.classList.toggle("collapsed", collapsed);
     if (app) app.classList.toggle("sidebar-collapsed", collapsed);
+    if (animateIcon && svgIcon) {
+      togglerRotation += 90;
+      svgIcon.style.transform = `rotate(${togglerRotation}deg)`;
+    }
     try { localStorage.setItem("sidebar-collapsed", collapsed ? "1" : "0"); } catch (e) {}
   };
+
   if (toggleBtn) {
     toggleBtn.addEventListener("click", () => {
-      setCollapsed(!sidebar.classList.contains("collapsed"));
+      setCollapsed(!sidebar.classList.contains("collapsed"), true);
     });
   }
+
   try {
-    if (localStorage.getItem("sidebar-collapsed") === "1") setCollapsed(true);
+    if (localStorage.getItem("sidebar-collapsed") === "1") {
+      // Återställ utan animation – håll ikonens rotation i synk med läget
+      togglerRotation = 90;
+      if (svgIcon) svgIcon.style.transform = `rotate(${togglerRotation}deg)`;
+      setCollapsed(true, false);
+    }
   } catch (e) {}
 }
 
