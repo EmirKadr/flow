@@ -69,14 +69,13 @@ def apply_windows_titlebar_blend(hwnd: int) -> None:
         except Exception:
             return -1
 
-    # Caption + border + text color (Win 11 22H2+).
-    # COLORREF 0xFFFFFFFE = DWMWA_COLOR_DEFAULT (system default) – inte vad vi vill ha.
+    # Stäng av Mica/Acrylic-backdrop först – annars blir CAPTION_COLOR ignorerad
+    # på delar av title-baren (vänster sida får då Mica från desktop bakom).
+    _set_int(_DWMWA_SYSTEMBACKDROP_TYPE, _DWMSBT_NONE)
+    # Caption + border + text color (Win 11 22H2+) – nu får hela title-baren solid färg.
     _set_color(_DWMWA_CAPTION_COLOR, "#f5f7fb")
     _set_color(_DWMWA_BORDER_COLOR, "#e4e8ef")
     _set_color(_DWMWA_TEXT_COLOR, "#0f172a")
-    # Fallback: Mica-effekten (Win 11 21H2+) gör title-baren halvtransparent mot desktop
-    # vilket också "smälter in" om CAPTION_COLOR inte stöds på äldre 11.
-    _set_int(_DWMWA_SYSTEMBACKDROP_TYPE, _DWMSBT_MAINWINDOW)
 
 from PyQt6.QtCore import QProcess, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction
