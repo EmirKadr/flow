@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
 import os
 import sys
 import tempfile
@@ -11,44 +12,71 @@ from typing import Callable, Optional
 
 
 # Windows 11 DWM-attribut för att färga title-baren så den smälter in med appen.
-# Stöds från Windows 11 22H2 (build 22621+). Misslyckas tyst på äldre versioner.
+# CAPTION/BORDER/TEXT_COLOR kräver Windows 11 22H2 (build 22621+).
+# SYSTEMBACKDROP_TYPE (Mica) kräver Windows 11 21H2+.
 _DWMWA_BORDER_COLOR = 34
 _DWMWA_CAPTION_COLOR = 35
 _DWMWA_TEXT_COLOR = 36
+_DWMWA_SYSTEMBACKDROP_TYPE = 38
+
+_DWMSBT_AUTO = 0
+_DWMSBT_NONE = 1
+_DWMSBT_MAINWINDOW = 2  # Mica
+_DWMSBT_TRANSIENTWINDOW = 3  # Acrylic
+_DWMSBT_TABBEDWINDOW = 4  # Mica Alt
 
 
 def _hex_to_colorref(hex_color: str) -> int:
     """#RRGGBB → Windows COLORREF (0x00BBGGRR)."""
     h = hex_color.lstrip("#")
-    return int(h[4:6] + h[2:4] + h[0:2], 16)
+    r = int(h[0:2], 16)
+    g = int(h[2:4], 16)
+    b = int(h[4:6], 16)
+    return (b << 16) | (g << 8) | r
 
 
 def apply_windows_titlebar_blend(hwnd: int) -> None:
-    """Färga title-baren så den matchar appens ljusa tema (Teams/Word-lookalike)."""
-    if sys.platform != "win32":
+    """Färga title-baren så den matchar appens ljusa tema."""
+    if sys.platform != "win32" or not hwnd:
         return
     try:
         dwmapi = ctypes.WinDLL("dwmapi")
     except OSError:
         return
+
     set_attr = dwmapi.DwmSetWindowAttribute
+    set_attr.argtypes = [
+        ctypes.wintypes.HWND,
+        ctypes.wintypes.DWORD,
+        ctypes.c_void_p,
+        ctypes.wintypes.DWORD,
+    ]
+    set_attr.restype = ctypes.c_long
 
-    def _set(attr: int, hex_color: str) -> None:
-        value = ctypes.c_int(_hex_to_colorref(hex_color))
+    hwnd_val = ctypes.wintypes.HWND(hwnd)
+
+    def _set_color(attr: int, hex_color: str) -> int:
+        value = ctypes.wintypes.DWORD(_hex_to_colorref(hex_color))
         try:
-            set_attr(
-                ctypes.wintypes.HWND(hwnd) if hasattr(ctypes, "wintypes") else hwnd,
-                attr,
-                ctypes.byref(value),
-                ctypes.sizeof(value),
-            )
+            return set_attr(hwnd_val, attr, ctypes.byref(value), ctypes.sizeof(value))
         except Exception:
-            pass
+            return -1
 
-    # Matcha CSS-temat (var(--bg) = #f5f7fb, --border = #e4e8ef, --text = #0f172a)
-    _set(_DWMWA_CAPTION_COLOR, "#f5f7fb")
-    _set(_DWMWA_BORDER_COLOR, "#e4e8ef")
-    _set(_DWMWA_TEXT_COLOR, "#0f172a")
+    def _set_int(attr: int, int_value: int) -> int:
+        value = ctypes.wintypes.DWORD(int_value)
+        try:
+            return set_attr(hwnd_val, attr, ctypes.byref(value), ctypes.sizeof(value))
+        except Exception:
+            return -1
+
+    # Caption + border + text color (Win 11 22H2+).
+    # COLORREF 0xFFFFFFFE = DWMWA_COLOR_DEFAULT (system default) – inte vad vi vill ha.
+    _set_color(_DWMWA_CAPTION_COLOR, "#f5f7fb")
+    _set_color(_DWMWA_BORDER_COLOR, "#e4e8ef")
+    _set_color(_DWMWA_TEXT_COLOR, "#0f172a")
+    # Fallback: Mica-effekten (Win 11 21H2+) gör title-baren halvtransparent mot desktop
+    # vilket också "smälter in" om CAPTION_COLOR inte stöds på äldre 11.
+    _set_int(_DWMWA_SYSTEMBACKDROP_TYPE, _DWMSBT_MAINWINDOW)
 
 from PyQt6.QtCore import QProcess, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction
@@ -121,7 +149,21 @@ class MainWindow(QMainWindow):
         self.statusBar().hide()
 
         # Färga title-baren så den smälter in med appen på Windows 11
-        QTimer.singleShot(0, lambda: apply_windows_titlebar_blend(int(self.winId())))
+        self._titlebar_styled = False
+        QTimer.singleShot(0, self._apply_titlebar_styling)
+
+    def _apply_titlebar_styling(self) -> None:
+        try:
+            apply_windows_titlebar_blend(int(self.winId()))
+        except Exception:
+            pass
+
+    def showEvent(self, event):  # type: ignore[override]
+        super().showEvent(event)
+        # Applicera vid första show och dessutom efter eventuellt repaint
+        if not self._titlebar_styled:
+            self._titlebar_styled = True
+        self._apply_titlebar_styling()
 
         self._stack = QStackedWidget(self)
         self.setCentralWidget(self._stack)
