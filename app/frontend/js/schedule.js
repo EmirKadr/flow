@@ -116,9 +116,25 @@ function buildHeader() {
   while (header.children.length > 2) header.removeChild(header.lastChild);
   HOURS.forEach((h) => {
     const th = document.createElement("th");
+    th.dataset.hour = h;
     th.textContent = String(h).padStart(2, "0") + ":00";
     header.appendChild(th);
   });
+}
+
+function currentHourIfToday() {
+  const now = new Date();
+  const today = isoWeek(now);
+  if (today.year !== state.year || today.week !== state.week || today.weekday !== state.weekday) return null;
+  return now.getHours();
+}
+
+function refreshCurrentHourHighlight() {
+  const hour = currentHourIfToday();
+  document.querySelectorAll("table.matrix .now-hour").forEach((el) => el.classList.remove("now-hour"));
+  if (hour == null) return;
+  document.querySelectorAll(`table.matrix th[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
+  document.querySelectorAll(`table.matrix td[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
 }
 
 function activityById(id) {
@@ -1948,6 +1964,7 @@ async function loadSchedule() {
     `${DAYS[state.weekday]} – ${areaName} – V${state.week}/${state.year}`;
 
     buildRows();
+    refreshCurrentHourHighlight();
     scheduleSummaryRefresh(0);
     return true;
   } catch (err) {
@@ -1965,14 +1982,32 @@ async function loadSchedule() {
   if (!state.currentUser) return;
   await loadAreasAndActivities();
 
-  const now = isoWeek();
-  state.year = now.year;
-  state.week = now.week;
-  state.weekday = now.weekday <= 5 ? now.weekday : 1;
+  const stored = readSelectedDate();
+  if (stored) {
+    const [y, m, d] = stored;
+    const { year, week, weekday } = isoWeek(new Date(Date.UTC(y, m - 1, d)));
+    state.year = year;
+    state.week = week;
+    state.weekday = weekday;
+  } else {
+    const now = isoWeek();
+    state.year = now.year;
+    state.week = now.week;
+    state.weekday = now.weekday <= 5 ? now.weekday : 1;
+  }
+
+  const persistState = () => {
+    const date = dateFromYWD(state.year, state.week, state.weekday);
+    writeSelectedDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  };
 
   const syncDateInputFromState = () => {
+    const date = dateFromYWD(state.year, state.week, state.weekday);
+    const ymd = ymdString(date);
     const dateInput = document.getElementById("dateInput");
-    if (dateInput) dateInput.value = ymdString(dateFromYWD(state.year, state.week, state.weekday));
+    const dateDisplay = document.getElementById("dateDisplayText");
+    if (dateInput) dateInput.value = ymd;
+    if (dateDisplay) dateDisplay.textContent = ymd;
   };
 
   const writeYWDToInputs = () => {
@@ -1980,6 +2015,8 @@ async function loadSchedule() {
     document.getElementById("weekInput").value = state.week;
     document.getElementById("daySelect").value = String(state.weekday);
     syncDateInputFromState();
+    persistState();
+    refreshCurrentHourHighlight();
   };
 
   writeYWDToInputs();
@@ -1996,6 +2033,8 @@ async function loadSchedule() {
     const areaVal = document.getElementById("areaSelect").value;
     state.areaId = areaVal === "" ? null : Number(areaVal);
     syncDateInputFromState();
+    persistState();
+    refreshCurrentHourHighlight();
     await loadSchedule();
   };
 

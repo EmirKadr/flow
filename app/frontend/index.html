@@ -29,7 +29,10 @@
     </label>
     <div class="date-nav">
       <button id="prevDayBtn" class="date-nav-btn" type="button" aria-label="Föregående dag" title="Föregående dag">‹</button>
-      <input id="dateInput" type="date" />
+      <div class="date-display-wrap" title="Välj datum">
+        <span class="date-display-text" id="dateDisplayText">YYYY-MM-DD</span>
+        <input id="dateInput" type="date" class="date-display-overlay" aria-label="Välj datum" />
+      </div>
       <button id="nextDayBtn" class="date-nav-btn" type="button" aria-label="Nästa dag" title="Nästa dag">›</button>
     </div>
     <label>Område

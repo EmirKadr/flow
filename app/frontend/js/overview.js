@@ -62,6 +62,28 @@ function isoWeekToMonday(year, week) {
   return monday;
 }
 
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function todayWeekdayIndex() {
+  return new Date().getDay() || 7;
+}
+
+function persistOverviewState() {
+  let date;
+  if (state.view === "month") {
+    const now = new Date();
+    const isCurrentMonth = state.year === now.getFullYear() && state.month === now.getMonth() + 1;
+    date = isCurrentMonth ? now : new Date(Date.UTC(state.year, state.month - 1, 1));
+  } else {
+    const monday = isoWeekToMonday(state.year, state.week);
+    date = monday;
+  }
+  writeSelectedDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
@@ -290,11 +312,14 @@ function buildWeekHeader() {
   const header = document.getElementById("headerRow");
   while (header.children.length > 1) header.removeChild(header.lastChild);
   const monday = isoWeekToMonday(state.year, state.week);
+  const today = todayYmd();
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setUTCDate(monday.getUTCDate() + i);
     const th = document.createElement("th");
     th.textContent = `${DAY_SHORT[i + 1]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+    const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    if (ymd === today) th.classList.add("today-col");
     header.appendChild(th);
   }
 }
@@ -313,6 +338,8 @@ function buildWeekBody() {
     nameTd.textContent = p.name;
     tr.appendChild(nameTd);
 
+    const today = todayYmd();
+    const monday = isoWeekToMonday(state.year, state.week);
     for (let wd = 1; wd <= 7; wd++) {
       const cell = lookup.get(`${p.id}:${wd}`) || { activity_id: null, mixed: false, hours_total: 0, template_hours: 0 };
       const td = document.createElement("td");
@@ -322,6 +349,10 @@ function buildWeekBody() {
       td.dataset.year = state.year;
       td.dataset.week = state.week;
       td.tabIndex = -1;
+      const dayDate = new Date(monday);
+      dayDate.setUTCDate(monday.getUTCDate() + (wd - 1));
+      const ymd = `${dayDate.getUTCFullYear()}-${String(dayDate.getUTCMonth() + 1).padStart(2, "0")}-${String(dayDate.getUTCDate()).padStart(2, "0")}`;
+      if (ymd === today) td.classList.add("today-col");
       renderDayCell(td, cell);
       tr.appendChild(td);
     }
@@ -336,11 +367,13 @@ function buildWeekBody() {
 function buildMonthHeader() {
   const header = document.getElementById("headerRow");
   while (header.children.length > 1) header.removeChild(header.lastChild);
+  const today = todayYmd();
   state.days.forEach((d) => {
     const date = new Date(d.date);
     const th = document.createElement("th");
     th.textContent = `${DAY_SHORT[d.weekday]} ${date.getUTCDate()}/${date.getUTCMonth() + 1}`;
     if (d.weekday >= 6) th.style.opacity = "0.7";
+    if (d.date === today) th.classList.add("today-col");
     header.appendChild(th);
   });
 }
@@ -359,6 +392,7 @@ function buildMonthBody() {
     nameTd.textContent = p.name;
     tr.appendChild(nameTd);
 
+    const today = todayYmd();
     state.days.forEach((dInfo) => {
       const cell = lookup.get(`${p.id}:${dInfo.date}`) || { activity_id: null, mixed: false, hours_total: 0, template_hours: 0 };
       const td = document.createElement("td");
@@ -369,6 +403,7 @@ function buildMonthBody() {
       td.dataset.week = dInfo.week;
       td.dataset.date = dInfo.date;
       td.tabIndex = -1;
+      if (dInfo.date === today) td.classList.add("today-col");
       renderDayCell(td, cell);
       tr.appendChild(td);
     });
@@ -714,6 +749,7 @@ function shiftPeriod(delta) {
     document.getElementById("yearInput").value = state.year;
     document.getElementById("monthSelect").value = String(state.month);
   }
+  persistOverviewState();
   load();
 }
 
@@ -729,15 +765,25 @@ function updateViewVisibility() {
   await initPage("overview");
   await loadInitial();
 
-  const now = isoWeek();
-  state.year = now.year;
-  state.week = now.week;
-  state.month = new Date().getMonth() + 1;
+  const stored = readSelectedDate();
+  if (stored) {
+    const [y, m, d] = stored;
+    const wk = isoWeek(new Date(Date.UTC(y, m - 1, d)));
+    state.year = wk.year;
+    state.week = wk.week;
+    state.month = m;
+  } else {
+    const now = isoWeek();
+    state.year = now.year;
+    state.week = now.week;
+    state.month = new Date().getMonth() + 1;
+  }
 
   document.getElementById("yearInput").value = state.year;
   document.getElementById("weekInput").value = state.week;
   document.getElementById("monthSelect").value = String(state.month);
   updateViewVisibility();
+  persistOverviewState();
 
   await load();
   setupDrag();
@@ -748,6 +794,7 @@ function updateViewVisibility() {
     state.month = Number(document.getElementById("monthSelect").value) || state.month;
     const areaVal = document.getElementById("areaSelect").value;
     state.areaId = areaVal === "" ? null : Number(areaVal);
+    persistOverviewState();
     await load();
   };
 
@@ -762,6 +809,7 @@ function updateViewVisibility() {
   document.getElementById("viewMode").addEventListener("change", (e) => {
     state.view = e.target.value;
     updateViewVisibility();
+    persistOverviewState();
     load();
   });
 

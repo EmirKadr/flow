@@ -39,6 +39,10 @@
       return user?.must_change_password ? "/set-password.html" : "/index.html";
     }
 
+    function clearSessionDate() {
+      try { sessionStorage.removeItem("bemanning-selected-date"); } catch (e) {}
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       errEl.hidden = true;
@@ -47,6 +51,7 @@
           username: document.getElementById("username").value,
           password: document.getElementById("password").value,
         });
+        clearSessionDate();
         window.location.href = nextPage(user);
       } catch (err) {
         errEl.textContent = err.message || "Inloggning misslyckades";
