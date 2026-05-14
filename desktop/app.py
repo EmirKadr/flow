@@ -1,12 +1,54 @@
 """Qt desktop shell for the central Bemanning web app."""
 from __future__ import annotations
 
+import ctypes
 import os
 import sys
 import tempfile
 import webbrowser
 from pathlib import Path
 from typing import Callable, Optional
+
+
+# Windows 11 DWM-attribut för att färga title-baren så den smälter in med appen.
+# Stöds från Windows 11 22H2 (build 22621+). Misslyckas tyst på äldre versioner.
+_DWMWA_BORDER_COLOR = 34
+_DWMWA_CAPTION_COLOR = 35
+_DWMWA_TEXT_COLOR = 36
+
+
+def _hex_to_colorref(hex_color: str) -> int:
+    """#RRGGBB → Windows COLORREF (0x00BBGGRR)."""
+    h = hex_color.lstrip("#")
+    return int(h[4:6] + h[2:4] + h[0:2], 16)
+
+
+def apply_windows_titlebar_blend(hwnd: int) -> None:
+    """Färga title-baren så den matchar appens ljusa tema (Teams/Word-lookalike)."""
+    if sys.platform != "win32":
+        return
+    try:
+        dwmapi = ctypes.WinDLL("dwmapi")
+    except OSError:
+        return
+    set_attr = dwmapi.DwmSetWindowAttribute
+
+    def _set(attr: int, hex_color: str) -> None:
+        value = ctypes.c_int(_hex_to_colorref(hex_color))
+        try:
+            set_attr(
+                ctypes.wintypes.HWND(hwnd) if hasattr(ctypes, "wintypes") else hwnd,
+                attr,
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            )
+        except Exception:
+            pass
+
+    # Matcha CSS-temat (var(--bg) = #f5f7fb, --border = #e4e8ef, --text = #0f172a)
+    _set(_DWMWA_CAPTION_COLOR, "#f5f7fb")
+    _set(_DWMWA_BORDER_COLOR, "#e4e8ef")
+    _set(_DWMWA_TEXT_COLOR, "#0f172a")
 
 from PyQt6.QtCore import QProcess, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction
@@ -77,6 +119,9 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self.menuBar().hide()
         self.statusBar().hide()
+
+        # Färga title-baren så den smälter in med appen på Windows 11
+        QTimer.singleShot(0, lambda: apply_windows_titlebar_blend(int(self.winId())))
 
         self._stack = QStackedWidget(self)
         self.setCentralWidget(self._stack)
