@@ -23,5 +23,7 @@ services:
         value: production
       - key: SUPER_ADMIN_USERNAMES
         value: emikad
+      - key: EXCEL_API_TOKEN
+        generateValue: true
       - key: PYTHON_VERSION
         value: 3.12.7

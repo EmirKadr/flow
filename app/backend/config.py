@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-only-change-me"
     ENVIRONMENT: str = "development"
     SUPER_ADMIN_USERNAMES: str = "emikad"
+    EXCEL_API_TOKEN: str = ""
 
     @property
     def is_production(self) -> bool:
