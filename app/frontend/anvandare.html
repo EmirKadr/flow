@@ -14,7 +14,6 @@
     <button id="download-user-template" hidden>Ladda ner importmall</button>
     <button id="import-users" hidden>Importera Excel</button>
     <input id="user-import-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
-    <label><input type="checkbox" id="show-inactive" /> Visa inaktiva</label>
   </section>
 
   <main>
@@ -35,6 +34,17 @@
             <th>Aktiv</th>
             <th>Lösenord</th>
             <th>Skapad</th>
+            <th></th>
+          </tr>
+          <tr class="filter-row users-filter-row">
+            <th></th>
+            <th></th>
+            <th></th>
+            <th class="users-active-filter-cell">
+              <label class="table-checkbox-label"><input type="checkbox" id="show-inactive" /> Visa inaktiva</label>
+            </th>
+            <th></th>
+            <th></th>
             <th></th>
           </tr>
         </thead>

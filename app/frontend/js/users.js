@@ -119,7 +119,7 @@ function openModal(user) {
       </select>
       <label>${isEdit ? "Nytt lösenord" : "Lösenord"}</label>
       <input id="m-password" type="password" autocomplete="new-password" />
-      <p class="note">${isEdit ? "Lämna lösenord tomt om det inte ska ändras." : "Minst 8 tecken."}</p>
+      <p class="note">${isEdit ? "Lämna lösenord tomt om det inte ska ändras." : "Lämna tomt om användaren ska skapa sitt lösenord vid första inloggningen. Annars minst 8 tecken."}</p>
       <label><input id="m-active" type="checkbox" ${user?.is_active !== false ? "checked" : ""} /> Aktiv</label>
       <div class="actions">
         <button id="m-cancel">Avbryt</button>
@@ -142,7 +142,7 @@ function openModal(user) {
       showToast("Användarnamn krävs", "error");
       return;
     }
-    if (!isEdit && password.length < 8) {
+    if (password && password.length < 8) {
       showToast("Lösenord måste vara minst 8 tecken", "error");
       return;
     }
@@ -152,10 +152,6 @@ function openModal(user) {
       if (isEdit) {
         await api.put(`/api/users/${user.id}`, payload);
       } else {
-        if (!payload.password) {
-          showToast("Lösenord krävs", "error");
-          return;
-        }
         await api.post("/api/users", payload);
       }
       backdrop.remove();

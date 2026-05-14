@@ -269,11 +269,11 @@ def create_user(
 
     user = User(
         username=payload.username,
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(payload.password) if payload.password else None,
         display_name=payload.display_name,
         role=payload.role,
         is_active=payload.is_active,
-        must_change_password=False,
+        must_change_password=payload.password is None,
     )
     db.add(user)
     db.flush()

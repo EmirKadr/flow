@@ -300,7 +300,7 @@ class UserAdminOut(BaseModel):
 
 class UserCreate(BaseModel):
     username: str
-    password: str = Field(min_length=8, max_length=72)
+    password: str | None = Field(default=None, min_length=8, max_length=72)
     display_name: str | None = None
     role: Literal["admin", "leader"] = "leader"
     is_active: bool = True
@@ -316,6 +316,14 @@ class UserCreate(BaseModel):
     @field_validator("display_name")
     @classmethod
     def normalize_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def normalize_password(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()

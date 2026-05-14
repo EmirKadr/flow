@@ -1086,6 +1086,20 @@ tr.filter-row input {
   background: var(--surface);
 }
 
+.table-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.users-active-filter-cell {
+  white-space: nowrap;
+}
+
 
 /* ============================================================
    Modal
