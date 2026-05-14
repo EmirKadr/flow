@@ -951,6 +951,8 @@ function renderFullHourCell(td, segment, isScheduled) {
     td.style.background = colorFor(scheduledActivityId);
     td.dataset.isBase = "1";
   } else if (isScheduled) {
+    // Rensa inline-bakgrund så .scheduled-empty CSS-gradienten kan synas
+    td.style.background = "";
     td.classList.add("scheduled-empty");
   }
 
@@ -1023,6 +1025,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
     } else if (!segment.empty_override && scheduledActivityId != null) {
       part.style.background = colorFor(scheduledActivityId);
     } else if (isScheduled) {
+      part.style.background = "";
       part.classList.add("scheduled-empty-half");
     } else {
       part.style.background = "#fff";
