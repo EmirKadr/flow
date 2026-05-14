@@ -881,14 +881,48 @@ function effectiveActivityIdForFocus() {
   return effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd);
 }
 
-function handleFullHourContextMenu(e, td) {
+function openSelectPicker(select) {
+  if (!select) return;
+  try {
+    select.focus({ preventScroll: true });
+  } catch (e) {
+    select.focus();
+  }
+  try {
+    if (typeof select.showPicker === "function") {
+      select.showPicker();
+      return;
+    }
+  } catch (e) {}
+  try {
+    select.click();
+  } catch (e) {}
+}
+
+function openFullHourSelect(e, td) {
+  e.preventDefault();
+  e.stopPropagation();
+  focusSegment(td, td, 0, 60);
+  const select = td.querySelector("select.cell-select");
+  setTimeout(() => openSelectPicker(select), 0);
+}
+
+function openSplitSegmentSelect(e, td, part, minuteStart, minuteEnd) {
+  e.preventDefault();
+  e.stopPropagation();
+  focusSegment(td, part, minuteStart, minuteEnd);
+  const select = part.querySelector("select.half-select");
+  setTimeout(() => openSelectPicker(select), 0);
+}
+
+function toggleFullHourSplitFromEvent(e, td) {
   e.preventDefault();
   e.stopPropagation();
   focusSegment(td, td, 0, 60);
   void toggleHourSplit(td, 0);
 }
 
-function handleSplitSegmentContextMenu(e, td, part, minuteStart, minuteEnd) {
+function toggleSplitSegmentFromEvent(e, td, part, minuteStart, minuteEnd) {
   e.preventDefault();
   e.stopPropagation();
   focusSegment(td, part, minuteStart, minuteEnd);
@@ -936,7 +970,7 @@ function resetRenderedHourState(td) {
 function renderFullHourCell(td, segment, isScheduled) {
   td.dataset.split = "0";
   resetRenderedHourState(td);
-  td.oncontextmenu = (e) => handleFullHourContextMenu(e, td);
+  td.oncontextmenu = (e) => openFullHourSelect(e, td);
 
   const personId = Number(td.dataset.personId);
   const hasExplicitSegment = !!segment;
@@ -976,17 +1010,17 @@ function renderFullHourCell(td, segment, isScheduled) {
   select.addEventListener("mousedown", (e) => {
     armFullHourDrag(td, e);
     e.stopPropagation();
+    if (e.button === 0) e.preventDefault();
     const isFocused = state.focusedCell
       && state.focusedCell.td === td
       && state.focusedCell.minuteStart === 0
       && state.focusedCell.minuteEnd === 60;
     if (!isFocused) {
-      e.preventDefault();
       focusSegment(td, td, 0, 60);
     }
   });
   select.addEventListener("keydown", (e) => handleSelectClipboardKeys(e), true);
-  select.addEventListener("contextmenu", (e) => handleFullHourContextMenu(e, td), true);
+  select.addEventListener("contextmenu", (e) => openFullHourSelect(e, td), true);
 
   td.appendChild(select);
   if (showScheduledDefault && scheduledActivityId != null) {
@@ -1002,7 +1036,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
   td.oncontextmenu = (e) => {
     const part = splitPartFromEvent(td, e);
     if (!part) return;
-    handleSplitSegmentContextMenu(
+    openSplitSegmentSelect(
       e,
       td,
       part,
@@ -1056,24 +1090,24 @@ function renderSplitHourCell(td, segments, isScheduled) {
     select.addEventListener("mousedown", (e) => {
       armHalfHourDrag(td, minute_start, minute_end, e);
       e.stopPropagation();
+      if (e.button === 0) e.preventDefault();
       const isFocused = state.focusedCell
         && state.focusedCell.td === td
         && state.focusedCell.minuteStart === minute_start
         && state.focusedCell.minuteEnd === minute_end;
       if (!isFocused) {
-        e.preventDefault();
         focusSegment(td, part, minute_start, minute_end);
       }
     });
     select.addEventListener("keydown", (e) => handleSelectClipboardKeys(e), true);
     part.addEventListener(
       "contextmenu",
-      (e) => handleSplitSegmentContextMenu(e, td, part, minute_start, minute_end),
+      (e) => openSplitSegmentSelect(e, td, part, minute_start, minute_end),
       true,
     );
     select.addEventListener(
       "contextmenu",
-      (e) => handleSplitSegmentContextMenu(e, td, part, minute_start, minute_end),
+      (e) => openSplitSegmentSelect(e, td, part, minute_start, minute_end),
       true,
     );
 
@@ -1611,7 +1645,7 @@ function setupDrag() {
     if (td.dataset.split === "1") {
       const part = splitPartFromEvent(td, e);
       if (part) {
-        handleSplitSegmentContextMenu(
+        openSplitSegmentSelect(
           e,
           td,
           part,
@@ -1621,7 +1655,26 @@ function setupDrag() {
       }
       return;
     }
-    handleFullHourContextMenu(e, td);
+    openFullHourSelect(e, td);
+  }, true);
+
+  body.addEventListener("dblclick", (e) => {
+    const td = e.target.closest("td[data-hour]");
+    if (!td) return;
+    if (td.dataset.split === "1") {
+      const part = splitPartFromEvent(td, e);
+      if (part) {
+        toggleSplitSegmentFromEvent(
+          e,
+          td,
+          part,
+          Number(part.dataset.minuteStart),
+          Number(part.dataset.minuteEnd),
+        );
+      }
+      return;
+    }
+    toggleFullHourSplitFromEvent(e, td);
   }, true);
 
   document.addEventListener("mousemove", (e) => {
