@@ -77,6 +77,11 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   min-height: 100vh;
 }
 
+.app { transition: grid-template-columns 0.25s ease; }
+.app.sidebar-collapsed {
+  grid-template-columns: 64px 1fr;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -88,7 +93,59 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   flex-direction: column;
   gap: 18px;
   z-index: 10;
+  overflow: hidden;
+  transition: padding 0.25s ease;
 }
+
+/* ===== Sidebar toggle (hamburger) ===== */
+.sidebar-toggle {
+  background: transparent;
+  border: 0;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  width: 40px;
+  height: 40px;
+  align-self: flex-start;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-toggle:hover { background: var(--bg-2); color: var(--text); }
+.sidebar-toggle svg {
+  transition: transform 0.25s ease;
+}
+.sidebar.collapsed .sidebar-toggle {
+  align-self: center;
+}
+.sidebar.collapsed .sidebar-toggle svg {
+  transform: rotate(90deg);
+}
+
+/* ===== Collapsed state ===== */
+.sidebar.collapsed {
+  padding: 16px 8px;
+  gap: 12px;
+}
+.sidebar.collapsed .brand {
+  justify-content: center;
+  padding: 4px 0 10px;
+}
+.sidebar.collapsed .brand > div:not(.brand-dot) { display: none; }
+.sidebar.collapsed nav a {
+  justify-content: center;
+  padding: 9px 0;
+}
+.sidebar.collapsed nav a > span:not(.icon) { display: none; }
+.sidebar.collapsed .sidebar-bottom {
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+}
+.sidebar.collapsed .sidebar-bottom > div:not(.avatar) { display: none; }
 
 .brand {
   padding: 4px 10px 10px;
