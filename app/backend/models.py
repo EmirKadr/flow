@@ -22,6 +22,7 @@ from .database import Base
 
 # JSONB on PostgreSQL (production), plain JSON on SQLite (local dev).
 JsonField = JSON().with_variant(JSONB(), "postgresql")
+BigIntId = BigInteger().with_variant(Integer, "sqlite")
 
 
 class User(Base):
@@ -94,7 +95,7 @@ class ScheduleCell(Base):
         Index("ix_schedule_cells_ywd_person_hour", "year", "week", "weekday", "person_id", "hour"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
     year: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     week: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
@@ -132,7 +133,7 @@ class PersonScheduleTemplate(Base):
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
