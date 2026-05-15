@@ -1672,25 +1672,34 @@ function getDragRect() {
   return { r0, r1, c0, c1 };
 }
 
+function dragTargetTdsInRect() {
+  const { r0, r1, c0, c1 } = getDragRect();
+  return Array.from(document.querySelectorAll("#scheduleBody td[data-row-index]")).filter((td) => {
+    const r = Number(td.dataset.rowIndex);
+    const c = Number(td.dataset.colIndex);
+    return r >= r0 && r <= r1 && c >= c0 && c <= c1;
+  });
+}
+
 function updateDragTargets() {
   document.querySelectorAll("#scheduleBody td.drag-target").forEach((t) => t.classList.remove("drag-target"));
   document.querySelectorAll("#scheduleBody .hour-segment.drag-target-segment").forEach((t) => t.classList.remove("drag-target-segment"));
   if (!drag.active) return;
-  const { r0, r1, c0, c1 } = getDragRect();
-  document.querySelectorAll("#scheduleBody td[data-row-index]").forEach((td) => {
-    const r = Number(td.dataset.rowIndex);
-    const c = Number(td.dataset.colIndex);
-    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) {
-      td.classList.add("drag-target");
-      if (td.dataset.split === "1") {
-        const range = drag.targetRangesByCell.get(dragCellKeyForTd(td));
-        if (range) {
-          const part = td.querySelector(
-            `.hour-segment[data-minute-start="${range.minute_start}"][data-minute-end="${range.minute_end}"]`
-          );
-          part?.classList.add("drag-target-segment");
-        }
-      }
+  const targets = dragTargetTdsInRect();
+  const isAreaCopy = targets.filter((td) => td !== drag.sourceTd).length > 1;
+  targets.forEach((td) => {
+    td.classList.add("drag-target");
+    if (td.dataset.split !== "1") return;
+    if (isAreaCopy) {
+      td.querySelectorAll(".hour-segment").forEach((part) => part.classList.add("drag-target-segment"));
+      return;
+    }
+    const range = drag.targetRangesByCell.get(dragCellKeyForTd(td));
+    if (range) {
+      const part = td.querySelector(
+        `.hour-segment[data-minute-start="${range.minute_start}"][data-minute-end="${range.minute_end}"]`
+      );
+      part?.classList.add("drag-target-segment");
     }
   });
 }
@@ -1751,9 +1760,12 @@ function scheduleCellFromPoint(clientX, clientY) {
   return el?.closest("#scheduleBody td[data-hour]") || null;
 }
 
-function targetSegmentsForDragTarget(td, targetRangesByCell, fallbackTargetRange, sourceMinuteStart) {
+function targetSegmentsForDragTarget(td, targetRangesByCell, fallbackTargetRange, sourceMinuteStart, isAreaCopy) {
   if (td.dataset.split !== "1") {
     return [{ ...FULL_SEGMENT }];
+  }
+  if (isAreaCopy) {
+    return HALF_SEGMENTS.map((segment) => ({ ...segment }));
   }
 
   const sourceHalfFallback = sourceMinuteStart >= 30 ? HALF_SEGMENTS[1] : HALF_SEGMENTS[0];
@@ -1777,6 +1789,7 @@ async function finishDrag() {
     minute_end: drag.currentTargetMinuteEnd,
   };
   const targetCount = targets.filter((td) => td !== sourceTd).length;
+  const isAreaCopy = targetCount > 1;
   resetDragState();
 
   if (targets.length === 0 || (targets.length === 1 && targets[0] === sourceTd)) return;
@@ -1808,6 +1821,7 @@ async function finishDrag() {
         targetRangesByCell,
         fallbackTargetRange,
         sourceMinuteStart,
+        isAreaCopy,
       );
 
       return targetSegments.map(({ minute_start, minute_end }) => {
