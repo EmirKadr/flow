@@ -54,6 +54,9 @@ const drag = {
   sourceCol: -1,
   currentRow: -1,
   currentCol: -1,
+  currentTargetMinuteStart: 0,
+  currentTargetMinuteEnd: 60,
+  targetRangesByCell: new Map(),
   startX: 0,
   startY: 0,
 };
@@ -1060,7 +1063,11 @@ function splitPartFromEvent(td, e) {
   const directPart = e.target.closest?.(".hour-segment");
   if (directPart && td.contains(directPart)) return directPart;
 
-  const pointEl = document.elementFromPoint(e.clientX, e.clientY);
+  return splitPartFromPoint(td, e.clientX, e.clientY);
+}
+
+function splitPartFromPoint(td, clientX, clientY) {
+  const pointEl = document.elementFromPoint(clientX, clientY);
   const pointPart = pointEl?.closest?.(".hour-segment");
   if (pointPart && td.contains(pointPart)) return pointPart;
 
@@ -1068,7 +1075,24 @@ function splitPartFromEvent(td, e) {
   if (parts.length <= 1) return parts[0] || null;
 
   const rect = td.getBoundingClientRect();
-  return e.clientX >= rect.left + (rect.width / 2) ? parts[1] : parts[0];
+  return clientX >= rect.left + (rect.width / 2) ? parts[1] : parts[0];
+}
+
+function rangeFromSegmentPart(part) {
+  if (!part) return null;
+  return {
+    minute_start: Number(part.dataset.minuteStart),
+    minute_end: Number(part.dataset.minuteEnd),
+  };
+}
+
+function targetRangeFromPoint(td, clientX, clientY) {
+  if (!td || td.dataset.split !== "1") return { ...FULL_SEGMENT };
+  return rangeFromSegmentPart(splitPartFromPoint(td, clientX, clientY)) || { ...HALF_SEGMENTS[0] };
+}
+
+function dragCellKeyForTd(td) {
+  return `${td.dataset.personId}:${td.dataset.hour}`;
 }
 
 function activityIdForDragSource(td, minuteStart, minuteEnd) {
@@ -1650,12 +1674,24 @@ function getDragRect() {
 
 function updateDragTargets() {
   document.querySelectorAll("#scheduleBody td.drag-target").forEach((t) => t.classList.remove("drag-target"));
+  document.querySelectorAll("#scheduleBody .hour-segment.drag-target-segment").forEach((t) => t.classList.remove("drag-target-segment"));
   if (!drag.active) return;
   const { r0, r1, c0, c1 } = getDragRect();
   document.querySelectorAll("#scheduleBody td[data-row-index]").forEach((td) => {
     const r = Number(td.dataset.rowIndex);
     const c = Number(td.dataset.colIndex);
-    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) td.classList.add("drag-target");
+    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) {
+      td.classList.add("drag-target");
+      if (td.dataset.split === "1") {
+        const range = drag.targetRangesByCell.get(dragCellKeyForTd(td));
+        if (range) {
+          const part = td.querySelector(
+            `.hour-segment[data-minute-start="${range.minute_start}"][data-minute-end="${range.minute_end}"]`
+          );
+          part?.classList.add("drag-target-segment");
+        }
+      }
+    }
   });
 }
 
@@ -1663,6 +1699,7 @@ function resetDragState() {
   document.body.classList.remove("dragging");
   drag.sourceTd?.classList.remove("drag-source-cell");
   document.querySelectorAll("#scheduleBody td.drag-target").forEach((t) => t.classList.remove("drag-target"));
+  document.querySelectorAll("#scheduleBody .hour-segment.drag-target-segment").forEach((t) => t.classList.remove("drag-target-segment"));
   drag.active = false;
   drag.pending = false;
   drag.sourceTd = null;
@@ -1673,6 +1710,9 @@ function resetDragState() {
   drag.sourceCol = -1;
   drag.currentRow = -1;
   drag.currentCol = -1;
+  drag.currentTargetMinuteStart = 0;
+  drag.currentTargetMinuteEnd = 60;
+  drag.targetRangesByCell = new Map();
   drag.startX = 0;
   drag.startY = 0;
 }
@@ -1687,6 +1727,9 @@ function startPendingDrag(td, event, minuteStart = 0, minuteEnd = 60) {
   drag.sourceCol = Number(td.dataset.colIndex);
   drag.currentRow = drag.sourceRow;
   drag.currentCol = drag.sourceCol;
+  drag.currentTargetMinuteStart = minuteStart;
+  drag.currentTargetMinuteEnd = minuteEnd;
+  drag.targetRangesByCell = new Map();
   drag.startX = event.clientX;
   drag.startY = event.clientY;
 }
@@ -1708,13 +1751,31 @@ function scheduleCellFromPoint(clientX, clientY) {
   return el?.closest("#scheduleBody td[data-hour]") || null;
 }
 
+function targetSegmentsForDragTarget(td, targetRangesByCell, fallbackTargetRange, sourceMinuteStart) {
+  if (td.dataset.split !== "1") {
+    return [{ ...FULL_SEGMENT }];
+  }
+
+  const sourceHalfFallback = sourceMinuteStart >= 30 ? HALF_SEGMENTS[1] : HALF_SEGMENTS[0];
+  const fallbackRange = fallbackTargetRange
+    && fallbackTargetRange.minute_end - fallbackTargetRange.minute_start === 30
+    ? fallbackTargetRange
+    : sourceHalfFallback;
+  const range = targetRangesByCell.get(dragCellKeyForTd(td)) || fallbackRange;
+  return [{ minute_start: range.minute_start, minute_end: range.minute_end }];
+}
+
 async function finishDrag() {
   if (!drag.active) return;
   const sourceTd = drag.sourceTd;
   const sourceActivityId = drag.sourceActivityId;
   const sourceMinuteStart = drag.sourceMinuteStart;
-  const sourceMinuteEnd = drag.sourceMinuteEnd;
   const targets = Array.from(document.querySelectorAll("#scheduleBody td.drag-target"));
+  const targetRangesByCell = new Map(drag.targetRangesByCell);
+  const fallbackTargetRange = {
+    minute_start: drag.currentTargetMinuteStart,
+    minute_end: drag.currentTargetMinuteEnd,
+  };
   const targetCount = targets.filter((td) => td !== sourceTd).length;
   resetDragState();
 
@@ -1742,9 +1803,12 @@ async function finishDrag() {
         && segments[0].minute_end === 60
         ? segments[0]
         : null;
-      const targetSegments = (sourceMinuteStart === 0 && sourceMinuteEnd === 60 && td.dataset.split === "1")
-        ? HALF_SEGMENTS
-        : [{ minute_start: sourceMinuteStart, minute_end: sourceMinuteEnd }];
+      const targetSegments = targetSegmentsForDragTarget(
+        td,
+        targetRangesByCell,
+        fallbackTargetRange,
+        sourceMinuteStart,
+      );
 
       return targetSegments.map(({ minute_start, minute_end }) => {
         const matching = segments.find(
@@ -1876,6 +1940,12 @@ function setupDrag() {
     if (!td) return;
     drag.currentRow = Number(td.dataset.rowIndex);
     drag.currentCol = Number(td.dataset.colIndex);
+    const targetRange = targetRangeFromPoint(td, e.clientX, e.clientY);
+    drag.currentTargetMinuteStart = targetRange.minute_start;
+    drag.currentTargetMinuteEnd = targetRange.minute_end;
+    if (td.dataset.split === "1") {
+      drag.targetRangesByCell.set(dragCellKeyForTd(td), targetRange);
+    }
     updateDragTargets();
   });
 
