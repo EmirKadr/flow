@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .config import settings
 from .routers import (
     activities,
+    allocation,
     areas,
     audit_logs,
     auth,
@@ -38,6 +39,7 @@ def health() -> dict:
 
 
 app.include_router(auth.router)
+app.include_router(allocation.router)
 app.include_router(areas.router)
 app.include_router(activities.router)
 app.include_router(audit_logs.router)

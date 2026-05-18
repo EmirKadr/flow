@@ -26,10 +26,16 @@ def test_visual_smoke_covers_expected_routes():
         "stallen",
         "historik",
         "anvandare",
+        "uppladdningar",
+        "bearbeta",
+        "dela",
+        "harleda",
     }
     assert pages_by_name["bemanning"].roles == ("admin", "leader", "viewer")
     assert pages_by_name["produktivitet"].roles == ("admin",)
     assert pages_by_name["anvandare"].roles == ("admin",)
+    assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse")
+    assert pages_by_name["bearbeta"].roles == ("admin", "warehouse")
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -49,6 +55,8 @@ def test_visual_smoke_covers_critical_scenarios():
         "viewer-nekad-produktivitet",
         "leader-nekad-historik",
         "leader-nekad-produktivitet",
+        "leader-nekad-uppladdningar",
+        "viewer-nekad-uppladdningar",
     }.issubset(state_names)
 
 
@@ -157,7 +165,7 @@ def test_desktop_build_bundles_local_frontend():
 def test_visual_smoke_outputs_have_unique_names():
     names = []
     for viewport in visual_smoke.VIEWPORTS:
-        for role in ("public", "admin", "leader", "viewer"):
+        for role in ("public", "admin", "leader", "viewer", "warehouse"):
             for page in visual_smoke.PAGES:
                 if role in page.roles:
                     names.append(visual_smoke._safe_name(viewport.name, role, page.name))
@@ -196,7 +204,7 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
 
     with sqlite3.connect(db_path) as connection:
         users = connection.execute(
-            "select username, role from users where username in ('visual_leader', 'visual_viewer')"
+            "select username, role from users where username in ('visual_leader', 'visual_viewer', 'visual_lager')"
         ).fetchall()
         visual_people = connection.execute(
             "select count(*) from persons where name like 'Visual %'"
@@ -206,7 +214,11 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
             "select count(*) from audit_log where entity_type = 'visual_test'"
         ).fetchone()[0]
 
-    assert sorted(users) == [("visual_leader", "leader"), ("visual_viewer", "viewer")]
+    assert sorted(users) == [
+        ("visual_lager", "warehouse_clerk"),
+        ("visual_leader", "leader"),
+        ("visual_viewer", "viewer"),
+    ]
     assert visual_people >= 6
     assert schedule_cells > 0
     assert audit_rows == 1
@@ -256,3 +268,68 @@ def test_frontend_theme_toggle_is_wired_globally():
     for html_path in frontend.glob("*.html"):
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
+
+
+def test_sidebar_pages_reserve_layout_before_auth_finishes():
+    frontend = ROOT / "app" / "frontend"
+    public_pages = {"login.html", "set-password.html"}
+
+    for html_path in frontend.glob("*.html"):
+        html = html_path.read_text(encoding="utf-8")
+        if html_path.name in public_pages:
+            assert '<body class="with-sidebar">' not in html
+        else:
+            assert '<body class="with-sidebar">' in html, f"{html_path.name} saknar sidebar-reservering"
+
+    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'document.body.classList.add("sidebar-hydrated")' in common
+    assert "sessionStorage.setItem(SIDEBAR_USER_CACHE_KEY" in common
+    assert "localStorage.setItem(SIDEBAR_USER_CACHE_KEY" in common
+    assert "sessionStorage.getItem(SIDEBAR_USER_CACHE_KEY) || localStorage.getItem(SIDEBAR_USER_CACHE_KEY)" in common
+    assert "body.with-sidebar:not(.sidebar-hydrated)" in styles
+    assert "grid-template-columns: var(--sidebar-w) 1fr" in styles
+
+
+def test_allocation_pages_are_wired_to_shared_tool_shell():
+    frontend = ROOT / "app" / "frontend"
+    allocation_pages = {
+        "uppladdningar.html": "uploads",
+        "bearbeta.html": "process",
+        "dela.html": "split",
+        "harleda.html": "trace",
+    }
+
+    for filename, view in allocation_pages.items():
+        html = (frontend / filename).read_text(encoding="utf-8")
+        assert '<body class="with-sidebar">' in html
+        assert 'id="allocationRoot"' in html
+        assert f'data-allocation-view="{view}"' in html
+        assert "/js/api.js" in html
+        assert "/js/common.js" in html
+        assert "/js/allocation_tools.js" in html
+
+
+def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
+    frontend = ROOT / "app" / "frontend"
+    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert 'const ALLOCATION_API = "/api/allokering"' in allocation
+    assert 'const ALLOCATION_DB_NAME = "bemanning-allokering-files"' in allocation
+    assert "indexedDB.open(ALLOCATION_DB_NAME" in allocation
+    assert "window.allocationUploadActivity?.start()" in allocation
+    assert "window.allocationUploadActivity?.finish(assigned.length)" in allocation
+    assert "allocationState.files = await loadStoredAllocationFiles()" in allocation
+
+    assert "DATABASE_ICON" in common
+    assert "ALLOCATION_UPLOAD_NOTICE_KEY" in common
+    assert "writeAllocationUploadNotice({ count, at: Date.now() })" in common
+    assert "window.allocationUploadActivity" in common
+    assert "clearAllocationUploadNotice()" in common
+
+    assert ".database-toggle.uploading .upload-arrow" in styles
+    assert "@keyframes uploadArrowRise" in styles
+    assert ".database-toggle .upload-notice" in styles

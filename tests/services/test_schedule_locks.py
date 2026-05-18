@@ -10,8 +10,8 @@ from app.backend.schedule_locks import (
 from app.backend.settings_service import _parse_bool
 
 
-def make_user(user_id: int, role: str = "leader") -> User:
-    return User(id=user_id, username=f"user{user_id}", role=role, is_active=True)
+def make_user(user_id: int, role: str = "leader", roles: list[str] | None = None) -> User:
+    return User(id=user_id, username=f"user{user_id}", role=role, roles=roles, is_active=True)
 
 
 def make_cell(updated_by: int | None) -> ScheduleCell:
@@ -61,6 +61,7 @@ def test_lock_can_be_disabled():
 
 def test_admins_can_bypass_schedule_cell_lock():
     assert user_can_bypass_schedule_cell_lock(make_user(1, role="admin")) is True
+    assert user_can_bypass_schedule_cell_lock(make_user(3, role="viewer", roles=["viewer", "admin"])) is True
     assert user_can_bypass_schedule_cell_lock(make_user(2, role="leader")) is False
 
 

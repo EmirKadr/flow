@@ -95,6 +95,12 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
         def log_message(self, _format: str, *_args) -> None:  # noqa: A002
             return
 
+        def _write_body(self, body: bytes) -> None:
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                return
+
         def do_GET(self) -> None:  # noqa: N802
             self._handle_request(with_body=False)
 
@@ -135,7 +141,7 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
             self.send_header("Content-Length", str(target.stat().st_size if head_only else len(body)))
             self.end_headers()
             if not head_only:
-                self.wfile.write(body)
+                self._write_body(body)
 
         def _proxy_api(self, parsed, *, with_body: bool, head_only: bool = False) -> None:
             length = int(self.headers.get("Content-Length") or 0)
@@ -172,7 +178,7 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             if not head_only:
-                self.wfile.write(content)
+                self._write_body(content)
 
         def _send_json(self, status_code: int, detail: str) -> None:
             body = json.dumps({"detail": detail}, ensure_ascii=False).encode("utf-8")
@@ -180,7 +186,7 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            self._write_body(body)
 
         def _send_text(self, status_code: int, text: str) -> None:
             body = text.encode("utf-8")
@@ -188,7 +194,7 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            self._write_body(body)
 
     return LocalAppRequestHandler
 

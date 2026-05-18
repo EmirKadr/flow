@@ -2,6 +2,7 @@
 
 const THEME_STORAGE_KEY = "bemanning-theme";
 const SIDEBAR_USER_CACHE_KEY = "bemanning-sidebar-user";
+const ALLOCATION_UPLOAD_NOTICE_KEY = "bemanning-allocation-upload-notice";
 
 const THEME_ICONS = {
   light: `
@@ -16,6 +17,14 @@ const THEME_ICONS = {
     </svg>
   `,
 };
+
+const DATABASE_ICON = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+    <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
+    <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path>
+  </svg>
+`;
 
 function readTheme() {
   try {
@@ -94,16 +103,28 @@ function initials(name) {
     .map((part) => part[0].toUpperCase()).join("");
 }
 
+function userRoles(user) {
+  const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role];
+  return [...new Set(rawRoles.map((role) => String(role || "").trim()).filter(Boolean))];
+}
+
 function isAdminUser(user) {
-  return user?.role === "admin" || user?.is_super_user;
+  const roles = userRoles(user);
+  return roles.includes("admin") || user?.is_super_user;
 }
 
 function isReadOnlyUser(user) {
-  return user?.role === "viewer" && !user?.is_super_user;
+  const roles = userRoles(user);
+  return roles.includes("viewer") && !roles.includes("leader") && !roles.includes("admin") && !user?.is_super_user;
 }
 
 function canEditPlanning(user) {
-  return !isReadOnlyUser(user);
+  const roles = userRoles(user);
+  return roles.includes("leader") || roles.includes("admin") || user?.is_super_user;
+}
+
+function canUseAllocationTools(user) {
+  return userRoles(user).includes("warehouse_clerk") || user?.is_super_user;
 }
 
 function sidebarUserSnapshot(user) {
@@ -112,6 +133,7 @@ function sidebarUserSnapshot(user) {
     username: user.username || "",
     display_name: user.display_name || "",
     role: user.role || "",
+    roles: userRoles(user),
     is_super_user: Boolean(user.is_super_user),
     must_change_password: Boolean(user.must_change_password),
   };
@@ -120,13 +142,17 @@ function sidebarUserSnapshot(user) {
 function cacheSidebarUser(user) {
   try {
     const snapshot = sidebarUserSnapshot(user);
-    if (snapshot) sessionStorage.setItem(SIDEBAR_USER_CACHE_KEY, JSON.stringify(snapshot));
+    if (snapshot) {
+      const serialized = JSON.stringify(snapshot);
+      sessionStorage.setItem(SIDEBAR_USER_CACHE_KEY, serialized);
+      localStorage.setItem(SIDEBAR_USER_CACHE_KEY, serialized);
+    }
   } catch (e) {}
 }
 
 function readCachedSidebarUser() {
   try {
-    const raw = sessionStorage.getItem(SIDEBAR_USER_CACHE_KEY);
+    const raw = sessionStorage.getItem(SIDEBAR_USER_CACHE_KEY) || localStorage.getItem(SIDEBAR_USER_CACHE_KEY);
     if (!raw) return null;
     const user = JSON.parse(raw);
     return user?.username || user?.display_name ? user : null;
@@ -137,14 +163,73 @@ function readCachedSidebarUser() {
 
 function clearCachedSidebarUser() {
   try { sessionStorage.removeItem(SIDEBAR_USER_CACHE_KEY); } catch (e) {}
+  try { localStorage.removeItem(SIDEBAR_USER_CACHE_KEY); } catch (e) {}
 }
 
 function cachedUserCanRenderPage(user, options = {}) {
   if (!user || user.must_change_password) return false;
-  if (options.requireAdmin && user.role !== "admin" && !user.is_super_user) return false;
+  if (options.requireAdmin && !isAdminUser(user)) return false;
   if (options.requireSuperUser && !user.is_super_user) return false;
   if (options.requireEditor && !canEditPlanning(user)) return false;
+  if (options.requireAllocationTools && !canUseAllocationTools(user)) return false;
   return true;
+}
+
+function readAllocationUploadNotice() {
+  try {
+    const raw = sessionStorage.getItem(ALLOCATION_UPLOAD_NOTICE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeAllocationUploadNotice(notice) {
+  try {
+    if (notice) sessionStorage.setItem(ALLOCATION_UPLOAD_NOTICE_KEY, JSON.stringify(notice));
+    else sessionStorage.removeItem(ALLOCATION_UPLOAD_NOTICE_KEY);
+  } catch (e) {}
+}
+
+function updateAllocationUploadIndicator() {
+  const button = document.getElementById("allocation-upload-link");
+  const noticeEl = document.getElementById("allocation-upload-notice");
+  if (!button || !noticeEl) return;
+  const notice = readAllocationUploadNotice();
+  if (notice?.count) {
+    noticeEl.textContent = String(notice.count);
+    noticeEl.hidden = false;
+    button.title = notice.count === 1 ? "1 fil uppladdad" : `${notice.count} filer uppladdade`;
+  } else {
+    noticeEl.hidden = true;
+    noticeEl.textContent = "";
+    button.title = "Uppladdningar";
+  }
+}
+
+function clearAllocationUploadNotice() {
+  writeAllocationUploadNotice(null);
+  updateAllocationUploadIndicator();
+}
+
+function setAllocationUploading(active) {
+  const button = document.getElementById("allocation-upload-link");
+  if (!button) return;
+  button.classList.toggle("uploading", Boolean(active));
+}
+
+function startAllocationUploadActivity() {
+  setAllocationUploading(true);
+}
+
+function finishAllocationUploadActivity(count = 0) {
+  setAllocationUploading(false);
+  if (count > 0) {
+    writeAllocationUploadNotice({ count, at: Date.now() });
+    const text = count === 1 ? "1 fil uppladdad" : `${count} filer uppladdade`;
+    showToast(text, "success", 2500);
+  }
+  updateAllocationUploadIndicator();
 }
 
 function finishSidebarInitialRender(app) {
@@ -189,6 +274,13 @@ function renderSidebar(user, activePage) {
   const productivityLink = user?.is_super_user
     ? `<a href="/produktivitet.html" class="${activePage === "productivity" ? "active" : ""}"><span class="icon" aria-hidden="true">📈</span><span>Produktivitet</span></a>`
     : "";
+  const allocationLinks = canUseAllocationTools(user)
+    ? `
+      <a href="/bearbeta.html" class="${activePage === "allocationProcess" ? "active" : ""}"><span class="icon" aria-hidden="true">🧮</span><span>Bearbeta</span></a>
+      <a href="/dela.html" class="${activePage === "allocationSplit" ? "active" : ""}"><span class="icon" aria-hidden="true">✂</span><span>Dela</span></a>
+      <a href="/harleda.html" class="${activePage === "allocationTrace" ? "active" : ""}"><span class="icon" aria-hidden="true">⌕</span><span>Härleda</span></a>
+    `
+    : "";
 
   const editorLinks = canEditPlanning(user)
     ? `
@@ -207,12 +299,20 @@ function renderSidebar(user, activePage) {
       <a href="/index.html" class="${activePage === "schedule" ? "active" : ""}"><span class="icon" aria-hidden="true">📋</span><span>Bemanning</span></a>
       <a href="/overblick.html" class="${activePage === "overview" ? "active" : ""}"><span class="icon" aria-hidden="true">📅</span><span>Översikt</span></a>
       ${productivityLink}
+      ${allocationLinks}
       ${editorLinks}
       ${analyticsLink}
       ${adminLink}
     </nav>
     <div class="sidebar-footer">
-      <div class="sidebar-theme">
+      <div class="sidebar-utility">
+        ${canUseAllocationTools(user) ? `
+          <a href="/uppladdningar.html" class="database-toggle ${activePage === "allocationUploads" ? "active" : ""}" id="allocation-upload-link" title="Uppladdningar" aria-label="Uppladdningar">
+            ${DATABASE_ICON}
+            <span class="upload-arrow" aria-hidden="true">↑</span>
+            <span class="upload-notice" id="allocation-upload-notice" hidden></span>
+          </a>
+        ` : ""}
         <button class="theme-toggle" id="theme-toggle" type="button"></button>
       </div>
       <div class="sidebar-bottom">
@@ -226,6 +326,12 @@ function renderSidebar(user, activePage) {
   `;
 
   initThemeToggle();
+  updateAllocationUploadIndicator();
+  document.body.classList.add("sidebar-hydrated");
+  const allocationUploadLink = document.getElementById("allocation-upload-link");
+  if (allocationUploadLink) {
+    allocationUploadLink.addEventListener("click", () => clearAllocationUploadNotice());
+  }
 
   const logout = document.getElementById("logout-link");
   if (logout) {
@@ -291,7 +397,7 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/set-password.html";
     return null;
   }
-  if (options.requireAdmin && user.role !== "admin" && !user.is_super_user) {
+  if (options.requireAdmin && !isAdminUser(user)) {
     queueToast("Sidan kräver administratörsbehörighet", "error");
     window.location.href = "/index.html";
     return null;
@@ -306,8 +412,14 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/index.html";
     return null;
   }
+  if (options.requireAllocationTools && !canUseAllocationTools(user)) {
+    queueToast("Sidan kräver rollen Lagerkontorist", "error");
+    window.location.href = "/index.html";
+    return null;
+  }
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
+  if (activePage === "allocationUploads") clearAllocationUploadNotice();
   flushQueuedToast();
   return user;
 }
@@ -345,8 +457,16 @@ function clearSelectedDate() {
 window.showToast = showToast;
 window.initPage = initPage;
 window.queueToast = queueToast;
+window.userRoles = userRoles;
+window.isAdminUser = isAdminUser;
 window.isReadOnlyUser = isReadOnlyUser;
 window.canEditPlanning = canEditPlanning;
+window.canUseAllocationTools = canUseAllocationTools;
+window.allocationUploadActivity = {
+  start: startAllocationUploadActivity,
+  finish: finishAllocationUploadActivity,
+  clear: clearAllocationUploadNotice,
+};
 window.readSelectedDate = readSelectedDate;
 window.writeSelectedDate = writeSelectedDate;
 window.clearSelectedDate = clearSelectedDate;

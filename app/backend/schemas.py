@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+UserRole = Literal["admin", "leader", "viewer", "warehouse_clerk", "article_placer"]
+
+
 class AreaOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -287,6 +290,7 @@ class UserOut(BaseModel):
     username: str
     display_name: str | None
     role: str
+    roles: list[str] = Field(default_factory=list)
     area_id: int | None = None
     must_change_password: bool = False
     is_super_user: bool = False
@@ -298,6 +302,7 @@ class UserAdminOut(BaseModel):
     username: str
     display_name: str | None
     role: str
+    roles: list[str] = Field(default_factory=list)
     area_id: int | None = None
     is_active: bool
     must_change_password: bool = False
@@ -309,7 +314,8 @@ class UserCreate(BaseModel):
     username: str
     password: str | None = Field(default=None, min_length=8, max_length=72)
     display_name: str | None = None
-    role: Literal["admin", "leader", "viewer"] = "leader"
+    role: UserRole = "leader"
+    roles: list[UserRole] | None = None
     area_id: int | None = None
     is_active: bool = True
 
@@ -337,12 +343,23 @@ class UserCreate(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("roles")
+    @classmethod
+    def normalize_roles(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        roles = list(dict.fromkeys(value))
+        if not roles:
+            raise ValueError("Minst en roll krävs")
+        return roles
+
 
 class UserUpdate(BaseModel):
     username: str | None = None
     password: str | None = Field(default=None, min_length=8, max_length=72)
     display_name: str | None = None
-    role: Literal["admin", "leader", "viewer"] | None = None
+    role: UserRole | None = None
+    roles: list[UserRole] | None = None
     area_id: int | None = None
     is_active: bool | None = None
 
@@ -363,6 +380,16 @@ class UserUpdate(BaseModel):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+    @field_validator("roles")
+    @classmethod
+    def normalize_roles(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        roles = list(dict.fromkeys(value))
+        if not roles:
+            raise ValueError("Minst en roll krävs")
+        return roles
 
 
 class UserImportError(BaseModel):

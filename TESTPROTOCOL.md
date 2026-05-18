@@ -68,8 +68,9 @@ Vanliga varianter:
 
 ```powershell
 python -m tools.visual_smoke --roles public,admin
+python -m tools.visual_smoke --roles admin,warehouse
 python -m tools.visual_smoke --base-url http://127.0.0.1:8000 --roles admin
-python -m tools.visual_smoke --via-desktop-proxy --roles public,admin
+python -m tools.visual_smoke --via-desktop-proxy --roles public,admin,warehouse
 python -m tools.visual_smoke --output artifacts\visual\manual-check
 ```
 
@@ -86,6 +87,8 @@ Bas-screenshots som ska granskas:
 - Stallen.
 - Historik.
 - Anvandare.
+- Uppladdningar, Bearbeta, Dela och Harleda for admin/super user och
+  Lagerkontorist.
 
 Scenario-screenshots som ska granskas:
 
@@ -109,6 +112,7 @@ Scenario-screenshots som ska granskas:
 - Historik med filter.
 - Nekad atkomst for visningsroll till Personer, Stallen, Anvandare och Historik.
 - Nekad atkomst for arbetsledare till Anvandare och Historik.
+- Nekad atkomst for arbetsledare och visningsroll till Uppladdningar.
 
 Granska visuellt att:
 
@@ -116,6 +120,8 @@ Granska visuellt att:
 - Sidebar, kontroller och tabeller ligger ratt i desktop och mobil.
 - Rollerna visar ratt navigation och ratt vyer.
 - Otillgangliga sidor skickar anvandaren till Bemanning och visar feltoast.
+- Databasikonen, uppladdningsnotis och uppladdningspilen syns pa Lager-sidorna.
+- Allokering-vyerna kan visas via desktop-proxyn utan att sidebar blinkar bort.
 - Farger, halvceller, schemalagda/lediga celler och kalkyl syns begripligt.
 - Modaler far plats och har fungerande primar/sekundar-knappar.
 
@@ -211,7 +217,7 @@ men det blockerar inte de vanliga webbarbetsflodena. Anvand da:
 
 `tools.visual_data` lagger in:
 
-- admin, arbetsledare och visningsroll
+- admin, arbetsledare, visningsroll och Lagerkontorist
 - personer i flera avdelningar
 - veckomallar med ledig helg
 - schemaceller med heldagar och halvtimmar
@@ -241,6 +247,8 @@ Innan ny release:
 2. JS-syntaxkontroll
 3. `python desktop\main.py --smoke-test`
 4. `python -m tools.visual_smoke --roles public,admin,leader,viewer`
+   Kor ocksa `python -m tools.visual_smoke --via-desktop-proxy --roles admin,warehouse`
+   nar Lager/Allokering, sidebar, filuppladdning eller desktop-appytan har andrats.
 5. `python -m tools.interactive_e2e`
 6. `python -m tools.desktop_shell_screens`
 7. `python -m tools.desktop_app_probe`

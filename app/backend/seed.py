@@ -113,6 +113,7 @@ def seed_admin(db: Session) -> None:
                 password_hash=hash_password("admin123"),
                 display_name="Administratör",
                 role="admin",
+                roles=["admin"],
             )
         )
 

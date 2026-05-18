@@ -52,6 +52,7 @@ def _ensure_user(db, *, username: str, display_name: str, role: str, area: Area 
         db.add(user)
     user.display_name = display_name
     user.role = role
+    user.roles = [role]
     user.area_id = area.id if area else None
     user.is_active = True
     user.must_change_password = False
@@ -228,6 +229,7 @@ def seed_visual_data() -> None:
 
         _ensure_user(db, username="visual_leader", display_name="Visual Arbetsledare", role="leader", area=gg)
         _ensure_user(db, username="visual_viewer", display_name="Visual Visning", role="viewer", area=mg)
+        _ensure_user(db, username="visual_lager", display_name="Visual Lagerkontorist", role="warehouse_clerk", area=None)
 
         gg_vm = _activity_by_code(db, "GG_VM")
         gg_plock = _activity_by_code(db, "GG_PLOCK")

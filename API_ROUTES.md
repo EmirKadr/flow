@@ -18,6 +18,11 @@ python -m tools.bemanning_cli api GET /api/health
 `call` använder namngivna API-vägar. `api` kan anropa valfri väg manuellt, även
 om en ny väg ännu inte fått ett namn i CLI:t.
 
+Användar-API:t är bakåtkompatibelt med `role`, men nya klienter kan skicka
+`roles`, t.ex. `{"username":"anna","roles":["viewer","leader"]}` eller
+`{"username":"lina","roles":["warehouse_clerk"]}` för Lagerkontorist och
+`{"username":"arvid","roles":["article_placer"]}` för Artikelplacerare.
+
 | Namn | Metod | Väg | Beskrivning |
 | --- | --- | --- | --- |
 | `health` | `GET` | `/api/health` | Server health |
@@ -25,6 +30,15 @@ om en ny väg ännu inte fått ett namn i CLI:t.
 | `auth.logout` | `POST` | `/api/auth/logout` | Logga ut |
 | `auth.me` | `GET` | `/api/auth/me` | Aktuell användare |
 | `auth.set_password` | `POST` | `/api/auth/set-password` | Sätt första lösenord |
+| `allocation.health` | `GET` | `/api/allokering/health` | Allokering health |
+| `allocation.flows` | `GET` | `/api/allokering/flows` | Lista Allokering-flöden |
+| `allocation.pool` | `GET` | `/api/allokering/pool` | Lista Allokering-uppladdningsslots |
+| `allocation.detect` | `POST` | `/api/allokering/detect` | Identifiera Allokering-fil |
+| `allocation.observations_update` | `POST` | `/api/allokering/observations/update` | Uppdatera observations från buffert |
+| `allocation.run_flow` | `POST` | `/api/allokering/flow/{flow_id}` | Kör Allokering-flöde |
+| `allocation.open_excel` | `POST` | `/api/allokering/open-excel` | Öppna Allokering-resultat i Excel |
+| `allocation.table_column` | `GET` | `/api/allokering/table-column/{session_id}/{key}/{column_index}` | Hämta resultatkolumn |
+| `allocation.download` | `GET` | `/api/allokering/download/{session_id}/{key}` | Ladda ner Allokering-resultat |
 | `areas.list` | `GET` | `/api/areas` | Lista områden |
 | `areas.create` | `POST` | `/api/areas` | Skapa område |
 | `areas.update` | `PUT` | `/api/areas/{area_id}` | Uppdatera område |
@@ -75,4 +89,3 @@ om en ny väg ännu inte fått ett namn i CLI:t.
 | `public.persons_week` | `GET` | `/api/public/persons/week` | Publika FTE för vecka |
 | `public.summary` | `GET` | `/api/public/summary` | Publik CSV-summering för dag |
 | `public.summary_week` | `GET` | `/api/public/summary/week` | Publik CSV-summering för vecka |
-

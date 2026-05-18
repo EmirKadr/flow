@@ -5,18 +5,39 @@ let appSettings = {
   lock_foreign_schedule_cells: false,
 };
 
+const ROLE_OPTIONS = [
+  { value: "leader", label: "Arbetsledare" },
+  { value: "admin", label: "Administratör" },
+  { value: "warehouse_clerk", label: "Lagerkontorist" },
+  { value: "article_placer", label: "Artikelplacerare" },
+  { value: "viewer", label: "Visning" },
+];
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]
   );
 }
 
+function rolesForUser(user) {
+  const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role || "leader"];
+  const roles = [...new Set(rawRoles.map((role) => String(role || "").trim()).filter(Boolean))];
+  return roles.length ? roles : ["leader"];
+}
+
+function primaryRoleFromRoles(roles) {
+  if (roles.includes("admin")) return "admin";
+  if (roles.includes("leader")) return "leader";
+  if (roles.includes("warehouse_clerk")) return "warehouse_clerk";
+  if (roles.includes("article_placer")) return "article_placer";
+  if (roles.includes("viewer")) return "viewer";
+  return "leader";
+}
+
 function roleLabel(user) {
-  if (user?.is_super_user) return "Super User";
-  const role = user?.role;
-  if (role === "admin") return "Administratör";
-  if (role === "viewer") return "Visning";
-  return "Arbetsledare";
+  const labels = rolesForUser(user).map((role) => ROLE_OPTIONS.find((option) => option.value === role)?.label || role);
+  if (user?.is_super_user) labels.unshift("Super User");
+  return [...new Set(labels)].join(", ");
 }
 
 function areaName(areaId) {
@@ -118,7 +139,7 @@ function renderUsers() {
 
 function openModal(user) {
   const isEdit = !!user;
-  const selectedRole = user?.is_super_user ? "admin" : (user?.role || "leader");
+  const selectedRoles = rolesForUser(user);
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
@@ -128,12 +149,15 @@ function openModal(user) {
       <input id="m-username" autocomplete="username" value="${escapeHtml(user?.username || "")}" />
       <label>Visningsnamn</label>
       <input id="m-display-name" value="${escapeHtml(user?.display_name || "")}" />
-      <label>Roll</label>
-      <select id="m-role">
-        <option value="leader" ${selectedRole === "leader" ? "selected" : ""}>Arbetsledare</option>
-        <option value="admin" ${selectedRole === "admin" ? "selected" : ""}>Administratör</option>
-        <option value="viewer" ${selectedRole === "viewer" ? "selected" : ""}>Visning</option>
-      </select>
+      <label>Roller</label>
+      <div class="role-checks" id="m-roles">
+        ${ROLE_OPTIONS.map((option) => `
+          <label class="role-check">
+            <input type="checkbox" name="m-role" value="${option.value}" ${selectedRoles.includes(option.value) ? "checked" : ""} />
+            <span>${escapeHtml(option.label)}</span>
+          </label>
+        `).join("")}
+      </div>
       <label>Avdelning</label>
       <select id="m-area">
         <option value="">Ingen förinställning</option>
@@ -153,16 +177,22 @@ function openModal(user) {
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
     const password = document.getElementById("m-password").value;
+    const roles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => input.value);
     const payload = {
       username: document.getElementById("m-username").value.trim(),
       display_name: document.getElementById("m-display-name").value.trim() || null,
-      role: document.getElementById("m-role").value,
+      role: primaryRoleFromRoles(roles),
+      roles,
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       is_active: document.getElementById("m-active").checked,
     };
 
     if (!payload.username) {
       showToast("Användarnamn krävs", "error");
+      return;
+    }
+    if (roles.length === 0) {
+      showToast("Välj minst en roll", "error");
       return;
     }
     if (password && password.length < 8) {

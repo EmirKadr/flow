@@ -114,6 +114,26 @@ a:hover { text-decoration: underline; }
 
 button, input, select, textarea { font-family: inherit; color: inherit; }
 
+body.with-sidebar:not(.sidebar-hydrated) {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+body.with-sidebar:not(.sidebar-hydrated)::before {
+  content: "";
+  position: sticky;
+  top: 28px;
+  height: calc(100vh - 28px);
+  margin-top: 28px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-top-right-radius: 14px;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
+  visibility: hidden;
+}
+
 
 /* ============================================================
    Layout: sidebar + main
@@ -201,7 +221,7 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   gap: 0;
   padding-left: 4px;
 }
-.sidebar.collapsed .sidebar-theme {
+.sidebar.collapsed .sidebar-utility {
   align-items: center;
 }
 .sidebar.collapsed .sidebar-bottom > div:not(.avatar) {
@@ -268,11 +288,13 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   flex-direction: column;
   gap: 10px;
 }
-.sidebar-theme {
+.sidebar-utility {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 42px;
 }
+.database-toggle,
 .theme-toggle {
   width: 40px;
   height: 40px;
@@ -284,21 +306,67 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   display: grid;
   place-items: center;
   box-shadow: none;
+  position: relative;
+  text-decoration: none;
 }
+.database-toggle svg,
 .theme-toggle svg {
   width: 24px;
   height: 24px;
   display: block;
 }
+.database-toggle:hover,
 .theme-toggle:hover {
   background: var(--bg-2);
   border-color: var(--border);
+}
+.database-toggle.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: var(--accent);
+}
+.database-toggle .upload-notice {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #16a34a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 5px 14px rgba(22, 163, 74, .24);
+}
+.database-toggle .upload-notice[hidden] { display: none; }
+.database-toggle .upload-arrow {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  font-size: 15px;
+  line-height: 1;
+  color: #16a34a;
+  opacity: 0;
+  transform: translateY(9px);
+  pointer-events: none;
+}
+.database-toggle.uploading .upload-arrow {
+  animation: uploadArrowRise .72s linear infinite;
 }
 .theme-toggle[aria-pressed="false"] {
   color: #0f172a;
 }
 :root[data-theme="dark"] .theme-toggle[aria-pressed="true"] {
   color: #f8fafc;
+}
+@keyframes uploadArrowRise {
+  0% { opacity: 0; transform: translateY(10px); }
+  20% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-22px); }
 }
 .sidebar-bottom {
   margin-top: 0;
@@ -872,6 +940,32 @@ button.primary {
   border-color: var(--accent);
 }
 button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.button-like {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.button-like:hover {
+  background: var(--bg-2);
+  border-color: #c4ccd9;
+  text-decoration: none;
+}
+.button-like.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.button-like.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 button.danger {
   background: var(--surface);
@@ -1701,6 +1795,27 @@ tr.filter-row input {
   letter-spacing: 0.04em;
 }
 .modal input, .modal textarea, .modal select { width: 100%; }
+.modal .role-checks {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+.modal label.role-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.modal label.role-check input[type="checkbox"] { width: auto; }
 .modal label.modal-checkbox {
   display: inline-flex;
   align-items: center;
@@ -1725,6 +1840,276 @@ tr.filter-row input {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ============================================================
+   Allokering / lagerkontor
+   ============================================================ */
+
+.allocation-page {
+  max-width: none;
+}
+.allocation-panel,
+.allocation-upload-prompt {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-1);
+  padding: 18px;
+  margin: 16px 0;
+}
+.allocation-panel.drag-over,
+.allocation-upload-prompt.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow-1);
+}
+.allocation-panel-head,
+.allocation-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.allocation-panel-head h2,
+.allocation-table-head h3,
+.allocation-action-group h3,
+.allocation-action-card h4 {
+  margin: 0;
+}
+.allocation-panel-head > div,
+.allocation-table-head > div,
+.allocation-run-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.allocation-muted,
+.allocation-status {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.allocation-status {
+  margin: 8px 0 12px;
+}
+.allocation-file-grid {
+  display: grid;
+  gap: 10px;
+}
+.allocation-file-grid.compact {
+  margin-bottom: 14px;
+}
+.allocation-file-slot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 12px 14px;
+}
+.allocation-file-slot.filled {
+  background: color-mix(in srgb, #16a34a 7%, var(--surface));
+}
+.allocation-file-slot h3 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+.allocation-file-slot p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.allocation-file-slot p span {
+  color: var(--text-soft);
+  margin-left: 6px;
+}
+.allocation-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.allocation-file-badge,
+.allocation-file-tag {
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg-2);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.allocation-file-slot.filled .allocation-file-badge,
+.allocation-file-tag.ok {
+  background: color-mix(in srgb, #16a34a 16%, var(--surface));
+  color: #15803d;
+}
+.allocation-file-tag.missing {
+  background: color-mix(in srgb, #ef4444 12%, var(--surface));
+  color: var(--danger);
+}
+.allocation-file-tag.optional {
+  background: color-mix(in srgb, #64748b 12%, var(--surface));
+}
+.allocation-flow-files {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+.allocation-flow-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.allocation-flow-file > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.allocation-upload-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.allocation-action-group {
+  margin-top: 18px;
+}
+.allocation-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.allocation-action-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 14px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.allocation-action-card.ready {
+  border-color: color-mix(in srgb, #16a34a 32%, var(--border));
+}
+.allocation-action-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.allocation-action-card button {
+  margin-top: auto;
+  justify-content: center;
+}
+.allocation-action-card button:disabled,
+.allocation-run-row button:disabled {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--text-soft);
+  cursor: not-allowed;
+}
+.allocation-fields {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+}
+.allocation-fields label span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.allocation-fields input,
+.allocation-fields textarea {
+  width: 100%;
+}
+.allocation-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.allocation-summary div {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px;
+  background: var(--bg);
+}
+.allocation-summary span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.allocation-summary strong {
+  font-size: 18px;
+}
+.allocation-table-block {
+  margin-top: 18px;
+}
+.allocation-table-head h3 span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.allocation-table-wrap {
+  max-height: 430px;
+}
+.allocation-text-result,
+.allocation-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  white-space: pre-wrap;
+  color: var(--text);
+  overflow: auto;
+}
+.allocation-log {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .allocation-panel,
+  .allocation-upload-prompt {
+    padding: 14px;
+  }
+  .allocation-panel-head,
+  .allocation-table-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .allocation-panel-head > div,
+  .allocation-table-head > div {
+    width: 100%;
+  }
+  .allocation-file-slot {
+    grid-template-columns: 1fr;
+  }
+  .allocation-file-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .allocation-flow-file {
+    grid-template-columns: 1fr;
+  }
+  .allocation-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

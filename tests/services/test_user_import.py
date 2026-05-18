@@ -24,7 +24,7 @@ def test_build_user_import_template_excel_has_expected_headers():
     assert [sheet["A1"].value, sheet["B1"].value, sheet["C1"].value, sheet["D1"].value] == [
         "anv\u00e4ndarnamn",
         "namn",
-        "roll",
+        "roller",
         "avdelning",
     ]
 
@@ -36,17 +36,35 @@ def test_parse_user_import_excel_accepts_template_headers_and_swedish_roles():
             ["anna", "Anna Andersson", "arbetsledare", ""],
             ["bo", "Bo Berg", "administrat\u00f6r", "GG"],
             ["viola", "Viola Visning", "visning", "Mestergruppen"],
+            ["lina", "Lina Lager", "lagerkontorist", ""],
+            ["arvid", "Arvid Artikel", "artikelplacerare", ""],
         ]
     )
 
     rows, errors = parse_user_import_excel(content)
 
     assert errors == []
-    assert [(row.username, row.display_name, row.role, row.area_name) for row in rows] == [
-        ("anna", "Anna Andersson", "leader", None),
-        ("bo", "Bo Berg", "admin", "GG"),
-        ("viola", "Viola Visning", "viewer", "Mestergruppen"),
+    assert [(row.username, row.display_name, row.roles, row.area_name) for row in rows] == [
+        ("anna", "Anna Andersson", ["leader"], None),
+        ("bo", "Bo Berg", ["admin"], "GG"),
+        ("viola", "Viola Visning", ["viewer"], "Mestergruppen"),
+        ("lina", "Lina Lager", ["warehouse_clerk"], None),
+        ("arvid", "Arvid Artikel", ["article_placer"], None),
     ]
+
+
+def test_parse_user_import_excel_accepts_multiple_roles_in_one_cell():
+    content = workbook_bytes(
+        [
+            ["username", "name", "roles"],
+            ["mira", "Mira Multi", "admin, arbetsledare"],
+        ]
+    )
+
+    rows, errors = parse_user_import_excel(content)
+
+    assert errors == []
+    assert rows[0].roles == ["admin", "leader"]
 
 
 def test_parse_user_import_excel_collects_row_errors():

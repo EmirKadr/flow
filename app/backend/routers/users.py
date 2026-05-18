@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -17,7 +17,7 @@ from ..deps import get_db, require_admin, require_super_user
 from ..models import Area, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserUpdate
 from ..security import hash_password
-from ..user_access import ADMIN_ROLES, user_admin_out
+from ..user_access import can_admin, normalize_user_roles, primary_role, user_admin_out, user_roles
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -33,7 +33,9 @@ HEADER_ALIASES = {
     "visningsnamn": "display_name",
     "displayname": "display_name",
     "roll": "role",
+    "roller": "role",
     "role": "role",
+    "roles": "role",
     "avdelning": "area",
     "omrade": "area",
     "område": "area",
@@ -47,12 +49,21 @@ ROLE_ALIASES = {
     "arbetsledare": "leader",
     "ledare": "leader",
     "leader": "leader",
+    "lagerkontorist": "warehouse_clerk",
+    "lager": "warehouse_clerk",
+    "warehouseclerk": "warehouse_clerk",
+    "warehouse": "warehouse_clerk",
+    "artikelplacerare": "article_placer",
+    "artikelplacering": "article_placer",
+    "articleplacer": "article_placer",
+    "articleplacement": "article_placer",
     "visning": "viewer",
     "visningslage": "viewer",
     "lasare": "viewer",
     "läsare": "viewer",
     "viewer": "viewer",
 }
+ROLE_SPLIT_CHARS = ",;/+&"
 
 
 @dataclass(frozen=True)
@@ -60,7 +71,7 @@ class ImportUserRow:
     row_number: int
     username: str
     display_name: str | None
-    role: str
+    roles: list[str]
     area_name: str | None = None
 
 
@@ -72,18 +83,20 @@ def _find_username_conflict(db: Session, username: str, *, exclude_user_id: int 
 
 
 def _active_admin_count(db: Session, *, exclude_user_id: int | None = None) -> int:
-    query = db.query(func.count(User.id)).filter(User.role.in_(tuple(ADMIN_ROLES)), User.is_active.is_(True))
+    query = db.query(User).filter(User.is_active.is_(True))
     if exclude_user_id is not None:
         query = query.filter(User.id != exclude_user_id)
-    return int(query.scalar() or 0)
+    return sum(1 for user in query.all() if can_admin(user))
 
 
 def _user_snapshot(user: User) -> dict:
+    roles = user_roles(user)
     return {
         "id": user.id,
         "username": user.username,
         "display_name": user.display_name,
-        "role": user.role,
+        "role": primary_role(roles),
+        "roles": roles,
         "area_id": user.area_id,
         "is_active": user.is_active,
         "must_change_password": bool(user.must_change_password or user.password_hash is None),
@@ -127,6 +140,18 @@ def _normalize_role(value: str) -> str | None:
     return ROLE_ALIASES.get(_compact_key(value))
 
 
+def _normalize_roles(value: str) -> list[str] | None:
+    normalized_value = value or ""
+    for char in ROLE_SPLIT_CHARS:
+        normalized_value = normalized_value.replace(char, ",")
+    roles: list[str] = []
+    for part in normalized_value.split(","):
+        role = _normalize_role(part)
+        if role and role not in roles:
+            roles.append(role)
+    return roles or None
+
+
 def _area_lookup(db: Session) -> dict[str, Area]:
     lookup: dict[str, Area] = {}
     for area in db.query(Area).all():
@@ -148,7 +173,7 @@ def build_user_import_template_excel() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Användare"
-    sheet.append(["användarnamn", "namn", "roll", "avdelning"])
+    sheet.append(["användarnamn", "namn", "roller", "avdelning"])
     sheet.column_dimensions["A"].width = 24
     sheet.column_dimensions["B"].width = 28
     sheet.column_dimensions["C"].width = 18
@@ -200,13 +225,13 @@ def parse_user_import_excel(content: bytes) -> tuple[list[ImportUserRow], list[U
             errors.append(UserImportError(row=row_number, username=username, error="Namn får vara max 100 tecken"))
             continue
 
-        role = _normalize_role(role_value)
-        if role is None:
+        roles = _normalize_roles(role_value)
+        if roles is None:
             errors.append(
                 UserImportError(
                     row=row_number,
                     username=username,
-                    error="Roll måste vara admin, arbetsledare eller visning",
+                    error="Roll måste vara admin, arbetsledare, lagerkontorist, artikelplacerare eller visning. Flera roller kan separeras med komma.",
                 )
             )
             continue
@@ -215,7 +240,7 @@ def parse_user_import_excel(content: bytes) -> tuple[list[ImportUserRow], list[U
             row_number=row_number,
             username=username,
             display_name=display_name,
-            role=role,
+            roles=roles,
             area_name=area_name,
         ))
 
@@ -227,11 +252,12 @@ def list_users(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
-) -> list[User]:
+) -> list[UserAdminOut]:
     query = db.query(User)
     if not include_inactive:
         query = query.filter(User.is_active.is_(True))
-    users = query.order_by(case((User.role.in_(tuple(ADMIN_ROLES)), 0), else_=1), User.username.asc()).all()
+    users = query.order_by(User.username.asc()).all()
+    users.sort(key=lambda user: (0 if can_admin(user) else 1, user.username.lower()))
     return [user_admin_out(user) for user in users]
 
 
@@ -281,7 +307,8 @@ async def import_users(
             username=row.username,
             password_hash=None,
             display_name=row.display_name,
-            role=row.role,
+            role=primary_role(row.roles),
+            roles=row.roles,
             area_id=area_id,
             is_active=True,
             must_change_password=True,
@@ -313,12 +340,14 @@ def create_user(
     if _find_username_conflict(db, payload.username):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Användarnamnet används redan")
     _validate_area_id(db, payload.area_id)
+    roles = normalize_user_roles(payload.roles, payload.role)
 
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password) if payload.password else None,
         display_name=payload.display_name,
-        role=payload.role,
+        role=primary_role(roles),
+        roles=roles,
         area_id=payload.area_id,
         is_active=payload.is_active,
         must_change_password=payload.password is None,
@@ -357,9 +386,13 @@ def update_user(
     if payload.area_id is not None:
         _validate_area_id(db, payload.area_id)
 
-    new_role = payload.role if payload.role is not None else user.role
+    current_roles = user_roles(user)
+    if payload.roles is not None or payload.role is not None:
+        new_roles = normalize_user_roles(payload.roles, payload.role or primary_role(current_roles))
+    else:
+        new_roles = current_roles
     new_is_active = payload.is_active if payload.is_active is not None else user.is_active
-    removes_admin_access = user.role == "admin" and (new_role != "admin" or not new_is_active)
+    removes_admin_access = can_admin(user) and (not can_admin(User(role=primary_role(new_roles), roles=new_roles)) or not new_is_active)
     if removes_admin_access and _active_admin_count(db, exclude_user_id=user.id) == 0:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -367,9 +400,12 @@ def update_user(
         )
 
     before = _user_snapshot(user)
-    updates = payload.model_dump(exclude_unset=True, exclude={"password"})
+    updates = payload.model_dump(exclude_unset=True, exclude={"password", "role", "roles"})
     for key, value in updates.items():
         setattr(user, key, value)
+    if payload.roles is not None or payload.role is not None:
+        user.roles = new_roles
+        user.role = primary_role(new_roles)
     if payload.password is not None:
         user.password_hash = hash_password(payload.password)
         user.must_change_password = False

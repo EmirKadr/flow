@@ -33,6 +33,7 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     display_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="leader")
+    roles: Mapped[list[str] | None] = mapped_column(JsonField)
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

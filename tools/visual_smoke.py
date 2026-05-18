@@ -60,6 +60,7 @@ TEST_USERS: dict[str, tuple[str, str]] = {
     "admin": ("admin", "admin123"),
     "leader": ("visual_leader", VISUAL_PASSWORD),
     "viewer": ("visual_viewer", VISUAL_PASSWORD),
+    "warehouse": ("visual_lager", VISUAL_PASSWORD),
 }
 
 PAGES: tuple[VisualPage, ...] = (
@@ -71,6 +72,10 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("stallen", "/stallen.html", "#acts-body", ("admin", "leader")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
     VisualPage("anvandare", "/anvandare.html", "#users-body", ("admin",)),
+    VisualPage("uppladdningar", "/uppladdningar.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
+    VisualPage("bearbeta", "/bearbeta.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
+    VisualPage("dela", "/dela.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
+    VisualPage("harleda", "/harleda.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
 )
 
 STATES: tuple[VisualState, ...] = (
@@ -100,6 +105,8 @@ STATES: tuple[VisualState, ...] = (
     VisualState("leader-nekad-anvandare", "/anvandare.html", "#scheduleTable", "noop", ("leader",)),
     VisualState("leader-nekad-historik", "/historik.html", "#scheduleTable", "noop", ("leader",)),
     VisualState("leader-nekad-produktivitet", "/produktivitet.html", "#scheduleTable", "noop", ("leader",)),
+    VisualState("leader-nekad-uppladdningar", "/uppladdningar.html", "#scheduleTable", "noop", ("leader",)),
+    VisualState("viewer-nekad-uppladdningar", "/uppladdningar.html", "#scheduleTable", "noop", ("viewer",)),
 )
 
 
@@ -401,7 +408,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--roles",
         default="public,admin,leader,viewer",
-        help="Comma-separated roles to capture: public, admin, leader, viewer.",
+        help="Comma-separated roles to capture: public, admin, leader, viewer, warehouse.",
     )
     parser.add_argument("--headful", action="store_true", help="Show the browser while capturing screenshots.")
     parser.add_argument(

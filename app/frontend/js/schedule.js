@@ -341,6 +341,7 @@ function currentSegment(personId, hour, minuteStart, minuteEnd) {
 }
 
 function currentUserCanBypassCellLock() {
+  if (typeof isAdminUser === "function") return isAdminUser(state.currentUser);
   return state.currentUser?.role === "admin" || state.currentUser?.is_super_user;
 }
 
