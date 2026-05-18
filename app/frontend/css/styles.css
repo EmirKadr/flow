@@ -312,7 +312,7 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   background: var(--surface);
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 500;
   cursor: pointer;
   box-shadow: none;
   display: grid;
