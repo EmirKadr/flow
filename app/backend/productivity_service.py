@@ -340,6 +340,26 @@ def source_files_from_session_logs(
     return files
 
 
+def read_productivity_targets(reference_dir: Path | str | None = None) -> dict[str, Any]:
+    path = find_kpi_file(reference_dir)
+    rows = _read_csv(path)
+    targets = _parse_kpi_rows(rows)
+    return {
+        "source": _source_payload(SOURCE_SPEC_BY_KEY["kpi"], path, len(rows)),
+        "targets": [
+            {
+                "company": company,
+                "process": process,
+                "description": values.get("description", ""),
+                "rader": values.get("rader", 0),
+                "kollin": values.get("kollin", 0),
+                "pallar": values.get("pallar", 0),
+            }
+            for (company, process), values in sorted(targets.items())
+        ],
+    }
+
+
 def _get(row: dict[str, str], *names: str) -> str:
     for name in names:
         value = row.get(name)

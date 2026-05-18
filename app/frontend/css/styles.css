@@ -129,6 +129,11 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .app.sidebar-collapsed {
   grid-template-columns: 64px 1fr;
 }
+.app.sidebar-initializing,
+.app.sidebar-initializing .sidebar,
+.app.sidebar-initializing .sidebar * {
+  transition: none !important;
+}
 
 .sidebar {
   position: sticky;

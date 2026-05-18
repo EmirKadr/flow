@@ -1,6 +1,7 @@
 // Delade hjälpare: navbar, toast, auth-check.
 
 const THEME_STORAGE_KEY = "bemanning-theme";
+const SIDEBAR_USER_CACHE_KEY = "bemanning-sidebar-user";
 
 const THEME_ICONS = {
   light: `
@@ -105,8 +106,57 @@ function canEditPlanning(user) {
   return !isReadOnlyUser(user);
 }
 
+function sidebarUserSnapshot(user) {
+  if (!user) return null;
+  return {
+    username: user.username || "",
+    display_name: user.display_name || "",
+    role: user.role || "",
+    is_super_user: Boolean(user.is_super_user),
+    must_change_password: Boolean(user.must_change_password),
+  };
+}
+
+function cacheSidebarUser(user) {
+  try {
+    const snapshot = sidebarUserSnapshot(user);
+    if (snapshot) sessionStorage.setItem(SIDEBAR_USER_CACHE_KEY, JSON.stringify(snapshot));
+  } catch (e) {}
+}
+
+function readCachedSidebarUser() {
+  try {
+    const raw = sessionStorage.getItem(SIDEBAR_USER_CACHE_KEY);
+    if (!raw) return null;
+    const user = JSON.parse(raw);
+    return user?.username || user?.display_name ? user : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearCachedSidebarUser() {
+  try { sessionStorage.removeItem(SIDEBAR_USER_CACHE_KEY); } catch (e) {}
+}
+
+function cachedUserCanRenderPage(user, options = {}) {
+  if (!user || user.must_change_password) return false;
+  if (options.requireAdmin && user.role !== "admin" && !user.is_super_user) return false;
+  if (options.requireSuperUser && !user.is_super_user) return false;
+  if (options.requireEditor && !canEditPlanning(user)) return false;
+  return true;
+}
+
+function finishSidebarInitialRender(app) {
+  if (!app?.classList.contains("sidebar-initializing")) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => app.classList.remove("sidebar-initializing"));
+  });
+}
+
 function renderSidebar(user, activePage) {
   let sidebar = document.querySelector(".sidebar");
+  let app = document.querySelector(".app");
   if (!sidebar) {
     const body = document.body;
     const topbar = document.querySelector(".topbar");
@@ -122,8 +172,9 @@ function renderSidebar(user, activePage) {
     sidebar = document.createElement("aside");
     sidebar.className = "sidebar";
 
-    const app = document.createElement("div");
+    app = document.createElement("div");
     app.className = "app";
+    app.classList.add("sidebar-initializing");
     app.appendChild(sidebar);
     app.appendChild(main);
     body.insertBefore(app, body.firstChild);
@@ -181,13 +232,14 @@ function renderSidebar(user, activePage) {
     logout.addEventListener("click", async (e) => {
       e.preventDefault();
       await api.post("/api/auth/logout");
+      clearCachedSidebarUser();
       window.location.href = "/login.html";
     });
   }
 
   // Toggle collapsed state – hamburger fortsätter rotera åt samma håll vid varje klick
   const toggleBtn = document.getElementById("sidebar-toggle");
-  const app = document.querySelector(".app");
+  app = app || document.querySelector(".app");
   let togglerRotation = 0;
   const svgIcon = toggleBtn?.querySelector("svg");
 
@@ -215,6 +267,7 @@ function renderSidebar(user, activePage) {
       setCollapsed(true, false);
     }
   } catch (e) {}
+  finishSidebarInitialRender(app);
 }
 
 // Bakåtkompatibilitet
@@ -223,8 +276,14 @@ function renderTopbar(user, activePage) {
 }
 
 async function initPage(activePage, options = {}) {
+  const cachedUser = readCachedSidebarUser();
+  if (cachedUserCanRenderPage(cachedUser, options)) {
+    renderSidebar(cachedUser, activePage);
+  }
+
   const user = await loadCurrentUser();
   if (!user) {
+    clearCachedSidebarUser();
     window.location.href = "/login.html";
     return null;
   }
@@ -247,6 +306,7 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/index.html";
     return null;
   }
+  cacheSidebarUser(user);
   renderSidebar(user, activePage);
   flushQueuedToast();
   return user;

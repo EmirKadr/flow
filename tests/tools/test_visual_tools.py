@@ -201,12 +201,18 @@ def test_frontend_theme_toggle_is_wired_globally():
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
 
     assert "bemanning-theme" in common
+    assert "bemanning-sidebar-user" in common
+    assert "readCachedSidebarUser" in common
+    assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
     assert "THEME_ICONS" in common
     assert ':root[data-theme="dark"]' in styles
     assert ".theme-toggle" in styles
+    assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
     assert "/api/productivity/files/raw" in productivity
+    assert "productivityLocalFiles" in productivity
+    assert "buildProductivityReportFromLocalDataset" in productivity
     assert "prefetchAdjacentReports" in productivity
     assert "refreshProductivityBtn" not in productivity_html
 

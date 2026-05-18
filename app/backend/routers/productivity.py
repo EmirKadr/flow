@@ -15,6 +15,7 @@ from ..productivity_service import (
     classify_productivity_file,
     clear_productivity_cache,
     clear_productivity_file,
+    read_productivity_targets,
     save_productivity_file,
     source_files_from_session_logs,
 )
@@ -148,6 +149,24 @@ def get_productivity_files(
     _: User = Depends(require_super_user),
 ) -> dict:
     return build_productivity_session_file_status(_session_log_files(request))
+
+
+@router.get("/targets")
+def get_productivity_targets(
+    _: User = Depends(require_super_user),
+) -> dict:
+    try:
+        return read_productivity_targets()
+    except ProductivitySourceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Kunde inte l\u00e4sa KPI-m\u00e5l: {exc}",
+        ) from exc
 
 
 @router.post("/files")

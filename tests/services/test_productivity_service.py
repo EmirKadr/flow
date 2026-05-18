@@ -5,6 +5,7 @@ from app.backend.productivity_service import (
     build_productivity_report,
     build_productivity_session_file_status,
     classify_productivity_file,
+    read_productivity_targets,
     save_productivity_file,
     source_files_from_session_logs,
 )
@@ -48,6 +49,30 @@ def test_productivity_file_detection_accepts_hidden_kpi_target():
     sample = "Bolag\tLager\tFlödesnamn\tProcessnamn\tBeskrivning\tRader\tKollin\n".encode()
 
     assert classify_productivity_file("nytt-mal.csv", sample) == "kpi"
+
+
+def test_productivity_targets_are_serializable(tmp_path):
+    write(
+        tmp_path / "v_ask_kpi_target-20260518080915.csv",
+        """
+Bolag\tLager\tFlÃ¶desnamn\tProcessnamn\tBeskrivning\tRader\tKollin\tPallar
+GG\t404\tOUTBOUND\tManual_Pick\tManuellt plock\t10\t0\t0
+""",
+    )
+
+    targets = read_productivity_targets(tmp_path)
+
+    assert targets["source"]["name"].startswith("v_ask_kpi_target")
+    assert targets["targets"] == [
+        {
+            "company": "GG",
+            "process": "MANUAL_PICK",
+            "description": "Manuellt plock",
+            "rader": 10,
+            "kollin": 0,
+            "pallar": 0,
+        }
+    ]
 
 
 def test_productivity_session_status_uses_local_logs_and_permanent_kpi(tmp_path):
