@@ -54,6 +54,13 @@ const api = {
     request(path, { ...options, method: "POST", body: JSON.stringify(data) }),
   postForm: (path, formData, options = {}) =>
     request(path, { ...options, method: "POST", body: formData }),
+  postFile: (path, file, options = {}) => {
+    const headers = {
+      "Content-Type": file?.type || "application/octet-stream",
+      ...(options.headers || {}),
+    };
+    return request(path, { ...options, method: "POST", headers, body: file });
+  },
   put: (path, data, options = {}) =>
     request(path, { ...options, method: "PUT", body: JSON.stringify(data) }),
   del: (path, options = {}) => request(path, { ...options, method: "DELETE" }),

@@ -2,7 +2,7 @@ from datetime import date
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
 from ..deps import require_super_user
 from ..models import User
@@ -33,6 +33,40 @@ async def _save_upload_temp(upload: UploadFile) -> tuple[Path, bytes]:
     return Path(tmp.name), sample
 
 
+async def _save_raw_upload_temp(request: Request, filename: str | None) -> tuple[Path, bytes]:
+    suffix = Path(filename or "").suffix or ".csv"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    sample = b""
+    try:
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            if len(sample) < 8192:
+                sample += chunk[: 8192 - len(sample)]
+            tmp.write(chunk)
+    finally:
+        tmp.close()
+    return Path(tmp.name), sample
+
+
+def _save_classified_productivity_file(
+    *,
+    temp_path: Path,
+    filename: str | None,
+    sample: bytes,
+) -> tuple[list[dict], list[str]]:
+    file_type = classify_productivity_file(filename, sample)
+    if file_type is None:
+        return [], [filename or "okänd fil"]
+    return [
+        save_productivity_file(
+            source_path=temp_path,
+            filename=filename,
+            file_type=file_type,
+        )
+    ], []
+
+
 @router.get("/files")
 def get_productivity_files(_: User = Depends(require_super_user)) -> dict:
     return build_productivity_file_status()
@@ -51,19 +85,38 @@ async def upload_productivity_files(
     for upload in files:
         temp_path, sample = await _save_upload_temp(upload)
         try:
-            file_type = classify_productivity_file(upload.filename, sample)
-            if file_type is None:
-                unknown.append(upload.filename or "okänd fil")
-                continue
-            saved.append(
-                save_productivity_file(
-                    source_path=temp_path,
-                    filename=upload.filename,
-                    file_type=file_type,
-                )
+            saved_items, unknown_items = _save_classified_productivity_file(
+                temp_path=temp_path,
+                filename=upload.filename,
+                sample=sample,
             )
+            saved.extend(saved_items)
+            unknown.extend(unknown_items)
         finally:
             temp_path.unlink(missing_ok=True)
+
+    return {
+        "saved": saved,
+        "unknown": unknown,
+        "status": build_productivity_file_status(),
+    }
+
+
+@router.post("/files/raw")
+async def upload_productivity_file_raw(
+    request: Request,
+    filename: str = Query(default=""),
+    _: User = Depends(require_super_user),
+) -> dict:
+    temp_path, sample = await _save_raw_upload_temp(request, filename)
+    try:
+        saved, unknown = _save_classified_productivity_file(
+            temp_path=temp_path,
+            filename=filename,
+            sample=sample,
+        )
+    finally:
+        temp_path.unlink(missing_ok=True)
 
     return {
         "saved": saved,

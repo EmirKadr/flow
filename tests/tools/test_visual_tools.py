@@ -196,12 +196,16 @@ def test_frontend_theme_toggle_is_wired_globally():
     frontend = ROOT / "app" / "frontend"
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+    api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
+    productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
 
     assert "bemanning-theme" in common
     assert "id=\"theme-toggle\"" in common
     assert "THEME_ICONS" in common
     assert ':root[data-theme="dark"]' in styles
     assert ".theme-toggle" in styles
+    assert "postFile" in api_js
+    assert "/api/productivity/files/raw" in productivity
 
     for html_path in frontend.glob("*.html"):
         html = html_path.read_text(encoding="utf-8")

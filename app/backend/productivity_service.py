@@ -671,7 +671,6 @@ def _section_specs() -> tuple[SectionSpec, ...]:
 def _add_section_event(
     *,
     event: dict[str, Any],
-    event_date: date,
     sections: list[SectionSpec],
     section_buckets: Any,
 ) -> None:
@@ -684,7 +683,7 @@ def _add_section_event(
     user = str(event["user"])
     for spec in sections:
         if spec.predicate(event):
-            section_buckets[spec.id][event_date][user][hour] += 1
+            section_buckets[spec.id][user][hour] += 1
 
 
 def _rows_from_buckets(
@@ -815,15 +814,6 @@ def build_productivity_report(
     for spec in section_specs:
         sections_by_source[spec.source].append(spec)
 
-    section_buckets = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    )
-    pick_totals_by_date: dict[date, dict[str, dict[str, float]]] = defaultdict(
-        lambda: defaultdict(lambda: {"kolli": 0.0, "vikt": 0.0})
-    )
-    trans_totals_by_date: dict[date, dict[str, dict[str, float]]] = defaultdict(
-        lambda: defaultdict(lambda: {"antal": 0.0})
-    )
     dates_seen: set[date] = set()
     raw_counts = {
         "pick": 0,
@@ -834,56 +824,21 @@ def build_productivity_report(
 
     for lookup, values in _iter_csv_values(files["pick"]):
         raw_counts["pick"] += 1
-        event = _parse_pick_values(values, lookup)
-        if event is None:
-            continue
-        event_date = _event_date(event)
-        if event_date is None:
-            continue
-        dates_seen.add(event_date)
-        user = str(event["user"])
-        pick_totals_by_date[event_date][user]["kolli"] += float(event.get("kolli") or 0)
-        pick_totals_by_date[event_date][user]["vikt"] += float(event.get("vikt") or 0)
-        _add_section_event(
-            event=event,
-            event_date=event_date,
-            sections=sections_by_source["pick"],
-            section_buckets=section_buckets,
-        )
+        timestamp = _timestamp(_cell(values, lookup, "Ändrad", "Andrad"))
+        if timestamp is not None:
+            dates_seen.add(timestamp.date())
 
     for lookup, values in _iter_csv_values(files["trans"]):
         raw_counts["trans"] += 1
-        event = _parse_trans_values(values, lookup)
-        if event is None:
-            continue
-        event_date = _event_date(event)
-        if event_date is None:
-            continue
-        dates_seen.add(event_date)
-        user = str(event["user"])
-        trans_totals_by_date[event_date][user]["antal"] += float(event.get("antal") or 0)
-        _add_section_event(
-            event=event,
-            event_date=event_date,
-            sections=sections_by_source["trans"],
-            section_buckets=section_buckets,
-        )
+        timestamp = _timestamp(_cell(values, lookup, "Timestamp"))
+        if timestamp is not None:
+            dates_seen.add(timestamp.date())
 
     for lookup, values in _iter_csv_values(files["pallet"]):
         raw_counts["pallet"] += 1
-        event = _parse_pallet_values(values, lookup)
-        if event is None:
-            continue
-        event_date = _event_date(event)
-        if event_date is None:
-            continue
-        dates_seen.add(event_date)
-        _add_section_event(
-            event=event,
-            event_date=event_date,
-            sections=sections_by_source["pallet"],
-            section_buckets=section_buckets,
-        )
+        timestamp = _timestamp(_cell(values, lookup, "Ändrad", "Andrad"))
+        if timestamp is not None:
+            dates_seen.add(timestamp.date())
 
     dates = sorted(dates_seen)
     if not dates:
@@ -891,11 +846,49 @@ def build_productivity_report(
     selected_date = requested_date or dates[-1]
     if selected_date not in dates:
         raise ProductivitySourceError(f"Saknar produktivitetsdata för {selected_date.isoformat()}")
-    pick_totals = pick_totals_by_date.get(selected_date, {})
-    trans_totals = trans_totals_by_date.get(selected_date, {})
     key = _cache_key(files, selected_date)
     if key in _REPORT_CACHE:
         return _REPORT_CACHE[key]
+
+    section_buckets = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    pick_totals: dict[str, dict[str, float]] = defaultdict(lambda: {"kolli": 0.0, "vikt": 0.0})
+    trans_totals: dict[str, dict[str, float]] = defaultdict(lambda: {"antal": 0.0})
+
+    for lookup, values in _iter_csv_values(files["pick"]):
+        event = _parse_pick_values(values, lookup)
+        if event is None or _event_date(event) != selected_date:
+            continue
+        user = str(event["user"])
+        pick_totals[user]["kolli"] += float(event.get("kolli") or 0)
+        pick_totals[user]["vikt"] += float(event.get("vikt") or 0)
+        _add_section_event(
+            event=event,
+            sections=sections_by_source["pick"],
+            section_buckets=section_buckets,
+        )
+
+    for lookup, values in _iter_csv_values(files["trans"]):
+        event = _parse_trans_values(values, lookup)
+        if event is None or _event_date(event) != selected_date:
+            continue
+        user = str(event["user"])
+        trans_totals[user]["antal"] += float(event.get("antal") or 0)
+        _add_section_event(
+            event=event,
+            sections=sections_by_source["trans"],
+            section_buckets=section_buckets,
+        )
+
+    for lookup, values in _iter_csv_values(files["pallet"]):
+        event = _parse_pallet_values(values, lookup)
+        if event is None or _event_date(event) != selected_date:
+            continue
+        _add_section_event(
+            event=event,
+            sections=sections_by_source["pallet"],
+            section_buckets=section_buckets,
+        )
+
     sections_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
     section_count = 0
     total_rows = 0
@@ -905,7 +898,7 @@ def build_productivity_report(
     for spec in section_specs:
         rows = _rows_from_buckets(
             spec=spec,
-            buckets=section_buckets.get(spec.id, {}).get(selected_date, {}),
+            buckets=section_buckets.get(spec.id, {}),
             targets=targets,
             pick_totals=pick_totals,
             trans_totals=trans_totals,

@@ -146,6 +146,25 @@ async function loadProductivityFileStatus() {
   return status;
 }
 
+function setProductivityWaitingStatus(fileStatus) {
+  clearReportContent();
+  document.getElementById("productivityStatus").textContent = fileStatus?.ready
+    ? "Underlagen är uppladdade. Klicka Uppdatera för att beräkna produktivitet."
+    : "Saknar produktivitetsunderlag.";
+}
+
+async function initializeProductivityPage() {
+  const status = document.getElementById("productivityStatus");
+  status.textContent = "Kontrollerar underlag...";
+  try {
+    const fileStatus = await loadProductivityFileStatus();
+    setProductivityWaitingStatus(fileStatus);
+  } catch (error) {
+    status.textContent = error.message || "Kunde inte kontrollera underlag.";
+    showToast(status.textContent, "error", 7000);
+  }
+}
+
 function renderGroupFilter(report) {
   const select = document.getElementById("productivityGroupFilter");
   const current = select.value || "all";
@@ -287,21 +306,31 @@ async function uploadProductivityFiles(files) {
 
   const uploadStatus = document.getElementById("productivityUploadStatus");
   uploadStatus.textContent = "Laddar upp filer...";
-  const form = new FormData();
-  incoming.forEach((file) => form.append("files", file));
   try {
-    const result = await api.postForm("/api/productivity/files", form);
-    renderFileStatus(result.status);
-    const visibleSaved = (result.saved || []).filter((file) => file.visible !== false).length;
-    const hiddenSaved = (result.saved || []).filter((file) => file.visible === false).length;
+    const saved = [];
+    const unknown = [];
+    let latestStatus = null;
+    for (const [index, file] of incoming.entries()) {
+      uploadStatus.textContent = `Laddar upp ${index + 1}/${incoming.length}: ${file.name}`;
+      const result = await api.postFile(
+        `/api/productivity/files/raw?filename=${encodeURIComponent(file.name)}`,
+        file,
+      );
+      saved.push(...(result.saved || []));
+      unknown.push(...(result.unknown || []));
+      latestStatus = result.status;
+      renderFileStatus(result.status);
+    }
+
+    const visibleSaved = saved.filter((file) => file.visible !== false).length;
+    const hiddenSaved = saved.filter((file) => file.visible === false).length;
     const parts = [];
     if (visibleSaved) parts.push(`${visibleSaved} fil(er) uppladdade`);
     if (hiddenSaved) parts.push("KPI-mål uppdaterat i bakgrunden");
-    if (result.unknown?.length) parts.push(`Okänd filtyp: ${result.unknown.join(", ")}`);
+    if (unknown.length) parts.push(`Okänd filtyp: ${unknown.join(", ")}`);
     const message = parts.join(". ") || "Ingen fil uppdaterades.";
+    if (latestStatus) setProductivityWaitingStatus(latestStatus);
     uploadStatus.textContent = message;
-    await loadProductivity();
-    document.getElementById("productivityUploadStatus").textContent = message;
   } catch (error) {
     uploadStatus.textContent = error.message || "Kunde inte ladda upp filer.";
     showToast(uploadStatus.textContent, "error", 7000);
@@ -364,5 +393,5 @@ function setupUploadDropzone() {
   document.getElementById("productivityGroupFilter").addEventListener("change", renderContent);
   document.getElementById("productivitySearch").addEventListener("input", renderContent);
   setupUploadDropzone();
-  await loadProductivity();
+  await initializeProductivityPage();
 })();
