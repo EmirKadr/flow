@@ -99,6 +99,13 @@ def find_source_files(reference_dir: Path) -> dict[str, Path]:
     return {spec.key: _latest_file(reference_dir, spec.prefix) for spec in SOURCE_SPECS}
 
 
+def find_kpi_file(reference_dir: Path | str | None = None) -> Path:
+    target_dir = Path(reference_dir) if reference_dir is not None else default_reference_dir()
+    if not target_dir.exists():
+        raise ProductivitySourceError(f"Produktivitetsmappen finns inte: {target_dir}")
+    return _latest_file(target_dir, SOURCE_SPEC_BY_KEY["kpi"].prefix)
+
+
 def _try_find_file(reference_dir: Path, prefix: str) -> Path | None:
     try:
         return _latest_file(reference_dir, prefix)
@@ -286,6 +293,51 @@ def build_productivity_file_status(reference_dir: Path | str | None = None) -> d
         "missing": missing,
         "files": visible_files,
     }
+
+
+def build_productivity_session_file_status(
+    log_files: dict[str, Path],
+    reference_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    files = {
+        spec.key: _file_status_payload(
+            spec,
+            Path(log_files[spec.key]) if spec.key in log_files and Path(log_files[spec.key]).is_file() else None,
+        )
+        for spec in VISIBLE_SOURCE_SPECS
+    }
+    missing = [
+        item["key"]
+        for item in files.values()
+        if item["required"] and not item["uploaded"]
+    ]
+    kpi_path: Path | None = None
+    try:
+        kpi_path = find_kpi_file(reference_dir)
+    except ProductivitySourceError:
+        kpi_path = None
+    return {
+        "ready": not missing and kpi_path is not None,
+        "missing": missing,
+        "files": files,
+        "kpi_loaded": kpi_path is not None,
+    }
+
+
+def source_files_from_session_logs(
+    log_files: dict[str, Path],
+    reference_dir: Path | str | None = None,
+) -> dict[str, Path]:
+    missing = [
+        spec.label
+        for spec in VISIBLE_SOURCE_SPECS
+        if spec.key not in log_files or not Path(log_files[spec.key]).is_file()
+    ]
+    if missing:
+        raise ProductivitySourceError(f"Saknar produktivitetsunderlag: {', '.join(missing)}")
+    files = {key: Path(path) for key, path in log_files.items() if key in SOURCE_SPEC_BY_KEY}
+    files["kpi"] = find_kpi_file(reference_dir)
+    return files
 
 
 def _get(row: dict[str, str], *names: str) -> str:
@@ -801,6 +853,13 @@ def build_productivity_report(
 ) -> dict[str, Any]:
     base_dir = Path(reference_dir) if reference_dir is not None else default_reference_dir()
     files = find_source_files(base_dir)
+    return build_productivity_report_from_files(files, report_date=report_date)
+
+
+def build_productivity_report_from_files(
+    files: dict[str, Path],
+    report_date: date | str | None = None,
+) -> dict[str, Any]:
     requested_date = _parse_report_date(report_date)
     key = _cache_key(files, requested_date)
     if key in _REPORT_CACHE:

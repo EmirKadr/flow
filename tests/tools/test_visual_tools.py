@@ -198,6 +198,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
+    productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
 
     assert "bemanning-theme" in common
     assert "id=\"theme-toggle\"" in common
@@ -206,6 +207,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".theme-toggle" in styles
     assert "postFile" in api_js
     assert "/api/productivity/files/raw" in productivity
+    assert "prefetchAdjacentReports" in productivity
+    assert "refreshProductivityBtn" not in productivity_html
 
     for html_path in frontend.glob("*.html"):
         html = html_path.read_text(encoding="utf-8")

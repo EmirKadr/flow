@@ -3,8 +3,10 @@ from pathlib import Path
 from app.backend.productivity_service import (
     build_productivity_file_status,
     build_productivity_report,
+    build_productivity_session_file_status,
     classify_productivity_file,
     save_productivity_file,
+    source_files_from_session_logs,
 )
 
 
@@ -46,6 +48,37 @@ def test_productivity_file_detection_accepts_hidden_kpi_target():
     sample = "Bolag\tLager\tFlödesnamn\tProcessnamn\tBeskrivning\tRader\tKollin\n".encode()
 
     assert classify_productivity_file("nytt-mal.csv", sample) == "kpi"
+
+
+def test_productivity_session_status_uses_local_logs_and_permanent_kpi(tmp_path):
+    write(
+        tmp_path / "v_ask_kpi_target-20260518080915.csv",
+        "Bolag\tLager\tFlödesnamn\tProcessnamn\tBeskrivning\tRader\tKollin\tPallar",
+    )
+    log_files = {}
+
+    status = build_productivity_session_file_status(log_files, tmp_path)
+
+    assert status["ready"] is False
+    assert status["kpi_loaded"] is True
+    assert status["missing"] == ["pick", "trans", "pallet"]
+
+    for key, filename in (
+        ("pick", "local_pick.csv"),
+        ("trans", "local_trans.csv"),
+        ("pallet", "local_pallet.csv"),
+    ):
+        path = tmp_path / filename
+        write(path, "Kolumn\nvärde")
+        log_files[key] = path
+
+    status = build_productivity_session_file_status(log_files, tmp_path)
+    source_files = source_files_from_session_logs(log_files, tmp_path)
+
+    assert status["ready"] is True
+    assert status["missing"] == []
+    assert source_files["pick"] == log_files["pick"]
+    assert source_files["kpi"].name.startswith("v_ask_kpi_target")
 
 
 def test_productivity_report_groups_pick_trans_and_pallet_logs(tmp_path):

@@ -1,5 +1,7 @@
 let productivityReport = null;
 let productivityFileStatus = null;
+const productivityReportCache = new Map();
+const productivityReportRequests = new Map();
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -40,6 +42,20 @@ function formatTimestamp(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function addDays(isoDate, days) {
+  if (!isoDate) return "";
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (![year, month, day].every(Number.isFinite)) return "";
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function clearProductivityReportCache() {
+  productivityReportCache.clear();
+  productivityReportRequests.clear();
 }
 
 function metricClass(value) {
@@ -149,7 +165,7 @@ async function loadProductivityFileStatus() {
 function setProductivityWaitingStatus(fileStatus) {
   clearReportContent();
   document.getElementById("productivityStatus").textContent = fileStatus?.ready
-    ? "Underlagen är uppladdade. Klicka Uppdatera för att beräkna produktivitet."
+    ? "Underlagen är uppladdade. Beräknar produktivitet..."
     : "Saknar produktivitetsunderlag.";
 }
 
@@ -158,11 +174,69 @@ async function initializeProductivityPage() {
   status.textContent = "Kontrollerar underlag...";
   try {
     const fileStatus = await loadProductivityFileStatus();
-    setProductivityWaitingStatus(fileStatus);
+    if (fileStatus.ready) {
+      await loadProductivity();
+    } else {
+      setProductivityWaitingStatus(fileStatus);
+    }
   } catch (error) {
     status.textContent = error.message || "Kunde inte kontrollera underlag.";
     showToast(status.textContent, "error", 7000);
   }
+}
+
+function cacheReport(report) {
+  if (report?.date) productivityReportCache.set(report.date, report);
+  return report;
+}
+
+async function fetchProductivityReport(dateValue = "") {
+  const cacheKey = dateValue || "latest";
+  if (dateValue && productivityReportCache.has(dateValue)) {
+    return productivityReportCache.get(dateValue);
+  }
+  if (productivityReportRequests.has(cacheKey)) {
+    return productivityReportRequests.get(cacheKey);
+  }
+
+  const params = new URLSearchParams();
+  if (dateValue) params.set("date", dateValue);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const request = api.get(`/api/productivity${suffix}`)
+    .then((report) => {
+      cacheReport(report);
+      return report;
+    })
+    .finally(() => productivityReportRequests.delete(cacheKey));
+  productivityReportRequests.set(cacheKey, request);
+  return request;
+}
+
+function renderProductivityReport(report) {
+  productivityReport = report;
+  const dateInput = document.getElementById("productivityDate");
+  if (productivityReport.date) dateInput.value = productivityReport.date;
+  const dates = productivityReport.available_dates || [];
+  if (dates.length) {
+    dateInput.min = dates[0];
+    dateInput.max = dates[dates.length - 1];
+  }
+  renderGroupFilter(productivityReport);
+  renderSummary(productivityReport);
+  renderSources(productivityReport);
+  renderContent();
+  document.getElementById("productivityStatus").textContent =
+    `${productivityReport.date} · uppdaterad ${formatTimestamp(productivityReport.generated_at)}`;
+}
+
+function prefetchAdjacentReports(report) {
+  const dates = new Set(report?.available_dates || []);
+  const selected = report?.date || "";
+  [addDays(selected, -1), addDays(selected, 1)]
+    .filter((dateValue) => dateValue && dates.has(dateValue) && !productivityReportCache.has(dateValue))
+    .forEach((dateValue) => {
+      fetchProductivityReport(dateValue).catch(() => {});
+    });
 }
 
 function renderGroupFilter(report) {
@@ -275,21 +349,9 @@ async function loadProductivity() {
       return;
     }
     status.textContent = "Läser produktivitet...";
-    const params = new URLSearchParams();
-    if (dateInput.value) params.set("date", dateInput.value);
-    const suffix = params.toString() ? `?${params.toString()}` : "";
-    productivityReport = await api.get(`/api/productivity${suffix}`);
-    if (productivityReport.date) dateInput.value = productivityReport.date;
-    const dates = productivityReport.available_dates || [];
-    if (dates.length) {
-      dateInput.min = dates[0];
-      dateInput.max = dates[dates.length - 1];
-    }
-    renderGroupFilter(productivityReport);
-    renderSummary(productivityReport);
-    renderSources(productivityReport);
-    renderContent();
-    status.textContent = `${productivityReport.date} · uppdaterad ${formatTimestamp(productivityReport.generated_at)}`;
+    const report = await fetchProductivityReport(dateInput.value);
+    renderProductivityReport(report);
+    prefetchAdjacentReports(report);
   } catch (error) {
     productivityReport = null;
     document.getElementById("productivitySummary").innerHTML = "";
@@ -329,7 +391,13 @@ async function uploadProductivityFiles(files) {
     if (hiddenSaved) parts.push("KPI-mål uppdaterat i bakgrunden");
     if (unknown.length) parts.push(`Okänd filtyp: ${unknown.join(", ")}`);
     const message = parts.join(". ") || "Ingen fil uppdaterades.";
-    if (latestStatus) setProductivityWaitingStatus(latestStatus);
+    if (saved.length) clearProductivityReportCache();
+    if (latestStatus?.ready) {
+      uploadStatus.textContent = message;
+      await loadProductivity();
+    } else if (latestStatus) {
+      setProductivityWaitingStatus(latestStatus);
+    }
     uploadStatus.textContent = message;
   } catch (error) {
     uploadStatus.textContent = error.message || "Kunde inte ladda upp filer.";
@@ -342,6 +410,7 @@ async function clearProductivityFile(fileKey) {
   try {
     const status = await api.del(`/api/productivity/files/${encodeURIComponent(fileKey)}`);
     renderFileStatus(status);
+    clearProductivityReportCache();
     clearReportContent();
     document.getElementById("productivityStatus").textContent = "Saknar produktivitetsunderlag.";
   } catch (error) {
@@ -381,7 +450,6 @@ function setupUploadDropzone() {
   const user = await initPage("productivity", { requireSuperUser: true });
   if (!user) return;
 
-  document.getElementById("refreshProductivityBtn").addEventListener("click", loadProductivity);
   document.getElementById("productivityUploadBtn").addEventListener("click", () => {
     document.getElementById("productivityUploadInput").click();
   });
