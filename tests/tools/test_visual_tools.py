@@ -35,8 +35,10 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["personer"].roles == ("admin", "leader", "staffing")
     assert pages_by_name["produktivitet"].roles == ("admin",)
     assert pages_by_name["anvandare"].roles == ("admin",)
-    assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse")
-    assert pages_by_name["bearbeta"].roles == ("admin", "warehouse")
+    assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
+    assert pages_by_name["bearbeta"].roles == ("admin",)
+    assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
+    assert pages_by_name["harleda"].roles == ("admin", "warehouse", "article")
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -176,7 +178,7 @@ def test_desktop_build_bundles_local_frontend():
 def test_visual_smoke_outputs_have_unique_names():
     names = []
     for viewport in visual_smoke.VIEWPORTS:
-        for role in ("public", "admin", "leader", "staffing", "viewer", "warehouse"):
+        for role in ("public", "admin", "leader", "staffing", "viewer", "warehouse", "article"):
             for page in visual_smoke.PAGES:
                 if role in page.roles:
                     names.append(visual_smoke._safe_name(viewport.name, role, page.name))
@@ -215,7 +217,7 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
 
     with sqlite3.connect(db_path) as connection:
         users = connection.execute(
-            "select username, role from users where username in ('visual_leader', 'visual_staffing', 'visual_viewer', 'visual_lager')"
+            "select username, role from users where username in ('visual_leader', 'visual_staffing', 'visual_viewer', 'visual_lager', 'visual_artikel')"
         ).fetchall()
         visual_people = connection.execute(
             "select count(*) from persons where name like 'Visual %'"
@@ -226,6 +228,7 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
         ).fetchone()[0]
 
     assert sorted(users) == [
+        ("visual_artikel", "article_placer"),
         ("visual_lager", "warehouse_clerk"),
         ("visual_leader", "leader"),
         ("visual_staffing", "staffing_manager"),
@@ -324,6 +327,20 @@ def test_frontend_knows_bemanningsansvarig_role():
     assert 'roles.includes("staffing_manager")' in users
     assert 'roles.includes("staffing_manager") || roles.includes("admin")' in common
     assert '!roles.includes("staffing_manager")' in common
+
+
+def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta():
+    frontend = ROOT / "app" / "frontend"
+    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+
+    assert 'roles.includes("article_placer")' in common
+    assert "const scheduleLink = canViewPlanning(user)" in common
+    assert "const allocationProcessLink = canUseAllocationProcess(user)" in common
+    assert 'initPage("schedule", { requirePlanningView: true, denyRedirect: "/overblick.html" })' in schedule
+    assert "pageOptions.requireAllocationProcess = true" in allocation
+    assert 'pageOptions.denyRedirect = "/dela.html"' in allocation
 
 
 def test_import_views_have_templates_and_help_buttons():

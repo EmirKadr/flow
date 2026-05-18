@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .models import User
-from .user_access import can_admin, can_edit_planning, can_use_allocation_tools, is_super_user, user_needs_password_setup
+from .user_access import (
+    can_admin,
+    can_edit_planning,
+    can_use_allocation_process,
+    can_use_allocation_tools,
+    can_view_planning,
+    is_super_user,
+    user_needs_password_setup,
+)
 
 
 PASSWORD_SETUP_ALLOWED_PATHS = {
@@ -47,6 +55,12 @@ def require_planning_editor(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_planning_viewer(user: User = Depends(get_current_user)) -> User:
+    if not can_view_planning(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bemanningsvyn kräver planerings- eller visningsroll")
+    return user
+
+
 def require_super_user(user: User = Depends(get_current_user)) -> User:
     if not is_super_user(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super User required")
@@ -55,5 +69,11 @@ def require_super_user(user: User = Depends(get_current_user)) -> User:
 
 def require_allocation_tools_user(user: User = Depends(get_current_user)) -> User:
     if not can_use_allocation_tools(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Lagerkontorist required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Lagerkontorist eller Artikelplacerare required")
+    return user
+
+
+def require_allocation_process_user(user: User = Depends(get_current_user)) -> User:
+    if not can_use_allocation_process(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver Super User")
     return user

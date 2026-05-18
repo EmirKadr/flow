@@ -2251,7 +2251,7 @@ async function loadSchedule() {
 }
 
 (async () => {
-  state.currentUser = await initPage("schedule");
+  state.currentUser = await initPage("schedule", { requirePlanningView: true, denyRedirect: "/overblick.html" });
   if (!state.currentUser) return;
   applyScheduleReadOnlyMode();
   await loadAreasAndActivities();

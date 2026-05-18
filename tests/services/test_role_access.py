@@ -1,7 +1,12 @@
 import pytest
 from fastapi import HTTPException
 
-from app.backend.deps import require_allocation_tools_user, require_planning_editor
+from app.backend.deps import (
+    require_allocation_process_user,
+    require_allocation_tools_user,
+    require_planning_editor,
+    require_planning_viewer,
+)
 from app.backend.models import User
 
 
@@ -14,6 +19,10 @@ def test_viewer_cannot_edit_planning():
         require_planning_editor(make_user("viewer"))
 
     assert exc_info.value.status_code == 403
+
+
+def test_viewer_can_open_bemanning_view():
+    assert require_planning_viewer(make_user("viewer")).role == "viewer"
 
 
 def test_leader_and_admin_can_edit_planning():
@@ -37,6 +46,10 @@ def test_lagerkontorist_can_open_allocation_tools_but_not_edit_planning():
         require_planning_editor(user)
 
     assert exc_info.value.status_code == 403
+    with pytest.raises(HTTPException):
+        require_planning_viewer(user)
+    with pytest.raises(HTTPException):
+        require_allocation_process_user(user)
 
 
 def test_admin_without_lagerkontorist_cannot_open_allocation_tools():
@@ -46,10 +59,20 @@ def test_admin_without_lagerkontorist_cannot_open_allocation_tools():
     assert exc_info.value.status_code == 403
 
 
-def test_artikelplacerare_has_no_extra_permissions_yet():
+def test_artikelplacerare_can_open_same_allocation_tools_as_lagerkontorist():
     user = make_user("article_placer", roles=["article_placer"])
 
+    assert require_allocation_tools_user(user).role == "article_placer"
     with pytest.raises(HTTPException):
         require_planning_editor(user)
     with pytest.raises(HTTPException):
-        require_allocation_tools_user(user)
+        require_planning_viewer(user)
+    with pytest.raises(HTTPException):
+        require_allocation_process_user(user)
+
+
+def test_super_user_can_open_allocation_process():
+    user = make_user("super_user", roles=["super_user"])
+
+    assert require_allocation_tools_user(user).role == "super_user"
+    assert require_allocation_process_user(user).role == "super_user"

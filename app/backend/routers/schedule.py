@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_current_user, get_db, require_planning_editor
+from ..deps import get_db, require_planning_editor, require_planning_viewer
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
 from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
@@ -177,7 +177,7 @@ def get_schedule(
     weekday: int = Query(..., ge=1, le=7),
     area_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_planning_viewer),
 ) -> ScheduleOut:
     persons_q = select(Person).where(Person.is_active.is_(True))
     if area_id is not None:
@@ -924,7 +924,7 @@ def get_summary(
     weekday: int = Query(..., ge=1, le=7),
     area_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_planning_viewer),
 ) -> list[SummaryRow]:
     persons_q = select(Person).where(Person.is_active.is_(True))
     if area_id is not None:

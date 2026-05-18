@@ -13,6 +13,8 @@ WAREHOUSE_CLERK_ROLE = "warehouse_clerk"
 ARTICLE_PLACER_ROLE = "article_placer"
 ADMIN_ROLES = {"admin", SUPER_USER_ROLE, LEGACY_SUPER_USER_ROLE}
 EDITOR_ROLES = {"leader", STAFFING_MANAGER_ROLE, *ADMIN_ROLES}
+ALLOCATION_TOOL_ROLES = {WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
+PLANNING_VIEW_ROLES = {VIEWER_ROLE, *EDITOR_ROLES}
 BASE_ROLES = {"admin", "leader", STAFFING_MANAGER_ROLE, VIEWER_ROLE, WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
 
 
@@ -67,12 +69,20 @@ def can_edit_planning(user: User) -> bool:
     return bool(set(user_roles(user)) & EDITOR_ROLES)
 
 
+def can_view_planning(user: User) -> bool:
+    return bool(set(user_roles(user)) & PLANNING_VIEW_ROLES)
+
+
 def can_admin(user: User) -> bool:
     return bool(set(user_roles(user)) & ADMIN_ROLES)
 
 
 def can_use_allocation_tools(user: User) -> bool:
-    return WAREHOUSE_CLERK_ROLE in user_roles(user) or is_super_user(user)
+    return bool(set(user_roles(user)) & ALLOCATION_TOOL_ROLES) or is_super_user(user)
+
+
+def can_use_allocation_process(user: User) -> bool:
+    return is_super_user(user)
 
 
 def user_out(user: User) -> UserOut:

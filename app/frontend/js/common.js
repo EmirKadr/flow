@@ -253,8 +253,18 @@ function canEditPlanning(user) {
   return roles.includes("leader") || roles.includes("staffing_manager") || roles.includes("admin") || user?.is_super_user;
 }
 
+function canViewPlanning(user) {
+  const roles = userRoles(user);
+  return roles.includes("viewer") || canEditPlanning(user);
+}
+
 function canUseAllocationTools(user) {
-  return userRoles(user).includes("warehouse_clerk") || user?.is_super_user;
+  const roles = userRoles(user);
+  return roles.includes("warehouse_clerk") || roles.includes("article_placer") || user?.is_super_user;
+}
+
+function canUseAllocationProcess(user) {
+  return Boolean(user?.is_super_user);
 }
 
 function sidebarUserSnapshot(user) {
@@ -300,8 +310,10 @@ function cachedUserCanRenderPage(user, options = {}) {
   if (!user || user.must_change_password) return false;
   if (options.requireAdmin && !isAdminUser(user)) return false;
   if (options.requireSuperUser && !user.is_super_user) return false;
+  if (options.requirePlanningView && !canViewPlanning(user)) return false;
   if (options.requireEditor && !canEditPlanning(user)) return false;
   if (options.requireAllocationTools && !canUseAllocationTools(user)) return false;
+  if (options.requireAllocationProcess && !canUseAllocationProcess(user)) return false;
   return true;
 }
 
@@ -404,9 +416,15 @@ function renderSidebar(user, activePage) {
   const productivityLink = user?.is_super_user
     ? `<a href="/produktivitet.html" class="${activePage === "productivity" ? "active" : ""}"><span class="icon" aria-hidden="true">📈</span><span>Produktivitet</span></a>`
     : "";
+  const scheduleLink = canViewPlanning(user)
+    ? `<a href="/index.html" class="${activePage === "schedule" ? "active" : ""}"><span class="icon" aria-hidden="true">📋</span><span>Bemanning</span></a>`
+    : "";
+  const allocationProcessLink = canUseAllocationProcess(user)
+    ? `<a href="/bearbeta.html" class="${activePage === "allocationProcess" ? "active" : ""}"><span class="icon" aria-hidden="true">🧮</span><span>Bearbeta</span></a>`
+    : "";
   const allocationLinks = canUseAllocationTools(user)
     ? `
-      <a href="/bearbeta.html" class="${activePage === "allocationProcess" ? "active" : ""}"><span class="icon" aria-hidden="true">🧮</span><span>Bearbeta</span></a>
+      ${allocationProcessLink}
       <a href="/dela.html" class="${activePage === "allocationSplit" ? "active" : ""}"><span class="icon" aria-hidden="true">✂</span><span>Dela</span></a>
       <a href="/harleda.html" class="${activePage === "allocationTrace" ? "active" : ""}"><span class="icon" aria-hidden="true">⌕</span><span>Härleda</span></a>
     `
@@ -426,7 +444,7 @@ function renderSidebar(user, activePage) {
       </svg>
     </button>
     <nav>
-      <a href="/index.html" class="${activePage === "schedule" ? "active" : ""}"><span class="icon" aria-hidden="true">📋</span><span>Bemanning</span></a>
+      ${scheduleLink}
       <a href="/overblick.html" class="${activePage === "overview" ? "active" : ""}"><span class="icon" aria-hidden="true">📅</span><span>Översikt</span></a>
       ${productivityLink}
       ${allocationLinks}
@@ -539,14 +557,24 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/index.html";
     return null;
   }
+  if (options.requirePlanningView && !canViewPlanning(user)) {
+    queueToast("Sidan kräver planerings- eller visningsbehörighet", "error");
+    window.location.href = options.denyRedirect || "/overblick.html";
+    return null;
+  }
   if (options.requireEditor && !canEditPlanning(user)) {
     queueToast("Sidan kräver redigeringsbehörighet", "error");
     window.location.href = "/index.html";
     return null;
   }
   if (options.requireAllocationTools && !canUseAllocationTools(user)) {
-    queueToast("Sidan kräver rollen Lagerkontorist", "error");
+    queueToast("Sidan kräver rollen Lagerkontorist eller Artikelplacerare", "error");
     window.location.href = "/index.html";
+    return null;
+  }
+  if (options.requireAllocationProcess && !canUseAllocationProcess(user)) {
+    queueToast("Bearbeta kräver Super User-behörighet", "error");
+    window.location.href = options.denyRedirect || "/dela.html";
     return null;
   }
   cacheSidebarUser(user);
@@ -621,7 +649,9 @@ window.userRoles = userRoles;
 window.isAdminUser = isAdminUser;
 window.isReadOnlyUser = isReadOnlyUser;
 window.canEditPlanning = canEditPlanning;
+window.canViewPlanning = canViewPlanning;
 window.canUseAllocationTools = canUseAllocationTools;
+window.canUseAllocationProcess = canUseAllocationProcess;
 window.readAreaFocus = readAreaFocus;
 window.writeAreaFocus = writeAreaFocus;
 window.areaFocusCode = areaFocusCode;

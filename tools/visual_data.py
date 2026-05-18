@@ -231,6 +231,7 @@ def seed_visual_data() -> None:
         _ensure_user(db, username="visual_staffing", display_name="Visual Bemanningsansvarig", role="staffing_manager", area=gg)
         _ensure_user(db, username="visual_viewer", display_name="Visual Visning", role="viewer", area=mg)
         _ensure_user(db, username="visual_lager", display_name="Visual Lagerkontorist", role="warehouse_clerk", area=None)
+        _ensure_user(db, username="visual_artikel", display_name="Visual Artikelplacerare", role="article_placer", area=None)
 
         gg_vm = _activity_by_code(db, "GG_VM")
         gg_plock = _activity_by_code(db, "GG_PLOCK")

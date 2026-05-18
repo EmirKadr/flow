@@ -663,7 +663,12 @@ async function initAllocationPage() {
   const root = document.getElementById("allocationRoot");
   if (!root) return;
   allocationState.page = root.dataset.allocationView || "uploads";
-  allocationState.user = await initPage(allocationPageActiveName(allocationState.page), { requireAllocationTools: true });
+  const pageOptions = { requireAllocationTools: true };
+  if (allocationState.page === "process") {
+    pageOptions.requireAllocationProcess = true;
+    pageOptions.denyRedirect = "/dela.html";
+  }
+  allocationState.user = await initPage(allocationPageActiveName(allocationState.page), pageOptions);
   if (!allocationState.user) return;
   root.innerHTML = `<div class="section-title">${allocationEscape(allocationPrimaryTitle(allocationState.page))}</div><section class="allocation-panel"><p>Laddar...</p></section>`;
   try {

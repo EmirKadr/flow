@@ -33,6 +33,10 @@ def fake_available(monkeypatch, *, flows_module=None, engine_module=None):
     return engine, flows
 
 
+def route_user(role: str):
+    return SimpleNamespace(id=1, username=f"{role}-user", role=role, roles=[role], is_active=True)
+
+
 def test_df_to_table_serializes_preview_without_nan_values():
     df = pd.DataFrame(
         {
@@ -149,8 +153,31 @@ def test_allocation_router_exposes_flow_registry_and_pool(monkeypatch):
     )
     fake_available(monkeypatch, flows_module=flows)
 
-    assert allocation_router.list_flows() == {"flows": [{"id": "allocering", "label": "Allokering"}]}
-    assert allocation_router.list_pool() == {"pool": [{"key": "orders", "label": "Bestallningslinjer"}]}
+    assert allocation_router.list_flows(user=route_user("super_user")) == {"flows": [{"id": "allocering", "label": "Allokering"}]}
+    assert allocation_router.list_pool(user=route_user("super_user")) == {"pool": [{"key": "orders", "label": "Bestallningslinjer"}]}
+
+
+def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flows(monkeypatch):
+    flows = SimpleNamespace(
+        FLOW_BY_ID={},
+        public_registry=lambda: [
+            {"id": "allocate", "label": "Allokering"},
+            {"id": "eftersok", "label": "Eftersok"},
+            {"id": "split-values", "label": "Dela varden"},
+        ],
+        public_pool=lambda: [{"key": "orders", "label": "Bestallningslinjer"}],
+    )
+    fake_available(monkeypatch, flows_module=flows)
+
+    for role in ("warehouse_clerk", "article_placer"):
+        user = route_user(role)
+        assert allocation_router.list_flows(user=user) == {
+            "flows": [
+                {"id": "eftersok", "label": "Eftersok"},
+                {"id": "split-values", "label": "Dela varden"},
+            ]
+        }
+        assert allocation_router.list_pool(user=user) == {"pool": []}
 
 
 def test_allocation_health_reports_unavailable_without_crashing(monkeypatch):

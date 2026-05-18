@@ -62,6 +62,7 @@ TEST_USERS: dict[str, tuple[str, str]] = {
     "staffing": ("visual_staffing", VISUAL_PASSWORD),
     "viewer": ("visual_viewer", VISUAL_PASSWORD),
     "warehouse": ("visual_lager", VISUAL_PASSWORD),
+    "article": ("visual_artikel", VISUAL_PASSWORD),
 }
 
 PAGES: tuple[VisualPage, ...] = (
@@ -73,10 +74,10 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("stallen", "/stallen.html", "#acts-body", ("admin", "leader", "staffing")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
     VisualPage("anvandare", "/anvandare.html", "#users-body", ("admin",)),
-    VisualPage("uppladdningar", "/uppladdningar.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
-    VisualPage("bearbeta", "/bearbeta.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
-    VisualPage("dela", "/dela.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
-    VisualPage("harleda", "/harleda.html", "#allocationRoot .allocation-panel", ("admin", "warehouse")),
+    VisualPage("uppladdningar", "/uppladdningar.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
+    VisualPage("bearbeta", "/bearbeta.html", "#allocationRoot .allocation-panel", ("admin",)),
+    VisualPage("dela", "/dela.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
+    VisualPage("harleda", "/harleda.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
 )
 
 STATES: tuple[VisualState, ...] = (
@@ -434,7 +435,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--roles",
         default="public,admin,leader,staffing,viewer",
-        help="Comma-separated roles to capture: public, admin, leader, staffing, viewer, warehouse.",
+        help="Comma-separated roles to capture: public, admin, leader, staffing, viewer, warehouse, article.",
     )
     parser.add_argument("--headful", action="store_true", help="Show the browser while capturing screenshots.")
     parser.add_argument(
