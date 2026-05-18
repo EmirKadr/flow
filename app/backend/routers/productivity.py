@@ -101,3 +101,8 @@ def get_productivity(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Kunde inte läsa produktivitetsunderlag: {exc}",
         ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Kunde inte beräkna produktivitet: {exc}",
+        ) from exc

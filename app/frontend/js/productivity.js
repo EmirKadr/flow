@@ -105,7 +105,7 @@ function renderFileStatus(status) {
 
   document.getElementById("productivityFileSlots").innerHTML = files.map((file) => `
     <div class="productivity-file-slot ${file.uploaded ? "is-uploaded" : ""}">
-      <div>
+      <div class="productivity-file-main">
         <div class="productivity-file-label">${escapeHtml(file.label)}${file.required ? '<span class="req">*</span>' : ""}</div>
         <div class="productivity-file-name">
           ${file.uploaded ? escapeHtml(file.name) : '<span class="muted">Ingen fil vald</span>'}

@@ -294,15 +294,15 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 
 .productivity-file-slots {
   display: grid;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
 }
 
 .productivity-file-slot {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -318,6 +318,10 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   font-weight: 700;
 }
 
+.productivity-file-main {
+  min-width: 0;
+}
+
 .productivity-file-label .req {
   color: var(--danger);
   margin-left: 2px;
@@ -325,7 +329,7 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 
 .productivity-file-name {
   margin-top: 3px;
-  max-width: 260px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -334,8 +338,10 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .productivity-file-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .status-pill {
@@ -1748,5 +1754,7 @@ tr.filter-row input {
   main { padding: 18px 16px 50px; }
   .productivity-summary,
   .productivity-sources { grid-template-columns: 1fr; }
+  .productivity-file-slot { grid-template-columns: 1fr; }
+  .productivity-file-actions { justify-content: flex-start; }
   .productivity-panel-header { align-items: flex-start; flex-direction: column; }
 }

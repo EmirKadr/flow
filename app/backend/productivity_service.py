@@ -124,6 +124,32 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, dialect=dialect))
 
 
+def _iter_csv_values(path: Path):
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        sample = handle.read(4096)
+        handle.seek(0)
+        dialect = _detect_dialect(sample)
+        reader = csv.reader(handle, dialect=dialect)
+        try:
+            headers = next(reader)
+        except StopIteration:
+            return
+        lookup = {
+            str(header).strip().lstrip("\ufeff").lower(): index
+            for index, header in enumerate(headers)
+        }
+        for values in reader:
+            yield lookup, values
+
+
+def _cell(values: list[str], lookup: dict[str, int], *names: str) -> str:
+    for name in names:
+        index = lookup.get(name.lower())
+        if index is not None and index < len(values):
+            return str(values[index]).strip()
+    return ""
+
+
 def _decode_sample(sample: bytes) -> str:
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
@@ -285,15 +311,16 @@ def _timestamp(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y%m%d %H:%M:%S", "%Y%m%d"):
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    for fmt in ("%Y%m%d %H:%M:%S", "%Y%m%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
             return datetime.strptime(text, fmt)
         except ValueError:
             continue
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
+    return None
 
 
 def _company_contains(event: dict[str, Any], company: str) -> bool:
@@ -308,60 +335,108 @@ def _clean_user(value: str) -> str:
     return value.strip()
 
 
+def _parse_pick_row(row: dict[str, str]) -> dict[str, Any] | None:
+    user = _clean_user(_get(row, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "zone": _get(row, "Zon").upper(),
+        "company": _get(row, "Bolag"),
+        "timestamp": _timestamp(_get(row, "Ändrad", "Andrad")),
+        "kolli": _number(_get(row, "Plockat")),
+        "vikt": _number(_get(row, "Vikt")),
+    }
+
+
+def _parse_pick_values(values: list[str], lookup: dict[str, int]) -> dict[str, Any] | None:
+    user = _clean_user(_cell(values, lookup, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "zone": _cell(values, lookup, "Zon").upper(),
+        "company": _cell(values, lookup, "Bolag"),
+        "timestamp": _timestamp(_cell(values, lookup, "Ändrad", "Andrad")),
+        "kolli": _number(_cell(values, lookup, "Plockat")),
+        "vikt": _number(_cell(values, lookup, "Vikt")),
+    }
+
+
 def _parse_pick_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
-        user = _clean_user(_get(row, "Användare", "Anvandare"))
-        if not user:
-            continue
-        picked = _number(_get(row, "Plockat"))
-        weight = _number(_get(row, "Vikt"))
-        events.append(
-            {
-                "user": user,
-                "zone": _get(row, "Zon").upper(),
-                "company": _get(row, "Bolag"),
-                "timestamp": _timestamp(_get(row, "Ändrad", "Andrad")),
-                "kolli": picked,
-                "vikt": weight,
-            }
-        )
+        event = _parse_pick_row(row)
+        if event is not None:
+            events.append(event)
     return events
+
+
+def _parse_trans_row(row: dict[str, str]) -> dict[str, Any] | None:
+    user = _clean_user(_get(row, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "company": _get(row, "Bolag"),
+        "to": _get(row, "Till"),
+        "timestamp": _timestamp(_get(row, "Timestamp")),
+        "antal": _number(_get(row, "Antal")),
+    }
+
+
+def _parse_trans_values(values: list[str], lookup: dict[str, int]) -> dict[str, Any] | None:
+    user = _clean_user(_cell(values, lookup, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "company": _cell(values, lookup, "Bolag"),
+        "to": _cell(values, lookup, "Till"),
+        "timestamp": _timestamp(_cell(values, lookup, "Timestamp")),
+        "antal": _number(_cell(values, lookup, "Antal")),
+    }
 
 
 def _parse_trans_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
-        user = _clean_user(_get(row, "Användare", "Anvandare"))
-        if not user:
-            continue
-        amount = _number(_get(row, "Antal"))
-        events.append(
-            {
-                "user": user,
-                "company": _get(row, "Bolag"),
-                "to": _get(row, "Till"),
-                "timestamp": _timestamp(_get(row, "Timestamp")),
-                "antal": amount,
-            }
-        )
+        event = _parse_trans_row(row)
+        if event is not None:
+            events.append(event)
     return events
+
+
+def _parse_pallet_row(row: dict[str, str]) -> dict[str, Any] | None:
+    user = _clean_user(_get(row, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "company": _get(row, "Bolag"),
+        "type": _get(row, "Typ"),
+        "timestamp": _timestamp(_get(row, "Ändrad", "Andrad")),
+    }
+
+
+def _parse_pallet_values(values: list[str], lookup: dict[str, int]) -> dict[str, Any] | None:
+    user = _clean_user(_cell(values, lookup, "Användare", "Anvandare"))
+    if not user:
+        return None
+    return {
+        "user": user,
+        "company": _cell(values, lookup, "Bolag"),
+        "type": _cell(values, lookup, "Typ"),
+        "timestamp": _timestamp(_cell(values, lookup, "Ändrad", "Andrad")),
+    }
 
 
 def _parse_pallet_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
-        user = _clean_user(_get(row, "Användare", "Anvandare"))
-        if not user:
-            continue
-        events.append(
-            {
-                "user": user,
-                "company": _get(row, "Bolag"),
-                "type": _get(row, "Typ"),
-                "timestamp": _timestamp(_get(row, "Ändrad", "Andrad")),
-            }
-        )
+        event = _parse_pallet_row(row)
+        if event is not None:
+            events.append(event)
     return events
 
 
@@ -593,30 +668,33 @@ def _section_specs() -> tuple[SectionSpec, ...]:
     )
 
 
-def _bucketed_rows(
+def _add_section_event(
+    *,
+    event: dict[str, Any],
+    event_date: date,
+    sections: list[SectionSpec],
+    section_buckets: Any,
+) -> None:
+    timestamp = event.get("timestamp")
+    if not isinstance(timestamp, datetime):
+        return
+    hour = timestamp.hour
+    if hour not in HOURS:
+        return
+    user = str(event["user"])
+    for spec in sections:
+        if spec.predicate(event):
+            section_buckets[spec.id][event_date][user][hour] += 1
+
+
+def _rows_from_buckets(
     *,
     spec: SectionSpec,
-    events: list[dict[str, Any]],
+    buckets: dict[str, dict[int, int]],
     targets: dict[tuple[str, str], dict[str, Any]],
     pick_totals: dict[str, dict[str, float]],
     trans_totals: dict[str, dict[str, float]],
-    report_date: date,
 ) -> list[dict[str, Any]]:
-    buckets: dict[str, dict[int, int]] = defaultdict(lambda: {hour: 0 for hour in HOURS})
-
-    for event in events:
-        if not spec.predicate(event):
-            continue
-        timestamp = event.get("timestamp")
-        if not isinstance(timestamp, datetime):
-            continue
-        if timestamp.date() != report_date:
-            continue
-        hour = timestamp.hour
-        if hour not in HOURS:
-            continue
-        buckets[str(event["user"])][hour] += 1
-
     target = _target_value(targets, spec.target_company, spec.process, spec.target_metric)
     rows: list[dict[str, Any]] = []
     for user in sorted(buckets, key=lambda value: value.upper()):
@@ -653,6 +731,39 @@ def _bucketed_rows(
             }
         )
     return rows
+
+
+def _bucketed_rows(
+    *,
+    spec: SectionSpec,
+    events: list[dict[str, Any]],
+    targets: dict[tuple[str, str], dict[str, Any]],
+    pick_totals: dict[str, dict[str, float]],
+    trans_totals: dict[str, dict[str, float]],
+    report_date: date,
+) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[int, int]] = defaultdict(lambda: {hour: 0 for hour in HOURS})
+
+    for event in events:
+        if not spec.predicate(event):
+            continue
+        timestamp = event.get("timestamp")
+        if not isinstance(timestamp, datetime):
+            continue
+        if timestamp.date() != report_date:
+            continue
+        hour = timestamp.hour
+        if hour not in HOURS:
+            continue
+        buckets[str(event["user"])][hour] += 1
+
+    return _rows_from_buckets(
+        spec=spec,
+        buckets=buckets,
+        targets=targets,
+        pick_totals=pick_totals,
+        trans_totals=trans_totals,
+    )
 
 
 def _source_payload(spec: SourceFileSpec, path: Path, rows: int) -> dict[str, Any]:
@@ -693,58 +804,111 @@ def build_productivity_report(
     files = find_source_files(base_dir)
     requested_date = _parse_report_date(report_date)
     key = _cache_key(files, requested_date)
-    if requested_date is not None and key in _REPORT_CACHE:
+    if key in _REPORT_CACHE:
         return _REPORT_CACHE[key]
 
-    pick_raw = _read_csv(files["pick"])
-    trans_raw = _read_csv(files["trans"])
-    pallet_raw = _read_csv(files["pallet"])
     kpi_raw = _read_csv(files["kpi"])
-
-    pick_events = _parse_pick_rows(pick_raw)
-    trans_events = _parse_trans_rows(trans_raw)
-    pallet_events = _parse_pallet_rows(pallet_raw)
     targets = _parse_kpi_rows(kpi_raw)
-    dates = _available_dates(pick_events, trans_events, pallet_events)
+
+    section_specs = _section_specs()
+    sections_by_source: dict[str, list[SectionSpec]] = defaultdict(list)
+    for spec in section_specs:
+        sections_by_source[spec.source].append(spec)
+
+    section_buckets = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    )
+    pick_totals_by_date: dict[date, dict[str, dict[str, float]]] = defaultdict(
+        lambda: defaultdict(lambda: {"kolli": 0.0, "vikt": 0.0})
+    )
+    trans_totals_by_date: dict[date, dict[str, dict[str, float]]] = defaultdict(
+        lambda: defaultdict(lambda: {"antal": 0.0})
+    )
+    dates_seen: set[date] = set()
+    raw_counts = {
+        "pick": 0,
+        "trans": 0,
+        "pallet": 0,
+        "kpi": len(kpi_raw),
+    }
+
+    for lookup, values in _iter_csv_values(files["pick"]):
+        raw_counts["pick"] += 1
+        event = _parse_pick_values(values, lookup)
+        if event is None:
+            continue
+        event_date = _event_date(event)
+        if event_date is None:
+            continue
+        dates_seen.add(event_date)
+        user = str(event["user"])
+        pick_totals_by_date[event_date][user]["kolli"] += float(event.get("kolli") or 0)
+        pick_totals_by_date[event_date][user]["vikt"] += float(event.get("vikt") or 0)
+        _add_section_event(
+            event=event,
+            event_date=event_date,
+            sections=sections_by_source["pick"],
+            section_buckets=section_buckets,
+        )
+
+    for lookup, values in _iter_csv_values(files["trans"]):
+        raw_counts["trans"] += 1
+        event = _parse_trans_values(values, lookup)
+        if event is None:
+            continue
+        event_date = _event_date(event)
+        if event_date is None:
+            continue
+        dates_seen.add(event_date)
+        user = str(event["user"])
+        trans_totals_by_date[event_date][user]["antal"] += float(event.get("antal") or 0)
+        _add_section_event(
+            event=event,
+            event_date=event_date,
+            sections=sections_by_source["trans"],
+            section_buckets=section_buckets,
+        )
+
+    for lookup, values in _iter_csv_values(files["pallet"]):
+        raw_counts["pallet"] += 1
+        event = _parse_pallet_values(values, lookup)
+        if event is None:
+            continue
+        event_date = _event_date(event)
+        if event_date is None:
+            continue
+        dates_seen.add(event_date)
+        _add_section_event(
+            event=event,
+            event_date=event_date,
+            sections=sections_by_source["pallet"],
+            section_buckets=section_buckets,
+        )
+
+    dates = sorted(dates_seen)
     if not dates:
         raise ProductivitySourceError("Produktivitetsunderlagen saknar datum")
     selected_date = requested_date or dates[-1]
     if selected_date not in dates:
         raise ProductivitySourceError(f"Saknar produktivitetsdata för {selected_date.isoformat()}")
-    pick_totals, trans_totals = _totals_for_date(
-        pick_events=pick_events,
-        trans_events=trans_events,
-        report_date=selected_date,
-    )
+    pick_totals = pick_totals_by_date.get(selected_date, {})
+    trans_totals = trans_totals_by_date.get(selected_date, {})
     key = _cache_key(files, selected_date)
     if key in _REPORT_CACHE:
         return _REPORT_CACHE[key]
-    raw_counts = {
-        "pick": len(pick_raw),
-        "trans": len(trans_raw),
-        "pallet": len(pallet_raw),
-        "kpi": len(kpi_raw),
-    }
-
-    events_by_source = {
-        "pick": pick_events,
-        "trans": trans_events,
-        "pallet": pallet_events,
-    }
     sections_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
     section_count = 0
     total_rows = 0
     total_worked_hours = 0
     productivity_values: list[float] = []
 
-    for spec in _section_specs():
-        rows = _bucketed_rows(
+    for spec in section_specs:
+        rows = _rows_from_buckets(
             spec=spec,
-            events=events_by_source[spec.source],
+            buckets=section_buckets.get(spec.id, {}).get(selected_date, {}),
             targets=targets,
             pick_totals=pick_totals,
             trans_totals=trans_totals,
-            report_date=selected_date,
         )
         section_total_rows = sum(row["total_rows"] for row in rows)
         section_worked_hours = sum(row["worked_hours"] for row in rows)
@@ -820,4 +984,6 @@ def build_productivity_report(
     }
     _REPORT_CACHE.clear()
     _REPORT_CACHE[key] = report
+    if requested_date is None:
+        _REPORT_CACHE[_cache_key(files, None)] = report
     return report
