@@ -12,10 +12,12 @@ def _smoke_test() -> int:
     from core.app_info import APP_NAME
     from services.health_service import build_health_url
     from services.update_service import is_newer_version
+    from desktop.local_app_server import localize_set_cookie
 
     assert APP_NAME == "Bemanning"
     assert build_health_url().endswith("/api/health")
     assert is_newer_version("0.1.1", "0.1.0") is True
+    assert "Secure" not in localize_set_cookie("bemanning_session=x; Path=/; Secure")
     return 0
 
 

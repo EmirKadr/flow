@@ -18,3 +18,6 @@ SERVER_BASE_URL = os.environ.get(
     DEFAULT_SERVER_BASE_URL,
 ).rstrip("/")
 SERVER_HEALTH_URL = urljoin(SERVER_BASE_URL + "/", "api/health")
+
+DESKTOP_LOCAL_HOST = os.environ.get("BEMANNING_DESKTOP_HOST", "127.0.0.1")
+DESKTOP_LOCAL_PORT = int(os.environ.get("BEMANNING_DESKTOP_PORT", "8766"))

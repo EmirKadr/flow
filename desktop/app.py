@@ -98,6 +98,7 @@ from core.app_info import (
     SERVER_BASE_URL,
     UPDATE_DISABLED_ENV,
 )
+from desktop.local_app_server import LocalAppServer
 from desktop.web_view import create_web_view
 from desktop.widgets.error_view import ErrorView
 from desktop.workers.health_worker import HealthCheckWorker
@@ -134,6 +135,7 @@ class MainWindow(QMainWindow):
         update_download_worker_factory: Optional[
             Callable[[object, Path], object]
         ] = None,
+        local_app_server_factory: Optional[Callable[[], object]] = None,
     ):
         super().__init__()
         self._browser_factory = browser_factory or create_web_view
@@ -146,11 +148,16 @@ class MainWindow(QMainWindow):
         self._update_download_worker_factory = update_download_worker_factory or (
             lambda info, target_dir: UpdateDownloadWorker(info, target_dir)
         )
+        self._local_app_server_factory = local_app_server_factory or (
+            lambda: LocalAppServer(upstream_base_url=SERVER_BASE_URL)
+        )
 
         self._health_worker = None
         self._update_check_worker = None
         self._update_download_worker = None
         self._update_progress: Optional[QProgressDialog] = None
+        self._local_app_server = None
+        self._local_app_url = ""
 
         self.setWindowTitle(APP_TITLE)
         self.setWindowIcon(_app_icon())
@@ -244,7 +251,11 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             f"Om {APP_NAME}",
-            f"{APP_NAME}\nVersion {APP_VERSION}\nServer: {SERVER_BASE_URL}",
+            (
+                f"{APP_NAME}\nVersion {APP_VERSION}\n"
+                f"App: {self._local_app_url or 'startar lokalt'}\n"
+                f"API-server: {SERVER_BASE_URL}"
+            ),
         )
 
     def _set_loading_message(self, message: str) -> None:
@@ -265,8 +276,21 @@ class MainWindow(QMainWindow):
         worker.start()
 
     def _on_health_ok(self, info) -> None:
+        try:
+            if self._local_app_server is None:
+                self._local_app_server = self._local_app_server_factory()
+            self._local_app_url = self._local_app_server.start()
+        except Exception as exc:
+            self._error_view.set_message(
+                "Den centrala servern svarade, men den lokala appytan kunde inte starta.\n\n"
+                f"Fel: {exc}"
+            )
+            self._stack.setCurrentWidget(self._error_view)
+            self.statusBar().showMessage("Kunde inte starta lokal appyta.")
+            return
+
         if hasattr(self._browser, "load"):
-            self._browser.load(QUrl(SERVER_BASE_URL))
+            self._browser.load(QUrl(self._local_app_url))
         self._stack.setCurrentWidget(self._browser)
         environment = getattr(info, "environment", "")
         if environment:
@@ -299,7 +323,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Kunde inte ladda appen.")
 
     def _open_in_browser(self) -> None:
-        webbrowser.open(SERVER_BASE_URL)
+        webbrowser.open(self._local_app_url or SERVER_BASE_URL)
 
     def _schedule_update_check(self) -> None:
         if not self._automatic_update_checks_enabled():
@@ -448,6 +472,12 @@ class MainWindow(QMainWindow):
         if self._update_download_worker and self._update_download_worker.isRunning():
             self._update_download_worker.stop()
             self._update_download_worker.wait(3000)
+        if self._local_app_server is not None:
+            try:
+                self._local_app_server.stop()
+            except Exception:
+                pass
+            self._local_app_server = None
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._cleanup_workers()

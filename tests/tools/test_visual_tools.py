@@ -92,6 +92,9 @@ def test_desktop_app_probe_has_safe_and_real_modes():
     assert args.real_webengine is True
     assert hasattr(desktop_app_probe, "run_shell_probe")
     assert hasattr(desktop_app_probe, "run_real_webengine_probe")
+    source = inspect.getsource(desktop_app_probe.run_real_webengine_child)
+    assert "real-webengine-child.stdout.log" in source
+    assert "real-webengine-child.stderr.log" in source
 
 
 def test_visual_smoke_has_handler_for_every_state_action():
@@ -102,19 +105,53 @@ def test_visual_smoke_has_handler_for_every_state_action():
     assert configured_actions <= handled_actions
 
 
+def test_visual_smoke_can_capture_through_desktop_local_proxy():
+    args = visual_smoke.parse_args(["--via-desktop-proxy", "--roles", "public"])
+    source = inspect.getsource(visual_smoke.main)
+
+    assert args.via_desktop_proxy is True
+    assert "LocalAppServer" in source
+    assert "via_desktop_proxy" in source
+
+
 def test_testprotocol_documents_agent_test_tools():
     protocol = (ROOT / "TESTPROTOCOL.md").read_text(encoding="utf-8")
 
     for command in (
         "python -m pytest",
+        "python -m tools.bemanning_cli routes --format table",
         "python desktop\\main.py --smoke-test",
         "python -m tools.visual_smoke",
         "python -m tools.interactive_e2e",
         "python -m tools.desktop_shell_screens",
         "python -m tools.desktop_app_probe",
+        "python -m tools.release_check",
         "cmd /c build_windows.bat",
     ):
         assert command in protocol
+
+
+def test_app_migration_plan_documents_high_risk_workflows():
+    plan = (ROOT / "APP_MIGRATION_PLAN.md").read_text(encoding="utf-8")
+
+    for required in (
+        "Inloggning, session och roller",
+        "Bemanning: dagsschema",
+        "Översikt",
+        "Produktivitet",
+        "Desktop/Windows-app",
+        "Lokalt appskal med central API-proxy",
+        "Stopplista",
+    ):
+        assert required in plan
+
+
+def test_desktop_build_bundles_local_frontend():
+    spec = (ROOT / "Bemanning.spec").read_text(encoding="utf-8")
+
+    assert "app/frontend" in spec
+    assert "frontend_dir" in spec
+    assert 'excludes=["pytest", "tests"]' in spec
 
 
 def test_visual_smoke_outputs_have_unique_names():

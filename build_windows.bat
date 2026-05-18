@@ -30,6 +30,10 @@ echo Building Setup.exe if Inno Setup is installed...
 powershell -NoProfile -ExecutionPolicy Bypass -File "packaging\windows\build_setup.ps1" -Version "%APP_VERSION%"
 if errorlevel 1 exit /b 1
 
+echo Validating release artifacts...
+python -m tools.release_check --version "%APP_VERSION%"
+if errorlevel 1 exit /b 1
+
 echo.
 echo Done. See the release folder.
 echo Build folder: "%APP_DIST_DIR%"

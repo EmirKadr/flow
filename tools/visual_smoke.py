@@ -66,7 +66,7 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("login", "/login.html", "#login-form", ("public",)),
     VisualPage("bemanning", "/index.html", "#scheduleTable", ("admin", "leader", "viewer")),
     VisualPage("oversikt", "/overblick.html", "#overviewTable", ("admin", "leader", "viewer")),
-    VisualPage("produktivitet", "/produktivitet.html", "#productivityContent", ("admin",)),
+    VisualPage("produktivitet", "/produktivitet.html", "#productivityUploadPanel", ("admin",)),
     VisualPage("personer", "/personer.html", "#persons-table", ("admin", "leader")),
     VisualPage("stallen", "/stallen.html", "#acts-body", ("admin", "leader")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
@@ -404,6 +404,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Comma-separated roles to capture: public, admin, leader, viewer.",
     )
     parser.add_argument("--headful", action="store_true", help="Show the browser while capturing screenshots.")
+    parser.add_argument(
+        "--via-desktop-proxy",
+        action="store_true",
+        help="Serve the same frontend through the desktop local app server and proxy API calls to the test backend.",
+    )
     return parser.parse_args(argv)
 
 
@@ -419,21 +424,33 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"Unknown roles: {', '.join(unknown)}")
 
     server: ServerProcess | None = None
+    desktop_proxy = None
+    upstream_base_url = None
     base_url = args.base_url
     try:
         if not base_url:
             base_url, server = start_local_server(output_dir)
+        upstream_base_url = base_url
+        if args.via_desktop_proxy:
+            from desktop.local_app_server import LocalAppServer
+
+            desktop_proxy = LocalAppServer(upstream_base_url=base_url)
+            base_url = desktop_proxy.start().rstrip("/")
         artifacts = capture_visuals(base_url=base_url, output_dir=output_dir, roles=roles, headful=args.headful)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     finally:
+        if desktop_proxy:
+            desktop_proxy.stop()
         if server:
             server.close()
 
     summary = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "base_url": base_url,
+        "upstream_base_url": upstream_base_url,
+        "via_desktop_proxy": bool(args.via_desktop_proxy),
         "roles": roles,
         "viewports": [asdict(viewport) for viewport in VIEWPORTS],
         "artifacts": artifacts,

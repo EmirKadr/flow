@@ -5,12 +5,16 @@ from pathlib import Path
 
 project_root = Path(SPECPATH)
 app_icon = project_root / "desktop" / "assets" / "app_icon.ico"
+frontend_dir = project_root / "app" / "frontend"
 
 a = Analysis(
     ["desktop/main.py"],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[(str(app_icon), "desktop/assets")],
+    datas=[
+        (str(app_icon), "desktop/assets"),
+        (str(frontend_dir), "app/frontend"),
+    ],
     hiddenimports=[
         "PyQt6.QtWebEngineCore",
         "PyQt6.QtWebEngineWidgets",
@@ -19,7 +23,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["pytest", "tests", "app"],
+    excludes=["pytest", "tests"],
     noarchive=False,
     optimize=0,
 )

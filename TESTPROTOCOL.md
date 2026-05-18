@@ -4,7 +4,8 @@ Det har protokollet beskriver hur en agent ska testa Bemanning efter andringar.
 Appen finns i tva klienter som ska hallas i paritet:
 
 - `app/` ar webbappen.
-- `desktop/` ar Windows-appen som visar samma webbapp i ett PyQt-skal.
+- `desktop/` ar Windows-appen som startar en lokal app-yta i ett PyQt-skal och
+  proxar API-anrop till samma centrala backend som hemsidan.
 
 ## Grundregel
 
@@ -19,6 +20,7 @@ Kor detta fore commit nar andringen inte ar rent dokumentar:
 ```powershell
 python -m pytest
 Get-ChildItem -Path app\frontend\js -Filter *.js | ForEach-Object { node --check $_.FullName }
+python -m tools.bemanning_cli routes --format table
 python desktop\main.py --smoke-test
 ```
 
@@ -26,6 +28,7 @@ For release eller desktop-andringar:
 
 ```powershell
 cmd /c build_windows.bat
+python -m tools.release_check
 ```
 
 ## Automatiska tester som finns
@@ -66,8 +69,13 @@ Vanliga varianter:
 ```powershell
 python -m tools.visual_smoke --roles public,admin
 python -m tools.visual_smoke --base-url http://127.0.0.1:8000 --roles admin
+python -m tools.visual_smoke --via-desktop-proxy --roles public,admin
 python -m tools.visual_smoke --output artifacts\visual\manual-check
 ```
+
+`--via-desktop-proxy` testar samma frontend via desktop-appens lokala appserver
+och proxar API-anrop till testbackend. Anvand den nar en andring paverkar
+Windows-appens lokala appyta, cookies, API-proxy eller paketerad frontend.
 
 Bas-screenshots som ska granskas:
 
@@ -166,7 +174,8 @@ Det skapar screenshots under `artifacts/desktop-shell/`:
 - `desktop-loaded-shell.png`
 
 De bilderna visar desktop-specifika tillstand. Sjalva bemanningsvyerna testas
-med `tools.visual_smoke`, eftersom Windows-appen visar samma webbyta.
+med `tools.visual_smoke`, eftersom Windows-appen använder samma frontendkod som
+webben men servar den lokalt.
 
 ## Desktop-app-probe
 
@@ -182,7 +191,7 @@ att desktop-skalet:
 
 - visar laddning
 - visar anslutningsfel
-- laddar den konfigurerade webbappen nar servern ar frisk
+- laddar den lokala appytan nar central server ar frisk
 - sparar `report.json` och screenshots under `artifacts/desktop-app/<timestamp>/`
 
 Pa en maskin dar Qt WebEngine kan rendera kan agenten aven kora:

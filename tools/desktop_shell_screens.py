@@ -77,9 +77,20 @@ def main(argv: list[str] | None = None) -> int:
         label.setStyleSheet("font-size: 22px; font-weight: 700; color: #0f172a; background: #f5f7fb;")
         return label
 
+    class FakeBrowser(QLabel):
+        def __init__(self, parent=None):
+            super().__init__("Vantar pa lokal appyta...", parent)
+            self.loadFinished = FakeSignal()
+            self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.setStyleSheet("font-size: 22px; font-weight: 700; color: #0f172a; background: #f5f7fb;")
+
+        def load(self, url):
+            self.setText(f"Lokal appyta laddad:\n{url.toString()}")
+            self.loadFinished.emit(True)
+
     worker = FakeWorker()
     window = MainWindow(
-        browser_factory=browser_factory,
+        browser_factory=lambda parent=None: FakeBrowser(parent),
         health_worker_factory=lambda: worker,
     )
     window.resize(1400, 900)

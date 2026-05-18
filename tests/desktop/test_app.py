@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from PyQt6.QtWidgets import QWidget
 
-from core.app_info import SERVER_BASE_URL, UPDATE_DISABLED_ENV
+from core.app_info import UPDATE_DISABLED_ENV
 from desktop.app import MainWindow
 from services.health_service import HealthInfo
 
@@ -60,13 +60,37 @@ class FakeUpdateCheckWorker(FakeHealthWorker):
         self.no_update = FakeSignal()
 
 
+class FakeLocalAppServer:
+    def __init__(self, url="http://127.0.0.1:8766/"):
+        self.url = url
+        self.start_called = 0
+        self.stop_called = 0
+
+    def start(self):
+        self.start_called += 1
+        return self.url
+
+    def stop(self):
+        self.stop_called += 1
+
+
+class FailingLocalAppServer:
+    def start(self):
+        raise RuntimeError("port upptagen")
+
+    def stop(self):
+        return None
+
+
 def test_startup_health_check_loads_server(qapp, monkeypatch):
     monkeypatch.setenv(UPDATE_DISABLED_ENV, "1")
     browser = FakeBrowser()
     worker = FakeHealthWorker()
+    local_server = FakeLocalAppServer()
     window = MainWindow(
         browser_factory=lambda parent=None: browser,
         health_worker_factory=lambda: worker,
+        local_app_server_factory=lambda: local_server,
     )
 
     qapp.processEvents()
@@ -75,7 +99,43 @@ def test_startup_health_check_loads_server(qapp, monkeypatch):
     worker.healthy.emit(HealthInfo(status="ok", environment="production"))
 
     assert window._stack.currentWidget() is browser
-    assert browser.loaded_urls == [SERVER_BASE_URL]
+    assert local_server.start_called == 1
+    assert browser.loaded_urls == [local_server.url]
+
+
+def test_startup_local_app_error_shows_error_view(qapp, monkeypatch):
+    monkeypatch.setenv(UPDATE_DISABLED_ENV, "1")
+    browser = FakeBrowser()
+    worker = FakeHealthWorker()
+    window = MainWindow(
+        browser_factory=lambda parent=None: browser,
+        health_worker_factory=lambda: worker,
+        local_app_server_factory=lambda: FailingLocalAppServer(),
+    )
+
+    qapp.processEvents()
+    worker.healthy.emit(HealthInfo(status="ok", environment="production"))
+
+    assert window._stack.currentWidget() is window._error_view
+    assert "port upptagen" in window._error_view.message_text
+    assert browser.loaded_urls == []
+
+
+def test_close_stops_local_app_server(qapp, monkeypatch):
+    monkeypatch.setenv(UPDATE_DISABLED_ENV, "1")
+    worker = FakeHealthWorker()
+    local_server = FakeLocalAppServer()
+    window = MainWindow(
+        browser_factory=lambda parent=None: FakeBrowser(),
+        health_worker_factory=lambda: worker,
+        local_app_server_factory=lambda: local_server,
+    )
+
+    qapp.processEvents()
+    worker.healthy.emit(HealthInfo(status="ok", environment="production"))
+    window.close()
+
+    assert local_server.stop_called == 1
 
 
 def test_startup_health_error_shows_error_view(qapp, monkeypatch):
@@ -84,6 +144,7 @@ def test_startup_health_error_shows_error_view(qapp, monkeypatch):
     window = MainWindow(
         browser_factory=lambda parent=None: FakeBrowser(),
         health_worker_factory=lambda: worker,
+        local_app_server_factory=lambda: FakeLocalAppServer(),
     )
 
     qapp.processEvents()
@@ -101,6 +162,7 @@ def test_manual_update_check_starts_worker(qapp, monkeypatch):
         browser_factory=lambda parent=None: FakeBrowser(),
         health_worker_factory=lambda: health_worker,
         update_check_worker_factory=lambda: update_worker,
+        local_app_server_factory=lambda: FakeLocalAppServer(),
     )
 
     qapp.processEvents()
@@ -114,6 +176,7 @@ def test_update_downloaded_runs_installer_silently(qapp, monkeypatch):
     window = MainWindow(
         browser_factory=lambda parent=None: FakeBrowser(),
         health_worker_factory=lambda: FakeHealthWorker(),
+        local_app_server_factory=lambda: FakeLocalAppServer(),
     )
 
     with patch("desktop.app.QProcess.startDetached", return_value=True) as start, patch(

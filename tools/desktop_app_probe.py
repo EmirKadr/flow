@@ -1,8 +1,9 @@
 """Probe Windows-app behavior.
 
 Default mode is deterministic and safe in headless agent sessions: it exercises
-the PyQt shell with a fake embedded browser, captures loading/error/loaded
-states, and verifies the shell asks the browser to load the configured server.
+the PyQt shell with a real local app server and fake embedded browser, captures
+loading/error/loaded states, and verifies that the local app surface and API
+proxy respond.
 
 Use `--real-webengine` on a machine where Qt WebEngine can render to test the
 real embedded browser as well. Some CI/agent sessions cannot run QWebEngine;
@@ -18,6 +19,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+
+import requests
 
 from tools import visual_smoke
 
@@ -85,6 +88,7 @@ def run_shell_probe(*, output_dir: Path, base_url: str) -> list[ProbeStep]:
     from PyQt6.QtWidgets import QApplication, QLabel
 
     from desktop.app import MainWindow
+    from desktop.local_app_server import LocalAppServer
     from services.health_service import HealthInfo
 
     app = QApplication.instance() or QApplication([])
@@ -105,6 +109,7 @@ def run_shell_probe(*, output_dir: Path, base_url: str) -> list[ProbeStep]:
     window = MainWindow(
         browser_factory=lambda parent=None: FakeBrowser(parent),
         health_worker_factory=lambda: worker,
+        local_app_server_factory=lambda: LocalAppServer(upstream_base_url=base_url),
     )
     window.resize(1400, 900)
     window.show()
@@ -124,9 +129,22 @@ def run_shell_probe(*, output_dir: Path, base_url: str) -> list[ProbeStep]:
         steps.append(ProbeStep("desktop_error", screenshot("02-desktop-error")))
         worker.healthy.emit(HealthInfo(status="ok", environment="desktop-probe"))
         app.processEvents()
-        if loaded_urls != [base_url]:
-            raise RuntimeError(f"Desktop shell loaded {loaded_urls}, expected {[base_url]}")
-        steps.append(ProbeStep("desktop_loaded_shell", screenshot("03-desktop-loaded-shell"), base_url))
+        if len(loaded_urls) != 1 or not loaded_urls[0].startswith("http://127.0.0.1:"):
+            raise RuntimeError(f"Desktop shell loaded unexpected URL(s): {loaded_urls}")
+        local_url = loaded_urls[0]
+        local_frontend = requests.get(local_url, timeout=8)
+        local_frontend.raise_for_status()
+        local_health = requests.get(f"{local_url.rstrip('/')}/api/health", timeout=8)
+        local_health.raise_for_status()
+        if local_health.json().get("status") != "ok":
+            raise RuntimeError(f"Local API proxy returned unexpected health: {local_health.text}")
+        steps.append(
+            ProbeStep(
+                "desktop_loaded_shell",
+                screenshot("03-desktop-loaded-shell"),
+                f"{local_url} -> {base_url}",
+            )
+        )
     finally:
         window.close()
         app.processEvents()
@@ -136,6 +154,7 @@ def run_shell_probe(*, output_dir: Path, base_url: str) -> list[ProbeStep]:
 
 def run_real_webengine_child(*, output_dir: Path, base_url: str) -> int:
     env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
     env["BEMANNING_DISABLE_UPDATE_CHECK"] = "1"
     env["BEMANNING_SERVER_BASE_URL"] = base_url
@@ -149,7 +168,15 @@ def run_real_webengine_child(*, output_dir: Path, base_url: str) -> int:
         "--output",
         str(output_dir),
     ]
-    result = subprocess.run(command, cwd=ROOT, env=env)
+    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
+    (output_dir / "real-webengine-child.stdout.log").write_text(
+        result.stdout,
+        encoding="utf-8",
+    )
+    (output_dir / "real-webengine-child.stderr.log").write_text(
+        result.stderr,
+        encoding="utf-8",
+    )
     return int(result.returncode)
 
 
@@ -240,7 +267,11 @@ def main(argv: list[str] | None = None) -> int:
         real_returncode: int | None = None
         if args.real_webengine:
             real_returncode = run_real_webengine_child(output_dir=output_dir, base_url=base_url)
-            detail = "ok" if real_returncode == 0 else f"failed with exit code {real_returncode}"
+            detail = (
+                "ok"
+                if real_returncode == 0
+                else f"failed with exit code {real_returncode}; see real-webengine-child.*.log"
+            )
             results.append(ProbeStep("real_webengine_probe", detail=detail))
     finally:
         if server:

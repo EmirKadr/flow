@@ -60,9 +60,15 @@ Versionsnumret finns i `core/app_info.py`. Hoj `APP_VERSION`, skapa en tagg som
 
 ## Central drift
 
-Desktop-klienten pekar mot den centrala driftsatta sajten via
-`SERVER_BASE_URL` i `core/app_info.py`. Standardvardet ar `https://stigamo.nu`.
-Klienten innehaller ingen lokal databas och ingen lokal FastAPI-server i steg 1.
+Desktop-klienten startar en lokal app-yta pa `127.0.0.1` och servar den
+paketerade frontendkoden fran `app/frontend`. Alla `/api/*`-anrop proxas vidare
+till den centrala driftsatta servern via `SERVER_BASE_URL` i `core/app_info.py`.
+Standardvardet ar `https://stigamo.nu`.
+
+Det betyder att appen inte langre behover rendera hemsidan direkt, men den delar
+fortfarande samma centrala PostgreSQL-sanning som hemsidan. Klienten innehaller
+ingen lokal databas. Standardporten ar `8766` och kan andras med
+`BEMANNING_DESKTOP_PORT`.
 
 ## GitHub artifact
 
