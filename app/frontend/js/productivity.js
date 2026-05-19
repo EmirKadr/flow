@@ -9,7 +9,7 @@ let productivityGroupFilterManual = false;
 
 const productivityReportCache = new Map();
 const productivityReportRequests = new Map();
-const productivityLocalFiles = {};
+let productivityLocalFiles = {};
 
 const PRODUCTIVITY_HOURS = Array.from({ length: 18 }, (_, index) => index + 6);
 const PRODUCTIVITY_SOURCE_SPECS = [
@@ -483,24 +483,11 @@ function localFilesSignature() {
     .join("|");
 }
 
-async function readFileSample(file) {
-  return await file.slice(0, 8192).text();
-}
-
-function classifyProductivityLocalFile(file, sample) {
-  const name = String(file?.name || "").toLowerCase();
-  for (const spec of PRODUCTIVITY_SOURCE_SPECS) {
-    if (name.startsWith(spec.prefix.toLowerCase())) return spec.key;
-  }
-
-  const firstLine = String(sample || "").split(/\r?\n/).find((line) => line.trim()) || "";
-  if (!firstLine) return null;
-  const delimiter = detectDelimiter(firstLine);
-  const headers = new Set(parseDelimitedLine(firstLine, delimiter).map((header) => normalizeHeader(header)));
-  for (const spec of PRODUCTIVITY_SOURCE_SPECS) {
-    if (spec.headerHints.every((hint) => headers.has(normalizeHeader(hint)))) return spec.key;
-  }
-  return null;
+async function syncProductivityLocalFilesFromStore() {
+  if (!window.productivityUploads?.loadFiles) return;
+  const previousSignature = localFilesSignature();
+  productivityLocalFiles = await window.productivityUploads.loadFiles();
+  if (previousSignature !== localFilesSignature()) resetLocalProductivityDataset();
 }
 
 function buildLocalFileStatus(serverStatus = {}) {
@@ -870,42 +857,6 @@ function renderSources(report) {
 
 function renderFileStatus(status) {
   productivityFileStatus = status;
-  const files = Object.values(status.files || {});
-  const filled = files.filter((file) => file.uploaded).length;
-  const required = files.filter((file) => file.required).length;
-  document.getElementById("productivityUploadCount").textContent = `${filled}/${required} valda`;
-
-  document.getElementById("productivityFileSlots").innerHTML = files.map((file) => `
-    <div class="productivity-file-slot ${file.uploaded ? "is-uploaded" : ""}">
-      <div class="productivity-file-main">
-        <div class="productivity-file-label">${escapeHtml(file.label)}${file.required ? '<span class="req">*</span>' : ""}</div>
-        <div class="productivity-file-name">
-          ${file.uploaded ? escapeHtml(file.name) : '<span class="muted">Ingen fil vald</span>'}
-        </div>
-        ${file.uploaded ? `<div class="productivity-file-meta">${escapeHtml(file.size_label || "")}</div>` : ""}
-      </div>
-      <div class="productivity-file-actions">
-        <span class="status-pill ${file.uploaded ? "ok" : "none"}">${file.uploaded ? "Vald" : "Ej fil"}</span>
-        <button type="button" class="btn-sm productivity-slot-upload" data-file-key="${escapeHtml(file.key)}">V\u00e4lj</button>
-        <button type="button" class="btn-sm danger productivity-slot-clear" data-file-key="${escapeHtml(file.key)}" ${file.uploaded ? "" : "disabled"}>&times;</button>
-      </div>
-    </div>
-  `).join("");
-
-  document.querySelectorAll(".productivity-slot-upload").forEach((button) => {
-    button.addEventListener("click", () => document.getElementById("productivityUploadInput").click());
-  });
-  document.querySelectorAll(".productivity-slot-clear").forEach((button) => {
-    button.addEventListener("click", () => clearProductivityFile(button.dataset.fileKey));
-  });
-
-  const uploadStatus = document.getElementById("productivityUploadStatus");
-  uploadStatus.textContent = status.ready
-    ? "Alla produktivitetsunderlag \u00e4r valda."
-    : "Produktivitet r\u00e4knas n\u00e4r de markerade filerna \u00e4r valda.";
-  if (!status.kpi_loaded) {
-    uploadStatus.textContent = "Saknar permanent KPI-m\u00e5l i bakgrunden.";
-  }
 }
 
 function clearReportContent() {
@@ -917,6 +868,7 @@ function clearReportContent() {
 }
 
 async function loadProductivityFileStatus() {
+  await syncProductivityLocalFilesFromStore();
   const serverStatus = await api.get("/api/productivity/files");
   const status = buildLocalFileStatus(serverStatus);
   renderFileStatus(status);
@@ -1124,127 +1076,10 @@ async function loadProductivity() {
   }
 }
 
-async function uploadPermanentKpiFile(file) {
-  const result = await api.postFile(
-    `/api/productivity/files/raw?filename=${encodeURIComponent(file.name)}`,
-    file,
-  );
-  productivityTargets = null;
-  productivityTargetsSignature = "";
-  clearProductivityReportCache();
-  return result;
-}
-
-async function uploadProductivityFiles(files) {
-  const incoming = Array.from(files || []);
-  if (!incoming.length) return;
-
-  const uploadStatus = document.getElementById("productivityUploadStatus");
-  uploadStatus.textContent = "L\u00e4ser filval...";
-  try {
-    const saved = [];
-    const unknown = [];
-    let hiddenSaved = 0;
-    let localChanged = false;
-
-    for (const file of incoming) {
-      const sample = await readFileSample(file);
-      const fileType = classifyProductivityLocalFile(file, sample);
-      if (!fileType) {
-        unknown.push(file.name || "ok\u00e4nd fil");
-        continue;
-      }
-      if (fileType === "kpi") {
-        uploadStatus.textContent = `Uppdaterar KPI-m\u00e5l: ${file.name}`;
-        const result = await uploadPermanentKpiFile(file);
-        hiddenSaved += (result.saved || []).length;
-        unknown.push(...(result.unknown || []));
-        continue;
-      }
-
-      productivityLocalFiles[fileType] = { file };
-      saved.push({ key: fileType, name: file.name, visible: true });
-      localChanged = true;
-    }
-
-    if (localChanged) resetLocalProductivityDataset();
-    const latestStatus = await loadProductivityFileStatus();
-    const parts = [];
-    if (saved.length) parts.push(`${saved.length} fil(er) valda lokalt`);
-    if (hiddenSaved) parts.push("KPI-m\u00e5l uppdaterat i bakgrunden");
-    if (unknown.length) parts.push(`Ok\u00e4nd filtyp: ${unknown.join(", ")}`);
-    const message = parts.join(". ") || "Ingen fil uppdaterades.";
-    uploadStatus.textContent = message;
-
-    if (latestStatus.ready) {
-      await loadProductivity();
-    } else {
-      setProductivityWaitingStatus(latestStatus);
-      uploadStatus.textContent = message;
-    }
-  } catch (error) {
-    uploadStatus.textContent = error.message || "Kunde inte l\u00e4sa filer.";
-    showToast(uploadStatus.textContent, "error", 7000);
-  }
-}
-
-async function clearProductivityFile(fileKey) {
-  if (!fileKey) return;
-  if (productivityLocalFiles[fileKey]) {
-    delete productivityLocalFiles[fileKey];
-    resetLocalProductivityDataset();
-  }
-  try {
-    const status = await loadProductivityFileStatus();
-    clearReportContent();
-    document.getElementById("productivityStatus").textContent = status.ready
-      ? "Underlagen \u00e4r valda. Ber\u00e4knar produktivitet..."
-      : "Saknar produktivitetsunderlag.";
-    if (status.ready) await loadProductivity();
-  } catch (error) {
-    showToast(error.message || "Kunde inte rensa filen.", "error", 7000);
-  }
-}
-
-function setupUploadDropzone() {
-  const panel = document.getElementById("productivityUploadPanel");
-  let dragDepth = 0;
-
-  panel.addEventListener("dragenter", (event) => {
-    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-    event.preventDefault();
-    dragDepth += 1;
-    panel.classList.add("is-dragging");
-  });
-  panel.addEventListener("dragover", (event) => {
-    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  });
-  panel.addEventListener("dragleave", () => {
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) panel.classList.remove("is-dragging");
-  });
-  panel.addEventListener("drop", (event) => {
-    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-    event.preventDefault();
-    dragDepth = 0;
-    panel.classList.remove("is-dragging");
-    uploadProductivityFiles(event.dataTransfer.files);
-  });
-}
-
 (async () => {
   const user = await initPage("productivity", { requireSuperUser: true });
   if (!user) return;
 
-  document.getElementById("productivityUploadBtn").addEventListener("click", () => {
-    document.getElementById("productivityUploadInput").click();
-  });
-  document.getElementById("productivityUploadInput").addEventListener("change", (event) => {
-    uploadProductivityFiles(event.target.files);
-    event.target.value = "";
-  });
   document.getElementById("productivityDate").addEventListener("change", loadProductivity);
   document.getElementById("productivityPrevDate").addEventListener("click", () => shiftProductivityDate(-1));
   document.getElementById("productivityNextDate").addEventListener("click", () => shiftProductivityDate(1));
@@ -1260,6 +1095,5 @@ function setupUploadDropzone() {
     }
   });
   document.getElementById("productivitySearch").addEventListener("input", renderContent);
-  setupUploadDropzone();
   await initializeProductivityPage();
 })();

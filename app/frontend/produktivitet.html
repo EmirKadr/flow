@@ -13,8 +13,6 @@
   <header class="topbar"></header>
 
   <section class="controls">
-    <button id="productivityUploadBtn" type="button">Välj CSV-filer</button>
-    <input id="productivityUploadInput" type="file" accept=".csv,.txt" multiple hidden />
     <label class="productivity-date-field">Datum
       <span class="date-nav productivity-date-nav">
         <button id="productivityPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum" disabled>‹</button>
@@ -35,14 +33,6 @@
   <main class="productivity-page">
     <div class="section-title">Produktivitet</div>
     <div id="productivityStatus" class="productivity-status"></div>
-    <section id="productivityUploadPanel" class="productivity-upload-panel">
-      <div class="productivity-upload-head">
-        <h3>Underlag</h3>
-        <span id="productivityUploadCount"></span>
-      </div>
-      <div id="productivityFileSlots" class="productivity-file-slots"></div>
-      <div id="productivityUploadStatus" class="productivity-upload-status"></div>
-    </section>
     <div id="productivitySummary" class="productivity-summary"></div>
     <div id="productivitySources" class="productivity-sources"></div>
     <div id="productivityContent" class="productivity-content"></div>
@@ -50,6 +40,7 @@
 
   <script src="/js/api.js"></script>
   <script src="/js/common.js"></script>
+  <script src="/js/productivity_uploads.js"></script>
   <script src="/js/productivity.js"></script>
 </body>
 </html>

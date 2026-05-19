@@ -69,7 +69,7 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("login", "/login.html", "#login-form", ("public",)),
     VisualPage("bemanning", "/index.html", "#scheduleTable", ("admin", "leader", "staffing", "viewer")),
     VisualPage("oversikt", "/overblick.html", "#overviewTable", ("admin", "leader", "staffing", "viewer")),
-    VisualPage("produktivitet", "/produktivitet.html", "#productivityUploadPanel", ("admin",)),
+    VisualPage("produktivitet", "/produktivitet.html", "#productivityStatus", ("admin",)),
     VisualPage("personer", "/personer.html", "#persons-table", ("admin", "leader", "staffing")),
     VisualPage("stallen", "/stallen.html", "#acts-body", ("admin", "leader", "staffing")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
@@ -116,7 +116,7 @@ STATES: tuple[VisualState, ...] = (
     VisualState("viewer-nekad-uppladdningar", "/uppladdningar.html", "#scheduleTable", "noop", ("viewer",)),
     VisualState("bemanning-fokus-mestergruppen", "/index.html", "#scheduleTable", "area_focus_mg", ("admin", "leader", "staffing")),
     VisualState("oversikt-fokus-mestergruppen", "/overblick.html", "#overviewTable", "area_focus_mg", ("admin", "leader", "staffing")),
-    VisualState("produktivitet-fokus-mestergruppen", "/produktivitet.html", "#productivityUploadPanel", "area_focus_mg", ("admin",)),
+    VisualState("produktivitet-fokus-mestergruppen", "/produktivitet.html", "#productivityStatus", "area_focus_mg", ("admin",)),
     VisualState("personer-fokus-mestergruppen", "/personer.html", "#persons-table", "area_focus_mg", ("admin", "leader", "staffing")),
     VisualState("stallen-fokus-mestergruppen", "/stallen.html", "#acts-body", "area_focus_mg", ("admin", "leader", "staffing")),
 )

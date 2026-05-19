@@ -363,6 +363,9 @@ function bindAllocationCommonEvents(root) {
 function renderUploadsView() {
   const slots = currentAllocationSlots();
   const filled = slots.filter((slot) => allocationState.files[slot.key]).length;
+  const productivityPanel = allocationState.user?.is_super_user
+    ? '<section id="productivityUploadPanel" class="allocation-panel productivity-upload-panel" data-productivity-upload-panel></section>'
+    : "";
   renderAllocationShell(`
     <section class="allocation-panel" data-allocation-drop>
       <div class="allocation-panel-head">
@@ -377,10 +380,15 @@ function renderUploadsView() {
       ${allocationState.status ? `<p class="allocation-status">${allocationEscape(allocationState.status)}</p>` : ""}
       <div class="allocation-file-grid">${allocationFileRows(slots)}</div>
     </section>
+    ${productivityPanel}
   `);
   document.getElementById("allocation-upload-all")?.addEventListener("change", async (event) => {
     await routeAllocationFiles(event.target.files, slots);
   });
+  const productivityPanelElement = document.querySelector("[data-productivity-upload-panel]");
+  if (productivityPanelElement && window.productivityUploads?.setupPanel) {
+    void window.productivityUploads.setupPanel(productivityPanelElement);
+  }
 }
 
 function slotsForFlow(flow) {

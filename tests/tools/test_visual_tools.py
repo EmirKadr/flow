@@ -262,7 +262,10 @@ def test_frontend_theme_toggle_is_wired_globally():
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
+    productivity_uploads = (frontend / "js" / "productivity_uploads.js").read_text(encoding="utf-8")
+    allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
+    uploads_html = (frontend / "uppladdningar.html").read_text(encoding="utf-8")
 
     assert "bemanning-theme" in common
     assert "bemanning-sidebar-user" in common
@@ -274,8 +277,16 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".theme-toggle" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
-    assert "/api/productivity/files/raw" in productivity
+    assert "/api/productivity/files/raw" in productivity_uploads
     assert "productivityLocalFiles" in productivity
+    assert "syncProductivityLocalFilesFromStore" in productivity
+    assert "window.productivityUploads.loadFiles()" in productivity
+    assert "productivityUploads?.setupPanel" in allocation_tools
+    assert "data-productivity-upload-panel" in allocation_tools
+    assert "/js/productivity_uploads.js" in productivity_html
+    assert "/js/productivity_uploads.js" in uploads_html
+    assert 'id="productivityUploadBtn"' not in productivity_html
+    assert 'id="productivityUploadPanel"' not in productivity_html
     assert "buildProductivityReportFromLocalDataset" in productivity
     assert "prefetchAdjacentReports" in productivity
     assert 'id="productivityPrevDate"' in productivity_html
