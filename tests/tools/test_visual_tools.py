@@ -479,6 +479,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+    catalog = (ROOT / "warehouse_tools" / "catalog.py").read_text(encoding="utf-8")
+    flows = (ROOT / "warehouse_tools" / "flows.py").read_text(encoding="utf-8")
 
     assert 'const ALLOCATION_API = "/api/allokering"' in allocation
     assert 'const ALLOCATION_DB_NAME = "bemanning-allokering-files"' in allocation
@@ -486,6 +488,19 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "window.allocationUploadActivity?.start()" in allocation
     assert "window.allocationUploadActivity?.finish(assigned.length)" in allocation
     assert "allocationState.files = await loadStoredAllocationFiles()" in allocation
+    assert "Detalj Kundorder(alla)" in allocation
+    assert "Detalj Kundorder(alla)" in catalog
+    assert "Detalj Kundorder(alla)" in flows
+    assert "Beställningslinjer" not in catalog
+    assert "Beställningslinjer" not in flows
+    assert "Saldo ink. Automation" in allocation
+    assert "Saldo ink. Automation" in catalog
+    assert "Saldo / automation" not in catalog
+    assert "ALLOCATION_CORE_FILES" in allocation
+    assert "allocationCoreFile" in allocation
+    assert "Kärnfil" in allocation
+    assert '" (kärnfil)"' in allocation
+    assert "artikel_max.csv (kärnfil)" in catalog
 
     assert "DATABASE_ICON" in common
     assert "ALLOCATION_UPLOAD_NOTICE_KEY" in common

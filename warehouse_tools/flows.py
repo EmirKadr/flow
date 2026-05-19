@@ -352,20 +352,20 @@ FLOWS: list[dict] = [
         "description": "Allokera kundorder mot buffertpallar (Helpall -> AutoStore -> Huvudplock, FIFO) med near-miss-loggning, refill och pallplatsberäkning.",
         "handler": flow_allocate,
         "inputs": [
-            {"key": "orders", "label": "Beställningslinjer", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
-            {"key": "saldo", "label": "Saldo / automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
             {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": []},
         ],
     },
     {
         "id": "ordersaldo", "label": "Ordersaldo", "category": "Order & saldo",
-        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån beställningslinjer.",
+        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån Detalj Kundorder(alla).",
         "handler": flow_ordersaldo,
         "inputs": [
-            {"key": "orders", "label": "Beställningslinjer", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo / automation (Utbestallt)", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo ink. Automation (Utbestallt)", "type": "file", "required": False, "detect": ["automation"]},
         ],
     },
     {
@@ -374,7 +374,7 @@ FLOWS: list[dict] = [
         "handler": flow_lyx,
         "inputs": [
             {"key": "saldo", "label": "Saldofil", "type": "file", "required": True, "detect": ["automation", "buffer"]},
-            {"key": "max_csv", "label": "artikel_max.csv (valfri)", "type": "file", "required": False, "detect": []},
+            {"key": "max_csv", "label": "artikel_max.csv (kärnfil)", "type": "file", "required": False, "detect": []},
         ],
     },
     {
@@ -382,10 +382,10 @@ FLOWS: list[dict] = [
         "description": "Prioritera påfyllnad utifrån underskott. Med orderöversikt används lastningsfönster-läge.",
         "handler": flow_pafyllnadsprio,
         "inputs": [
-            {"key": "orders", "label": "Beställningslinjer", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo / automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": False, "detect": ["overview"]},
-            {"key": "max_csv", "label": "artikel_max.csv (valfri)", "type": "file", "required": False, "detect": []},
+            {"key": "max_csv", "label": "artikel_max.csv (kärnfil)", "type": "file", "required": False, "detect": []},
         ],
     },
     {
@@ -393,7 +393,7 @@ FLOWS: list[dict] = [
         "description": "Räkna ut vilka HIB-ordrar som behöver kopplas om samt missade avgångar.",
         "handler": flow_hib_koppling,
         "inputs": [
-            {"key": "details", "label": "Beställningslinjer", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
         ],
     },
@@ -403,7 +403,7 @@ FLOWS: list[dict] = [
         "handler": flow_overview_check,
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "details", "label": "Beställningslinjer (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -413,7 +413,7 @@ FLOWS: list[dict] = [
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
             {"key": "dispatch", "label": "Dispatchpallar", "type": "file", "required": True, "detect": ["dispatch"]},
-            {"key": "details", "label": "Beställningslinjer (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -421,7 +421,7 @@ FLOWS: list[dict] = [
         "description": "Kontrollera orderrader mot vecka 27-reglerna.",
         "handler": flow_vecka27_check,
         "inputs": [
-            {"key": "orders", "label": "Beställningslinjer", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
         ],
     },
     {
@@ -446,7 +446,7 @@ FLOWS: list[dict] = [
         "inputs": [
             {"key": "prognos", "label": "Prognosfil", "type": "file", "required": False, "detect": ["prognos"]},
             {"key": "campaign", "label": "Kampanjfil", "type": "file", "required": False, "detect": ["campaign"]},
-            {"key": "saldo", "label": "Saldo / automation", "type": "file", "required": True, "detect": ["automation"]},
+            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": True, "detect": ["automation"]},
             {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": False, "detect": ["buffer"]},
         ],
     },
@@ -501,9 +501,9 @@ SOLO_FLOWS = {
 # varje flödes filinput mappas till en pool-nyckel. Endast "details" skiljer
 # sig från sin pool-nyckel (samma filformat som "orders").
 DATA_POOL: list[dict] = [
-    {"key": "orders", "label": "Beställningslinjer", "detect": ["orders"]},
+    {"key": "orders", "label": "Detalj Kundorder(alla)", "detect": ["orders"]},
     {"key": "buffer", "label": "Buffertpallar", "detect": ["buffer"]},
-    {"key": "saldo", "label": "Saldo / automation", "detect": ["automation"]},
+    {"key": "saldo", "label": "Saldo ink. Automation", "detect": ["automation"]},
     {"key": "overview", "label": "Orderöversikt", "detect": ["overview"]},
     {"key": "dispatch", "label": "Dispatchpallar", "detect": ["dispatch"]},
     {"key": "items", "label": "Item option", "detect": ["item"]},

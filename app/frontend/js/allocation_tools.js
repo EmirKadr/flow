@@ -11,11 +11,11 @@ const ALLOCATION_FILE_WORDS = {
   values_file: ["values", "varden", "värden"],
 };
 const ALLOCATION_SLOT_LABELS = {
-  orders: "Beställningslinjer",
+  orders: "Detalj Kundorder(alla)",
   buffer: "Buffertpallar",
   overview: "Orderöversikt",
   dispatch: "Dispatchpallar",
-  saldo: "Saldo / automation",
+  saldo: "Saldo ink. Automation",
   items: "Item option",
   not_putaway: "Ej inlagrade",
   prognos: "Prognosfil",
@@ -34,6 +34,13 @@ const ALLOCATION_SLOT_ORDER = [
   "prognos", "campaign", "max_csv", "wms_receive", "wms_booking", "wms_trans",
   "wms_pick", "wms_correct", "remote_file", "values_file",
 ];
+const ALLOCATION_CORE_FILES = {
+  max_csv: {
+    name: "artikel_max.csv",
+    badge: "Kärnfil",
+    sizeLabel: "Kärnfil",
+  },
+};
 
 const allocationState = {
   user: null,
@@ -65,6 +72,15 @@ function allocationFileInputKey(input) {
 
 function allocationSlotLabel(key) {
   return ALLOCATION_SLOT_LABELS[allocationLogicalKey(key)] || key;
+}
+
+function allocationCoreFile(key) {
+  return ALLOCATION_CORE_FILES[allocationLogicalKey(key)] || null;
+}
+
+function allocationDisplayFile(key) {
+  const logicalKey = allocationLogicalKey(key);
+  return allocationState.files[logicalKey] || allocationCoreFile(logicalKey);
 }
 
 function allocationPrimaryTitle(page) {
@@ -168,6 +184,11 @@ function allocationFileSize(size) {
   if (!size) return "";
   if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} kB`;
   return `${Math.round(size / 1024 / 102.4) / 10} MB`;
+}
+
+function allocationDisplaySizeLabel(entry, coreEntry) {
+  if (entry) return allocationFileSize(entry.size);
+  return coreEntry?.sizeLabel || "";
 }
 
 async function allocationJson(path, options = {}) {
@@ -292,15 +313,18 @@ function combinedAllocationFlows() {
 function allocationFileRows(slots) {
   return slots.map((slot) => {
     const entry = allocationState.files[slot.key];
+    const coreEntry = entry ? null : allocationCoreFile(slot.key);
+    const displayEntry = entry || coreEntry;
+    const sizeLabel = allocationDisplaySizeLabel(entry, coreEntry);
     const inputId = `allocation-file-${slot.key}`;
     return `
-      <div class="allocation-file-slot ${entry ? "filled" : ""}">
+      <div class="allocation-file-slot ${displayEntry ? "filled" : ""}">
         <div>
           <h3>${allocationEscape(slot.label)}</h3>
-          <p>${entry ? `${allocationEscape(entry.name)} ${allocationFileSize(entry.size) ? `<span>${allocationEscape(allocationFileSize(entry.size))}</span>` : ""}` : "Ingen fil vald"}</p>
+          <p>${displayEntry ? `${allocationEscape(displayEntry.name)} ${sizeLabel ? `<span>${allocationEscape(sizeLabel)}</span>` : ""}` : "Ingen fil vald"}</p>
         </div>
         <div class="allocation-file-actions">
-          <span class="allocation-file-badge">${entry ? "Inlagd" : "Ej fil"}</span>
+          <span class="allocation-file-badge">${entry ? "Inlagd" : coreEntry ? coreEntry.badge : "Ej fil"}</span>
           <label class="button-like" for="${inputId}">Välj</label>
           <input id="${inputId}" type="file" hidden data-slot="${allocationEscape(slot.key)}" />
           <button type="button" class="ghost danger" data-clear-slot="${allocationEscape(slot.key)}" ${entry ? "" : "disabled"}>×</button>
@@ -362,7 +386,7 @@ function bindAllocationCommonEvents(root) {
 
 function renderUploadsView() {
   const slots = currentAllocationSlots();
-  const filled = slots.filter((slot) => allocationState.files[slot.key]).length;
+  const filled = slots.filter((slot) => allocationDisplayFile(slot.key)).length;
   const productivityPanel = allocationState.user?.is_super_user
     ? '<section id="productivityUploadPanel" class="allocation-panel productivity-upload-panel" data-productivity-upload-panel></section>'
     : "";
@@ -411,11 +435,15 @@ function renderFlowFileList(flow) {
       ${fileInputs.map((input) => {
         const key = allocationFileInputKey(input);
         const entry = allocationState.files[key];
-        const cls = entry ? "ok" : input.required ? "missing" : "optional";
+        const coreEntry = entry ? null : allocationCoreFile(key);
+        const displayEntry = entry || coreEntry;
+        const cls = displayEntry ? "ok" : input.required ? "missing" : "optional";
+        const prefix = displayEntry ? "✓" : input.required ? "✗" : "○";
+        const suffix = coreEntry ? " (kärnfil)" : input.required || displayEntry ? "" : " (valfri)";
         return `
-          <div class="allocation-flow-file ${entry ? "filled" : ""}">
-            <span class="allocation-file-tag ${cls}">${entry ? "✓" : input.required ? "✗" : "○"} ${allocationEscape(allocationSlotLabel(key))}${input.required ? "" : " (valfri)"}</span>
-            <span>${entry ? allocationEscape(entry.name) : "Ingen fil"}</span>
+          <div class="allocation-flow-file ${displayEntry ? "filled" : ""}">
+            <span class="allocation-file-tag ${cls}">${prefix} ${allocationEscape(allocationSlotLabel(key))}${suffix}</span>
+            <span>${displayEntry ? allocationEscape(displayEntry.name) : "Ingen fil"}</span>
           </div>
         `;
       }).join("")}
