@@ -1,6 +1,7 @@
 # Lokala exempeldata
 demo/
 referens/
+testdata/
 
 # Uppladdade produktivitetsloggar
 data/v_ask_pick_log_full*.csv
