@@ -302,6 +302,10 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".sidebar-editor-row" in styles
     assert ".sidebar-editor-move button svg" in styles
     assert ".role-access-table" in styles
+    assert ".role-access-toggle" in styles
+    assert ".role-access-toggle.is-view" in styles
+    assert ".role-access-toggle.is-edit" in styles
+    assert ".role-access-table select" not in styles
     assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
@@ -424,6 +428,10 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
     assert "openRoleAccessModal" in users_js
     assert "ROLE_ACCESS_LEVEL_OPTIONS" in users_js
+    assert "ROLE_ACCESS_LEVEL_ORDER" in users_js
+    assert "roleAccessToggle" in users_js
+    assert "nextRoleAccessLevel" in users_js
+    assert "select[data-role][data-view]" not in users_js
 
     assert 'id="download-activity-template"' in activities_html
     assert 'id="import-activities"' in activities_html

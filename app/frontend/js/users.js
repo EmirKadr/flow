@@ -19,6 +19,7 @@ const ROLE_ACCESS_LEVEL_OPTIONS = [
   { value: "view", label: "Visa" },
   { value: "edit", label: "Redigera" },
 ];
+const ROLE_ACCESS_LEVEL_ORDER = ROLE_ACCESS_LEVEL_OPTIONS.map((option) => option.value);
 const VIEW_ACCESS_OPTIONS = [
   { id: "schedule", label: "Bemanning" },
   { id: "overview", label: "Översikt" },
@@ -122,15 +123,38 @@ function setupSettingsControls() {
   });
 }
 
-function roleAccessSelect(role, viewId) {
+function roleAccessLevelOption(value) {
+  return ROLE_ACCESS_LEVEL_OPTIONS.find((option) => option.value === value) || ROLE_ACCESS_LEVEL_OPTIONS[0];
+}
+
+function nextRoleAccessLevel(value) {
+  const index = ROLE_ACCESS_LEVEL_ORDER.indexOf(value);
+  return ROLE_ACCESS_LEVEL_ORDER[(index + 1) % ROLE_ACCESS_LEVEL_ORDER.length];
+}
+
+function applyRoleAccessToggleState(button, value) {
+  const option = roleAccessLevelOption(value);
+  button.dataset.level = option.value;
+  button.textContent = option.label;
+  button.className = `role-access-toggle is-${option.value}`;
+  button.setAttribute("aria-label", `Behörighet: ${option.label}`);
+  button.title = `Klicka för att byta från ${option.label}`;
+}
+
+function roleAccessToggle(role, viewId) {
   const value = roleViewAccess?.[role]?.[viewId] || "none";
+  const option = roleAccessLevelOption(value);
   return `
-    <select data-role="${escapeHtml(role)}" data-view="${escapeHtml(viewId)}">
-      ${ROLE_ACCESS_LEVEL_OPTIONS.map((option) => `
-        <option value="${option.value}" ${value === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>
-      `).join("")}
-    </select>
+    <button type="button" class="role-access-toggle is-${escapeHtml(option.value)}" data-role="${escapeHtml(role)}" data-view="${escapeHtml(viewId)}" data-level="${escapeHtml(option.value)}" aria-label="Behörighet: ${escapeHtml(option.label)}" title="Klicka för att byta från ${escapeHtml(option.label)}">${escapeHtml(option.label)}</button>
   `;
+}
+
+function bindRoleAccessToggles(container) {
+  container.querySelectorAll(".role-access-toggle[data-role][data-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyRoleAccessToggleState(button, nextRoleAccessLevel(button.dataset.level || "none"));
+    });
+  });
 }
 
 function renderRoleAccessTable(container) {
@@ -148,13 +172,14 @@ function renderRoleAccessTable(container) {
           ${VIEW_ACCESS_OPTIONS.map((view) => `
             <tr>
               <th>${escapeHtml(view.label)}</th>
-              ${roles.map((role) => `<td>${roleAccessSelect(role.value, view.id)}</td>`).join("")}
+              ${roles.map((role) => `<td>${roleAccessToggle(role.value, view.id)}</td>`).join("")}
             </tr>
           `).join("")}
         </tbody>
       </table>
     </div>
   `;
+  bindRoleAccessToggles(container);
 }
 
 async function openRoleAccessModal() {
@@ -192,8 +217,8 @@ async function openRoleAccessModal() {
     const saveButton = backdrop.querySelector("#role-access-save");
     saveButton.disabled = true;
     const next = roleViewDefaultAccess();
-    tableHost.querySelectorAll("select[data-role][data-view]").forEach((select) => {
-      next[select.dataset.role][select.dataset.view] = select.value;
+    tableHost.querySelectorAll(".role-access-toggle[data-role][data-view]").forEach((button) => {
+      next[button.dataset.role][button.dataset.view] = button.dataset.level || "none";
     });
     try {
       const response = await api.put("/api/settings/role-access", { access: roleViewAccessPayload(next) });

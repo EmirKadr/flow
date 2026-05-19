@@ -1986,8 +1986,29 @@ tr.filter-row input {
   font-size: 13px;
   color: var(--text);
 }
-.role-access-table select {
+.role-access-toggle {
   min-width: 112px;
+  min-height: 36px;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+}
+.role-access-toggle.is-none {
+  color: var(--text-muted);
+  background: var(--bg-2);
+  border-color: var(--border);
+}
+.role-access-toggle.is-view {
+  color: #2563eb;
+  background: color-mix(in srgb, #2563eb 10%, var(--surface));
+  border-color: color-mix(in srgb, #2563eb 28%, var(--border));
+}
+.role-access-toggle.is-edit {
+  color: #15803d;
+  background: color-mix(in srgb, #16a34a 13%, var(--surface));
+  border-color: color-mix(in srgb, #16a34a 32%, var(--border));
 }
 .sidebar-editor-modal .note {
   margin-top: -4px;
