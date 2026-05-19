@@ -269,12 +269,24 @@ def test_frontend_theme_toggle_is_wired_globally():
 
     assert "bemanning-theme" in common
     assert "bemanning-sidebar-user" in common
+    assert "bemanning-sidebar-layout" in common
     assert "readCachedSidebarUser" in common
     assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
+    assert 'id="sidebar-edit"' in common
+    assert 'api.get("/api/settings/sidebar")' in common
+    assert 'api.put("/api/settings/sidebar"' in common
+    assert "renderSidebarNav" in common
+    assert "openSidebarEditor" in common
+    assert "sidebar-subview" in common
+    assert "parent_id" in common
     assert "THEME_ICONS" in common
     assert ':root[data-theme="dark"]' in styles
     assert ".theme-toggle" in styles
+    assert ".sidebar-heading" in styles
+    assert ".sidebar-subviews" in styles
+    assert ".sidebar-editor-row" in styles
+    assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
     assert "/api/productivity/files/raw" in productivity_uploads
@@ -353,8 +365,11 @@ def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta
     allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
 
     assert 'roles.includes("article_placer")' in common
-    assert "const scheduleLink = canViewPlanning(user)" in common
-    assert "const allocationProcessLink = canUseAllocationProcess(user)" in common
+    assert 'id: "schedule"' in common
+    assert "visible: canViewPlanning(user)" in common
+    assert 'id: "allocationProcess"' in common
+    assert "visible: canUseAllocationProcess(user)" in common
+    assert 'id: "allocationUploads"' in common
     assert 'initPage("schedule", { requirePlanningView: true, denyRedirect: "/overblick.html" })' in schedule
     assert "pageOptions.requireAllocationProcess = true" in allocation
     assert 'pageOptions.denyRedirect = "/dela.html"' in allocation

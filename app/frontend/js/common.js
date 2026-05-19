@@ -2,6 +2,7 @@
 
 const THEME_STORAGE_KEY = "bemanning-theme";
 const SIDEBAR_USER_CACHE_KEY = "bemanning-sidebar-user";
+const SIDEBAR_LAYOUT_CACHE_KEY = "bemanning-sidebar-layout";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "bemanning-allocation-upload-notice";
 const AREA_FOCUS_STORAGE_KEY = "bemanning-area-focus";
 const AREA_FOCUS_OPTIONS = [
@@ -39,6 +40,20 @@ const DATABASE_ICON = `
     <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path>
   </svg>
 `;
+
+const SIDEBAR_DEFAULT_LAYOUT = [
+  { id: "schedule" },
+  { id: "overview" },
+  { id: "productivity" },
+  { id: "allocationUploads" },
+  { id: "allocationProcess" },
+  { id: "allocationSplit" },
+  { id: "allocationTrace" },
+  { id: "persons" },
+  { id: "stallen" },
+  { id: "analytics" },
+  { id: "users" },
+];
 
 function readTheme() {
   try {
@@ -233,6 +248,12 @@ function initials(name) {
     .map((part) => part[0].toUpperCase()).join("");
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]
+  );
+}
+
 function userRoles(user) {
   const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role];
   return [...new Set(rawRoles.map((role) => String(role || "").trim()).filter(Boolean))];
@@ -265,6 +286,358 @@ function canUseAllocationTools(user) {
 
 function canUseAllocationProcess(user) {
   return Boolean(user?.is_super_user);
+}
+
+function sidebarDefaultLayout() {
+  return SIDEBAR_DEFAULT_LAYOUT.map((item) => ({
+    id: item.id,
+    heading: item.heading || "",
+    parentId: item.parentId || null,
+  }));
+}
+
+function sidebarPageDefinitions(user, activePage) {
+  return [
+    {
+      id: "schedule",
+      label: "Bemanning",
+      href: "/index.html",
+      icon: "📋",
+      visible: canViewPlanning(user),
+      active: activePage === "schedule",
+    },
+    {
+      id: "overview",
+      label: "Översikt",
+      href: "/overblick.html",
+      icon: "🗓️",
+      visible: true,
+      active: activePage === "overview",
+    },
+    {
+      id: "productivity",
+      label: "Produktivitet",
+      href: "/produktivitet.html",
+      icon: "📈",
+      visible: Boolean(user?.is_super_user),
+      active: activePage === "productivity",
+    },
+    {
+      id: "allocationUploads",
+      label: "Uppladdningar",
+      href: "/uppladdningar.html",
+      iconHtml: DATABASE_ICON,
+      visible: canUseAllocationTools(user),
+      active: activePage === "allocationUploads",
+      linkId: "allocation-upload-link",
+      className: "sidebar-upload-link",
+      trailingHtml: `
+        <span class="upload-arrow" aria-hidden="true">↑</span>
+        <span class="upload-notice" id="allocation-upload-notice" hidden></span>
+      `,
+    },
+    {
+      id: "allocationProcess",
+      label: "Bearbeta",
+      href: "/bearbeta.html",
+      icon: "🧮",
+      visible: canUseAllocationProcess(user),
+      active: activePage === "allocationProcess",
+    },
+    {
+      id: "allocationSplit",
+      label: "Dela",
+      href: "/dela.html",
+      icon: "✂",
+      visible: canUseAllocationTools(user),
+      active: activePage === "allocationSplit",
+    },
+    {
+      id: "allocationTrace",
+      label: "Härleda",
+      href: "/harleda.html",
+      icon: "⌕",
+      visible: canUseAllocationTools(user),
+      active: activePage === "allocationTrace",
+    },
+    {
+      id: "persons",
+      label: "Personer",
+      href: "/personer.html",
+      icon: "👥",
+      visible: canEditPlanning(user),
+      active: activePage === "persons",
+    },
+    {
+      id: "stallen",
+      label: "Ställen",
+      href: "/stallen.html",
+      icon: "📍",
+      visible: canEditPlanning(user),
+      active: activePage === "stallen",
+    },
+    {
+      id: "analytics",
+      label: "Historik",
+      href: "/historik.html",
+      icon: "📊",
+      visible: Boolean(user?.is_super_user),
+      active: activePage === "analytics",
+    },
+    {
+      id: "users",
+      label: "Användare",
+      href: "/anvandare.html",
+      icon: "👤",
+      visible: isAdminUser(user),
+      active: activePage === "users",
+    },
+  ];
+}
+
+function normalizeSidebarLayout(items = []) {
+  const defaults = sidebarDefaultLayout();
+  const knownIds = new Set(defaults.map((item) => item.id));
+  const normalized = [];
+  const seen = new Set();
+  const incoming = Array.isArray(items) ? items : [];
+
+  for (const item of incoming) {
+    const id = String(item?.id || "").trim();
+    if (!knownIds.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    const parentId = String(item.parent_id || item.parentId || "").trim();
+    normalized.push({
+      id,
+      heading: String(item.heading || "").trim().slice(0, 80),
+      parentId: knownIds.has(parentId) && parentId !== id ? parentId : null,
+    });
+  }
+  for (const item of defaults) {
+    if (!seen.has(item.id)) normalized.push(item);
+  }
+
+  const byId = Object.fromEntries(normalized.map((item) => [item.id, item]));
+  for (const item of normalized) {
+    if (!item.parentId || !byId[item.parentId]) {
+      item.parentId = null;
+      continue;
+    }
+    const visited = new Set([item.id]);
+    let parent = byId[item.parentId];
+    while (parent?.parentId) {
+      if (visited.has(parent.id)) {
+        item.parentId = null;
+        break;
+      }
+      visited.add(parent.id);
+      parent = byId[parent.parentId];
+    }
+    if (item.parentId && byId[item.parentId]?.parentId) item.parentId = null;
+  }
+  return normalized;
+}
+
+function sidebarLayoutSignature(layout) {
+  return JSON.stringify(normalizeSidebarLayout(layout).map((item) => ({
+    id: item.id,
+    heading: item.heading || "",
+    parentId: item.parentId || null,
+  })));
+}
+
+function readCachedSidebarLayout() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_LAYOUT_CACHE_KEY);
+    return raw ? normalizeSidebarLayout(JSON.parse(raw)) : sidebarDefaultLayout();
+  } catch (e) {
+    return sidebarDefaultLayout();
+  }
+}
+
+function cacheSidebarLayout(layout) {
+  const normalized = normalizeSidebarLayout(layout);
+  try { localStorage.setItem(SIDEBAR_LAYOUT_CACHE_KEY, JSON.stringify(normalized)); } catch (e) {}
+  return normalized;
+}
+
+function sidebarLayoutForRender() {
+  return readCachedSidebarLayout();
+}
+
+function sidebarLayoutPayload(layout) {
+  return normalizeSidebarLayout(layout).map((item) => ({
+    id: item.id,
+    heading: item.heading || "",
+    parent_id: item.parentId || null,
+  }));
+}
+
+async function refreshSidebarLayout(user, activePage) {
+  const before = sidebarLayoutSignature(sidebarLayoutForRender());
+  try {
+    const response = await api.get("/api/settings/sidebar");
+    const next = cacheSidebarLayout(response?.items || []);
+    if (sidebarLayoutSignature(next) !== before) renderSidebar(user, activePage);
+  } catch (e) {
+    // Menyn har alltid en lokal standardlayout, så ett inställningsfel ska inte blockera sidan.
+  }
+}
+
+function renderSidebarLink(page, { active = false, subview = false } = {}) {
+  const classes = [
+    "sidebar-link",
+    page.className || "",
+    active ? "active" : "",
+    subview ? "sidebar-subview" : "",
+  ].filter(Boolean).join(" ");
+  const idAttr = page.linkId ? ` id="${page.linkId}"` : "";
+  const icon = page.iconHtml || escapeHtml(page.icon || "");
+  return `
+    <a href="${page.href}"${idAttr} class="${classes}" title="${escapeHtml(page.label)}">
+      <span class="icon" aria-hidden="true">${icon}${page.trailingHtml || ""}</span>
+      <span>${escapeHtml(page.label)}</span>
+    </a>
+  `;
+}
+
+function renderSidebarNav(user, activePage) {
+  const pages = sidebarPageDefinitions(user, activePage);
+  const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
+  const visibleIds = new Set(pages.filter((page) => page.visible).map((page) => page.id));
+  const layout = normalizeSidebarLayout(sidebarLayoutForRender())
+    .filter((item) => visibleIds.has(item.id))
+    .map((item) => ({
+      ...item,
+      parentId: visibleIds.has(item.parentId) ? item.parentId : null,
+    }));
+  const childrenByParent = {};
+  for (const item of layout) {
+    if (!item.parentId) continue;
+    if (!childrenByParent[item.parentId]) childrenByParent[item.parentId] = [];
+    childrenByParent[item.parentId].push(item);
+  }
+
+  return layout
+    .filter((item) => !item.parentId)
+    .map((item) => {
+      const page = pageById[item.id];
+      if (!page) return "";
+      const children = childrenByParent[item.id] || [];
+      const childActive = children.some((child) => pageById[child.id]?.active);
+      const heading = item.heading
+        ? `<div class="sidebar-heading">${escapeHtml(item.heading)}</div>`
+        : "";
+      const childHtml = children.length
+        ? `<div class="sidebar-subviews">${children.map((child) => renderSidebarLink(pageById[child.id], { active: pageById[child.id]?.active, subview: true })).join("")}</div>`
+        : "";
+      return `${heading}${renderSidebarLink(page, { active: page.active || childActive })}${childHtml}`;
+    })
+    .join("");
+}
+
+function openSidebarEditor(user, activePage) {
+  const pages = sidebarPageDefinitions(user, activePage).filter((page) => page.visible);
+  const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
+  let draft = normalizeSidebarLayout(sidebarLayoutForRender()).filter((item) => pageById[item.id]);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide sidebar-editor-modal">
+      <h2>Redigera meny</h2>
+      <p class="note">Rubriker och undervyer visas bara när sidomenyn är utfälld.</p>
+      <div class="sidebar-editor-list" id="sidebar-editor-list"></div>
+      <div class="actions">
+        <button type="button" id="sidebar-editor-reset">Standard</button>
+        <button type="button" id="sidebar-editor-cancel">Avbryt</button>
+        <button type="button" class="primary" id="sidebar-editor-save">Spara</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  const list = backdrop.querySelector("#sidebar-editor-list");
+  const parentOptionsFor = (item) => [
+    '<option value="">Ingen</option>',
+    ...draft
+      .filter((candidate) => candidate.id !== item.id)
+      .map((candidate) => `<option value="${candidate.id}" ${item.parentId === candidate.id ? "selected" : ""}>${escapeHtml(pageById[candidate.id]?.label || candidate.id)}</option>`),
+  ].join("");
+
+  const renderRows = () => {
+    list.innerHTML = draft.map((item, index) => {
+      const page = pageById[item.id];
+      return `
+        <div class="sidebar-editor-row ${item.parentId ? "is-child" : ""}" data-index="${index}">
+          <div class="sidebar-editor-view">
+            <span class="sidebar-editor-icon">${page.iconHtml || escapeHtml(page.icon || "")}</span>
+            <strong>${escapeHtml(page.label)}</strong>
+          </div>
+          <div class="sidebar-editor-move">
+            <button type="button" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="Flytta upp">↑</button>
+            <button type="button" data-move="1" ${index === draft.length - 1 ? "disabled" : ""} aria-label="Flytta ner">↓</button>
+          </div>
+          <label class="sidebar-editor-field">
+            <span>Rubrik ovanför</span>
+            <input data-heading value="${escapeHtml(item.heading || "")}" maxlength="80" />
+          </label>
+          <label class="sidebar-editor-field">
+            <span>Under</span>
+            <select data-parent>${parentOptionsFor(item)}</select>
+          </label>
+        </div>
+      `;
+    }).join("");
+
+    list.querySelectorAll("[data-move]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const row = button.closest(".sidebar-editor-row");
+        const index = Number(row.dataset.index);
+        const nextIndex = index + Number(button.dataset.move);
+        if (nextIndex < 0 || nextIndex >= draft.length) return;
+        const [item] = draft.splice(index, 1);
+        draft.splice(nextIndex, 0, item);
+        renderRows();
+      });
+    });
+    list.querySelectorAll("[data-heading]").forEach((input) => {
+      input.addEventListener("input", () => {
+        draft[Number(input.closest(".sidebar-editor-row").dataset.index)].heading = input.value;
+      });
+    });
+    list.querySelectorAll("[data-parent]").forEach((select) => {
+      select.addEventListener("change", () => {
+        draft[Number(select.closest(".sidebar-editor-row").dataset.index)].parentId = select.value || null;
+        draft = normalizeSidebarLayout(draft).filter((item) => pageById[item.id]);
+        renderRows();
+      });
+    });
+  };
+
+  backdrop.querySelector("#sidebar-editor-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#sidebar-editor-reset").addEventListener("click", () => {
+    draft = sidebarDefaultLayout().filter((item) => pageById[item.id]);
+    renderRows();
+  });
+  backdrop.querySelector("#sidebar-editor-save").addEventListener("click", async () => {
+    const saveButton = backdrop.querySelector("#sidebar-editor-save");
+    saveButton.disabled = true;
+    try {
+      const response = await api.put("/api/settings/sidebar", { items: sidebarLayoutPayload(draft) });
+      cacheSidebarLayout(response?.items || draft);
+      backdrop.remove();
+      renderSidebar(user, activePage);
+      showToast("Menyn sparades för alla.", "success", 2500);
+    } catch (error) {
+      saveButton.disabled = false;
+      showToast(error.message || "Kunde inte spara menyn.", "error", 7000);
+    }
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
+  });
+  renderRows();
 }
 
 function sidebarUserSnapshot(user) {
@@ -407,61 +780,33 @@ function renderSidebar(user, activePage) {
     body.insertBefore(app, body.firstChild);
   }
 
-  const adminLink = isAdminUser(user)
-    ? `<a href="/anvandare.html" class="${activePage === "users" ? "active" : ""}"><span class="icon" aria-hidden="true">👤</span><span>Användare</span></a>`
-    : "";
-  const analyticsLink = user?.is_super_user
-    ? `<a href="/historik.html" class="${activePage === "analytics" ? "active" : ""}"><span class="icon" aria-hidden="true">📊</span><span>Historik</span></a>`
-    : "";
-  const productivityLink = user?.is_super_user
-    ? `<a href="/produktivitet.html" class="${activePage === "productivity" ? "active" : ""}"><span class="icon" aria-hidden="true">📈</span><span>Produktivitet</span></a>`
-    : "";
-  const scheduleLink = canViewPlanning(user)
-    ? `<a href="/index.html" class="${activePage === "schedule" ? "active" : ""}"><span class="icon" aria-hidden="true">📋</span><span>Bemanning</span></a>`
-    : "";
-  const allocationProcessLink = canUseAllocationProcess(user)
-    ? `<a href="/bearbeta.html" class="${activePage === "allocationProcess" ? "active" : ""}"><span class="icon" aria-hidden="true">🧮</span><span>Bearbeta</span></a>`
-    : "";
-  const allocationLinks = canUseAllocationTools(user)
+  const navHtml = renderSidebarNav(user, activePage);
+  const editButton = user?.is_super_user
     ? `
-      ${allocationProcessLink}
-      <a href="/dela.html" class="${activePage === "allocationSplit" ? "active" : ""}"><span class="icon" aria-hidden="true">✂</span><span>Dela</span></a>
-      <a href="/harleda.html" class="${activePage === "allocationTrace" ? "active" : ""}"><span class="icon" aria-hidden="true">⌕</span><span>Härleda</span></a>
-    `
-    : "";
-
-  const editorLinks = canEditPlanning(user)
-    ? `
-      <a href="/personer.html" class="${activePage === "persons" ? "active" : ""}"><span class="icon" aria-hidden="true">👥</span><span>Personer</span></a>
-      <a href="/stallen.html" class="${activePage === "stallen" ? "active" : ""}"><span class="icon" aria-hidden="true">📍</span><span>Ställen</span></a>
+      <button class="sidebar-edit" id="sidebar-edit" type="button" title="Redigera meny" aria-label="Redigera meny">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"></path>
+        </svg>
+      </button>
     `
     : "";
 
   sidebar.innerHTML = `
-    <button class="sidebar-toggle" id="sidebar-toggle" title="Visa/dölj meny" aria-label="Visa/dölj meny">
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-        <path d="M4 6h14M4 11h14M4 16h14"/>
-      </svg>
-    </button>
+    <div class="sidebar-top-row">
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Visa/dölj meny" aria-label="Visa/dölj meny">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+          <path d="M4 6h14M4 11h14M4 16h14"/>
+        </svg>
+      </button>
+      ${editButton}
+    </div>
     <nav>
-      ${scheduleLink}
-      <a href="/overblick.html" class="${activePage === "overview" ? "active" : ""}"><span class="icon" aria-hidden="true">📅</span><span>Översikt</span></a>
-      ${productivityLink}
-      ${allocationLinks}
-      ${editorLinks}
-      ${analyticsLink}
-      ${adminLink}
+      ${navHtml}
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-utility">
         <button class="area-focus-toggle" id="area-focus-toggle" type="button" title="Områdesfokus" aria-label="Områdesfokus"></button>
-        ${canUseAllocationTools(user) ? `
-          <a href="/uppladdningar.html" class="database-toggle ${activePage === "allocationUploads" ? "active" : ""}" id="allocation-upload-link" title="Uppladdningar" aria-label="Uppladdningar">
-            ${DATABASE_ICON}
-            <span class="upload-arrow" aria-hidden="true">↑</span>
-            <span class="upload-notice" id="allocation-upload-notice" hidden></span>
-          </a>
-        ` : ""}
         <button class="theme-toggle" id="theme-toggle" type="button"></button>
       </div>
       <div class="sidebar-bottom">
@@ -481,6 +826,10 @@ function renderSidebar(user, activePage) {
   const allocationUploadLink = document.getElementById("allocation-upload-link");
   if (allocationUploadLink) {
     allocationUploadLink.addEventListener("click", () => clearAllocationUploadNotice());
+  }
+  const sidebarEdit = document.getElementById("sidebar-edit");
+  if (sidebarEdit) {
+    sidebarEdit.addEventListener("click", () => openSidebarEditor(user, activePage));
   }
 
   const logout = document.getElementById("logout-link");
@@ -579,6 +928,7 @@ async function initPage(activePage, options = {}) {
   }
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
+  void refreshSidebarLayout(user, activePage);
   if (activePage === "allocationUploads") clearAllocationUploadNotice();
   flushQueuedToast();
   return user;

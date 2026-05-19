@@ -60,6 +60,8 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("activities.delete", "DELETE", "/api/activities/{activity_id}", "Inaktivera aktivitet"),
     ApiRoute("settings.get", "GET", "/api/settings", "Hämta inställningar"),
     ApiRoute("settings.update", "PUT", "/api/settings", "Uppdatera inställningar"),
+    ApiRoute("settings.sidebar_get", "GET", "/api/settings/sidebar", "Hämta global sidomeny"),
+    ApiRoute("settings.sidebar_update", "PUT", "/api/settings/sidebar", "Uppdatera global sidomeny"),
     ApiRoute("audit.list", "GET", "/api/audit", "Lista auditlogg"),
     ApiRoute("audit.summary", "GET", "/api/audit/summary", "Audit-summering"),
     ApiRoute("persons.list", "GET", "/api/persons", "Lista personer"),

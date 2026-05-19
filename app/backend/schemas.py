@@ -450,3 +450,17 @@ class AppSettingsOut(BaseModel):
 
 class AppSettingsUpdate(BaseModel):
     lock_foreign_schedule_cells: bool
+
+
+class SidebarLayoutItem(BaseModel):
+    id: str
+    heading: str = ""
+    parent_id: str | None = None
+
+
+class SidebarLayoutOut(BaseModel):
+    items: list[SidebarLayoutItem] = Field(default_factory=list)
+
+
+class SidebarLayoutUpdate(BaseModel):
+    items: list[SidebarLayoutItem] = Field(default_factory=list)
