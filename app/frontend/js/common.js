@@ -41,6 +41,18 @@ const DATABASE_ICON = `
   </svg>
 `;
 
+const SIDEBAR_MOVE_UP_ICON = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m6 15 6-6 6 6"></path>
+  </svg>
+`;
+
+const SIDEBAR_MOVE_DOWN_ICON = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="m6 9 6 6 6-6"></path>
+  </svg>
+`;
+
 const SIDEBAR_DEFAULT_LAYOUT = [
   { id: "schedule" },
   { id: "overview" },
@@ -575,8 +587,8 @@ function openSidebarEditor(user, activePage) {
             <strong>${escapeHtml(page.label)}</strong>
           </div>
           <div class="sidebar-editor-move">
-            <button type="button" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="Flytta upp">↑</button>
-            <button type="button" data-move="1" ${index === draft.length - 1 ? "disabled" : ""} aria-label="Flytta ner">↓</button>
+            <button type="button" data-move="-1" ${index === 0 ? "disabled" : ""} aria-label="Flytta upp" title="Flytta upp">${SIDEBAR_MOVE_UP_ICON}</button>
+            <button type="button" data-move="1" ${index === draft.length - 1 ? "disabled" : ""} aria-label="Flytta ner" title="Flytta ner">${SIDEBAR_MOVE_DOWN_ICON}</button>
           </div>
           <label class="sidebar-editor-field">
             <span>Rubrik ovanför</span>

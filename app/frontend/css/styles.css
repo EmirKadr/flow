@@ -921,18 +921,6 @@ table.productivity-table td.has-work {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.productivity-date-field {
-  align-items: center;
-}
-.productivity-date-nav {
-  gap: 6px;
-}
-.productivity-date-nav .date-nav-btn {
-  width: 28px;
-  height: 34px;
-  padding: 0;
-}
-
 button.icon-btn {
   padding: 6px 10px;
   font-size: 18px;
@@ -2011,7 +1999,7 @@ tr.filter-row input {
 }
 .sidebar-editor-move {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   min-height: 36px;
 }
@@ -2019,6 +2007,18 @@ tr.filter-row input {
   width: 34px;
   height: 34px;
   padding: 0;
+  justify-content: center;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.sidebar-editor-move button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-2);
+}
+.sidebar-editor-move button svg {
+  width: 18px;
+  height: 18px;
 }
 .modal label.sidebar-editor-field {
   margin: 0;

@@ -274,6 +274,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
     assert 'id="sidebar-edit"' in common
+    assert "SIDEBAR_MOVE_UP_ICON" in common
+    assert "SIDEBAR_MOVE_DOWN_ICON" in common
     assert 'api.get("/api/settings/sidebar")' in common
     assert 'api.put("/api/settings/sidebar"' in common
     assert "renderSidebarNav" in common
@@ -286,6 +288,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".sidebar-heading" in styles
     assert ".sidebar-subviews" in styles
     assert ".sidebar-editor-row" in styles
+    assert ".sidebar-editor-move button svg" in styles
     assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
@@ -303,10 +306,13 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "prefetchAdjacentReports" in productivity
     assert 'id="productivityPrevDate"' in productivity_html
     assert 'id="productivityNextDate"' in productivity_html
+    assert 'id="productivityDateDisplayText"' in productivity_html
+    assert 'class="date-display-overlay"' in productivity_html
     assert "shiftProductivityDate(-1)" in productivity
     assert "shiftProductivityDate(1)" in productivity
+    assert "updateProductivityDateDisplay" in productivity
     assert "availableProductivityDates" in productivity
-    assert ".productivity-date-nav" in styles
+    assert ".date-display-wrap" in styles
     assert "refreshProductivityBtn" not in productivity_html
 
     for html_path in frontend.glob("*.html"):

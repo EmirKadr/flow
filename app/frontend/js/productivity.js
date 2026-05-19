@@ -266,9 +266,16 @@ function currentProductivityDate() {
   return document.getElementById("productivityDate")?.value || productivityReport?.date || "";
 }
 
+function updateProductivityDateDisplay() {
+  const dateInput = document.getElementById("productivityDate");
+  const dateDisplay = document.getElementById("productivityDateDisplayText");
+  if (dateDisplay) dateDisplay.textContent = dateInput?.value || "YYYY-MM-DD";
+}
+
 function updateProductivityDateNav() {
   const prevButton = document.getElementById("productivityPrevDate");
   const nextButton = document.getElementById("productivityNextDate");
+  updateProductivityDateDisplay();
   if (!prevButton || !nextButton) return;
   if (!productivityReport) {
     prevButton.disabled = true;
@@ -306,6 +313,7 @@ async function shiftProductivityDate(direction) {
   const nextDate = adjacentProductivityDate(direction);
   if (!nextDate || nextDate === dateInput.value) return;
   dateInput.value = nextDate;
+  updateProductivityDateDisplay();
   updateProductivityDateNav();
   await loadProductivity();
 }
@@ -928,6 +936,7 @@ function renderProductivityReport(report) {
   productivityReport = report;
   const dateInput = document.getElementById("productivityDate");
   if (productivityReport.date) dateInput.value = productivityReport.date;
+  updateProductivityDateDisplay();
   const dates = productivityReport.available_dates || [];
   if (dates.length) {
     dateInput.min = dates[0];
@@ -1080,7 +1089,10 @@ async function loadProductivity() {
   const user = await initPage("productivity", { requireSuperUser: true });
   if (!user) return;
 
-  document.getElementById("productivityDate").addEventListener("change", loadProductivity);
+  document.getElementById("productivityDate").addEventListener("change", () => {
+    updateProductivityDateDisplay();
+    loadProductivity();
+  });
   document.getElementById("productivityPrevDate").addEventListener("click", () => shiftProductivityDate(-1));
   document.getElementById("productivityNextDate").addEventListener("click", () => shiftProductivityDate(1));
   document.getElementById("productivityGroupFilter").addEventListener("change", () => {

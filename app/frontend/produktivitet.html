@@ -16,7 +16,10 @@
     <label class="productivity-date-field">Datum
       <span class="date-nav productivity-date-nav">
         <button id="productivityPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum" disabled>‹</button>
-        <input id="productivityDate" type="date" />
+        <div class="date-display-wrap" title="Välj datum">
+          <span class="date-display-text" id="productivityDateDisplayText">YYYY-MM-DD</span>
+          <input id="productivityDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
+        </div>
         <button id="productivityNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum" disabled>›</button>
       </span>
     </label>
