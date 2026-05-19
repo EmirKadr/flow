@@ -503,6 +503,7 @@ function refreshAllocationRunButtons(root) {
     const flow = flowById(button.dataset.runFlow);
     const missing = missingForFlow(flow);
     button.disabled = Boolean(allocationState.busyId) || missing.length > 0;
+    button.closest(".allocation-flow-chip")?.classList.toggle("ready", missing.length === 0);
   });
 }
 
