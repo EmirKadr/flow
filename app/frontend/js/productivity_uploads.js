@@ -40,6 +40,7 @@
 
   const VISIBLE_SPECS = SOURCE_SPECS.filter((spec) => spec.visible);
   const SOURCE_BY_KEY = Object.fromEntries(SOURCE_SPECS.map((spec) => [spec.key, spec]));
+  const registeredPanels = new Set();
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -175,6 +176,10 @@
     await store("readwrite", (objectStore) => objectStore.delete(key));
   }
 
+  async function clearFiles() {
+    await store("readwrite", (objectStore) => objectStore.clear());
+  }
+
   async function readFileSample(file) {
     return await file.slice(0, 8192).text();
   }
@@ -197,6 +202,23 @@
 
   async function classifyFile(file) {
     return classifyFileFromSample(file, await readFileSample(file));
+  }
+
+  function dragContainsFiles(event) {
+    return Array.from(event.dataTransfer?.types || []).includes("Files");
+  }
+
+  function updateDropDepth(target, delta) {
+    const nextDepth = Math.max(0, Number(target.dataset.productivityDragDepth || 0) + delta);
+    target.dataset.productivityDragDepth = String(nextDepth);
+    return nextDepth;
+  }
+
+  function clearDropHighlights() {
+    document.querySelectorAll("[data-productivity-drop-bound='1']").forEach((target) => {
+      target.dataset.productivityDragDepth = "0";
+      target.classList.remove("is-dragging", "is-file-dragging", "drag-over");
+    });
   }
 
   async function uploadPermanentKpiFile(file) {
@@ -271,7 +293,7 @@
       const cls = file.uploaded ? "ok" : file.required ? "missing" : "optional";
       const prefix = file.uploaded ? "✓" : file.required ? "✗" : "○";
       return `
-      <div class="productivity-file-slot ${file.uploaded ? "is-uploaded" : ""}">
+      <div class="productivity-file-slot ${file.uploaded ? "is-uploaded" : ""}" data-file-key="${escapeHtml(file.key)}">
         <div class="productivity-file-main">
           <div class="productivity-file-label">
             <span class="allocation-file-tag ${cls}">${prefix} ${escapeHtml(file.label)}${file.required ? "" : " (valfri)"}</span>
@@ -300,6 +322,9 @@
 
   async function refreshPanel(panel) {
     renderStatus(panel, await fileStatus());
+    panel.querySelectorAll(".productivity-file-slot[data-file-key]").forEach((slot) => {
+      setupDropTarget(slot, (files) => handleFiles(panel, files, slot.dataset.fileKey || ""));
+    });
     panel.querySelectorAll(".productivity-slot-upload").forEach((button) => {
       button.addEventListener("click", () => {
         const input = panel.querySelector("#productivityUploadInput");
@@ -315,12 +340,13 @@
     });
   }
 
-  async function handleFiles(panel, files, targetKey = "") {
+  async function saveFiles(files, options = {}) {
+    const targetKey = options.targetKey || "";
+    const statusElement = options.statusElement || options.panel?.querySelector("#productivityUploadStatus") || null;
     const incoming = Array.from(files || []);
-    if (!incoming.length) return;
+    if (!incoming.length) return { saved: [], unknown: [], hiddenSaved: 0, message: "Ingen fil uppdaterades." };
 
-    const uploadStatus = panel.querySelector("#productivityUploadStatus");
-    uploadStatus.textContent = "Läser filval...";
+    if (statusElement) statusElement.textContent = "Läser filval...";
     const saved = [];
     const unknown = [];
     let hiddenSaved = 0;
@@ -332,7 +358,7 @@
         continue;
       }
       if (fileType === "kpi") {
-        uploadStatus.textContent = `Uppdaterar KPI-mål: ${file.name}`;
+        if (statusElement) statusElement.textContent = `Uppdaterar KPI-mål: ${file.name}`;
         const result = await uploadPermanentKpiFile(file);
         hiddenSaved += (result.saved || []).length;
         unknown.push(...(result.unknown || []));
@@ -342,45 +368,59 @@
       saved.push(file.name);
     }
 
-    await refreshPanel(panel);
+    if (options.panel) await refreshPanel(options.panel);
     const parts = [];
     if (saved.length) parts.push(`${saved.length} fil(er) valda`);
     if (hiddenSaved) parts.push("KPI-mål uppdaterat i bakgrunden");
     if (unknown.length) parts.push(`Okänd filtyp: ${unknown.join(", ")}`);
     const message = parts.join(". ") || "Ingen fil uppdaterades.";
-    uploadStatus.textContent = message;
+    if (statusElement) statusElement.textContent = message;
     if (saved.length || hiddenSaved) showToast(message, "success", 3500);
     else if (unknown.length) showToast(message, "warn", 7000);
+    return { saved, unknown, hiddenSaved, message };
+  }
+
+  async function handleFiles(panel, files, targetKey = "") {
+    return await saveFiles(files, { panel, targetKey });
+  }
+
+  function setupDropTarget(target, onDrop, options = {}) {
+    if (!target || target.dataset.productivityDropBound === "1") return;
+    target.dataset.productivityDropBound = "1";
+    const dragClass = options.dragClass || "is-dragging";
+    target.addEventListener("dragenter", (event) => {
+      if (!dragContainsFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      updateDropDepth(target, 1);
+      target.classList.add(dragClass);
+    });
+    target.addEventListener("dragover", (event) => {
+      if (!dragContainsFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "copy";
+    });
+    target.addEventListener("dragleave", (event) => {
+      event.stopPropagation();
+      if (updateDropDepth(target, -1) === 0) target.classList.remove(dragClass);
+    });
+    target.addEventListener("drop", (event) => {
+      if (!dragContainsFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      clearDropHighlights();
+      void onDrop(event.dataTransfer.files, event);
+    });
   }
 
   function setupDropzone(panel) {
-    let dragDepth = 0;
-    panel.addEventListener("dragenter", (event) => {
-      if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-      event.preventDefault();
-      dragDepth += 1;
-      panel.classList.add("is-dragging");
-    });
-    panel.addEventListener("dragover", (event) => {
-      if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-    });
-    panel.addEventListener("dragleave", () => {
-      dragDepth = Math.max(0, dragDepth - 1);
-      if (dragDepth === 0) panel.classList.remove("is-dragging");
-    });
-    panel.addEventListener("drop", (event) => {
-      if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
-      event.preventDefault();
-      dragDepth = 0;
-      panel.classList.remove("is-dragging");
-      void handleFiles(panel, event.dataTransfer.files);
-    });
+    setupDropTarget(panel, (files) => handleFiles(panel, files));
   }
 
   async function setupPanel(panel) {
     if (!panel) return;
+    registeredPanels.add(panel);
     panel.innerHTML = `
       <div class="productivity-upload-head">
         <h3>Produktivitet</h3>
@@ -407,10 +447,26 @@
     await refreshPanel(panel);
   }
 
+  window.addEventListener("bemanning:uploadsCleared", async () => {
+    for (const panel of Array.from(registeredPanels)) {
+      if (!document.body.contains(panel)) {
+        registeredPanels.delete(panel);
+        continue;
+      }
+      await refreshPanel(panel);
+    }
+  });
+
+  window.addEventListener("dragend", clearDropHighlights);
+
   window.productivityUploads = {
     visibleSpecs: () => VISIBLE_SPECS.map((spec) => ({ ...spec })),
     loadFiles,
+    clearFiles,
     fileStatus,
+    saveFiles,
+    handleFiles,
+    setupDropTarget,
     setupPanel,
   };
 })();

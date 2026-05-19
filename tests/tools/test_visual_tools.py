@@ -306,6 +306,10 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "renderSidebarNav" in common
     assert "renderAllocationUploadUtility" in common
     assert 'class="database-toggle${activeClass}"' in common
+    assert "openUploadContextMenu" in common
+    assert "Rensa filer" in common
+    assert "clearAllUploadedFiles" in common
+    assert "bemanning:uploadsCleared" in common
     assert 'className: "sidebar-upload-link"' not in common
     assert "openSidebarEditor" in common
     assert "sidebar-subview" in common
@@ -322,6 +326,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".role-access-toggle.is-view" in styles
     assert ".role-access-toggle.is-edit" in styles
     assert ".role-access-table select" not in styles
+    assert ".upload-context-menu" in styles
     assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
@@ -334,9 +339,19 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "productivityUploads?.setupPanel" in allocation_tools
     assert "data-productivity-upload-panel" in allocation_tools
     assert "statusItems" in productivity_uploads
+    assert "clearFiles" in productivity_uploads
+    assert "saveFiles" in productivity_uploads
+    assert "setupDropTarget" in productivity_uploads
+    assert "productivity-file-slot[data-file-key]" in productivity_uploads
     assert "Permanent målfil inlagd" in productivity_uploads
     assert "allocation-file-tag" in productivity_uploads
     assert "allocation-file-tag" in productivity
+    assert "setupProductivityPageDrop" in productivity
+    assert "handleProductivityDroppedFiles" in productivity
+    assert "handleProductivityUploadsCleared" in productivity
+    assert "data-productivity-file-key" in productivity
+    assert ".productivity-page.is-file-dragging" in styles
+    assert ".productivity-requirement-file.drag-over" in styles
     assert "/js/productivity_uploads.js" in productivity_html
     assert "/js/productivity_uploads.js" in uploads_html
     assert 'id="productivityUploadBtn"' not in productivity_html
@@ -512,6 +527,10 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "window.allocationUploadActivity?.start()" in allocation
     assert "window.allocationUploadActivity?.finish(assigned.length)" in allocation
     assert "allocationState.files = await loadStoredAllocationFiles()" in allocation
+    assert 'id="allocation-clear-all-files"' in allocation
+    assert "Rensa alla" in allocation
+    assert "window.clearAllUploadedFiles" in allocation
+    assert 'window.addEventListener("bemanning:uploadsCleared"' in allocation
     assert "allocationDropSlotsForTarget" in allocation
     assert "data-drop-slot" in allocation
     assert "fallbackSlotKey" in allocation

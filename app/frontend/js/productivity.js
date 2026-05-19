@@ -914,7 +914,7 @@ function renderProductivityFileRequirements(status) {
           const prefix = item.uploaded ? "✓" : "✗";
           const suffix = item.required ? "" : " (valfri)";
           return `
-            <div class="allocation-flow-file ${item.uploaded ? "filled" : ""}">
+            <div class="allocation-flow-file productivity-requirement-file ${item.uploaded ? "filled" : ""}" data-productivity-file-key="${escapeHtml(item.key)}">
               <span class="allocation-file-tag ${cls}">${prefix} ${escapeHtml(item.label)}${suffix}</span>
               <span>${item.uploaded ? escapeHtml([item.name, item.size_label].filter(Boolean).join(" · ")) : "Ingen fil"}</span>
             </div>
@@ -923,6 +923,63 @@ function renderProductivityFileRequirements(status) {
       </div>
     </section>
   `;
+  bindProductivityRequirementDrops(target);
+}
+
+function resetProductivityAfterFileChange() {
+  productivityTargets = null;
+  productivityTargetsSignature = "";
+  resetLocalProductivityDataset();
+}
+
+async function handleProductivityDroppedFiles(files, targetKey = "") {
+  const status = document.getElementById("productivityStatus");
+  if (!window.productivityUploads?.saveFiles) {
+    showToast("Filuppladdningen är inte laddad.", "error", 7000);
+    return;
+  }
+  try {
+    const result = await window.productivityUploads.saveFiles(files, {
+      targetKey,
+      statusElement: status,
+    });
+    if (result.saved.length || result.hiddenSaved) {
+      resetProductivityAfterFileChange();
+      await loadProductivity();
+      return;
+    }
+    const fileStatus = await loadProductivityFileStatus();
+    if (fileStatus.ready) renderProductivityFileRequirements(null);
+    else setProductivityWaitingStatus(fileStatus);
+  } catch (error) {
+    status.textContent = error.message || "Kunde inte läsa filerna.";
+    showToast(status.textContent, "error", 7000);
+  }
+}
+
+function bindProductivityRequirementDrops(root) {
+  if (!window.productivityUploads?.setupDropTarget) return;
+  root.querySelectorAll("[data-productivity-file-key]").forEach((slot) => {
+    window.productivityUploads.setupDropTarget(
+      slot,
+      (files) => handleProductivityDroppedFiles(files, slot.dataset.productivityFileKey || ""),
+      { dragClass: "drag-over" },
+    );
+  });
+}
+
+function setupProductivityPageDrop() {
+  const page = document.querySelector(".productivity-page");
+  if (!page || !window.productivityUploads?.setupDropTarget) return;
+  window.productivityUploads.setupDropTarget(
+    page,
+    (files, event) => {
+      const dropTarget = event.target instanceof Element ? event.target : null;
+      const slot = dropTarget?.closest("[data-productivity-file-key]");
+      return handleProductivityDroppedFiles(files, slot?.dataset.productivityFileKey || "");
+    },
+    { dragClass: "is-file-dragging" },
+  );
 }
 
 function clearReportContent() {
@@ -1146,6 +1203,22 @@ async function loadProductivity() {
   }
 }
 
+async function handleProductivityUploadsCleared() {
+  const status = document.getElementById("productivityStatus");
+  if (!status) return;
+  productivityLocalFiles = {};
+  productivityFileStatus = null;
+  resetLocalProductivityDataset();
+  try {
+    const fileStatus = await loadProductivityFileStatus();
+    setProductivityWaitingStatus(fileStatus);
+  } catch (error) {
+    clearReportContent();
+    status.textContent = error.message || "Kunde inte kontrollera underlag.";
+    showToast(status.textContent, "error", 7000);
+  }
+}
+
 (async () => {
   const user = await initPage("productivity", { requireSuperUser: true });
   if (!user) return;
@@ -1167,6 +1240,8 @@ async function loadProductivity() {
       renderContent();
     }
   });
+  window.addEventListener("bemanning:uploadsCleared", handleProductivityUploadsCleared);
   document.getElementById("productivitySearch").addEventListener("input", renderContent);
+  setupProductivityPageDrop();
   await initializeProductivityPage();
 })();

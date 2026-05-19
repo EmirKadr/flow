@@ -5,6 +5,10 @@ const SIDEBAR_USER_CACHE_KEY = "bemanning-sidebar-user";
 const SIDEBAR_LAYOUT_CACHE_KEY = "bemanning-sidebar-layout";
 const ROLE_VIEW_ACCESS_CACHE_KEY = "bemanning-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "bemanning-allocation-upload-notice";
+const UPLOAD_FILE_STORES = [
+  { dbName: "bemanning-allokering-files", storeName: "files" },
+  { dbName: "bemanning-productivity-files", storeName: "files" },
+];
 const AREA_FOCUS_STORAGE_KEY = "bemanning-area-focus";
 const AREA_FOCUS_OPTIONS = [
   { value: "MG", label: "MG", title: "Mestergruppen" },
@@ -643,7 +647,7 @@ function renderAllocationUploadUtility(user, activePage) {
   if (!canViewPage(user, "allocationUploads")) return "";
   const activeClass = activePage === "allocationUploads" ? " active" : "";
   return `
-        <a href="/uppladdningar.html" class="database-toggle${activeClass}" id="allocation-upload-link" title="Uppladdningar" aria-label="Uppladdningar">
+        <a href="/uppladdningar.html" class="database-toggle${activeClass}" id="allocation-upload-link" title="Uppladdningar" aria-label="Uppladdningar" aria-haspopup="menu">
           ${DATABASE_ICON}
           <span class="upload-arrow" aria-hidden="true">&uarr;</span>
           <span class="upload-notice" id="allocation-upload-notice" hidden></span>
@@ -882,6 +886,81 @@ function clearAllocationUploadNotice() {
   updateAllocationUploadIndicator();
 }
 
+function clearUploadIndexedDbStore(dbName, storeName) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(storeName)) database.createObjectStore(storeName, { keyPath: "key" });
+    };
+    request.onsuccess = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(storeName)) {
+        database.close();
+        resolve();
+        return;
+      }
+      const tx = database.transaction(storeName, "readwrite");
+      tx.objectStore(storeName).clear();
+      tx.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        database.close();
+        reject(tx.error);
+      };
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function clearAllUploadedFiles({ confirmUser = true } = {}) {
+  if (confirmUser && !confirm("Rensa alla valda filer i Uppladdningar?")) return false;
+  await Promise.all(UPLOAD_FILE_STORES.map((item) => clearUploadIndexedDbStore(item.dbName, item.storeName)));
+  clearAllocationUploadNotice();
+  window.dispatchEvent(new CustomEvent("bemanning:uploadsCleared"));
+  showToast("Filvalen är rensade.", "success", 2500);
+  return true;
+}
+
+function closeUploadContextMenu() {
+  document.querySelector(".upload-context-menu")?.remove();
+}
+
+function openUploadContextMenu(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeUploadContextMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "upload-context-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = '<button type="button" role="menuitem">Rensa filer</button>';
+  document.body.appendChild(menu);
+
+  const left = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8);
+  const top = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8);
+  menu.style.left = `${Math.max(8, left)}px`;
+  menu.style.top = `${Math.max(8, top)}px`;
+
+  menu.querySelector("button").addEventListener("click", async () => {
+    closeUploadContextMenu();
+    try {
+      await clearAllUploadedFiles();
+    } catch (error) {
+      showToast(error.message || "Kunde inte rensa filerna.", "error", 7000);
+    }
+  });
+
+  setTimeout(() => {
+    document.addEventListener("click", closeUploadContextMenu, { once: true });
+    document.addEventListener("keydown", (keyEvent) => {
+      if (keyEvent.key === "Escape") closeUploadContextMenu();
+    }, { once: true });
+  }, 0);
+}
+
 function setAllocationUploading(active) {
   const button = document.getElementById("allocation-upload-link");
   if (!button) return;
@@ -983,6 +1062,7 @@ function renderSidebar(user, activePage) {
   const allocationUploadLink = document.getElementById("allocation-upload-link");
   if (allocationUploadLink) {
     allocationUploadLink.addEventListener("click", () => clearAllocationUploadNotice());
+    allocationUploadLink.addEventListener("contextmenu", openUploadContextMenu);
   }
   const sidebarEdit = document.getElementById("sidebar-edit");
   if (sidebarEdit) {
@@ -1183,6 +1263,7 @@ window.preferredAreaIdFromFocus = preferredAreaIdFromFocus;
 window.compareActivitiesForAreaFocus = compareActivitiesForAreaFocus;
 window.comparePersonsForAreaFocus = comparePersonsForAreaFocus;
 window.setupImportHelpButton = setupImportHelpButton;
+window.clearAllUploadedFiles = clearAllUploadedFiles;
 window.allocationUploadActivity = {
   start: startAllocationUploadActivity,
   finish: finishAllocationUploadActivity,

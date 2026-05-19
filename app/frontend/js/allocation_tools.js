@@ -419,6 +419,7 @@ function renderUploadsView() {
         <h2>Filer</h2>
         <div>
           <span class="allocation-muted">${filled}/${slots.length} inlagda</span>
+          <button type="button" class="danger" id="allocation-clear-all-files">Rensa alla</button>
           <label class="button-like primary" for="allocation-upload-all">Välj filer</label>
           <input id="allocation-upload-all" type="file" multiple hidden />
         </div>
@@ -431,6 +432,13 @@ function renderUploadsView() {
   `);
   document.getElementById("allocation-upload-all")?.addEventListener("change", async (event) => {
     await routeAllocationFiles(event.target.files, slots);
+  });
+  document.getElementById("allocation-clear-all-files")?.addEventListener("click", async () => {
+    try {
+      await window.clearAllUploadedFiles?.();
+    } catch (error) {
+      showToast(error.message || "Kunde inte rensa filerna.", "error", 7000);
+    }
   });
   const productivityPanelElement = document.querySelector("[data-productivity-upload-panel]");
   if (productivityPanelElement && window.productivityUploads?.setupPanel) {
@@ -798,5 +806,15 @@ async function initAllocationPage() {
     renderAllocationUnavailable(error.message);
   }
 }
+
+window.addEventListener("bemanning:uploadsCleared", async () => {
+  const root = document.getElementById("allocationRoot");
+  if (!root || !allocationState.user) return;
+  allocationState.files = await loadStoredAllocationFiles();
+  allocationState.status = "Alla filval rensade.";
+  allocationState.autoStatus = "";
+  allocationState.lastBufferSignature = "";
+  renderAllocationPage();
+});
 
 document.addEventListener("DOMContentLoaded", initAllocationPage);
