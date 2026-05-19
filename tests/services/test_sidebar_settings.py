@@ -3,8 +3,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.models import AppSetting, User
 from app.backend.routers import settings as settings_router
-from app.backend.schemas import SidebarLayoutItem, SidebarLayoutUpdate
-from app.backend.settings_service import SIDEBAR_LAYOUT_KEY, get_sidebar_layout, set_sidebar_layout
+from app.backend.schemas import RoleViewAccessUpdate, SidebarLayoutItem, SidebarLayoutUpdate
+from app.backend.settings_service import (
+    ROLE_VIEW_ACCESS_KEY,
+    SIDEBAR_LAYOUT_KEY,
+    get_role_view_access,
+    get_sidebar_layout,
+    set_role_view_access,
+    set_sidebar_layout,
+)
 
 
 def make_session():
@@ -62,6 +69,52 @@ def test_sidebar_router_cleans_layout_before_saving():
         assert result.items[1].parent_id == "schedule"
         assert result.items[2].parent_id is None
         assert result.items[3].parent_id == "persons"
+    finally:
+        session.close()
+        AppSetting.__table__.drop(engine)
+        User.__table__.drop(engine)
+        engine.dispose()
+
+
+def test_role_view_access_setting_roundtrips():
+    engine, session = make_session()
+    try:
+        assert get_role_view_access(session) == {}
+
+        set_role_view_access(
+            session,
+            {"viewer": {"schedule": "view", "users": "none"}},
+            user_id=9,
+        )
+        session.commit()
+
+        row = session.get(AppSetting, ROLE_VIEW_ACCESS_KEY)
+        assert row is not None
+        assert row.updated_by == 9
+        assert get_role_view_access(session)["viewer"]["schedule"] == "view"
+    finally:
+        session.close()
+        AppSetting.__table__.drop(engine)
+        User.__table__.drop(engine)
+        engine.dispose()
+
+
+def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
+    engine, session = make_session()
+    try:
+        admin = User(id=7, username="root", role="admin", roles=["super_user"], is_active=True)
+        payload = RoleViewAccessUpdate(access={
+            "viewer": {"schedule": "view", "users": "edit", "ghost": "edit"},
+            "leader": {"overview": "edit", "stallen": "delete"},
+            "unknown": {"schedule": "edit"},
+        })
+
+        result = settings_router.update_role_access_settings(payload, session, admin)
+
+        assert result.access == {
+            "viewer": {"schedule": "view", "users": "edit"},
+            "leader": {"overview": "edit"},
+        }
     finally:
         session.close()
         AppSetting.__table__.drop(engine)

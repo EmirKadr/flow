@@ -3,6 +3,7 @@
 const THEME_STORAGE_KEY = "bemanning-theme";
 const SIDEBAR_USER_CACHE_KEY = "bemanning-sidebar-user";
 const SIDEBAR_LAYOUT_CACHE_KEY = "bemanning-sidebar-layout";
+const ROLE_VIEW_ACCESS_CACHE_KEY = "bemanning-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "bemanning-allocation-upload-notice";
 const AREA_FOCUS_STORAGE_KEY = "bemanning-area-focus";
 const AREA_FOCUS_OPTIONS = [
@@ -66,6 +67,52 @@ const SIDEBAR_DEFAULT_LAYOUT = [
   { id: "analytics" },
   { id: "users" },
 ];
+
+const ROLE_VIEW_ROLES = [
+  { value: "leader", label: "Arbetsledare" },
+  { value: "staffing_manager", label: "Bemanningsansvarig" },
+  { value: "admin", label: "Administratör" },
+  { value: "warehouse_clerk", label: "Lagerkontorist" },
+  { value: "article_placer", label: "Artikelplacerare" },
+  { value: "viewer", label: "Visning" },
+];
+const ROLE_VIEW_LEVELS = ["none", "view", "edit"];
+const ROLE_VIEW_LEVEL_RANK = { none: 0, view: 1, edit: 2 };
+const ROLE_VIEW_DEFAULT_ACCESS = {
+  leader: {
+    schedule: "edit",
+    overview: "edit",
+    persons: "edit",
+    stallen: "edit",
+  },
+  staffing_manager: {
+    schedule: "edit",
+    overview: "edit",
+    persons: "edit",
+    stallen: "edit",
+  },
+  admin: {
+    schedule: "edit",
+    overview: "edit",
+    persons: "edit",
+    stallen: "edit",
+    users: "edit",
+  },
+  warehouse_clerk: {
+    allocationUploads: "edit",
+    allocationSplit: "edit",
+    allocationTrace: "edit",
+  },
+  article_placer: {
+    allocationUploads: "edit",
+    allocationSplit: "edit",
+    allocationTrace: "edit",
+  },
+  viewer: {
+    schedule: "view",
+    overview: "view",
+  },
+};
 
 function readTheme() {
   try {
@@ -271,6 +318,73 @@ function userRoles(user) {
   return [...new Set(rawRoles.map((role) => String(role || "").trim()).filter(Boolean))];
 }
 
+function roleViewDefaultAccess() {
+  return Object.fromEntries(ROLE_VIEW_ROLES.map((role) => [
+    role.value,
+    { ...(ROLE_VIEW_DEFAULT_ACCESS[role.value] || {}) },
+  ]));
+}
+
+function normalizeRoleViewAccess(access = {}) {
+  const defaults = roleViewDefaultAccess();
+  const normalized = roleViewDefaultAccess();
+  const roles = new Set(ROLE_VIEW_ROLES.map((role) => role.value));
+  const views = new Set(SIDEBAR_DEFAULT_LAYOUT.map((item) => item.id));
+  const incoming = access && typeof access === "object" ? access : {};
+
+  for (const [role, roleAccess] of Object.entries(incoming)) {
+    if (!roles.has(role) || !roleAccess || typeof roleAccess !== "object") continue;
+    normalized[role] = { ...(defaults[role] || {}) };
+    for (const [viewId, level] of Object.entries(roleAccess)) {
+      if (!views.has(viewId)) continue;
+      normalized[role][viewId] = ROLE_VIEW_LEVELS.includes(level) ? level : "none";
+    }
+  }
+  return normalized;
+}
+
+function readCachedRoleViewAccess() {
+  try {
+    const raw = localStorage.getItem(ROLE_VIEW_ACCESS_CACHE_KEY);
+    return raw ? normalizeRoleViewAccess(JSON.parse(raw)) : roleViewDefaultAccess();
+  } catch (e) {
+    return roleViewDefaultAccess();
+  }
+}
+
+function cacheRoleViewAccess(access) {
+  const normalized = normalizeRoleViewAccess(access);
+  try { localStorage.setItem(ROLE_VIEW_ACCESS_CACHE_KEY, JSON.stringify(normalized)); } catch (e) {}
+  return normalized;
+}
+
+function roleViewAccessForRender() {
+  return readCachedRoleViewAccess();
+}
+
+function roleViewAccessPayload(access) {
+  return normalizeRoleViewAccess(access);
+}
+
+function roleViewAccessLevel(user, viewId) {
+  if (user?.is_super_user) return "edit";
+  const access = roleViewAccessForRender();
+  let best = "none";
+  for (const role of userRoles(user)) {
+    const level = access[role]?.[viewId] || "none";
+    if ((ROLE_VIEW_LEVEL_RANK[level] || 0) > (ROLE_VIEW_LEVEL_RANK[best] || 0)) best = level;
+  }
+  return best;
+}
+
+function canViewPage(user, viewId) {
+  return (ROLE_VIEW_LEVEL_RANK[roleViewAccessLevel(user, viewId)] || 0) >= ROLE_VIEW_LEVEL_RANK.view;
+}
+
+function canEditPage(user, viewId) {
+  return roleViewAccessLevel(user, viewId) === "edit";
+}
+
 function isAdminUser(user) {
   const roles = userRoles(user);
   return roles.includes("admin") || user?.is_super_user;
@@ -282,22 +396,24 @@ function isReadOnlyUser(user) {
 }
 
 function canEditPlanning(user) {
-  const roles = userRoles(user);
-  return roles.includes("leader") || roles.includes("staffing_manager") || roles.includes("admin") || user?.is_super_user;
+  return canEditPage(user, "schedule") || canEditPage(user, "overview");
 }
 
 function canViewPlanning(user) {
-  const roles = userRoles(user);
-  return roles.includes("viewer") || canEditPlanning(user);
+  return canViewPage(user, "schedule") || canViewPage(user, "overview");
 }
 
 function canUseAllocationTools(user) {
-  const roles = userRoles(user);
-  return roles.includes("warehouse_clerk") || roles.includes("article_placer") || user?.is_super_user;
+  return (
+    canViewPage(user, "allocationUploads")
+    || canViewPage(user, "allocationSplit")
+    || canViewPage(user, "allocationTrace")
+    || canViewPage(user, "allocationProcess")
+  );
 }
 
 function canUseAllocationProcess(user) {
-  return Boolean(user?.is_super_user);
+  return canViewPage(user, "allocationProcess");
 }
 
 function sidebarDefaultLayout() {
@@ -315,7 +431,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Bemanning",
       href: "/index.html",
       icon: "📋",
-      visible: canViewPlanning(user),
+      visible: canViewPage(user, "schedule"),
       active: activePage === "schedule",
     },
     {
@@ -323,7 +439,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Översikt",
       href: "/overblick.html",
       icon: "🗓️",
-      visible: true,
+      visible: canViewPage(user, "overview"),
       active: activePage === "overview",
     },
     {
@@ -331,7 +447,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Produktivitet",
       href: "/produktivitet.html",
       icon: "📈",
-      visible: Boolean(user?.is_super_user),
+      visible: canViewPage(user, "productivity"),
       active: activePage === "productivity",
     },
     {
@@ -339,7 +455,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Uppladdningar",
       href: "/uppladdningar.html",
       iconHtml: DATABASE_ICON,
-      visible: canUseAllocationTools(user),
+      visible: canViewPage(user, "allocationUploads"),
       active: activePage === "allocationUploads",
       linkId: "allocation-upload-link",
       className: "sidebar-upload-link",
@@ -353,7 +469,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Bearbeta",
       href: "/bearbeta.html",
       icon: "🧮",
-      visible: canUseAllocationProcess(user),
+      visible: canViewPage(user, "allocationProcess"),
       active: activePage === "allocationProcess",
     },
     {
@@ -361,7 +477,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Dela",
       href: "/dela.html",
       icon: "✂",
-      visible: canUseAllocationTools(user),
+      visible: canViewPage(user, "allocationSplit"),
       active: activePage === "allocationSplit",
     },
     {
@@ -369,7 +485,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Härleda",
       href: "/harleda.html",
       icon: "⌕",
-      visible: canUseAllocationTools(user),
+      visible: canViewPage(user, "allocationTrace"),
       active: activePage === "allocationTrace",
     },
     {
@@ -377,7 +493,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Personer",
       href: "/personer.html",
       icon: "👥",
-      visible: canEditPlanning(user),
+      visible: canViewPage(user, "persons"),
       active: activePage === "persons",
     },
     {
@@ -385,7 +501,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Ställen",
       href: "/stallen.html",
       icon: "📍",
-      visible: canEditPlanning(user),
+      visible: canViewPage(user, "stallen"),
       active: activePage === "stallen",
     },
     {
@@ -393,7 +509,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Historik",
       href: "/historik.html",
       icon: "📊",
-      visible: Boolean(user?.is_super_user),
+      visible: canViewPage(user, "analytics"),
       active: activePage === "analytics",
     },
     {
@@ -401,7 +517,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Användare",
       href: "/anvandare.html",
       icon: "👤",
-      visible: isAdminUser(user),
+      visible: canViewPage(user, "users"),
       active: activePage === "users",
     },
   ];
@@ -493,6 +609,17 @@ async function refreshSidebarLayout(user, activePage) {
     if (sidebarLayoutSignature(next) !== before) renderSidebar(user, activePage);
   } catch (e) {
     // Menyn har alltid en lokal standardlayout, så ett inställningsfel ska inte blockera sidan.
+  }
+}
+
+async function refreshRoleViewAccess(user, activePage) {
+  const before = JSON.stringify(roleViewAccessForRender());
+  try {
+    const response = await api.get("/api/settings/role-access");
+    const next = cacheRoleViewAccess(response?.access || {});
+    if (JSON.stringify(next) !== before) renderSidebar(user, activePage);
+  } catch (e) {
+    // Standardbehörigheter räcker för att appen ska kunna fortsätta.
   }
 }
 
@@ -691,15 +818,20 @@ function clearCachedSidebarUser() {
   try { localStorage.removeItem(SIDEBAR_USER_CACHE_KEY); } catch (e) {}
 }
 
-function cachedUserCanRenderPage(user, options = {}) {
+function pageAccessAllowed(user, activePage, options = {}) {
   if (!user || user.must_change_password) return false;
+  if (activePage && activePage !== "passwordSetup" && !canViewPage(user, activePage)) return false;
   if (options.requireAdmin && !isAdminUser(user)) return false;
-  if (options.requireSuperUser && !user.is_super_user) return false;
-  if (options.requirePlanningView && !canViewPlanning(user)) return false;
-  if (options.requireEditor && !canEditPlanning(user)) return false;
-  if (options.requireAllocationTools && !canUseAllocationTools(user)) return false;
-  if (options.requireAllocationProcess && !canUseAllocationProcess(user)) return false;
+  if (options.requireSuperUser && !canViewPage(user, activePage)) return false;
+  if (options.requirePlanningView && !canViewPage(user, activePage || "schedule")) return false;
+  if (options.requireEditor && !canViewPage(user, activePage)) return false;
+  if (options.requireAllocationTools && !canViewPage(user, activePage)) return false;
+  if (options.requireAllocationProcess && !canViewPage(user, activePage)) return false;
   return true;
+}
+
+function cachedUserCanRenderPage(user, activePage, options = {}) {
+  return pageAccessAllowed(user, activePage, options);
 }
 
 function readAllocationUploadNotice() {
@@ -894,7 +1026,7 @@ function renderTopbar(user, activePage) {
 
 async function initPage(activePage, options = {}) {
   const cachedUser = readCachedSidebarUser();
-  if (cachedUserCanRenderPage(cachedUser, options)) {
+  if (cachedUserCanRenderPage(cachedUser, activePage, options)) {
     renderSidebar(cachedUser, activePage);
   }
 
@@ -913,33 +1045,39 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/index.html";
     return null;
   }
-  if (options.requireSuperUser && !user.is_super_user) {
+  if (activePage !== "passwordSetup" && !canViewPage(user, activePage)) {
+    queueToast("Sidan kräver behörighet", "error");
+    window.location.href = options.denyRedirect || "/index.html";
+    return null;
+  }
+  if (options.requireSuperUser && !canViewPage(user, activePage)) {
     queueToast("Sidan kräver Super User-behörighet", "error");
     window.location.href = "/index.html";
     return null;
   }
-  if (options.requirePlanningView && !canViewPlanning(user)) {
+  if (options.requirePlanningView && !canViewPage(user, activePage || "schedule")) {
     queueToast("Sidan kräver planerings- eller visningsbehörighet", "error");
     window.location.href = options.denyRedirect || "/overblick.html";
     return null;
   }
-  if (options.requireEditor && !canEditPlanning(user)) {
+  if (options.requireEditor && !canViewPage(user, activePage)) {
     queueToast("Sidan kräver redigeringsbehörighet", "error");
     window.location.href = "/index.html";
     return null;
   }
-  if (options.requireAllocationTools && !canUseAllocationTools(user)) {
+  if (options.requireAllocationTools && !canViewPage(user, activePage)) {
     queueToast("Sidan kräver rollen Lagerkontorist eller Artikelplacerare", "error");
     window.location.href = "/index.html";
     return null;
   }
-  if (options.requireAllocationProcess && !canUseAllocationProcess(user)) {
+  if (options.requireAllocationProcess && !canViewPage(user, activePage)) {
     queueToast("Bearbeta kräver Super User-behörighet", "error");
     window.location.href = options.denyRedirect || "/dela.html";
     return null;
   }
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
+  void refreshRoleViewAccess(user, activePage);
   void refreshSidebarLayout(user, activePage);
   if (activePage === "allocationUploads") clearAllocationUploadNotice();
   flushQueuedToast();
@@ -1010,6 +1148,15 @@ window.queueToast = queueToast;
 window.userRoles = userRoles;
 window.isAdminUser = isAdminUser;
 window.isReadOnlyUser = isReadOnlyUser;
+window.ROLE_VIEW_ROLES = ROLE_VIEW_ROLES;
+window.ROLE_VIEW_LEVELS = ROLE_VIEW_LEVELS;
+window.SIDEBAR_DEFAULT_LAYOUT = SIDEBAR_DEFAULT_LAYOUT;
+window.roleViewDefaultAccess = roleViewDefaultAccess;
+window.normalizeRoleViewAccess = normalizeRoleViewAccess;
+window.cacheRoleViewAccess = cacheRoleViewAccess;
+window.roleViewAccessPayload = roleViewAccessPayload;
+window.canViewPage = canViewPage;
+window.canEditPage = canEditPage;
 window.canEditPlanning = canEditPlanning;
 window.canViewPlanning = canViewPlanning;
 window.canUseAllocationTools = canUseAllocationTools;

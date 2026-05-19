@@ -4,6 +4,7 @@ let areas = [];
 let appSettings = {
   lock_foreign_schedule_cells: false,
 };
+let roleViewAccess = {};
 
 const ROLE_OPTIONS = [
   { value: "leader", label: "Arbetsledare" },
@@ -12,6 +13,24 @@ const ROLE_OPTIONS = [
   { value: "warehouse_clerk", label: "Lagerkontorist" },
   { value: "article_placer", label: "Artikelplacerare" },
   { value: "viewer", label: "Visning" },
+];
+const ROLE_ACCESS_LEVEL_OPTIONS = [
+  { value: "none", label: "Ingen" },
+  { value: "view", label: "Visa" },
+  { value: "edit", label: "Redigera" },
+];
+const VIEW_ACCESS_OPTIONS = [
+  { id: "schedule", label: "Bemanning" },
+  { id: "overview", label: "Översikt" },
+  { id: "productivity", label: "Produktivitet" },
+  { id: "allocationUploads", label: "Uppladdningar" },
+  { id: "allocationProcess", label: "Bearbeta" },
+  { id: "allocationSplit", label: "Dela" },
+  { id: "allocationTrace", label: "Härleda" },
+  { id: "persons", label: "Personer" },
+  { id: "stallen", label: "Ställen" },
+  { id: "analytics", label: "Historik" },
+  { id: "users", label: "Användare" },
 ];
 
 function escapeHtml(value) {
@@ -76,6 +95,12 @@ async function loadSettings() {
   document.getElementById("lock-foreign-schedule-cells").checked = !!appSettings.lock_foreign_schedule_cells;
 }
 
+async function loadRoleViewAccess() {
+  const response = await api.get("/api/settings/role-access");
+  roleViewAccess = normalizeRoleViewAccess(response?.access || {});
+  cacheRoleViewAccess(roleViewAccess);
+}
+
 async function loadAreas() {
   areas = await api.get("/api/areas?include_inactive=true");
 }
@@ -94,6 +119,95 @@ function setupSettingsControls() {
       checkbox.checked = previous;
       showToast(error.message, "error");
     }
+  });
+}
+
+function roleAccessSelect(role, viewId) {
+  const value = roleViewAccess?.[role]?.[viewId] || "none";
+  return `
+    <select data-role="${escapeHtml(role)}" data-view="${escapeHtml(viewId)}">
+      ${ROLE_ACCESS_LEVEL_OPTIONS.map((option) => `
+        <option value="${option.value}" ${value === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>
+      `).join("")}
+    </select>
+  `;
+}
+
+function renderRoleAccessTable(container) {
+  const roles = window.ROLE_VIEW_ROLES || ROLE_OPTIONS;
+  container.innerHTML = `
+    <div class="modal-table-scroll role-access-scroll">
+      <table class="role-access-table">
+        <thead>
+          <tr>
+            <th>Vy</th>
+            ${roles.map((role) => `<th>${escapeHtml(role.label)}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${VIEW_ACCESS_OPTIONS.map((view) => `
+            <tr>
+              <th>${escapeHtml(view.label)}</th>
+              ${roles.map((role) => `<td>${roleAccessSelect(role.value, view.id)}</td>`).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function openRoleAccessModal() {
+  try {
+    await loadRoleViewAccess();
+  } catch (error) {
+    showToast(error.message || "Kunde inte läsa vybehörigheter.", "error", 7000);
+    return;
+  }
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide role-access-modal">
+      <h2>Vybehörigheter</h2>
+      <p class="note">Super User har alltid full åtkomst. Övriga roller kan få ingen åtkomst, bara visa eller redigera per vy.</p>
+      <div id="role-access-table"></div>
+      <div class="actions">
+        <button type="button" id="role-access-defaults">Standard</button>
+        <button type="button" id="role-access-cancel">Avbryt</button>
+        <button type="button" class="primary" id="role-access-save">Spara</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const tableHost = backdrop.querySelector("#role-access-table");
+  renderRoleAccessTable(tableHost);
+
+  backdrop.querySelector("#role-access-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#role-access-defaults").addEventListener("click", () => {
+    roleViewAccess = roleViewDefaultAccess();
+    renderRoleAccessTable(tableHost);
+  });
+  backdrop.querySelector("#role-access-save").addEventListener("click", async () => {
+    const saveButton = backdrop.querySelector("#role-access-save");
+    saveButton.disabled = true;
+    const next = roleViewDefaultAccess();
+    tableHost.querySelectorAll("select[data-role][data-view]").forEach((select) => {
+      next[select.dataset.role][select.dataset.view] = select.value;
+    });
+    try {
+      const response = await api.put("/api/settings/role-access", { access: roleViewAccessPayload(next) });
+      roleViewAccess = normalizeRoleViewAccess(response?.access || next);
+      cacheRoleViewAccess(roleViewAccess);
+      backdrop.remove();
+      showToast("Vybehörigheter sparades.", "success", 2500);
+    } catch (error) {
+      saveButton.disabled = false;
+      showToast(error.message || "Kunde inte spara vybehörigheter.", "error", 7000);
+    }
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
   });
 }
 
@@ -287,6 +401,7 @@ async function importUserFile(file) {
 function setupImportControls() {
   const downloadButton = document.getElementById("download-user-template");
   const importButton = document.getElementById("import-users");
+  const roleAccessButton = document.getElementById("role-view-access");
   const helpButton = document.getElementById("user-import-help");
   const fileInput = document.getElementById("user-import-file");
 
@@ -294,6 +409,7 @@ function setupImportControls() {
 
   downloadButton.hidden = false;
   importButton.hidden = false;
+  roleAccessButton.hidden = false;
   helpButton.hidden = false;
 
   setupImportHelpButton("user-import-help", "Importera användare");
@@ -307,6 +423,7 @@ function setupImportControls() {
     if (!file) return;
     await importUserFile(file);
   });
+  roleAccessButton.addEventListener("click", openRoleAccessModal);
 }
 
 (async () => {

@@ -1950,6 +1950,26 @@ tr.filter-row input {
   justify-content: flex-end;
   gap: 8px;
 }
+.role-access-scroll {
+  max-height: min(66vh, 620px);
+}
+.role-access-table th,
+.role-access-table td {
+  white-space: nowrap;
+}
+.role-access-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.role-access-table tbody th {
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+}
+.role-access-table select {
+  min-width: 112px;
+}
 .sidebar-editor-modal .note {
   margin-top: -4px;
 }

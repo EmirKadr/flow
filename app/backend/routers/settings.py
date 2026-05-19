@@ -3,15 +3,47 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db, require_admin, require_super_user
 from ..models import User
-from ..schemas import AppSettingsOut, AppSettingsUpdate, SidebarLayoutOut, SidebarLayoutUpdate
+from ..schemas import (
+    AppSettingsOut,
+    AppSettingsUpdate,
+    RoleViewAccessOut,
+    RoleViewAccessUpdate,
+    SidebarLayoutOut,
+    SidebarLayoutUpdate,
+)
 from ..settings_service import (
     get_lock_foreign_schedule_cells,
+    get_role_view_access,
     get_sidebar_layout,
+    set_role_view_access,
     set_lock_foreign_schedule_cells,
     set_sidebar_layout,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+ROLE_VIEW_ACCESS_ROLES = {
+    "leader",
+    "staffing_manager",
+    "admin",
+    "warehouse_clerk",
+    "article_placer",
+    "viewer",
+}
+ROLE_VIEW_ACCESS_VIEWS = {
+    "schedule",
+    "overview",
+    "productivity",
+    "allocationUploads",
+    "allocationProcess",
+    "allocationSplit",
+    "allocationTrace",
+    "persons",
+    "stallen",
+    "analytics",
+    "users",
+}
+ROLE_VIEW_ACCESS_LEVELS = {"none", "view", "edit"}
 
 
 def _settings_out(db: Session) -> AppSettingsOut:
@@ -22,6 +54,10 @@ def _settings_out(db: Session) -> AppSettingsOut:
 
 def _sidebar_layout_out(db: Session) -> SidebarLayoutOut:
     return SidebarLayoutOut(items=get_sidebar_layout(db))
+
+
+def _role_view_access_out(db: Session) -> RoleViewAccessOut:
+    return RoleViewAccessOut(access=get_role_view_access(db))
 
 
 def _clean_sidebar_layout(payload: SidebarLayoutUpdate) -> list[dict]:
@@ -54,6 +90,23 @@ def _clean_sidebar_layout(payload: SidebarLayoutUpdate) -> list[dict]:
             visited.add(parent_id)
             parent = next((candidate for candidate in cleaned if candidate["id"] == parent_id), None)
             parent_id = parent["parent_id"] if parent else None
+    return cleaned
+
+
+def _clean_role_view_access(payload: RoleViewAccessUpdate) -> dict[str, dict[str, str]]:
+    cleaned: dict[str, dict[str, str]] = {}
+    for role, views in (payload.access or {}).items():
+        role_key = role.strip()
+        if role_key not in ROLE_VIEW_ACCESS_ROLES or not isinstance(views, dict):
+            continue
+        role_views: dict[str, str] = {}
+        for view_id, level in views.items():
+            view_key = view_id.strip()
+            level_key = level.strip()
+            if view_key not in ROLE_VIEW_ACCESS_VIEWS or level_key not in ROLE_VIEW_ACCESS_LEVELS:
+                continue
+            role_views[view_key] = level_key
+        cleaned[role_key] = role_views
     return cleaned
 
 
@@ -97,3 +150,22 @@ def update_sidebar_settings(
     set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id)
     db.commit()
     return _sidebar_layout_out(db)
+
+
+@router.get("/role-access", response_model=RoleViewAccessOut)
+def get_role_access_settings(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> RoleViewAccessOut:
+    return _role_view_access_out(db)
+
+
+@router.put("/role-access", response_model=RoleViewAccessOut)
+def update_role_access_settings(
+    payload: RoleViewAccessUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_super_user),
+) -> RoleViewAccessOut:
+    set_role_view_access(db, _clean_role_view_access(payload), user_id=admin.id)
+    db.commit()
+    return _role_view_access_out(db)

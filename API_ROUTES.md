@@ -54,6 +54,8 @@ Användar-API:t är bakåtkompatibelt med `role`, men nya klienter kan skicka
 | `settings.update` | `PUT` | `/api/settings` | Uppdatera inställningar |
 | `settings.sidebar_get` | `GET` | `/api/settings/sidebar` | Hämta global sidomeny |
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera global sidomeny |
+| `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta rollernas vyåtkomst |
+| `settings.role_access_update` | `PUT` | `/api/settings/role-access` | Uppdatera rollernas vyåtkomst |
 | `audit.list` | `GET` | `/api/audit` | Lista auditlogg |
 | `audit.summary` | `GET` | `/api/audit/summary` | Audit-summering |
 | `persons.list` | `GET` | `/api/persons` | Lista personer |

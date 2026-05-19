@@ -9,6 +9,7 @@ from .models import AppSetting
 
 LOCK_FOREIGN_SCHEDULE_CELLS_KEY = "lock_foreign_schedule_cells"
 SIDEBAR_LAYOUT_KEY = "sidebar_layout"
+ROLE_VIEW_ACCESS_KEY = "role_view_access"
 
 
 def _bool_text(value: bool) -> str:
@@ -76,3 +77,12 @@ def get_sidebar_layout(db: Session) -> list[dict]:
 
 def set_sidebar_layout(db: Session, items: list[dict], *, user_id: int | None = None) -> AppSetting:
     return set_json_setting(db, SIDEBAR_LAYOUT_KEY, items, user_id=user_id)
+
+
+def get_role_view_access(db: Session) -> dict:
+    value = get_json_setting(db, ROLE_VIEW_ACCESS_KEY, default={})
+    return value if isinstance(value, dict) else {}
+
+
+def set_role_view_access(db: Session, access: dict, *, user_id: int | None = None) -> AppSetting:
+    return set_json_setting(db, ROLE_VIEW_ACCESS_KEY, access, user_id=user_id)

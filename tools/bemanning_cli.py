@@ -62,6 +62,8 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("settings.update", "PUT", "/api/settings", "Uppdatera inställningar"),
     ApiRoute("settings.sidebar_get", "GET", "/api/settings/sidebar", "Hämta global sidomeny"),
     ApiRoute("settings.sidebar_update", "PUT", "/api/settings/sidebar", "Uppdatera global sidomeny"),
+    ApiRoute("settings.role_access_get", "GET", "/api/settings/role-access", "Hämta rollernas vyåtkomst"),
+    ApiRoute("settings.role_access_update", "PUT", "/api/settings/role-access", "Uppdatera rollernas vyåtkomst"),
     ApiRoute("audit.list", "GET", "/api/audit", "Lista auditlogg"),
     ApiRoute("audit.summary", "GET", "/api/audit/summary", "Audit-summering"),
     ApiRoute("persons.list", "GET", "/api/persons", "Lista personer"),

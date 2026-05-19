@@ -264,12 +264,19 @@ def test_frontend_theme_toggle_is_wired_globally():
     productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
     productivity_uploads = (frontend / "js" / "productivity_uploads.js").read_text(encoding="utf-8")
     allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
     uploads_html = (frontend / "uppladdningar.html").read_text(encoding="utf-8")
 
     assert "bemanning-theme" in common
     assert "bemanning-sidebar-user" in common
     assert "bemanning-sidebar-layout" in common
+    assert "bemanning-role-view-access" in common
+    assert "ROLE_VIEW_DEFAULT_ACCESS" in common
+    assert "roleViewAccessLevel" in common
+    assert "refreshRoleViewAccess" in common
+    assert 'api.get("/api/settings/role-access")' in common
+    assert 'api.put("/api/settings/role-access"' in users
     assert "readCachedSidebarUser" in common
     assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
@@ -289,6 +296,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".sidebar-subviews" in styles
     assert ".sidebar-editor-row" in styles
     assert ".sidebar-editor-move button svg" in styles
+    assert ".role-access-table" in styles
     assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
     assert "postFile" in api_js
@@ -360,8 +368,8 @@ def test_frontend_knows_bemanningsansvarig_role():
 
     assert '{ value: "staffing_manager", label: "Bemanningsansvarig" }' in users
     assert 'roles.includes("staffing_manager")' in users
-    assert 'roles.includes("staffing_manager") || roles.includes("admin")' in common
-    assert '!roles.includes("staffing_manager")' in common
+    assert "staffing_manager:" in common
+    assert "roleViewAccessLevel" in common
 
 
 def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta():
@@ -370,11 +378,11 @@ def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta
     schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
     allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
 
-    assert 'roles.includes("article_placer")' in common
+    assert 'article_placer: {' in common
     assert 'id: "schedule"' in common
-    assert "visible: canViewPlanning(user)" in common
+    assert 'visible: canViewPage(user, "schedule")' in common
     assert 'id: "allocationProcess"' in common
-    assert "visible: canUseAllocationProcess(user)" in common
+    assert 'visible: canViewPage(user, "allocationProcess")' in common
     assert 'id: "allocationUploads"' in common
     assert 'initPage("schedule", { requirePlanningView: true, denyRedirect: "/overblick.html" })' in schedule
     assert "pageOptions.requireAllocationProcess = true" in allocation
@@ -399,8 +407,11 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
 
     assert 'id="download-user-template"' in users_html
+    assert 'id="role-view-access"' in users_html
     assert 'id="user-import-help"' in users_html
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
+    assert "openRoleAccessModal" in users_js
+    assert "ROLE_ACCESS_LEVEL_OPTIONS" in users_js
 
     assert 'id="download-activity-template"' in activities_html
     assert 'id="import-activities"' in activities_html

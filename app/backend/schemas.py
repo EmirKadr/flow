@@ -464,3 +464,11 @@ class SidebarLayoutOut(BaseModel):
 
 class SidebarLayoutUpdate(BaseModel):
     items: list[SidebarLayoutItem] = Field(default_factory=list)
+
+
+class RoleViewAccessOut(BaseModel):
+    access: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+
+class RoleViewAccessUpdate(BaseModel):
+    access: dict[str, dict[str, str]] = Field(default_factory=dict)
