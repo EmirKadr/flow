@@ -318,8 +318,28 @@ def create_person(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("persons", "edit")),
 ) -> Person:
-    if _find_name_conflict(db, payload.name):
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Person med samma namn finns redan")
+    existing = _find_name_conflict(db, payload.name)
+    if existing:
+        if existing.is_active:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Person med samma namn finns redan")
+
+        before = _person_snapshot(existing)
+        for key, value in payload.model_dump().items():
+            setattr(existing, key, value)
+        existing.is_active = True
+        audit_log(
+            db,
+            entity_type="person",
+            entity_id=existing.id,
+            action="reactivate",
+            old_value=before,
+            new_value=_person_snapshot(existing),
+            user_id=user.id,
+        )
+        db.commit()
+        db.refresh(existing)
+        return existing
+
     person = Person(**payload.model_dump())
     db.add(person)
     db.flush()

@@ -117,6 +117,20 @@ def test_create_person_rejects_duplicate_name(person_db):
     assert exc.value.status_code == 409
 
 
+def test_create_person_reactivates_inactive_duplicate_name(person_db):
+    admin = User(username="admin", role="admin", roles=["admin"], is_active=True)
+    inactive = Person(name="Anton Holmqvist", competencies=[], is_active=False, sort_order=17)
+    person_db.add_all([admin, inactive])
+    person_db.flush()
+
+    result = create_person(PersonCreate(name="Anton Holmqvist", sort_order=3), db=person_db, user=admin)
+
+    assert result.id == inactive.id
+    assert result.is_active is True
+    assert result.sort_order == 3
+    assert person_db.query(Person).filter(Person.name == "Anton Holmqvist").count() == 1
+
+
 def test_update_person_rejects_duplicate_name(person_db):
     admin = User(username="admin", role="admin", roles=["admin"], is_active=True)
     anna = Person(name="Anna Andersson", competencies=[], is_active=True, sort_order=1)
