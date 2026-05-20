@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db, require_view_access
-from ..models import Activity, Area, User
+from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schemas import ActivityCreate, ActivityImportError, ActivityImportResult, ActivityOut, ActivityUpdate
 from ..user_access import is_super_user
 
@@ -287,10 +287,8 @@ def list_activities(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ) -> list[Activity]:
-    q = db.query(Activity)
-    if not include_inactive:
-        q = q.filter(Activity.is_active.is_(True))
-    return q.order_by(Activity.sort_order, Activity.label).all()
+    _ = include_inactive
+    return db.query(Activity).order_by(Activity.sort_order, Activity.label).all()
 
 
 @router.get("/import-template")
@@ -472,14 +470,26 @@ def delete_activity(
     if not activity:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Aktivitet hittades inte")
     before = _activity_snapshot(activity)
-    activity.is_active = False
+    db.query(Person).filter(Person.home_activity_id == activity_id).update(
+        {Person.home_activity_id: None},
+        synchronize_session=False,
+    )
+    db.query(Activity).filter(Activity.summary_activity_id == activity_id).update(
+        {Activity.summary_activity_id: None},
+        synchronize_session=False,
+    )
+    db.query(ScheduleCell).filter(ScheduleCell.activity_id == activity_id).update(
+        {ScheduleCell.activity_id: None, ScheduleCell.empty_override: True},
+        synchronize_session=False,
+    )
+    db.delete(activity)
     audit_log(
         db,
         entity_type="activity",
         entity_id=activity.id,
-        action="deactivate",
+        action="delete",
         old_value=before,
-        new_value=_activity_snapshot(activity),
+        new_value=None,
         user_id=admin.id,
     )
     db.commit()

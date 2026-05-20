@@ -138,10 +138,7 @@ def seed_persons(db: Session, areas: dict[str, Area]) -> None:
 
 
 def backfill_home_activities(db: Session) -> None:
-    activities_by_code = {
-        activity.code: activity
-        for activity in db.query(Activity).filter(Activity.is_active.is_(True)).all()
-    }
+    activities_by_code = {activity.code: activity for activity in db.query(Activity).all()}
     fallback_by_area: dict[int | None, Activity] = {}
     for activity in sorted(activities_by_code.values(), key=lambda a: (a.sort_order, a.label)):
         if activity.area_id is None or activity.category == "absence":

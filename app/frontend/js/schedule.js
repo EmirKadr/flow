@@ -209,12 +209,11 @@ function defaultHomeActivityId(person) {
   if (!person?.home_area_id) return null;
   const homeArea = areaById(person.home_area_id);
   const preferred = homeArea?.code ? activityByCode(`${homeArea.code}_VM`) : null;
-  if (preferred && preferred.is_active !== false) return preferred.id;
+  if (preferred) return preferred.id;
 
   const fallback = state.activities
     .filter((activity) =>
-      activity.is_active
-      && activity.area_id === person.home_area_id
+      activity.area_id === person.home_area_id
       && activity.category !== "absence"
     )
     .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))[0];

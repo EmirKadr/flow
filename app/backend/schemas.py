@@ -53,7 +53,6 @@ class ActivityCreate(BaseModel):
     color: str = "#ffffff"
     category: str = "work"
     sort_order: int = 0
-    is_active: bool = True
     required_competency: str | None = None
 
 
@@ -65,7 +64,6 @@ class ActivityUpdate(BaseModel):
     color: str | None = None
     category: str | None = None
     sort_order: int | None = None
-    is_active: bool | None = None
     required_competency: str | None = None
 
 

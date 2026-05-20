@@ -206,7 +206,7 @@ function renderRows() {
     if (canEditPersons) tdAct.addEventListener("click", () =>
       editSelect(
         tdAct, p, "home_activity_id", p.home_activity_id,
-        activities.filter((a) => a.is_active),
+        activities,
         (a) => a.id,
         (a) => a.label,
       )
@@ -390,7 +390,7 @@ function openModal(person) {
       <label>Huvudställe</label>
       <select id="m-activity">
         <option value="">(inget)</option>
-        ${activities.filter((a) => a.is_active).map((a) => `<option value="${a.id}" ${person?.home_activity_id === a.id ? "selected" : ""}>${escapeHtml(a.label)}</option>`).join("")}
+        ${activities.map((a) => `<option value="${a.id}" ${person?.home_activity_id === a.id ? "selected" : ""}>${escapeHtml(a.label)}</option>`).join("")}
       </select>
       <label>Sortering</label>
       <input id="m-sort" type="number" value="${person?.sort_order ?? 0}" />

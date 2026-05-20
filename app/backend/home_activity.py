@@ -24,14 +24,14 @@ def build_home_activity_resolver(
 
         home_area = areas_by_id.get(person.home_area_id)
         preferred = activities_by_code.get(f"{home_area.code}_VM") if home_area else None
-        if preferred is not None and preferred.is_active:
+        if preferred is not None:
             return preferred.id
 
         fallback = next(
             (
                 activity
                 for activity in activities_by_area.get(person.home_area_id, [])
-                if activity.is_active and activity.category != "absence"
+                if activity.category != "absence"
             ),
             None,
         )

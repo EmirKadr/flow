@@ -579,6 +579,11 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'window.location.href = "/api/activities/import-template"' not in activities_js
     assert "/api/activities/import" in activities_js
     assert 'canEditPage(currentUser, "stallen")' in activities_js
+    assert 'id="show-inactive"' not in activities_html
+    assert "<th>Aktiv</th>" not in activities_html
+    assert "m-active" not in activities_js
+    assert "Inaktivera" not in activities_js
+    assert "Ta bort" in activities_js
     assert 'setupImportHelpButton("activity-import-help", "Importera ställen")' in activities_js
 
 

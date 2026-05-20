@@ -8,13 +8,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import Activity, Area, User
+from app.backend.models import Activity, Area, Person, ScheduleCell, User
 from app.backend.routers.activities import (
     build_activity_import_template_excel,
     create_activity,
     delete_activity,
     download_import_template,
     import_activities,
+    list_activities,
     parse_activity_import_excel,
     update_activity,
 )
@@ -235,4 +236,57 @@ def test_bemanningsansvarig_can_manage_activities(import_db):
 
     delete_activity(activity_id=created.id, db=import_db, admin=staffing)
 
-    assert import_db.get(Activity, created.id).is_active is False
+    assert import_db.get(Activity, created.id) is None
+
+
+def test_activity_delete_removes_inactive_legacy_activity_and_clears_references(import_db):
+    gg, _mg, summary, _admin, staffing = seed_activity_import_base(import_db)
+    legacy = Activity(
+        code="GG_GAMMAL",
+        label="Gammalt ställe",
+        area_id=gg.id,
+        summary_activity_id=summary.id,
+        color="#ffffff",
+        category="work",
+        sort_order=99,
+        is_active=False,
+    )
+    child = Activity(
+        code="GG_BARN",
+        label="Barnställe",
+        area_id=gg.id,
+        summary_activity_id=None,
+        color="#ffffff",
+        category="work",
+        sort_order=100,
+        is_active=True,
+    )
+    person = Person(name="Test Person", home_area_id=gg.id, competencies=[], home_activity_id=None)
+    import_db.add_all([legacy, child, person])
+    import_db.flush()
+    child.summary_activity_id = legacy.id
+    person.home_activity_id = legacy.id
+    cell = ScheduleCell(
+        year=2026,
+        week=21,
+        weekday=1,
+        hour=7,
+        minute_start=0,
+        minute_end=60,
+        person_id=person.id,
+        activity_id=legacy.id,
+    )
+    import_db.add(cell)
+    import_db.commit()
+
+    labels = [activity.label for activity in list_activities(include_inactive=False, db=import_db)]
+    assert "Gammalt ställe" in labels
+
+    delete_activity(activity_id=legacy.id, db=import_db, admin=staffing)
+
+    assert import_db.get(Activity, legacy.id) is None
+    assert import_db.get(Person, person.id).home_activity_id is None
+    assert import_db.get(Activity, child.id).summary_activity_id is None
+    cleared_cell = import_db.get(ScheduleCell, cell.id)
+    assert cleared_cell.activity_id is None
+    assert cleared_cell.empty_override is True

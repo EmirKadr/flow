@@ -25,10 +25,9 @@ function canSeeCodes() {
 }
 
 async function load() {
-  activities = await api.get("/api/activities?include_inactive=true");
+  activities = await api.get("/api/activities");
   const canEditStallen = canEditPage(currentUser, "stallen");
-  const includeInactive = document.getElementById("show-inactive").checked;
-  const acts = [...(includeInactive ? activities : activities.filter((a) => a.is_active))]
+  const acts = [...activities]
     .sort((a, b) => typeof compareActivitiesForAreaFocus === "function"
       ? compareActivitiesForAreaFocus(a, b, areas)
       : ((Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)));
@@ -45,11 +44,10 @@ async function load() {
       <td>${escapeHtml(activityLabel(a.summary_activity_id) || "–")}</td>
       <td>${escapeHtml(a.category)}</td>
       <td>${a.sort_order}</td>
-      <td>${a.is_active ? "Ja" : "Nej"}</td>
       <td>
         ${canEditStallen ? `
         <button data-edit="${a.id}">Redigera</button>
-        ${a.is_active ? `<button data-delete="${a.id}" class="danger">Inaktivera</button>` : ""}
+        <button data-delete="${a.id}" class="danger">Ta bort</button>
         ` : ""}
       </td>`;
     tbody.appendChild(tr);
@@ -61,7 +59,7 @@ async function load() {
   );
   tbody.querySelectorAll("button[data-delete]").forEach((b) =>
     b.addEventListener("click", async () => {
-      if (!confirm("Inaktivera aktivitet?")) return;
+      if (!confirm("Ta bort stället permanent?")) return;
       try { await api.del(`/api/activities/${b.dataset.delete}`); load(); }
       catch (e) { showToast(e.message, "error"); }
     })
@@ -104,7 +102,6 @@ function openModal(act) {
       </select>
       <label>Sortering</label>
       <input id="m-sort" type="number" value="${act?.sort_order ?? 0}" />
-      <label class="modal-checkbox"><input id="m-active" type="checkbox" ${act?.is_active !== false ? "checked" : ""} /> Aktiv</label>
       <div class="actions">
         <button id="m-cancel">Avbryt</button>
         <button class="primary" id="m-save">Spara</button>
@@ -121,7 +118,6 @@ function openModal(act) {
       color: document.getElementById("m-color").value,
       category: document.getElementById("m-cat").value,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
-      is_active: document.getElementById("m-active").checked,
     };
 
     if (!payload.label) {
@@ -242,6 +238,5 @@ function setupImportControls() {
   const newActButton = document.getElementById("new-act");
   newActButton.hidden = !canEditPage(currentUser, "stallen");
   if (canEditPage(currentUser, "stallen")) newActButton.addEventListener("click", () => openModal(null));
-  document.getElementById("show-inactive").addEventListener("change", load);
   window.addEventListener("bemanning:areaFocusChanged", () => load());
 })();
