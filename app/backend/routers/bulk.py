@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_db, require_planning_editor
+from ..deps import get_db, require_view_access
 from ..models import Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..schemas import ClearRequest, CopyRequest, FillFromLeftRequest
@@ -38,7 +38,7 @@ def _person_ids_for_area(db: Session, area_id: int | None) -> list[int] | None:
 def copy_schedule(
     payload: CopyRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("schedule", "edit")),
 ) -> dict:
     if (payload.from_weekday is None) != (payload.to_weekday is None):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Antingen båda eller ingen weekday")
@@ -162,7 +162,7 @@ def copy_schedule(
 def clear_schedule(
     payload: ClearRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("schedule", "edit")),
 ) -> dict:
     q = select(ScheduleCell).where(
         ScheduleCell.year == payload.year,
@@ -200,7 +200,7 @@ def clear_schedule(
 def fill_from_left(
     payload: FillFromLeftRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("schedule", "edit")),
 ) -> dict:
     """För varje person: kopiera senaste icke-tomma aktivitet till efterföljande tomma celler samma dag."""
     pids = _person_ids_for_area(db, payload.area_id)

@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .models import User
+from .settings_service import get_role_view_access
 from .user_access import (
+    can_access_view,
     can_admin,
     can_edit_planning,
     can_use_allocation_process,
@@ -77,3 +79,16 @@ def require_allocation_process_user(user: User = Depends(get_current_user)) -> U
     if not can_use_allocation_process(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver Super User")
     return user
+
+
+def require_view_access(view_id: str, min_level: str = "view"):
+    def dependency(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        if not can_access_view(user, get_role_view_access(db), view_id, min_level):
+            label = "redigeringsbehörighet" if min_level == "edit" else "behörighet"
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sidan kräver {label}")
+        return user
+
+    return dependency

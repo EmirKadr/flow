@@ -8,6 +8,7 @@ from app.backend.deps import (
     require_planning_viewer,
 )
 from app.backend.models import User
+from app.backend.user_access import can_access_view, is_super_user, role_view_access_level
 
 
 def make_user(role: str, roles: list[str] | None = None) -> User:
@@ -76,3 +77,27 @@ def test_super_user_can_open_allocation_process():
 
     assert require_allocation_tools_user(user).role == "super_user"
     assert require_allocation_process_user(user).role == "super_user"
+    assert role_view_access_level(user, {}, "users") == "edit"
+
+
+def test_configured_username_is_super_user_even_without_admin_role(monkeypatch):
+    monkeypatch.setattr("app.backend.user_access.settings.SUPER_USER_USERNAMES", "mikhal")
+    user = User(id=2, username="Mikhal", role="viewer", roles=["viewer"], is_active=True)
+
+    assert is_super_user(user)
+    assert require_planning_editor(user).username == "Mikhal"
+    assert require_allocation_process_user(user).username == "Mikhal"
+    assert role_view_access_level(user, {}, "users") == "edit"
+
+
+def test_role_view_access_can_grant_and_revoke_feature_permissions():
+    leader = make_user("leader")
+    staffing = make_user("staffing_manager")
+    viewer = make_user("viewer")
+
+    assert can_access_view(staffing, {}, "stallen", "edit")
+    assert can_access_view(staffing, {"staffing_manager": {"stallen": "view"}}, "stallen", "view")
+    assert not can_access_view(staffing, {"staffing_manager": {"stallen": "view"}}, "stallen", "edit")
+    assert can_access_view(leader, {"leader": {"roleAccess": "edit"}}, "roleAccess", "edit")
+    assert not can_access_view(viewer, {}, "personImport", "edit")
+    assert role_view_access_level(viewer, {"viewer": {"users": "view"}}, "users") == "view"

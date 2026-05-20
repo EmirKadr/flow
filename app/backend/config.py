@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/bemanning"
     SECRET_KEY: str = "dev-only-change-me"
     ENVIRONMENT: str = "development"
-    SUPER_USER_USERNAMES: str = "emikad"
+    SUPER_USER_USERNAMES: str = "emikad,mikhal"
     EXCEL_API_TOKEN: str = ""
     PRODUCTIVITY_REFERENCE_DIR: str = ""
     PRODUCTIVITY_DATA_DIR: str = ""

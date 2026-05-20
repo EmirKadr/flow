@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ..deps import get_current_user, get_db, require_admin, require_super_user
+from ..deps import get_current_user, get_db, require_view_access
 from ..models import User
 from ..schemas import (
     AppSettingsOut,
@@ -19,31 +19,13 @@ from ..settings_service import (
     set_lock_foreign_schedule_cells,
     set_sidebar_layout,
 )
+from ..user_access import BASE_ROLES, ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-ROLE_VIEW_ACCESS_ROLES = {
-    "leader",
-    "staffing_manager",
-    "admin",
-    "warehouse_clerk",
-    "article_placer",
-    "viewer",
-}
-ROLE_VIEW_ACCESS_VIEWS = {
-    "schedule",
-    "overview",
-    "productivity",
-    "allocationUploads",
-    "allocationProcess",
-    "allocationSplit",
-    "allocationTrace",
-    "persons",
-    "stallen",
-    "analytics",
-    "users",
-}
-ROLE_VIEW_ACCESS_LEVELS = {"none", "view", "edit"}
+ROLE_VIEW_ACCESS_ROLES = BASE_ROLES
+ROLE_VIEW_ACCESS_VIEWS = ROLE_VIEW_IDS
+ROLE_VIEW_ACCESS_LEVELS = set(ROLE_ACCESS_LEVEL_RANK)
 
 
 def _settings_out(db: Session) -> AppSettingsOut:
@@ -113,7 +95,7 @@ def _clean_role_view_access(payload: RoleViewAccessUpdate) -> dict[str, dict[str
 @router.get("", response_model=AppSettingsOut)
 def get_app_settings(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_view_access("appSettings", "view")),
 ) -> AppSettingsOut:
     return _settings_out(db)
 
@@ -122,7 +104,7 @@ def get_app_settings(
 def update_app_settings(
     payload: AppSettingsUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_view_access("appSettings", "edit")),
 ) -> AppSettingsOut:
     set_lock_foreign_schedule_cells(
         db,
@@ -145,7 +127,7 @@ def get_sidebar_settings(
 def update_sidebar_settings(
     payload: SidebarLayoutUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_super_user),
+    admin: User = Depends(require_view_access("sidebarLayout", "edit")),
 ) -> SidebarLayoutOut:
     set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id)
     db.commit()
@@ -164,7 +146,7 @@ def get_role_access_settings(
 def update_role_access_settings(
     payload: RoleViewAccessUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_super_user),
+    admin: User = Depends(require_view_access("roleAccess", "edit")),
 ) -> RoleViewAccessOut:
     set_role_view_access(db, _clean_role_view_access(payload), user_id=admin.id)
     db.commit()

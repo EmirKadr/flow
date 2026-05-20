@@ -33,6 +33,11 @@ def admin_user():
     return User(id=999, username="admin", role="admin", is_active=True)
 
 
+@pytest.fixture
+def super_user():
+    return User(id=1000, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+
 def test_create_user_without_password_marks_password_setup_required(monkeypatch, db_session, admin_user):
     monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
 
@@ -128,6 +133,32 @@ def test_create_bemanningsansvarig_user(monkeypatch, db_session, admin_user):
     assert saved.roles == ["staffing_manager"]
 
 
+def test_only_super_user_can_create_super_user(monkeypatch, db_session, admin_user, super_user):
+    monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        users_router.create_user(
+            UserCreate(username="not-root", roles=["super_user"]),
+            db_session,
+            admin_user,
+        )
+
+    assert exc_info.value.status_code == 403
+
+    result = users_router.create_user(
+        UserCreate(username="new-root", roles=["super_user"]),
+        db_session,
+        super_user,
+    )
+
+    saved = db_session.query(User).filter_by(username="new-root").one()
+    assert result.role == "super_user"
+    assert result.roles == ["super_user"]
+    assert result.is_super_user is True
+    assert saved.role == "super_user"
+    assert saved.roles == ["super_user"]
+
+
 def test_create_artikelplacerare_user(monkeypatch, db_session, admin_user):
     monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
 
@@ -189,6 +220,61 @@ def test_update_user_can_change_multiple_roles(monkeypatch, db_session, admin_us
     assert result.roles == ["viewer", "leader"]
     assert saved.role == "leader"
     assert saved.roles == ["viewer", "leader"]
+
+
+def test_only_super_user_can_add_or_remove_super_user_role(monkeypatch, db_session, admin_user, super_user):
+    monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
+    user = User(
+        username="nina",
+        password_hash=None,
+        display_name="Nina",
+        role="leader",
+        roles=["leader"],
+        is_active=True,
+        must_change_password=True,
+    )
+    db_session.add(user)
+    db_session.add(User(username="backup-admin", role="admin", roles=["admin"], is_active=True))
+    db_session.commit()
+    db_session.refresh(user)
+
+    with pytest.raises(HTTPException) as exc_info:
+        users_router.update_user(
+            user.id,
+            UserUpdate(roles=["leader", "super_user"]),
+            db_session,
+            admin_user,
+        )
+
+    assert exc_info.value.status_code == 403
+
+    result = users_router.update_user(
+        user.id,
+        UserUpdate(roles=["leader", "super_user"]),
+        db_session,
+        super_user,
+    )
+    assert result.roles == ["leader", "super_user"]
+    assert result.is_super_user is True
+
+    with pytest.raises(HTTPException) as exc_info:
+        users_router.update_user(
+            user.id,
+            UserUpdate(roles=["leader"]),
+            db_session,
+            admin_user,
+        )
+
+    assert exc_info.value.status_code == 403
+
+    result = users_router.update_user(
+        user.id,
+        UserUpdate(roles=["leader"]),
+        db_session,
+        super_user,
+    )
+    assert result.roles == ["leader"]
+    assert result.is_super_user is False
 
 
 def test_passwordless_user_can_log_in_with_empty_password(db_session):

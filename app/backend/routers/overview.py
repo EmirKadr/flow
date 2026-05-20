@@ -9,7 +9,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_current_user, get_db, require_planning_editor
+from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
 from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
@@ -460,7 +460,7 @@ def get_overview(
     week: int = Query(..., ge=1, le=53),
     area_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_view_access("overview", "view")),
 ) -> OverviewOut:
     persons_q = select(Person).where(Person.is_active.is_(True))
     if area_id is not None:
@@ -543,7 +543,7 @@ def get_month_overview(
     month: int = Query(..., ge=1, le=12),
     area_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_view_access("overview", "view")),
 ) -> MonthOverviewOut:
     first = date(year, month, 1)
     next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
@@ -645,7 +645,7 @@ def get_month_overview(
 def set_day(
     payload: OverviewDayRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("overview", "edit")),
 ) -> dict:
     try:
         if not db.get(Person, payload.person_id):
@@ -685,7 +685,7 @@ def set_day(
 def set_days_bulk(
     payload: OverviewBulkDayRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("overview", "edit")),
 ) -> dict:
     if not payload.days:
         return {"applied": [], "errors": [], "written": 0, "deleted": 0}

@@ -22,6 +22,11 @@ NAME_HINTS = {
     "campaign": "campaign",
     "prognos idag": "prognos",
     "prognos": "prognos",
+    "not_putaway": "not_putaway",
+    "not putaway": "not_putaway",
+    "ej_inlag": "not_putaway",
+    "ej inlag": "not_putaway",
+    "ejinlag": "not_putaway",
 }
 
 BUFFER_NAME_HINTS = (

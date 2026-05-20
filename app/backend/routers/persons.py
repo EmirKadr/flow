@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_db, require_planning_editor
+from ..deps import get_db, require_view_access
 from ..models import Activity, Area, Person, User
 from ..schemas import PersonCreate, PersonImportError, PersonImportResult, PersonOut, PersonUpdate
 
@@ -202,7 +202,7 @@ def list_persons(
     include_inactive: bool = False,
     area_id: int | None = None,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_planning_editor),
+    _user: User = Depends(require_view_access("persons", "view")),
 ) -> list[Person]:
     q = db.query(Person)
     if not include_inactive:
@@ -213,7 +213,7 @@ def list_persons(
 
 
 @router.get("/import-template")
-def download_import_template(_user: User = Depends(require_planning_editor)) -> Response:
+def download_import_template(_user: User = Depends(require_view_access("personImport", "edit"))) -> Response:
     return Response(
         content=build_person_import_template_excel(),
         media_type=EXCEL_MEDIA_TYPE,
@@ -225,7 +225,7 @@ def download_import_template(_user: User = Depends(require_planning_editor)) -> 
 async def import_persons(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("personImport", "edit")),
 ) -> PersonImportResult:
     content = await file.read()
     if len(content) > MAX_IMPORT_BYTES:
@@ -304,7 +304,7 @@ async def import_persons(
 def create_person(
     payload: PersonCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("persons", "edit")),
 ) -> Person:
     person = Person(**payload.model_dump())
     db.add(person)
@@ -324,7 +324,7 @@ def create_person(
 
 
 @router.get("/{person_id}", response_model=PersonOut)
-def get_person(person_id: int, db: Session = Depends(get_db), _user: User = Depends(require_planning_editor)) -> Person:
+def get_person(person_id: int, db: Session = Depends(get_db), _user: User = Depends(require_view_access("persons", "view"))) -> Person:
     person = db.get(Person, person_id)
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
@@ -336,7 +336,7 @@ def update_person(
     person_id: int,
     payload: PersonUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("persons", "edit")),
 ) -> Person:
     person = db.get(Person, person_id)
     if not person:
@@ -362,7 +362,7 @@ def update_person(
 def delete_person(
     person_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("persons", "edit")),
 ) -> None:
     person = db.get(Person, person_id)
     if not person:

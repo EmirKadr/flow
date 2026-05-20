@@ -12,7 +12,7 @@ const ALLOCATION_FILE_WORDS = {
   saldo: ["v_ask_item_summary_stock_automation", "item_summary_stock_automation", "saldo ink", "automation"],
   items: ["item_option", "item option"],
   max_csv: ["artikel_max", "article_max"],
-  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag"],
+  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
   wms_receive: ["v_ask_receive_log", "receive_log", "mottagningslogg"],
@@ -20,8 +20,15 @@ const ALLOCATION_FILE_WORDS = {
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
   wms_correct: ["v_ask_correct_log", "correct_log", "korrigeringslogg"],
+  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
   remote_file: ["observations", "observationer"],
   values_file: ["values", "varden", "värden"],
+};
+const ALLOCATION_FILE_TYPE_PRIMARY_SLOT = {
+  wms_booking: "wms_booking",
+};
+const ALLOCATION_SLOT_MIRRORS = {
+  wms_booking: ["not_putaway"],
 };
 const PRODUCTIVITY_SHARED_UPLOAD_WORDS = [
   "v_ask_pick_log_full",
@@ -45,14 +52,23 @@ const ALLOCATION_SLOT_LABELS = {
   wms_trans: "Transaktionslogg",
   wms_pick: "Plocklogg",
   wms_correct: "Korrigeringslogg",
+  productivity_pallet: "Palllastningslogg",
   remote_file: "Observationsfil",
   values_file: "Textfil med värden",
 };
 const ALLOCATION_SLOT_ORDER = [
   "orders", "buffer", "overview", "dispatch", "saldo", "items", "not_putaway",
   "prognos", "campaign", "max_csv", "wms_receive", "wms_booking", "wms_trans",
-  "wms_pick", "wms_correct", "remote_file", "values_file",
+  "wms_pick", "productivity_pallet", "wms_correct", "remote_file", "values_file",
 ];
+const PRODUCTIVITY_UPLOAD_SLOTS = [
+  { key: "productivity_pallet", label: "Palllastningslogg", detect: [] },
+];
+const ALLOCATION_PRODUCTIVITY_KEYS = {
+  wms_pick: "pick",
+  wms_trans: "trans",
+  productivity_pallet: "pallet",
+};
 const ALLOCATION_CORE_FILES = {
   max_csv: {
     name: "artikel_max.csv",
@@ -194,6 +210,10 @@ async function saveAllocationFile(key, file) {
 async function deleteAllocationFile(key) {
   await allocationStore("readwrite", (store) => store.delete(key));
   delete allocationState.files[key];
+  const productivityKey = ALLOCATION_PRODUCTIVITY_KEYS[key];
+  if (productivityKey && window.productivityUploads?.deleteFile) {
+    await window.productivityUploads.deleteFile(productivityKey);
+  }
 }
 
 function allocationFileForForm(entry) {
@@ -251,6 +271,18 @@ function deriveAllocationSlots(flows) {
   return keys.map((key) => ({ ...map.get(key), detect: [...map.get(key).detect] }));
 }
 
+function mergeUploadOnlySlots(slots) {
+  if (allocationState.page !== "uploads") return slots;
+  const map = new Map(slots.map((slot) => [slot.key, { ...slot }]));
+  for (const slot of PRODUCTIVITY_UPLOAD_SLOTS) {
+    if (!map.has(slot.key)) map.set(slot.key, { ...slot });
+  }
+  const keys = ALLOCATION_SLOT_ORDER
+    .filter((key) => map.has(key))
+    .concat([...map.keys()].filter((key) => !ALLOCATION_SLOT_ORDER.includes(key)));
+  return keys.map((key) => map.get(key));
+}
+
 function allocationNameHintScore(slot, name) {
   return (ALLOCATION_FILE_WORDS[slot.key] || []).reduce((best, word) => {
     const normalized = String(word || "").toLowerCase();
@@ -282,6 +314,24 @@ function fallbackAllocationSlot(file, slots, droppedCount, fallbackSlotKey = "")
   return droppedCount === 1 && slots.length === 1 ? slots[0] : null;
 }
 
+function allocationSlotsForDetectedType(fileType, slots) {
+  const matches = slots.filter((slot) => (slot.detect || []).includes(fileType));
+  if (!matches.length) return [];
+  const preferredKey = ALLOCATION_FILE_TYPE_PRIMARY_SLOT[fileType];
+  const preferred = preferredKey ? matches.find((slot) => slot.key === preferredKey) : null;
+  return preferred ? [preferred] : [matches[0]];
+}
+
+function expandAllocationTargetSlots(primarySlot, slots) {
+  if (!primarySlot) return [];
+  const targets = [primarySlot];
+  for (const mirrorKey of ALLOCATION_SLOT_MIRRORS[primarySlot.key] || []) {
+    const mirror = slots.find((slot) => slot.key === mirrorKey);
+    if (mirror && !targets.some((slot) => slot.key === mirror.key)) targets.push(mirror);
+  }
+  return targets;
+}
+
 function productivitySharedUploadCandidates(files) {
   return Array.from(files || []).filter((file) => {
     const name = String(file.name || "").toLowerCase();
@@ -298,6 +348,8 @@ async function routeProductivityFilesFromSharedUpload(files) {
     return await window.productivityUploads.saveFiles(candidates, {
       reportUnknown: false,
       showToast: false,
+      trackUploadActivity: false,
+      syncAllocationUploads: false,
     });
   } catch (error) {
     console.warn("Kunde inte uppdatera produktivitetsfiler.", error);
@@ -322,35 +374,42 @@ async function routeAllocationFiles(files, slots, options = {}) {
   let productivityResult = { saved: [], unknown: [], hiddenSaved: 0, recognized: [] };
   try {
     for (const file of dropped) {
-      let target = null;
+      let targets = [];
       try {
         const result = await detectAllocationFile(file);
-        target = slots.find((slot) => (slot.detect || []).includes(result.file_type));
+        targets = allocationSlotsForDetectedType(result.file_type, slots);
       } catch (e) {
-        target = null;
+        targets = [];
       }
+      let target = targets[0] || null;
       if (!target) target = fallbackAllocationSlot(file, slots, dropped.length, options.fallbackSlotKey || "");
+      targets = expandAllocationTargetSlots(target, slots);
       if (target) {
-        await saveAllocationFile(target.key, file);
-        assigned.push({ file, slot: target });
+        for (const slot of targets) {
+          await saveAllocationFile(slot.key, file);
+          assigned.push({ file, slot });
+        }
       } else {
         unknown.push(file.name);
       }
     }
     productivityResult = await routeProductivityFilesFromSharedUpload(dropped);
   } finally {
-    const productivityCount = (productivityResult.saved?.length || 0) + (productivityResult.hiddenSaved || 0);
-    window.allocationUploadActivity?.finish(assigned.length + productivityCount);
+    const uploadedNames = new Set([
+      ...assigned.map((item) => item.file?.name || ""),
+      ...(productivityResult.recognized || productivityResult.saved || []),
+    ].filter(Boolean));
+    window.allocationUploadActivity?.finish(uploadedNames.size);
   }
   const productivityNames = new Set(productivityResult.recognized || productivityResult.saved || []);
   const visibleUnknown = unknown.filter((name) => !productivityNames.has(name));
-  const statusParts = [];
-  if (assigned.length === 1) statusParts.push("1 fil inlagd");
-  else if (assigned.length > 1) statusParts.push(`${assigned.length} filer inlagda`);
-  const productivityCount = (productivityResult.saved?.length || 0) + (productivityResult.hiddenSaved || 0);
-  if (productivityCount === 1) statusParts.push("1 produktivitetsfil inlagd");
-  else if (productivityCount > 1) statusParts.push(`${productivityCount} produktivitetsfiler inlagda`);
-  allocationState.status = statusParts.length ? `${statusParts.join(". ")}.` : "";
+  const uploadedNames = new Set([
+    ...assigned.map((item) => item.file?.name || ""),
+    ...(productivityResult.recognized || productivityResult.saved || []),
+  ].filter(Boolean));
+  if (uploadedNames.size === 1) allocationState.status = "1 fil inlagd.";
+  else if (uploadedNames.size > 1) allocationState.status = `${uploadedNames.size} filer inlagda.`;
+  else allocationState.status = "";
   if (visibleUnknown.length) showToast(`Kunde inte sortera: ${visibleUnknown.join(", ")}`, "warn");
   renderAllocationPage();
 }
@@ -421,7 +480,7 @@ async function triggerAllocationObservationsUpdate(entry) {
 }
 
 function currentAllocationSlots() {
-  return deriveAllocationSlots(allocationState.visibleFlows);
+  return mergeUploadOnlySlots(deriveAllocationSlots(allocationState.visibleFlows));
 }
 
 function flowById(id) {
@@ -483,14 +542,9 @@ function bindAllocationCommonEvents(root) {
       const slot = input.dataset.slot;
       const file = input.files?.[0];
       if (!slot || !file) return;
-      window.allocationUploadActivity?.start();
-      try {
-        await saveAllocationFile(slot, file);
-        allocationState.status = "1 fil inlagd.";
-      } finally {
-        window.allocationUploadActivity?.finish(1);
-      }
-      renderAllocationPage();
+      const targetSlot = currentAllocationSlots().find((item) => item.key === slot);
+      await routeAllocationFiles([file], targetSlot ? [targetSlot] : currentAllocationSlots(), { fallbackSlotKey: slot });
+      input.value = "";
     });
   });
   root.querySelectorAll("[data-clear-slot]").forEach((button) => {
@@ -526,9 +580,6 @@ function bindAllocationCommonEvents(root) {
 function renderUploadsView() {
   const slots = currentAllocationSlots();
   const filled = slots.filter((slot) => allocationDisplayFile(slot.key)).length;
-  const productivityPanel = allocationState.user?.is_super_user
-    ? '<section id="productivityUploadPanel" class="allocation-panel productivity-upload-panel" data-productivity-upload-panel></section>'
-    : "";
   renderAllocationShell(`
     <section class="allocation-panel" data-allocation-drop>
       <div class="allocation-panel-head">
@@ -544,7 +595,6 @@ function renderUploadsView() {
       ${allocationState.status ? `<p class="allocation-status">${allocationEscape(allocationState.status)}</p>` : ""}
       <div class="allocation-file-grid">${allocationFileRows(slots)}</div>
     </section>
-    ${productivityPanel}
   `);
   document.getElementById("allocation-upload-all")?.addEventListener("change", async (event) => {
     await routeAllocationFiles(event.target.files, slots);
@@ -556,10 +606,6 @@ function renderUploadsView() {
       showToast(error.message || "Kunde inte rensa filerna.", "error", 7000);
     }
   });
-  const productivityPanelElement = document.querySelector("[data-productivity-upload-panel]");
-  if (productivityPanelElement && window.productivityUploads?.setupPanel) {
-    void window.productivityUploads.setupPanel(productivityPanelElement);
-  }
 }
 
 function slotsForFlow(flow) {
@@ -666,11 +712,23 @@ async function runAllocationFlow(flow) {
   }
 }
 
+function allocationResultSummaryEntries(data) {
+  const displaySummary = data.display_summary || null;
+  const summary = displaySummary && Object.keys(displaySummary).length ? displaySummary : (data.summary || {});
+  return Object.entries(summary);
+}
+
+function allocationResultTables(data) {
+  const tables = data.tables || [];
+  if (data.flow_id === "allocate") return tables.filter((entry) => entry.key !== "result");
+  return tables;
+}
+
 function renderResultPanel(result) {
   if (!result?.data) return "";
   const data = result.data;
-  const summaryEntries = Object.entries(data.summary || {});
-  const tables = data.tables || [];
+  const summaryEntries = allocationResultSummaryEntries(data);
+  const tables = allocationResultTables(data);
   return `
     <section class="allocation-panel allocation-result">
       <div class="allocation-panel-head">
@@ -698,7 +756,7 @@ function renderResultTable(sessionId, entry) {
         <h3>${allocationEscape(entry.label)} <span>${allocationEscape(table.row_count || 0)} rader</span></h3>
         <div>
           <button type="button" data-open-excel="${allocationEscape(entry.key)}">Öppna i Excel</button>
-          <a class="button-like" href="${ALLOCATION_API}/download/${encodeURIComponent(sessionId)}/${encodeURIComponent(entry.key)}">Ladda ner CSV</a>
+          <button type="button" class="button-like" data-download-csv="${allocationEscape(entry.key)}" data-download-label="${allocationEscape(entry.label || entry.key)}">Ladda ner CSV</button>
         </div>
       </div>
       <div class="table-wrap allocation-table-wrap">
@@ -725,6 +783,19 @@ function bindResultActions(root) {
         });
       } catch (error) {
         showToast(error.message, "error");
+      }
+    });
+  });
+  root.querySelectorAll("[data-download-csv]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        const sessionId = allocationState.result?.data?.session_id;
+        const key = button.dataset.downloadCsv;
+        if (!sessionId || !key) throw new Error("Resultatet kunde inte hittas.");
+        const filename = `${button.dataset.downloadLabel || key}.csv`;
+        await api.download(`${ALLOCATION_API}/download/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`, filename);
+      } catch (error) {
+        showToast(error.message || "Kunde inte ladda ner CSV-filen.", "error");
       }
     });
   });
@@ -917,6 +988,14 @@ async function initAllocationPage() {
   try {
     allocationState.files = await loadStoredAllocationFiles();
     await loadAllocationFlows();
+    if (allocationState.page === "uploads" && window.productivityUploads?.syncAllocationUploads) {
+      try {
+        await window.productivityUploads.syncAllocationUploads();
+        allocationState.files = await loadStoredAllocationFiles();
+      } catch (error) {
+        console.warn("Kunde inte synka produktivitetsfiler till Uppladdningar.", error);
+      }
+    }
     renderAllocationPage();
   } catch (error) {
     renderAllocationUnavailable(error.message);
@@ -930,6 +1009,13 @@ window.addEventListener("bemanning:uploadsCleared", async () => {
   allocationState.status = "Alla filval rensade.";
   allocationState.autoStatus = "";
   allocationState.lastBufferSignature = "";
+  renderAllocationPage();
+});
+
+window.addEventListener("bemanning:allocationFilesChanged", async () => {
+  const root = document.getElementById("allocationRoot");
+  if (!root || !allocationState.user) return;
+  allocationState.files = await loadStoredAllocationFiles();
   renderAllocationPage();
 });
 

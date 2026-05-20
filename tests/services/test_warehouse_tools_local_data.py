@@ -183,6 +183,60 @@ def _first_value(table, column_index: int) -> str:
     return str(table.iloc[0, column_index])
 
 
+def test_allocate_display_summary_formats_fixed_labels_in_order():
+    result_df = pd.DataFrame({
+        "K\u00e4lltyp": [
+            "HELPALL",
+            "AUTOSTORE",
+            "AUTOSTORE",
+            "HUVUDPLOCK",
+            "SKRYMMANDE",
+            "EHANDEL",
+            "HIB",
+        ]
+    })
+    refill_hp_df = pd.DataFrame({"Artikel": ["A1", "A2"]})
+    refill_autostore_df = pd.DataFrame({"Artikel": ["R1"]})
+
+    assert flows.build_allocate_display_summary(result_df, refill_hp_df, refill_autostore_df) == {
+        "Helpall": "1 pallar",
+        "Autostore": "2 rader",
+        "Huvudplock": "1 rader",
+        "Skrymmande": "1 rader",
+        "E-Handel": "1 rader",
+        "HIB": "1 rader",
+        "Refill Autostore": "1 rader",
+        "Refill Huvudplock": "2 rader",
+    }
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Workbook contains no default style, apply openpyxl's default:UserWarning:openpyxl.styles.stylesheet"
+)
+def test_allocate_display_summary_matches_current_local_fixture_data():
+    files = {
+        "orders": next(iter(sorted(WAREHOUSE_TESTDATA.glob("v_ask_customer_order_details_all-*.csv"))), None),
+        "buffer": next(iter(sorted(WAREHOUSE_TESTDATA.glob("v_ask_article_buffertpallet-*.csv"))), None),
+        "saldo": next(iter(sorted(WAREHOUSE_TESTDATA.glob("v_ask_item_summary_stock_automation-*.csv"))), None),
+        "items": next(iter(sorted(WAREHOUSE_TESTDATA.glob("item_option-*.csv"))), None),
+    }
+    if any(path is None for path in files.values()):
+        pytest.skip("Aktuella warehouse-regressionsfiler saknas.")
+
+    result = flows.FLOW_BY_ID["allocate"]["handler"](files, {})
+
+    assert result["display_summary"] == {
+        "Helpall": "403 pallar",
+        "Autostore": "7734 rader",
+        "Huvudplock": "5122 rader",
+        "Skrymmande": "1559 rader",
+        "E-Handel": "184 rader",
+        "HIB": "266 rader",
+        "Refill Autostore": "124 rader",
+        "Refill Huvudplock": "401 rader",
+    }
+
+
 def test_warehouse_tool_testdata_is_local_to_bemanning():
     assert WAREHOUSE_TESTDATA.is_dir()
     assert any(WAREHOUSE_TESTDATA.glob("v_ask_pick_log_full-*.csv"))

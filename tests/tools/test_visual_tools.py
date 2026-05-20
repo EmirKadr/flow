@@ -196,6 +196,15 @@ def test_desktop_build_bundles_local_frontend():
     assert 'excludes=["pytest", "tests"]' in spec
 
 
+def test_desktop_web_view_accepts_file_downloads():
+    web_view = (ROOT / "desktop" / "web_view.py").read_text(encoding="utf-8")
+
+    assert "downloadRequested.connect" in web_view
+    assert "setDownloadDirectory" in web_view
+    assert "StandardLocation.DownloadLocation" in web_view
+    assert "download.accept()" in web_view
+
+
 def test_visual_smoke_outputs_have_unique_names():
     names = []
     for viewport in visual_smoke.VIEWPORTS:
@@ -258,6 +267,56 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
     assert visual_people >= 6
     assert schedule_cells > 0
     assert audit_rows == 1
+
+
+def test_local_bootstrap_upgrades_existing_persons_table(tmp_path):
+    db_path = tmp_path / "old-local.sqlite"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            create table persons (
+                id integer primary key,
+                name varchar(120) not null,
+                home_area_id integer,
+                home_activity_id integer,
+                competencies json not null default '[]',
+                comment text,
+                is_active boolean not null default 1,
+                sort_order integer not null default 0,
+                created_at datetime,
+                updated_at datetime
+            )
+            """
+        )
+        connection.execute(
+            "insert into persons (name, competencies, is_active, sort_order) values ('Legacy Person', '[]', 1, 0)"
+        )
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "DATABASE_URL": f"sqlite:///{db_path.as_posix()}",
+            "SECRET_KEY": "test-secret",
+            "SUPER_USER_USERNAMES": "admin,emikad",
+        }
+    )
+
+    subprocess.run(
+        [sys.executable, "-m", "app.backend.bootstrap_local"],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("pragma table_info(persons)").fetchall()}
+        fixed_schedule = connection.execute(
+            "select has_fixed_schedule from persons where name = 'Legacy Person'"
+        ).fetchone()[0]
+
+    assert "has_fixed_schedule" in columns
+    assert fixed_schedule == 1
 
 
 def test_frontend_icon_assets_are_referenced_and_present():
@@ -354,16 +413,22 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "renderProductivityFileRequirements" in productivity
     assert 'id="productivityFileRequirements"' in productivity_html
     assert "window.productivityUploads.loadFiles()" in productivity
-    assert "productivityUploads?.setupPanel" in allocation_tools
-    assert "data-productivity-upload-panel" in allocation_tools
+    assert "productivityUploads?.setupPanel" not in allocation_tools
+    assert "data-productivity-upload-panel" not in allocation_tools
+    assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation_tools
+    assert "productivity_pallet" in allocation_tools
+    assert "Palllastningslogg" in allocation_tools
     assert "PRODUCTIVITY_SHARED_UPLOAD_WORDS" in allocation_tools
     assert "v_ask_booking_putaway" in allocation_tools
+    assert "ALLOCATION_SLOT_MIRRORS" in allocation_tools
+    assert 'wms_booking: ["not_putaway"]' in allocation_tools
     assert "v_ask_receive_log" in allocation_tools
     assert "v_ask_palletloading_log" in allocation_tools
     assert "routeProductivityFilesFromSharedUpload" in allocation_tools
     assert "reportUnknown: false" in allocation_tools
     assert "statusItems" in productivity_uploads
     assert "clearFiles" in productivity_uploads
+    assert "deleteFile" in productivity_uploads
     assert "saveFiles" in productivity_uploads
     assert "recognized" in productivity_uploads
     assert "refreshPanels" in productivity_uploads
@@ -444,6 +509,15 @@ def test_frontend_knows_bemanningsansvarig_role():
     assert "roleViewAccessLevel" in common
 
 
+def test_frontend_only_shows_super_user_role_to_super_users():
+    users = (ROOT / "app" / "frontend" / "js" / "users.js").read_text(encoding="utf-8")
+
+    assert 'const SUPER_USER_ROLE_OPTION = { value: "super_user", label: "Super User" };' in users
+    assert "currentUser?.is_super_user ? USER_ROLE_OPTIONS : ROLE_OPTIONS" in users
+    assert 'if (roles.includes("super_user")) return "super_user";' in users
+    assert 'selectedRoles.includes("super_user")' in users
+
+
 def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta():
     frontend = ROOT / "app" / "frontend"
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
@@ -465,6 +539,7 @@ def test_frontend_keeps_lager_and_artikelplacering_out_of_bemanning_and_bearbeta
 def test_import_views_have_templates_and_help_buttons():
     frontend = ROOT / "app" / "frontend"
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
     persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
     users_html = (frontend / "anvandare.html").read_text(encoding="utf-8")
@@ -474,15 +549,21 @@ def test_import_views_have_templates_and_help_buttons():
 
     assert "setupImportHelpButton" in common
     assert "Ladda ner importmallen" in common
+    assert "async function download" in api_js
+    assert "URL.createObjectURL(blob)" in api_js
 
     assert 'id="download-person-template"' in persons_html
     assert 'id="person-import-help"' in persons_html
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
+    assert 'api.download("/api/persons/import-template", "personer-importmall.xlsx")' in persons_js
+    assert 'window.location.href = "/api/persons/import-template"' not in persons_js
 
     assert 'id="download-user-template"' in users_html
     assert 'id="role-view-access"' in users_html
     assert 'id="user-import-help"' in users_html
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
+    assert 'api.download("/api/users/import-template", "anvandare-importmall.xlsx")' in users_js
+    assert 'window.location.href = "/api/users/import-template"' not in users_js
     assert "openRoleAccessModal" in users_js
     assert "ROLE_ACCESS_LEVEL_OPTIONS" in users_js
     assert "ROLE_ACCESS_LEVEL_ORDER" in users_js
@@ -494,6 +575,8 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="import-activities"' in activities_html
     assert 'id="activity-import-help"' in activities_html
     assert "/api/activities/import-template" in activities_js
+    assert 'api.download("/api/activities/import-template", "stallen-importmall.xlsx")' in activities_js
+    assert 'window.location.href = "/api/activities/import-template"' not in activities_js
     assert "/api/activities/import" in activities_js
     assert 'canEditPage(currentUser, "stallen")' in activities_js
     assert 'setupImportHelpButton("activity-import-help", "Importera ställen")' in activities_js
@@ -544,6 +627,7 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     frontend = ROOT / "app" / "frontend"
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    productivity_uploads = (frontend / "js" / "productivity_uploads.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     catalog = (ROOT / "warehouse_tools" / "catalog.py").read_text(encoding="utf-8")
     flows = (ROOT / "warehouse_tools" / "flows.py").read_text(encoding="utf-8")
@@ -552,7 +636,7 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert 'const ALLOCATION_DB_NAME = "bemanning-allokering-files"' in allocation
     assert "indexedDB.open(ALLOCATION_DB_NAME" in allocation
     assert "window.allocationUploadActivity?.start()" in allocation
-    assert "window.allocationUploadActivity?.finish(assigned.length + productivityCount)" in allocation
+    assert "window.allocationUploadActivity?.finish(uploadedNames.size)" in allocation
     assert "observationsUpdateStatusText" in allocation
     assert "observationsUpdateLogText" in allocation
     assert "github_sent_rows" in allocation
@@ -562,6 +646,12 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "Rensa alla" in allocation
     assert "window.clearAllUploadedFiles" in allocation
     assert 'window.addEventListener("bemanning:uploadsCleared"' in allocation
+    assert 'window.addEventListener("bemanning:allocationFilesChanged"' in allocation
+    assert "productivityUploads?.syncAllocationUploads" in allocation
+    assert "Kunde inte synka produktivitetsfiler till Uppladdningar." in allocation
+    assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation
+    assert "Palllastningslogg" in allocation
+    assert "data-productivity-upload-panel" not in allocation
     assert "allocationDropSlotsForTarget" in allocation
     assert "data-drop-slot" in allocation
     assert "fallbackSlotKey" in allocation
@@ -575,6 +665,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "Saldo ink. Automation" in allocation
     assert "Saldo ink. Automation" in catalog
     assert "Saldo / automation" not in catalog
+    assert '"not_putaway", "wms_booking"' in catalog
+    assert '"not_putaway", "wms_booking"' in flows
     assert "ALLOCATION_CORE_FILES" in allocation
     assert "allocationCoreFile" in allocation
     assert "Kärnfil" in allocation
@@ -583,13 +675,37 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
 
     assert "DATABASE_ICON" in common
     assert "ALLOCATION_UPLOAD_NOTICE_KEY" in common
-    assert "writeAllocationUploadNotice({ count, at: Date.now() })" in common
+    assert "SHARED_ALLOCATION_FILE_TYPE_KEYS" in common
+    assert "SHARED_ALLOCATION_SLOT_MIRRORS" in common
+    assert "productivity_pallet" in common
+    assert "saveSharedAllocationFiles" in common
+    assert "storeSharedAllocationFile" in common
+    assert 'new CustomEvent("bemanning:allocationFilesChanged"' in common
+    assert "window.sharedAllocationUploads" in common
+    assert "addAllocationUploadNotice(count)" in common
+    assert "isAllocationUploadsPage()" in common
     assert "window.allocationUploadActivity" in common
     assert "clearAllocationUploadNotice()" in common
+    assert "trackUploadActivity" in productivity_uploads
+    assert "syncAllocationUploads" in productivity_uploads
+    assert "syncAllocationUploadsFromStore" in productivity_uploads
+    assert "lastAllocationSyncSignature" in productivity_uploads
+    assert "window.sharedAllocationUploads?.saveFiles" in productivity_uploads
+    assert "window.allocationUploadActivity?.start()" in productivity_uploads
+    assert "window.allocationUploadActivity?.finish(activityCount)" in productivity_uploads
+    assert "syncAllocationUploads: false" in allocation
+    assert "allocationResultSummaryEntries" in allocation
+    assert "data.display_summary" in allocation
+    assert 'data.flow_id === "allocate"' in allocation
+    assert 'entry.key !== "result"' in allocation
+    assert "data-download-csv" in allocation
+    assert "api.download(`${ALLOCATION_API}/download/" in allocation
+    assert 'href="${ALLOCATION_API}/download/' not in allocation
 
     assert ".database-toggle.uploading .upload-arrow" in styles
     assert "@keyframes uploadArrowRise" in styles
     assert ".database-toggle .upload-notice" in styles
+    assert "left: -6px;" in styles
     assert ".sidebar-upload-link" not in styles
     assert ".allocation-file-slot.drag-over" in styles
     assert ".allocation-flow-chip.drag-over .allocation-flow-chip-row" in styles

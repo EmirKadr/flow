@@ -22,7 +22,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: SUPER_USER_USERNAMES
-        value: emikad
+        value: emikad,mikhal
       - key: EXCEL_API_TOKEN
         generateValue: true
       - key: PYTHON_VERSION

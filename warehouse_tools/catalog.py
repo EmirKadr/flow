@@ -19,7 +19,7 @@ CATALOG_FLOWS: list[dict] = [
             {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
             {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
-            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": []},
+            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
         ],
     },
     {
@@ -177,7 +177,7 @@ DATA_POOL: list[dict] = [
     {"key": "overview", "label": "Orderöversikt", "detect": ["overview"]},
     {"key": "dispatch", "label": "Dispatchpallar", "detect": ["dispatch"]},
     {"key": "items", "label": "Item option", "detect": ["item"]},
-    {"key": "not_putaway", "label": "Ej inlagrade", "detect": []},
+    {"key": "not_putaway", "label": "Ej inlagrade", "detect": ["not_putaway", "wms_booking"]},
     {"key": "prognos", "label": "Prognosfil", "detect": ["prognos"]},
     {"key": "campaign", "label": "Kampanjfil", "detect": ["campaign"]},
     {"key": "max_csv", "label": "artikel_max.csv", "detect": []},

@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer"]
+UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer", "super_user"]
 
 
 class AreaOut(BaseModel):

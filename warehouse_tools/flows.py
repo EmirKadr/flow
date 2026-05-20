@@ -31,6 +31,15 @@ NEAR_MISS_COLUMNS = [
     "Procentuell skillnad (%)", "Anledning", "Gäller (INSTEAD R/A)",
 ]
 
+ALLOCATE_DISPLAY_SUMMARY_TYPES = [
+    ("Helpall", "HELPALL", "pallar"),
+    ("Autostore", "AUTOSTORE", "rader"),
+    ("Huvudplock", "HUVUDPLOCK", "rader"),
+    ("Skrymmande", "SKRYMMANDE", "rader"),
+    ("E-Handel", "EHANDEL", "rader"),
+    ("HIB", "HIB", "rader"),
+]
+
 
 def _read(path: Path) -> pd.DataFrame:
     return E._read_cli_table(str(path))
@@ -39,6 +48,41 @@ def _read(path: Path) -> pd.DataFrame:
 def _temp(suffix: str) -> Path:
     """En unik temporär sökväg som ännu inte finns (motorn skapar filen)."""
     return Path(tempfile.gettempdir()) / f"allok_{uuid.uuid4().hex}{suffix}"
+
+
+def build_allocate_display_summary(
+    result_df: pd.DataFrame,
+    refill_hp_df: pd.DataFrame,
+    refill_autostore_df: pd.DataFrame,
+) -> dict[str, str]:
+    def column_key(value: object) -> str:
+        return "".join(ch for ch in str(value).strip().lower() if ch.isascii() and ch.isalnum())
+
+    ktyp_col = None
+    if isinstance(result_df, pd.DataFrame):
+        for column in result_df.columns:
+            if column_key(column) == "klltyp":
+                ktyp_col = column
+                break
+
+    if ktyp_col is not None:
+        source_counts = (
+            result_df[ktyp_col]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .value_counts()
+            .to_dict()
+        )
+    else:
+        source_counts = {}
+
+    summary: dict[str, str] = {}
+    for label, source, unit in ALLOCATE_DISPLAY_SUMMARY_TYPES:
+        summary[label] = f"{int(source_counts.get(source, 0))} {unit}"
+    summary["Refill Autostore"] = f"{len(refill_autostore_df)} rader"
+    summary["Refill Huvudplock"] = f"{len(refill_hp_df)} rader"
+    return summary
 
 
 # --- Floden ------------------------------------------------------------------
@@ -72,6 +116,7 @@ def flow_allocate(files: dict, params: dict) -> dict:
             "Refill AutoStore": len(refill_autostore_df),
             "Pallplatser": len(pallet_spaces_df),
         },
+        "display_summary": build_allocate_display_summary(result_df, refill_hp_df, refill_autostore_df),
         "tables": [
             ("result", "Resultat", result_df),
             ("near_miss", "Near-miss", near_miss_df),
@@ -362,7 +407,7 @@ FLOWS: list[dict] = [
             {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
             {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
-            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": []},
+            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
         ],
     },
     {
@@ -513,7 +558,7 @@ DATA_POOL: list[dict] = [
     {"key": "overview", "label": "Orderöversikt", "detect": ["overview"]},
     {"key": "dispatch", "label": "Dispatchpallar", "detect": ["dispatch"]},
     {"key": "items", "label": "Item option", "detect": ["item"]},
-    {"key": "not_putaway", "label": "Ej inlagrade", "detect": []},
+    {"key": "not_putaway", "label": "Ej inlagrade", "detect": ["not_putaway", "wms_booking"]},
     {"key": "prognos", "label": "Prognosfil", "detect": ["prognos"]},
     {"key": "campaign", "label": "Kampanjfil", "detect": ["campaign"]},
     {"key": "max_csv", "label": "artikel_max.csv", "detect": []},

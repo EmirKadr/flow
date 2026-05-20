@@ -41,6 +41,7 @@
   const VISIBLE_SPECS = SOURCE_SPECS.filter((spec) => spec.visible);
   const SOURCE_BY_KEY = Object.fromEntries(SOURCE_SPECS.map((spec) => [spec.key, spec]));
   const registeredPanels = new Set();
+  let lastAllocationSyncSignature = "";
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -350,11 +351,37 @@
     }
   }
 
+  function storedFilesSignature(files) {
+    return Object.values(files || {})
+      .map((entry) => {
+        const file = entry?.file;
+        return file ? `${entry.key}:${file.name}:${file.size}:${file.lastModified}` : "";
+      })
+      .filter(Boolean)
+      .sort()
+      .join("|");
+  }
+
+  async function syncAllocationUploadsFromStore(files = null) {
+    if (!window.sharedAllocationUploads?.saveFiles) return { saved: [], recognized: [], unknown: [], mappings: 0 };
+    const stored = files || await loadFiles();
+    const signature = storedFilesSignature(stored);
+    if (!signature || signature === lastAllocationSyncSignature) {
+      return { saved: [], recognized: [], unknown: [], mappings: 0 };
+    }
+    const fileList = Object.values(stored).map((entry) => entry?.file).filter(Boolean);
+    const result = await window.sharedAllocationUploads.saveFiles(fileList);
+    lastAllocationSyncSignature = signature;
+    return result;
+  }
+
   async function saveFiles(files, options = {}) {
     const targetKey = options.targetKey || "";
     const statusElement = options.statusElement || options.panel?.querySelector("#productivityUploadStatus") || null;
     const reportUnknown = options.reportUnknown !== false;
     const showResultToast = options.showToast !== false;
+    const trackUploadActivity = options.trackUploadActivity !== false;
+    const syncAllocationUploads = options.syncAllocationUploads !== false;
     const incoming = Array.from(files || []);
     if (!incoming.length) return { saved: [], unknown: [], hiddenSaved: 0, recognized: [], message: "Ingen fil uppdaterades." };
 
@@ -362,8 +389,12 @@
     const saved = [];
     const unknown = [];
     const recognized = [];
+    let allocationResult = { saved: [], unknown: [], hiddenSaved: 0, recognized: [] };
     let hiddenSaved = 0;
+    let activityCount = 0;
+    if (trackUploadActivity) window.allocationUploadActivity?.start();
 
+    try {
     for (const file of incoming) {
       const fileType = targetKey || await classifyFile(file);
       if (!fileType || !SOURCE_BY_KEY[fileType]) {
@@ -382,17 +413,30 @@
       saved.push(file.name);
     }
 
+    if (syncAllocationUploads && window.sharedAllocationUploads?.saveFiles) {
+      allocationResult = await window.sharedAllocationUploads.saveFiles(incoming);
+    }
+
     if (options.panel) await refreshPanel(options.panel);
     else if (saved.length || hiddenSaved) await refreshPanels();
+    const activityNames = new Set([
+      ...recognized,
+      ...(allocationResult.recognized || []),
+    ].filter(Boolean));
+    activityCount = activityNames.size;
     const parts = [];
     if (saved.length) parts.push(`${saved.length} fil(er) valda`);
+    if (allocationResult.saved?.length) parts.push(`${allocationResult.saved.length} fil(er) synkade till Uppladdningar`);
     if (hiddenSaved) parts.push("KPI-mål uppdaterat i bakgrunden");
     if (reportUnknown && unknown.length) parts.push(`Okänd filtyp: ${unknown.join(", ")}`);
     const message = parts.join(". ") || "Ingen fil uppdaterades.";
     if (statusElement) statusElement.textContent = message;
-    if (showResultToast && (saved.length || hiddenSaved)) showToast(message, "success", 3500);
+    if (showResultToast && (saved.length || hiddenSaved || allocationResult.saved?.length)) showToast(message, "success", 3500);
     else if (showResultToast && reportUnknown && unknown.length) showToast(message, "warn", 7000);
-    return { saved, unknown, hiddenSaved, recognized, message };
+    return { saved, unknown, hiddenSaved, recognized, message, allocationSaved: allocationResult.saved || [] };
+    } finally {
+      if (trackUploadActivity) window.allocationUploadActivity?.finish(activityCount);
+    }
   }
 
   async function handleFiles(panel, files, targetKey = "") {
@@ -436,6 +480,7 @@
   async function setupPanel(panel) {
     if (!panel) return;
     registeredPanels.add(panel);
+    await syncAllocationUploadsFromStore();
     panel.innerHTML = `
       <div class="productivity-upload-head">
         <h3>Produktivitet</h3>
@@ -470,10 +515,12 @@
     visibleSpecs: () => VISIBLE_SPECS.map((spec) => ({ ...spec })),
     loadFiles,
     clearFiles,
+    deleteFile,
     fileStatus,
     saveFiles,
     handleFiles,
     refreshPanels,
+    syncAllocationUploads: syncAllocationUploadsFromStore,
     setupDropTarget,
     setupPanel,
   };

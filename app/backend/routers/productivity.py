@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
-from ..deps import require_super_user
+from ..deps import require_view_access
 from ..models import User
 from ..productivity_service import (
     ProductivitySourceError,
@@ -146,14 +146,14 @@ def _save_classified_productivity_file(
 @router.get("/files")
 def get_productivity_files(
     request: Request,
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "view")),
 ) -> dict:
     return build_productivity_session_file_status(_session_log_files(request))
 
 
 @router.get("/targets")
 def get_productivity_targets(
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "view")),
 ) -> dict:
     try:
         return read_productivity_targets()
@@ -173,7 +173,7 @@ def get_productivity_targets(
 async def upload_productivity_files(
     request: Request,
     files: list[UploadFile] = File(...),
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "edit")),
 ) -> dict:
     if not files:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades")
@@ -205,7 +205,7 @@ async def upload_productivity_files(
 async def upload_productivity_file_raw(
     request: Request,
     filename: str = Query(default=""),
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "edit")),
 ) -> dict:
     temp_path, sample = await _save_raw_upload_temp(request, filename)
     try:
@@ -229,7 +229,7 @@ async def upload_productivity_file_raw(
 def delete_productivity_file(
     file_type: str,
     request: Request,
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "edit")),
 ) -> dict:
     if file_type not in LOCAL_FILE_TYPES:
         try:
@@ -250,7 +250,7 @@ def delete_productivity_file(
 def get_productivity(
     request: Request,
     date_filter: date | None = Query(default=None, alias="date"),
-    _: User = Depends(require_super_user),
+    _: User = Depends(require_view_access("productivity", "view")),
 ) -> dict:
     try:
         files = source_files_from_session_logs(_session_log_files(request))

@@ -5,7 +5,7 @@ cd /d "%~dp0app"
 set "DATABASE_URL=sqlite:///./bemanning_local.db"
 set "SECRET_KEY=dev-only-change-me"
 set "ENVIRONMENT=development"
-set "SUPER_USER_USERNAMES=admin,emikad"
+set "SUPER_USER_USERNAMES=admin,emikad,mikhal"
 set "EXCEL_API_TOKEN=dev-token"
 
 echo Synkar lokal SQLite-databas mot models...

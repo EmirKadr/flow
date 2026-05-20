@@ -16,6 +16,71 @@ EDITOR_ROLES = {"leader", STAFFING_MANAGER_ROLE, *ADMIN_ROLES}
 ALLOCATION_TOOL_ROLES = {WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
 PLANNING_VIEW_ROLES = {VIEWER_ROLE, *EDITOR_ROLES}
 BASE_ROLES = {"admin", "leader", STAFFING_MANAGER_ROLE, VIEWER_ROLE, WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
+ASSIGNABLE_ROLES = {*BASE_ROLES, SUPER_USER_ROLE}
+ROLE_ACCESS_LEVEL_RANK = {"none": 0, "view": 1, "edit": 2}
+ROLE_VIEW_IDS = {
+    "schedule",
+    "overview",
+    "productivity",
+    "allocationUploads",
+    "allocationProcess",
+    "allocationSplit",
+    "allocationTrace",
+    "persons",
+    "personImport",
+    "stallen",
+    "stallenImport",
+    "areas",
+    "analytics",
+    "users",
+    "userImport",
+    "appSettings",
+    "sidebarLayout",
+    "roleAccess",
+}
+ROLE_VIEW_DEFAULT_ACCESS = {
+    "leader": {
+        "schedule": "edit",
+        "overview": "edit",
+        "persons": "edit",
+        "personImport": "edit",
+        "stallen": "edit",
+        "stallenImport": "edit",
+    },
+    STAFFING_MANAGER_ROLE: {
+        "schedule": "edit",
+        "overview": "edit",
+        "persons": "edit",
+        "personImport": "edit",
+        "stallen": "edit",
+        "stallenImport": "edit",
+    },
+    "admin": {
+        "schedule": "edit",
+        "overview": "edit",
+        "persons": "edit",
+        "personImport": "edit",
+        "stallen": "edit",
+        "stallenImport": "edit",
+        "areas": "edit",
+        "users": "edit",
+        "appSettings": "edit",
+    },
+    WAREHOUSE_CLERK_ROLE: {
+        "allocationUploads": "edit",
+        "allocationSplit": "edit",
+        "allocationTrace": "edit",
+    },
+    ARTICLE_PLACER_ROLE: {
+        "allocationUploads": "edit",
+        "allocationSplit": "edit",
+        "allocationTrace": "edit",
+    },
+    VIEWER_ROLE: {
+        "schedule": "view",
+        "overview": "view",
+    },
+}
 
 
 def user_roles(user: User) -> list[str]:
@@ -29,7 +94,7 @@ def user_roles(user: User) -> list[str]:
 
 
 def primary_role(roles: list[str]) -> str:
-    for candidate in ("admin", STAFFING_MANAGER_ROLE, "leader", WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE, VIEWER_ROLE):
+    for candidate in (SUPER_USER_ROLE, "admin", STAFFING_MANAGER_ROLE, "leader", WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE, VIEWER_ROLE):
         if candidate in roles:
             return candidate
     return roles[0] if roles else "leader"
@@ -40,10 +105,30 @@ def normalize_user_roles(roles: list[str] | None, fallback_role: str = "leader")
     normalized: list[str] = []
     for role in raw:
         value = str(role or "").strip().lower()
-        if value in BASE_ROLES and value not in normalized:
+        if value in ASSIGNABLE_ROLES and value not in normalized:
             normalized.append(value)
     if not normalized:
         normalized = ["leader"]
+    return normalized
+
+
+def role_view_default_access() -> dict[str, dict[str, str]]:
+    return {role: dict(ROLE_VIEW_DEFAULT_ACCESS.get(role, {})) for role in BASE_ROLES}
+
+
+def normalize_role_view_access(access: dict | None) -> dict[str, dict[str, str]]:
+    normalized = role_view_default_access()
+    incoming = access if isinstance(access, dict) else {}
+    for role, views in incoming.items():
+        role_key = str(role or "").strip()
+        if role_key not in BASE_ROLES or not isinstance(views, dict):
+            continue
+        role_views = normalized.setdefault(role_key, {})
+        for view_id, level in views.items():
+            view_key = str(view_id or "").strip()
+            level_key = str(level or "").strip()
+            if view_key in ROLE_VIEW_IDS and level_key in ROLE_ACCESS_LEVEL_RANK:
+                role_views[view_key] = level_key
     return normalized
 
 
@@ -51,9 +136,8 @@ def is_super_user(user: User) -> bool:
     roles = user_roles(user)
     if {SUPER_USER_ROLE, LEGACY_SUPER_USER_ROLE} & set(roles):
         return True
-    if "admin" not in roles:
-        return False
-    return user.username.strip().lower() in settings.super_user_usernames
+    username = str(getattr(user, "username", "") or "").strip().lower()
+    return bool(username and username in settings.super_user_usernames)
 
 
 def user_needs_password_setup(user: User) -> bool:
@@ -66,15 +150,33 @@ def is_viewer(user: User) -> bool:
 
 
 def can_edit_planning(user: User) -> bool:
-    return bool(set(user_roles(user)) & EDITOR_ROLES)
+    return is_super_user(user) or bool(set(user_roles(user)) & EDITOR_ROLES)
 
 
 def can_view_planning(user: User) -> bool:
-    return bool(set(user_roles(user)) & PLANNING_VIEW_ROLES)
+    return is_super_user(user) or bool(set(user_roles(user)) & PLANNING_VIEW_ROLES)
 
 
 def can_admin(user: User) -> bool:
-    return bool(set(user_roles(user)) & ADMIN_ROLES)
+    return is_super_user(user) or bool(set(user_roles(user)) & ADMIN_ROLES)
+
+
+def role_view_access_level(user: User, access: dict | None, view_id: str) -> str:
+    if is_super_user(user):
+        return "edit"
+    normalized = normalize_role_view_access(access)
+    best = "none"
+    for role in user_roles(user):
+        level = normalized.get(role, {}).get(view_id, "none")
+        if ROLE_ACCESS_LEVEL_RANK.get(level, 0) > ROLE_ACCESS_LEVEL_RANK.get(best, 0):
+            best = level
+    return best
+
+
+def can_access_view(user: User, access: dict | None, view_id: str, min_level: str = "view") -> bool:
+    wanted = ROLE_ACCESS_LEVEL_RANK.get(min_level, ROLE_ACCESS_LEVEL_RANK["view"])
+    actual = ROLE_ACCESS_LEVEL_RANK.get(role_view_access_level(user, access, view_id), 0)
+    return actual >= wanted
 
 
 def can_use_allocation_tools(user: User) -> bool:
@@ -91,7 +193,7 @@ def user_out(user: User) -> UserOut:
         username=user.username,
         display_name=user.display_name,
         role=primary_role(user_roles(user)),
-        roles=[role for role in user_roles(user) if role in BASE_ROLES],
+        roles=[role for role in user_roles(user) if role in ASSIGNABLE_ROLES],
         area_id=user.area_id,
         must_change_password=user_needs_password_setup(user),
         is_super_user=is_super_user(user),
@@ -104,7 +206,7 @@ def user_admin_out(user: User) -> UserAdminOut:
         username=user.username,
         display_name=user.display_name,
         role=primary_role(user_roles(user)),
-        roles=[role for role in user_roles(user) if role in BASE_ROLES],
+        roles=[role for role in user_roles(user) if role in ASSIGNABLE_ROLES],
         area_id=user.area_id,
         is_active=user.is_active,
         must_change_password=user_needs_password_setup(user),

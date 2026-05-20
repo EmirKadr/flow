@@ -14,6 +14,26 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from core.app_info import APP_NAME
 
 
+def default_download_dir() -> Path:
+    location = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.DownloadLocation
+    )
+    root = Path(location) if location else Path.home() / "Downloads"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def configure_downloads(profile: QWebEngineProfile) -> None:
+    def accept_download(download) -> None:
+        filename = download.suggestedFileName() or download.downloadFileName() or "download"
+        download.setDownloadDirectory(str(default_download_dir()))
+        download.setDownloadFileName(filename)
+        download.accept()
+
+    profile.downloadRequested.connect(accept_download)
+    profile._bemanning_download_handler = accept_download
+
+
 def create_web_view(parent=None) -> QWebEngineView:
     view = QWebEngineView(parent)
 
@@ -30,6 +50,7 @@ def create_web_view(parent=None) -> QWebEngineView:
     profile.setPersistentCookiesPolicy(
         QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
     )
+    configure_downloads(profile)
 
     page = QWebEnginePage(profile, view)
     view.setPage(page)

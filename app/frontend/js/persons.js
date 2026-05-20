@@ -3,6 +3,7 @@
 let areas = [];
 let activities = [];
 let persons = [];
+let currentUser = null;
 let sortKey = "sort_order";
 let sortAsc = true;
 const filters = { name: "", home_area: "", home_activity: "", is_active: "", sort_order: "" };
@@ -175,6 +176,7 @@ function renderRows() {
   });
 
   const tbody = document.getElementById("persons-body");
+  const canEditPersons = canEditPage(currentUser, "persons");
   tbody.innerHTML = "";
 
   filtered.forEach((p) => {
@@ -182,26 +184,26 @@ function renderRows() {
 
     // Namn
     const tdName = document.createElement("td");
-    tdName.className = "editable";
+    if (canEditPersons) tdName.className = "editable";
     tdName.textContent = p.name;
-    tdName.addEventListener("click", () => editText(tdName, p, "name", p.name));
+    if (canEditPersons) tdName.addEventListener("click", () => editText(tdName, p, "name", p.name));
     tr.appendChild(tdName);
 
     // Hemområde
     const tdArea = document.createElement("td");
-    tdArea.className = "editable";
+    if (canEditPersons) tdArea.className = "editable";
     tdArea.textContent = areaName(p.home_area_id);
-    tdArea.addEventListener("click", () =>
+    if (canEditPersons) tdArea.addEventListener("click", () =>
       editSelect(tdArea, p, "home_area_id", p.home_area_id, areas, (a) => a.id, (a) => a.name)
     );
     tr.appendChild(tdArea);
 
     // Huvudställe
     const tdAct = document.createElement("td");
-    tdAct.className = "editable";
+    if (canEditPersons) tdAct.className = "editable";
     if (p.home_activity_id) tdAct.style.background = activityColor(p.home_activity_id);
     tdAct.textContent = activityLabel(p.home_activity_id);
-    tdAct.addEventListener("click", () =>
+    if (canEditPersons) tdAct.addEventListener("click", () =>
       editSelect(
         tdAct, p, "home_activity_id", p.home_activity_id,
         activities.filter((a) => a.is_active),
@@ -213,9 +215,9 @@ function renderRows() {
 
     // Aktiv (toggle)
     const tdActive = document.createElement("td");
-    tdActive.className = "editable";
+    if (canEditPersons) tdActive.className = "editable";
     tdActive.textContent = p.is_active ? "Ja" : "Nej";
-    tdActive.addEventListener("click", async () => {
+    if (canEditPersons) tdActive.addEventListener("click", async () => {
       try {
         await savePersonField(p.id, { is_active: !p.is_active });
         await loadPersons();
@@ -225,30 +227,32 @@ function renderRows() {
 
     // Sortering
     const tdSort = document.createElement("td");
-    tdSort.className = "editable";
+    if (canEditPersons) tdSort.className = "editable";
     tdSort.textContent = p.sort_order;
-    tdSort.addEventListener("click", () => editNumber(tdSort, p, "sort_order", p.sort_order));
+    if (canEditPersons) tdSort.addEventListener("click", () => editNumber(tdSort, p, "sort_order", p.sort_order));
     tr.appendChild(tdSort);
 
     // Åtgärder (Schema + Inaktivera)
     const tdActions = document.createElement("td");
     tdActions.innerHTML = `
       <button data-schedule="${p.id}">Schema</button>
-      ${p.is_active ? `<button data-delete="${p.id}" class="danger">Inaktivera</button>` : ""}
+      ${canEditPersons && p.is_active ? `<button data-delete="${p.id}" class="danger">Inaktivera</button>` : ""}
     `;
     tr.appendChild(tdActions);
 
     tbody.appendChild(tr);
   });
 
-  tbody.querySelectorAll("button[data-delete]").forEach((b) =>
-    b.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (!confirm("Inaktivera person?")) return;
-      await api.del(`/api/persons/${b.dataset.delete}`);
-      await loadPersons();
-    })
-  );
+  if (canEditPersons) {
+    tbody.querySelectorAll("button[data-delete]").forEach((b) =>
+      b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Inaktivera person?")) return;
+        await api.del(`/api/persons/${b.dataset.delete}`);
+        await loadPersons();
+      })
+    );
+  }
   tbody.querySelectorAll("button[data-schedule]").forEach((b) =>
     b.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -341,11 +345,22 @@ async function importPersonFile(file) {
 function setupImportControls() {
   const downloadButton = document.getElementById("download-person-template");
   const importButton = document.getElementById("import-persons");
+  const helpButton = document.getElementById("person-import-help");
   const fileInput = document.getElementById("person-import-file");
+  if (!canEditPage(currentUser, "personImport")) {
+    downloadButton.hidden = true;
+    importButton.hidden = true;
+    if (helpButton) helpButton.hidden = true;
+    return;
+  }
 
   setupImportHelpButton("person-import-help", "Importera personer");
-  downloadButton.addEventListener("click", () => {
-    window.location.href = "/api/persons/import-template";
+  downloadButton.addEventListener("click", async () => {
+    try {
+      await api.download("/api/persons/import-template", "personer-importmall.xlsx");
+    } catch (error) {
+      showToast(error.message || "Kunde inte ladda ner importmallen.", "error", 7000);
+    }
   });
   importButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
@@ -529,11 +544,14 @@ function updateRowDisabled(row) {
 
 // ---- Init ----
 (async () => {
-  if (!await initPage("persons", { requireEditor: true })) return;
+  currentUser = await initPage("persons");
+  if (!currentUser) return;
   await loadInitial();
   await loadPersons();
   setupImportControls();
-  document.getElementById("new-person").addEventListener("click", () => openModal(null));
+  const newPersonButton = document.getElementById("new-person");
+  newPersonButton.hidden = !canEditPage(currentUser, "persons");
+  if (canEditPage(currentUser, "persons")) newPersonButton.addEventListener("click", () => openModal(null));
   document.getElementById("show-inactive").addEventListener("change", loadPersons);
   window.addEventListener("bemanning:areaFocusChanged", () => renderRows());
 

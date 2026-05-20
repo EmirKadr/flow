@@ -314,6 +314,7 @@ def run_flow_handler(flow_id: str, files: dict, params: dict) -> dict:
         "flow_id": flow_id,
         "session_id": session_id,
         "summary": result.get("summary", {}),
+        "display_summary": result.get("display_summary"),
         "tables": [
             {"key": key, "label": label, "table": df_to_table(df)}
             for key, label, df in tables

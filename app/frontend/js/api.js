@@ -48,6 +48,49 @@ async function request(path, options = {}) {
   return body;
 }
 
+function filenameFromContentDisposition(value) {
+  const header = String(value || "");
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ""));
+  const match = header.match(/filename="?([^";]+)"?/i);
+  return match ? match[1].trim() : "";
+}
+
+async function download(path, fallbackFilename = "download") {
+  const resp = await fetch(path, { credentials: "include" });
+
+  if (resp.status === 401 && !isAuthPath(path)) {
+    if (!window.location.pathname.endsWith("/login.html")) {
+      window.location.href = "/login.html";
+    }
+    throw new Error("Unauthorized");
+  }
+
+  const ct = resp.headers.get("content-type") || "";
+  if (!resp.ok) {
+    const body = ct.includes("application/json") ? await resp.json() : await resp.text();
+    const err = new Error(body?.detail || body?.error || `HTTP ${resp.status}`);
+    err.status = resp.status;
+    err.body = body;
+    throw err;
+  }
+
+  const blob = await resp.blob();
+  const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+    link.remove();
+  }, 1000);
+  return { filename };
+}
+
 const api = {
   get: (path, options = {}) => request(path, options),
   post: (path, data, options = {}) =>
@@ -64,6 +107,7 @@ const api = {
   put: (path, data, options = {}) =>
     request(path, { ...options, method: "PUT", body: JSON.stringify(data) }),
   del: (path, options = {}) => request(path, { ...options, method: "DELETE" }),
+  download,
 };
 
 window.api = api;

@@ -132,6 +132,8 @@ def test_native_detector_recognizes_current_upload_filename_hints(tmp_path):
         "v_ask_booking_putaway-20260519090707.csv": "wms_booking",
         "v_ask_receive_log-20260519090715.csv": "wms_receive",
         "v_ask_trans_log-20260519051930.csv": "wms_trans",
+        "ej_inlagrade-20260519090707.csv": "not_putaway",
+        "not_putaway-20260519090707.csv": "not_putaway",
         "Granngarden prognos kampanjplock +6v.xlsx": "campaign",
         "Prognos idag_1227934.xlsx": "prognos",
     }
@@ -163,6 +165,17 @@ def test_native_detector_recognizes_relex_forecast_workbooks(tmp_path):
 
     assert bridge.detect_file_type(campaign) == "campaign"
     assert bridge.detect_file_type(forecast) == "prognos"
+
+
+def test_catalog_routes_booking_putaway_to_not_putaway_pool():
+    pool = {slot["key"]: slot for slot in bridge.public_pool()}
+    allocate = next(flow for flow in bridge.public_registry() if flow["id"] == "allocate")
+    inputs = {item["key"]: item for item in allocate["inputs"]}
+
+    assert "wms_booking" in pool["not_putaway"]["detect"]
+    assert "not_putaway" in pool["not_putaway"]["detect"]
+    assert "wms_booking" in inputs["not_putaway"]["detect"]
+    assert inputs["not_putaway"]["pool"] == "not_putaway"
 
 
 def test_observations_update_reports_github_sent_rows_and_max_changes(tmp_path, monkeypatch):
@@ -277,6 +290,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
             "demo": {
                 "handler": lambda files, params: {
                     "summary": {"files": sorted(files), "limit": params["limit"]},
+                    "display_summary": {"Visad": "2 rader"},
                     "tables": [("main", "Demoresultat", df)],
                     "text": "klart",
                     "log": ["rad 1"],
@@ -291,6 +305,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
 
     assert result["flow_id"] == "demo"
     assert result["summary"] == {"files": ["orders"], "limit": "10"}
+    assert result["display_summary"] == {"Visad": "2 rader"}
     assert result["text"] == "klart"
     assert result["log"] == ["rad 1"]
     assert result["tables"][0]["key"] == "main"

@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_db, require_planning_editor
+from ..deps import get_db, require_view_access
 from ..models import Person, PersonScheduleTemplate, User
 from ..schemas import TemplateDay, TemplateOut, TemplateUpdate
 from ..template_service import get_all_default_days
@@ -67,7 +67,7 @@ def _template_rows(db: Session, person_id: int) -> list[PersonScheduleTemplate]:
 def get_schedule(
     person_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_planning_editor),
+    _: User = Depends(require_view_access("persons", "view")),
 ) -> TemplateOut:
     person = db.get(Person, person_id)
     if not person:
@@ -85,7 +85,7 @@ def put_schedule(
     person_id: int,
     payload: TemplateUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_planning_editor),
+    user: User = Depends(require_view_access("persons", "edit")),
 ) -> TemplateOut:
     person = db.get(Person, person_id)
     if not person:

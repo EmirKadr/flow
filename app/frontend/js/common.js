@@ -9,6 +9,47 @@ const UPLOAD_FILE_STORES = [
   { dbName: "bemanning-allokering-files", storeName: "files" },
   { dbName: "bemanning-productivity-files", storeName: "files" },
 ];
+const SHARED_ALLOCATION_API = "/api/allokering";
+const SHARED_ALLOCATION_DB_NAME = "bemanning-allokering-files";
+const SHARED_ALLOCATION_STORE = "files";
+const SHARED_ALLOCATION_FILE_TYPE_KEYS = {
+  orders: ["orders"],
+  buffer: ["buffer"],
+  overview: ["overview"],
+  dispatch: ["dispatch"],
+  automation: ["saldo"],
+  item: ["items"],
+  not_putaway: ["not_putaway"],
+  prognos: ["prognos"],
+  campaign: ["campaign"],
+  wms_receive: ["wms_receive"],
+  wms_booking: ["wms_booking"],
+  wms_trans: ["wms_trans"],
+  wms_pick: ["wms_pick"],
+  wms_correct: ["wms_correct"],
+  productivity_pallet: ["productivity_pallet"],
+};
+const SHARED_ALLOCATION_SLOT_MIRRORS = {
+  wms_booking: ["not_putaway"],
+};
+const SHARED_ALLOCATION_FILE_WORDS = {
+  orders: ["v_ask_customer_order_details_all", "customer_order_details_all", "customer_order_details", "detalj kundorder"],
+  buffer: ["v_ask_article_buffertpallet", "v_ask_article_bufferpallet", "article_buffertpallet", "article_bufferpallet", "buffertpall", "buffertpallet", "bufferpall", "bufferpallet"],
+  overview: ["v_ask_order_overview", "order_overview", "orderoversikt"],
+  dispatch: ["v_ask_dispatch_pallet", "dispatch_pallet", "dispatchpall"],
+  saldo: ["v_ask_item_summary_stock_automation", "item_summary_stock_automation", "saldo ink", "automation"],
+  items: ["item_option", "item option"],
+  max_csv: ["artikel_max", "article_max"],
+  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
+  campaign: ["kampanjplock", "kampanj", "campaign"],
+  prognos: ["prognos idag", "prognos", "forecast"],
+  wms_receive: ["v_ask_receive_log", "receive_log", "mottagningslogg"],
+  wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
+  wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
+  wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
+  wms_correct: ["v_ask_correct_log", "correct_log", "korrigeringslogg"],
+  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
+};
 const AREA_FOCUS_STORAGE_KEY = "bemanning-area-focus";
 const AREA_FOCUS_OPTIONS = [
   { value: "MG", label: "MG", title: "Mestergruppen" },
@@ -91,9 +132,16 @@ const ROLE_VIEW_IDS = [
   "allocationSplit",
   "allocationTrace",
   "persons",
+  "personImport",
   "stallen",
+  "stallenImport",
+  "areas",
   "analytics",
   "users",
+  "userImport",
+  "appSettings",
+  "sidebarLayout",
+  "roleAccess",
 ];
 
 const ROLE_VIEW_ROLES = [
@@ -111,20 +159,28 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     schedule: "edit",
     overview: "edit",
     persons: "edit",
+    personImport: "edit",
     stallen: "edit",
+    stallenImport: "edit",
   },
   staffing_manager: {
     schedule: "edit",
     overview: "edit",
     persons: "edit",
+    personImport: "edit",
     stallen: "edit",
+    stallenImport: "edit",
   },
   admin: {
     schedule: "edit",
     overview: "edit",
     persons: "edit",
+    personImport: "edit",
     stallen: "edit",
+    stallenImport: "edit",
+    areas: "edit",
     users: "edit",
+    appSettings: "edit",
   },
   warehouse_clerk: {
     allocationUploads: "edit",
@@ -928,7 +984,7 @@ function pageAccessAllowed(user, activePage, options = {}) {
   if (options.requireAdmin && !isAdminUser(user)) return false;
   if (options.requireSuperUser && !canViewPage(user, activePage)) return false;
   if (options.requirePlanningView && !canViewPage(user, activePage || "schedule")) return false;
-  if (options.requireEditor && !canViewPage(user, activePage)) return false;
+  if (options.requireEditor && !canEditPage(user, activePage)) return false;
   if (options.requireAllocationTools && !canViewPage(user, activePage)) return false;
   if (options.requireAllocationProcess && !canViewPage(user, activePage)) return false;
   return true;
@@ -952,6 +1008,23 @@ function writeAllocationUploadNotice(notice) {
     if (notice) sessionStorage.setItem(ALLOCATION_UPLOAD_NOTICE_KEY, JSON.stringify(notice));
     else sessionStorage.removeItem(ALLOCATION_UPLOAD_NOTICE_KEY);
   } catch (e) {}
+}
+
+function isAllocationUploadsPage() {
+  return window.location.pathname.endsWith("/uppladdningar.html")
+    || document.getElementById("allocation-upload-link")?.classList.contains("active");
+}
+
+function addAllocationUploadNotice(count = 0) {
+  const numericCount = Math.max(0, Number(count) || 0);
+  if (!numericCount) return;
+  if (isAllocationUploadsPage()) {
+    clearAllocationUploadNotice();
+    return;
+  }
+  const existing = readAllocationUploadNotice();
+  const nextCount = Math.min(999, (Number(existing?.count) || 0) + numericCount);
+  writeAllocationUploadNotice({ count: nextCount, at: Date.now() });
 }
 
 function updateAllocationUploadIndicator() {
@@ -1002,6 +1075,126 @@ function clearUploadIndexedDbStore(dbName, storeName) {
     };
     request.onerror = () => reject(request.error);
   });
+}
+
+function sharedAllocationDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SHARED_ALLOCATION_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(SHARED_ALLOCATION_STORE)) {
+        database.createObjectStore(SHARED_ALLOCATION_STORE, { keyPath: "key" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function storeSharedAllocationFile(key, file) {
+  const database = await sharedAllocationDb();
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(SHARED_ALLOCATION_STORE, "readwrite");
+    const entry = {
+      key,
+      name: file.name || key,
+      size: file.size || 0,
+      type: file.type || "",
+      lastModified: file.lastModified || Date.now(),
+      blob: file,
+    };
+    tx.objectStore(SHARED_ALLOCATION_STORE).put(entry);
+    tx.oncomplete = () => {
+      database.close();
+      resolve(entry);
+    };
+    tx.onerror = () => {
+      database.close();
+      reject(tx.error);
+    };
+  });
+}
+
+async function detectSharedAllocationFile(file) {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  try {
+    const response = await fetch(`${SHARED_ALLOCATION_API}/detect`, {
+      method: "POST",
+      body: fd,
+      credentials: "include",
+    });
+    if (!response.ok) return "";
+    const result = await response.json();
+    return result?.file_type || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function sharedAllocationNameHintScore(slotKey, name) {
+  return (SHARED_ALLOCATION_FILE_WORDS[slotKey] || []).reduce((best, word) => {
+    const normalized = String(word || "").toLowerCase();
+    return normalized && name.includes(normalized) ? Math.max(best, normalized.length) : best;
+  }, 0);
+}
+
+function hintedSharedAllocationKeys(file) {
+  const name = String(file?.name || "").toLowerCase();
+  let bestKey = "";
+  let bestScore = 0;
+  for (const key of Object.keys(SHARED_ALLOCATION_FILE_WORDS)) {
+    const score = sharedAllocationNameHintScore(key, name);
+    if (score > bestScore) {
+      bestKey = key;
+      bestScore = score;
+    }
+  }
+  return bestKey ? [bestKey] : [];
+}
+
+function expandSharedAllocationKeys(keys) {
+  const result = [];
+  for (const key of keys || []) {
+    if (!result.includes(key)) result.push(key);
+    for (const mirror of SHARED_ALLOCATION_SLOT_MIRRORS[key] || []) {
+      if (!result.includes(mirror)) result.push(mirror);
+    }
+  }
+  return result;
+}
+
+function sharedAllocationKeysForType(fileType) {
+  return expandSharedAllocationKeys(SHARED_ALLOCATION_FILE_TYPE_KEYS[fileType] || []);
+}
+
+async function saveSharedAllocationFiles(files) {
+  const incoming = Array.from(files || []);
+  const saved = [];
+  const recognized = [];
+  const unknown = [];
+  let mappings = 0;
+  for (const file of incoming) {
+    const fileType = await detectSharedAllocationFile(file);
+    const targetKeys = sharedAllocationKeysForType(fileType);
+    const keys = targetKeys.length ? targetKeys : expandSharedAllocationKeys(hintedSharedAllocationKeys(file));
+    if (!keys.length) {
+      unknown.push(file.name || "okand fil");
+      continue;
+    }
+    recognized.push(file.name || keys[0]);
+    for (const key of keys) {
+      await storeSharedAllocationFile(key, file);
+      mappings += 1;
+    }
+    saved.push(file.name || keys[0]);
+  }
+  if (mappings) {
+    window.dispatchEvent(new CustomEvent("bemanning:allocationFilesChanged", {
+      detail: { saved: saved.length, mappings },
+    }));
+  }
+  return { saved, recognized, unknown, mappings };
 }
 
 async function clearAllUploadedFiles({ confirmUser = true } = {}) {
@@ -1063,7 +1256,7 @@ function startAllocationUploadActivity() {
 function finishAllocationUploadActivity(count = 0) {
   setAllocationUploading(false);
   if (count > 0) {
-    writeAllocationUploadNotice({ count, at: Date.now() });
+    addAllocationUploadNotice(count);
     const text = count === 1 ? "1 fil uppladdad" : `${count} filer uppladdade`;
     showToast(text, "success", 2500);
   }
@@ -1104,7 +1297,7 @@ function renderSidebar(user, activePage) {
   }
 
   const navHtml = renderSidebarNav(user, activePage);
-  const editButton = user?.is_super_user
+  const editButton = canEditPage(user, "sidebarLayout")
     ? `
       <button class="sidebar-edit" id="sidebar-edit" type="button" title="Redigera meny" aria-label="Redigera meny">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1246,7 +1439,7 @@ async function initPage(activePage, options = {}) {
     window.location.href = options.denyRedirect || "/overblick.html";
     return null;
   }
-  if (options.requireEditor && !canViewPage(user, activePage)) {
+  if (options.requireEditor && !canEditPage(user, activePage)) {
     queueToast("Sidan kräver redigeringsbehörighet", "error");
     window.location.href = "/index.html";
     return null;
@@ -1358,6 +1551,9 @@ window.comparePersonsForAreaFocus = comparePersonsForAreaFocus;
 window.setupImportHelpButton = setupImportHelpButton;
 window.appendAppLog = appendAppLog;
 window.clearAllUploadedFiles = clearAllUploadedFiles;
+window.sharedAllocationUploads = {
+  saveFiles: saveSharedAllocationFiles,
+};
 window.allocationUploadActivity = {
   start: startAllocationUploadActivity,
   finish: finishAllocationUploadActivity,

@@ -19,15 +19,24 @@ from .seed import run as seed_run
 
 def _sync_lightweight_sqlite_columns() -> None:
     inspector = inspect(engine)
-    if not inspector.has_table("users"):
-        return
-    user_columns = {column["name"] for column in inspector.get_columns("users")}
+
+    def columns_for(table: str) -> set[str]:
+        if not inspector.has_table(table):
+            return set()
+        return {column["name"] for column in inspector.get_columns(table)}
+
+    user_columns = columns_for("users")
+    person_columns = columns_for("persons")
     with engine.begin() as connection:
-        if "area_id" not in user_columns:
+        if user_columns and "area_id" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN area_id INTEGER REFERENCES areas(id)")
-        if "roles" not in user_columns:
+        if user_columns and "roles" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN roles JSON")
             connection.exec_driver_sql("UPDATE users SET roles = json_array(role) WHERE roles IS NULL")
+        if person_columns and "has_fixed_schedule" not in person_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE persons ADD COLUMN has_fixed_schedule BOOLEAN NOT NULL DEFAULT 1"
+            )
 
 
 def main() -> None:

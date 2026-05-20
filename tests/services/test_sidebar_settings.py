@@ -105,7 +105,8 @@ def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
         admin = User(id=7, username="root", role="admin", roles=["super_user"], is_active=True)
         payload = RoleViewAccessUpdate(access={
             "viewer": {"schedule": "view", "users": "edit", "ghost": "edit"},
-            "leader": {"overview": "edit", "stallen": "delete"},
+            "leader": {"overview": "edit", "stallen": "delete", "personImport": "edit"},
+            "admin": {"roleAccess": "edit", "sidebarLayout": "edit", "appSettings": "edit"},
             "unknown": {"schedule": "edit"},
         })
 
@@ -113,7 +114,8 @@ def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
 
         assert result.access == {
             "viewer": {"schedule": "view", "users": "edit"},
-            "leader": {"overview": "edit"},
+            "leader": {"overview": "edit", "personImport": "edit"},
+            "admin": {"roleAccess": "edit", "sidebarLayout": "edit", "appSettings": "edit"},
         }
     finally:
         session.close()

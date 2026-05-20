@@ -26,6 +26,7 @@ function canSeeCodes() {
 
 async function load() {
   activities = await api.get("/api/activities?include_inactive=true");
+  const canEditStallen = canEditPage(currentUser, "stallen");
   const includeInactive = document.getElementById("show-inactive").checked;
   const acts = [...(includeInactive ? activities : activities.filter((a) => a.is_active))]
     .sort((a, b) => typeof compareActivitiesForAreaFocus === "function"
@@ -46,12 +47,15 @@ async function load() {
       <td>${a.sort_order}</td>
       <td>${a.is_active ? "Ja" : "Nej"}</td>
       <td>
+        ${canEditStallen ? `
         <button data-edit="${a.id}">Redigera</button>
         ${a.is_active ? `<button data-delete="${a.id}" class="danger">Inaktivera</button>` : ""}
+        ` : ""}
       </td>`;
     tbody.appendChild(tr);
   });
 
+  if (!canEditStallen) return;
   tbody.querySelectorAll("button[data-edit]").forEach((b) =>
     b.addEventListener("click", () => openModal(acts.find((x) => x.id === Number(b.dataset.edit))))
   );
@@ -206,15 +210,19 @@ function setupImportControls() {
   const helpButton = document.getElementById("activity-import-help");
   const fileInput = document.getElementById("activity-import-file");
 
-  if (!canEditPage(currentUser, "stallen")) return;
+  if (!canEditPage(currentUser, "stallenImport")) return;
 
   downloadButton.hidden = false;
   importButton.hidden = false;
   helpButton.hidden = false;
 
   setupImportHelpButton("activity-import-help", "Importera ställen");
-  downloadButton.addEventListener("click", () => {
-    window.location.href = "/api/activities/import-template";
+  downloadButton.addEventListener("click", async () => {
+    try {
+      await api.download("/api/activities/import-template", "stallen-importmall.xlsx");
+    } catch (error) {
+      showToast(error.message || "Kunde inte ladda ner importmallen.", "error", 7000);
+    }
   });
   importButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
@@ -226,12 +234,14 @@ function setupImportControls() {
 }
 
 (async () => {
-  currentUser = await initPage("stallen", { requireEditor: true });
+  currentUser = await initPage("stallen");
   if (!currentUser) return;
   areas = await api.get("/api/areas");
   await load();
   setupImportControls();
-  document.getElementById("new-act").addEventListener("click", () => openModal(null));
+  const newActButton = document.getElementById("new-act");
+  newActButton.hidden = !canEditPage(currentUser, "stallen");
+  if (canEditPage(currentUser, "stallen")) newActButton.addEventListener("click", () => openModal(null));
   document.getElementById("show-inactive").addEventListener("change", load);
   window.addEventListener("bemanning:areaFocusChanged", () => load());
 })();

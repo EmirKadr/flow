@@ -13,11 +13,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..deps import get_db, require_admin, require_super_user
+from ..deps import get_db, require_view_access
 from ..models import Area, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserUpdate
 from ..security import hash_password
-from ..user_access import can_admin, normalize_user_roles, primary_role, user_admin_out, user_roles
+from ..user_access import SUPER_USER_ROLE, can_admin, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -95,6 +95,21 @@ def _active_admin_count(db: Session, *, exclude_user_id: int | None = None) -> i
     if exclude_user_id is not None:
         query = query.filter(User.id != exclude_user_id)
     return sum(1 for user in query.all() if can_admin(user))
+
+
+def _has_super_user_role(roles: list[str]) -> bool:
+    return SUPER_USER_ROLE in {str(role or "").strip().lower() for role in roles}
+
+
+def _guard_super_user_role_change(*, current_roles: list[str], new_roles: list[str], admin: User) -> None:
+    if _has_super_user_role(current_roles) == _has_super_user_role(new_roles):
+        return
+    if is_super_user(admin):
+        return
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        detail="Endast Super User kan ändra Super User-rollen",
+    )
 
 
 def _user_snapshot(user: User) -> dict:
@@ -267,7 +282,7 @@ def parse_user_import_excel(content: bytes) -> tuple[list[ImportUserRow], list[U
 def list_users(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_view_access("users", "view")),
 ) -> list[UserAdminOut]:
     query = db.query(User)
     if not include_inactive:
@@ -278,7 +293,7 @@ def list_users(
 
 
 @router.get("/import-template")
-def download_import_template(_admin: User = Depends(require_super_user)) -> Response:
+def download_import_template(_admin: User = Depends(require_view_access("userImport", "edit"))) -> Response:
     return Response(
         content=build_user_import_template_excel(),
         media_type=EXCEL_MEDIA_TYPE,
@@ -290,7 +305,7 @@ def download_import_template(_admin: User = Depends(require_super_user)) -> Resp
 async def import_users(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_super_user),
+    admin: User = Depends(require_view_access("userImport", "edit")),
 ) -> UserImportResult:
     content = await file.read()
     if len(content) > MAX_IMPORT_BYTES:
@@ -351,12 +366,13 @@ async def import_users(
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_view_access("users", "edit")),
 ) -> UserAdminOut:
     if _find_username_conflict(db, payload.username):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Användarnamnet används redan")
     _validate_area_id(db, payload.area_id)
     roles = normalize_user_roles(payload.roles, payload.role)
+    _guard_super_user_role_change(current_roles=[], new_roles=roles, admin=admin)
 
     user = User(
         username=payload.username,
@@ -391,7 +407,7 @@ def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_view_access("users", "edit")),
 ) -> UserAdminOut:
     user = db.get(User, user_id)
     if not user:
@@ -407,6 +423,7 @@ def update_user(
         new_roles = normalize_user_roles(payload.roles, payload.role or primary_role(current_roles))
     else:
         new_roles = current_roles
+    _guard_super_user_role_change(current_roles=current_roles, new_roles=new_roles, admin=admin)
     new_is_active = payload.is_active if payload.is_active is not None else user.is_active
     removes_admin_access = can_admin(user) and (not can_admin(User(role=primary_role(new_roles), roles=new_roles)) or not new_is_active)
     if removes_admin_access and _active_admin_count(db, exclude_user_id=user.id) == 0:

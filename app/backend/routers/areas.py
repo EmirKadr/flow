@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..deps import get_current_user, get_db, require_admin
+from ..deps import get_current_user, get_db, require_view_access
 from ..models import Area, User
 from ..schemas import AreaCreate, AreaOut, AreaUpdate
 
@@ -32,7 +32,7 @@ def list_areas(
 
 
 @router.post("", response_model=AreaOut, status_code=status.HTTP_201_CREATED)
-def create_area(payload: AreaCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)) -> Area:
+def create_area(payload: AreaCreate, db: Session = Depends(get_db), admin: User = Depends(require_view_access("areas", "edit"))) -> Area:
     if db.query(Area).filter_by(code=payload.code).first():
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Område med samma kod finns redan")
     area = Area(**payload.model_dump())
@@ -57,7 +57,7 @@ def update_area(
     area_id: int,
     payload: AreaUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_view_access("areas", "edit")),
 ) -> Area:
     area = db.get(Area, area_id)
     if not area:

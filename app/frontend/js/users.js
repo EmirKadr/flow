@@ -14,6 +14,9 @@ const ROLE_OPTIONS = [
   { value: "article_placer", label: "Artikelplacerare" },
   { value: "viewer", label: "Visning" },
 ];
+const SUPER_USER_ROLE_OPTION = { value: "super_user", label: "Super User" };
+const USER_ROLE_OPTIONS = [...ROLE_OPTIONS, SUPER_USER_ROLE_OPTION];
+
 const ROLE_ACCESS_LEVEL_OPTIONS = [
   { value: "none", label: "Ingen" },
   { value: "view", label: "Visa" },
@@ -29,9 +32,16 @@ const VIEW_ACCESS_OPTIONS = [
   { id: "allocationSplit", label: "Dela" },
   { id: "allocationTrace", label: "Härleda" },
   { id: "persons", label: "Personer" },
+  { id: "personImport", label: "Personimport" },
   { id: "stallen", label: "Ställen" },
+  { id: "stallenImport", label: "Ställenimport" },
+  { id: "areas", label: "Avdelningar" },
   { id: "analytics", label: "Historik" },
   { id: "users", label: "Användare" },
+  { id: "userImport", label: "Användarimport" },
+  { id: "appSettings", label: "Appinställningar" },
+  { id: "sidebarLayout", label: "Menyordning" },
+  { id: "roleAccess", label: "Vybehörigheter" },
 ];
 
 function escapeHtml(value) {
@@ -47,6 +57,7 @@ function rolesForUser(user) {
 }
 
 function primaryRoleFromRoles(roles) {
+  if (roles.includes("super_user")) return "super_user";
   if (roles.includes("admin")) return "admin";
   if (roles.includes("staffing_manager")) return "staffing_manager";
   if (roles.includes("leader")) return "leader";
@@ -57,9 +68,13 @@ function primaryRoleFromRoles(roles) {
 }
 
 function roleLabel(user) {
-  const labels = rolesForUser(user).map((role) => ROLE_OPTIONS.find((option) => option.value === role)?.label || role);
+  const labels = rolesForUser(user).map((role) => USER_ROLE_OPTIONS.find((option) => option.value === role)?.label || role);
   if (user?.is_super_user) labels.unshift("Super User");
   return [...new Set(labels)].join(", ");
+}
+
+function editableRoleOptions() {
+  return currentUser?.is_super_user ? USER_ROLE_OPTIONS : ROLE_OPTIONS;
 }
 
 function areaName(areaId) {
@@ -92,6 +107,7 @@ async function loadUsers() {
 }
 
 async function loadSettings() {
+  if (!canViewPage(currentUser, "appSettings")) return;
   appSettings = await api.get("/api/settings");
   document.getElementById("lock-foreign-schedule-cells").checked = !!appSettings.lock_foreign_schedule_cells;
 }
@@ -108,6 +124,13 @@ async function loadAreas() {
 
 function setupSettingsControls() {
   const checkbox = document.getElementById("lock-foreign-schedule-cells");
+  const wrapper = checkbox.closest(".controls-checkbox");
+  if (!canViewPage(currentUser, "appSettings")) {
+    if (wrapper) wrapper.hidden = true;
+    return;
+  }
+  checkbox.disabled = !canEditPage(currentUser, "appSettings");
+  if (!canEditPage(currentUser, "appSettings")) return;
   checkbox.addEventListener("change", async () => {
     const previous = !checkbox.checked;
     try {
@@ -238,6 +261,7 @@ async function openRoleAccessModal() {
 
 function renderUsers() {
   const tbody = document.getElementById("users-body");
+  const canEditUsers = canEditPage(currentUser, "users");
   tbody.innerHTML = "";
 
   users.forEach((user) => {
@@ -252,12 +276,15 @@ function renderUsers() {
       <td>${escapeHtml(passwordStatus(user))}</td>
       <td>${escapeHtml(formatDate(user.created_at))}</td>
       <td>
+        ${canEditUsers ? `
         <button data-edit="${user.id}">Redigera</button>
         ${user.is_active ? `<button data-toggle="${user.id}" class="danger">Inaktivera</button>` : `<button data-toggle="${user.id}">Aktivera</button>`}
+        ` : ""}
       </td>`;
     tbody.appendChild(tr);
   });
 
+  if (!canEditUsers) return;
   tbody.querySelectorAll("button[data-edit]").forEach((button) =>
     button.addEventListener("click", () => openModal(users.find((user) => user.id === Number(button.dataset.edit))))
   );
@@ -281,6 +308,7 @@ function renderUsers() {
 function openModal(user) {
   const isEdit = !!user;
   const selectedRoles = rolesForUser(user);
+  const roleOptions = editableRoleOptions();
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
@@ -292,7 +320,7 @@ function openModal(user) {
       <input id="m-display-name" value="${escapeHtml(user?.display_name || "")}" />
       <label>Roller</label>
       <div class="role-checks" id="m-roles">
-        ${ROLE_OPTIONS.map((option) => `
+        ${roleOptions.map((option) => `
           <label class="role-check">
             <input type="checkbox" name="m-role" value="${option.value}" ${selectedRoles.includes(option.value) ? "checked" : ""} />
             <span>${escapeHtml(option.label)}</span>
@@ -318,7 +346,10 @@ function openModal(user) {
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
     const password = document.getElementById("m-password").value;
-    const roles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => input.value);
+    const checkedRoles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => input.value);
+    const roles = (!currentUser?.is_super_user && isEdit && selectedRoles.includes("super_user") && !checkedRoles.includes("super_user"))
+      ? [...checkedRoles, "super_user"]
+      : checkedRoles;
     const payload = {
       username: document.getElementById("m-username").value.trim(),
       display_name: document.getElementById("m-display-name").value.trim() || null,
@@ -430,36 +461,45 @@ function setupImportControls() {
   const helpButton = document.getElementById("user-import-help");
   const fileInput = document.getElementById("user-import-file");
 
-  if (!currentUser?.is_super_user) return;
+  if (canEditPage(currentUser, "userImport")) {
+    downloadButton.hidden = false;
+    importButton.hidden = false;
+    helpButton.hidden = false;
 
-  downloadButton.hidden = false;
-  importButton.hidden = false;
-  roleAccessButton.hidden = false;
-  helpButton.hidden = false;
-
-  setupImportHelpButton("user-import-help", "Importera användare");
-  downloadButton.addEventListener("click", () => {
-    window.location.href = "/api/users/import-template";
-  });
-  importButton.addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = "";
-    if (!file) return;
-    await importUserFile(file);
-  });
-  roleAccessButton.addEventListener("click", openRoleAccessModal);
+    setupImportHelpButton("user-import-help", "Importera användare");
+    downloadButton.addEventListener("click", async () => {
+      try {
+        await api.download("/api/users/import-template", "anvandare-importmall.xlsx");
+      } catch (error) {
+        showToast(error.message || "Kunde inte ladda ner importmallen.", "error", 7000);
+      }
+    });
+    importButton.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = "";
+      if (!file) return;
+      await importUserFile(file);
+    });
+  }
+  if (canEditPage(currentUser, "roleAccess")) {
+    roleAccessButton.hidden = false;
+    roleAccessButton.addEventListener("click", openRoleAccessModal);
+  }
 }
 
 (async () => {
-  currentUser = await initPage("users", { requireAdmin: true });
+  currentUser = await initPage("users");
   if (!currentUser) return;
 
+  await loadRoleViewAccess();
+  const newUserButton = document.getElementById("new-user");
+  newUserButton.hidden = !canEditPage(currentUser, "users");
   setupImportControls();
   setupSettingsControls();
   await loadSettings();
   await loadAreas();
   await loadUsers();
-  document.getElementById("new-user").addEventListener("click", () => openModal(null));
+  if (canEditPage(currentUser, "users")) newUserButton.addEventListener("click", () => openModal(null));
   document.getElementById("show-inactive").addEventListener("change", loadUsers);
 })();
