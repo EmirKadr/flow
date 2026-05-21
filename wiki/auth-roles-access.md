@@ -40,7 +40,7 @@ Apphjalpens LLM-prompt far en begransad supportkontext om inloggad anvandare: ro
 
 Vyer som kan styras:
 
-- `schedule`, `overview`, `productivity`
+- `schedule`, `overview`, `productivity`, `dataFetch`
 - `allocationUploads`, `allocationProcess`, `allocationSplit`, `allocationTrace`
 - `persons`, `personImport`
 - `activities`, `activityImport`, `areas`
@@ -62,6 +62,7 @@ Om anvandaren bara har `view`:
 - Knappen syns men fungerar inte: anvandaren har `view`, inte `edit`.
 - Importknapp ar dold: importvyn saknar edit-atkomst.
 - Historik/Produktivitet nekas: kraver super user/vyatkomst.
+- Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
 - Bearbeta saknas eller nekas: `allocationProcess` saknas i vyatkomst eller anvandaren ar inte Super User. Lagerroller har som standard Uppladdningar, Dela och Harleda, men inte Bearbeta.
 
 ## Kallor

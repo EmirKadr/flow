@@ -2458,6 +2458,136 @@ tr.filter-row input {
 }
 
 /* ============================================================
+   Hämta data
+   ============================================================ */
+
+.data-fetch-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.data-fetch-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-1);
+  padding: 18px;
+}
+
+.data-fetch-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.data-fetch-panel-head h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.data-fetch-page textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.data-fetch-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.data-fetch-actions label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.data-fetch-actions input {
+  width: 110px;
+}
+
+.data-fetch-status {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.data-fetch-column-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.data-fetch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-fetch-chip code,
+.data-fetch-filter-list code {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.data-fetch-filter-list ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+  line-height: 1.7;
+}
+
+.data-fetch-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.data-fetch-table-wrap table {
+  margin: 0;
+  box-shadow: none;
+}
+
+.error-text {
+  color: var(--danger) !important;
+}
+
+@media (max-width: 700px) {
+  .data-fetch-panel-head {
+    flex-direction: column;
+  }
+
+  .data-fetch-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-fetch-actions input,
+  .data-fetch-actions button {
+    width: 100%;
+  }
+}
+
+/* ============================================================
    Allokering / lagerkontor
    ============================================================ */
 

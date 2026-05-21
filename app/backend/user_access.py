@@ -26,6 +26,7 @@ ROLE_VIEW_IDS = {
     "schedule",
     "overview",
     "productivity",
+    "dataFetch",
     "allocationUploads",
     "allocationProcess",
     "allocationSplit",

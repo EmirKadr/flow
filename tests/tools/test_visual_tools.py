@@ -26,6 +26,7 @@ def test_visual_smoke_covers_expected_routes():
         "aktiviteter",
         "historik",
         "anvandare",
+        "hamta-data",
         "uppladdningar",
         "bearbeta",
         "dela",
@@ -35,6 +36,7 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["personer"].roles == ("admin", "leader", "staffing")
     assert pages_by_name["produktivitet"].roles == ("admin",)
     assert pages_by_name["anvandare"].roles == ("admin",)
+    assert pages_by_name["hamta-data"].roles == ("admin",)
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")

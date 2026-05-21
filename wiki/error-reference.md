@@ -121,6 +121,19 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | 500 | "Kunde inte lasa produktivitetsunderlag..." | Loggar finns men kan inte lasas | Kontrollera filformat/encoding. |
 | 500 | "Kunde inte berakna produktivitet..." | Berakningsfel | Rapportera med filer/datum. |
 
+## Hamta data
+
+| Status | Text | Orsak | Atgard |
+| --- | --- | --- | --- |
+| 400 | "MiniMax-planen..." eller "Kolumnen ... finns inte" | Modellen valde okand vy/kolumn/operator eller svarade med fel JSON | Andra prompten eller kontrollera katalogen. Backend anropar inte extern datakälla nar planen ar ogiltig. |
+| 403 | "Sidan kraver behorighet" | Rollen saknar `dataFetch` | Be admin/Super User kontrollera Vybehorigheter. |
+| 404 | "Resultatet hittades inte..." | Export-sessionen saknas | Kor datahamtningen igen. |
+| 502 | "Extern datakälla kunde inte nås." | Extern datakälla svarade med fel eller kunde inte nas | Kontrollera serverns `DATA_SOURCE_*`-miljovarden och API-status. |
+| 503 | "Extern datakatalog saknas..." | Katalogfil/env saknas | Bygg `data/external_data_catalog.json` lokalt eller satt katalog som hemligt driftvarde. |
+| 503 | "DATA_SOURCE_API_BASE_URL saknas..." | API-bas saknas i servermiljon | Satt `DATA_SOURCE_API_BASE_URL` i Render/env. |
+| 503 | "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE saknas..." | Endpointmall saknas i servermiljon | Satt provider-specifik endpointmall som secret/env, inte i git. |
+| 503 | "Datahamtning saknar MINIMAX_API_KEY..." | MiniMax-nyckel saknas | Satt `MINIMAX_API_KEY` i servermiljon. |
+
 ## Lagerverktyg/allokering
 
 | Status | Text | Orsak | Atgard |
@@ -166,6 +179,7 @@ Be anvandaren skicka:
 - `../app/frontend/js/api.js`
 - `../app/backend/deps.py`
 - `../app/backend/routers/*.py`
+- `../app/backend/routers/data_fetch.py`
 - `../app/backend/productivity_service.py`
 - `../app/backend/allocation_bridge.py`
 - `../warehouse_tools/flows.py`

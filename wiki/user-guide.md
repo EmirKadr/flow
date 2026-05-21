@@ -104,6 +104,17 @@ Sista aktiva administratören kan inte inaktiveras eller nedgraderas.
 
 Historik ar inte en generell "fel-logg"; den visar auditlogg for muterande appfloden.
 
+## Hamta data
+
+1. Ga till `Hamta data`.
+2. Skriv vilken extern data-vy du vill hamta, vilka kolumner du vill se och vilka filter som ska anvandas.
+3. Klicka `Tolka med MiniMax`.
+4. Kontrollera planen: vy, kolumner och filter visas innan data hamtas.
+5. Klicka `Hamta data`.
+6. Granska tabellpreviewn och klicka `Exportera Excel` om resultatet ska sparas.
+
+MiniMax far bara vy-/kolumnstruktur och exempel pa fragor. API-lank och nycklar ligger i servermiljon och skickas inte till modellen.
+
 ## Produktivitet
 
 1. Ga till `Produktivitet`.
@@ -147,5 +158,6 @@ Om webben fungerar men Windows inte gor det, felsok desktopprofil, lokal appserv
 - `../app/frontend/js/persons.js`
 - `../app/frontend/js/activities.js`
 - `../app/frontend/js/users.js`
+- `../app/frontend/js/data_fetch.js`
 - `../app/frontend/js/productivity.js`
 - `../app/frontend/js/allocation_tools.js`

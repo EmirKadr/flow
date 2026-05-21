@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hämta data - Bemanning</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <main class="data-fetch-page">
+    <div class="section-title">Hämta data</div>
+
+    <section class="data-fetch-panel">
+      <div class="data-fetch-panel-head">
+        <div>
+          <h2>Prompt</h2>
+          <p id="dataFetchHealth" class="note">Kontrollerar katalog och anslutning...</p>
+        </div>
+        <button id="dataFetchReloadCatalog" type="button">Läs om katalog</button>
+      </div>
+      <textarea
+        id="dataFetchPrompt"
+        rows="5"
+        spellcheck="true"
+        placeholder="Exempel: Exportera Arkiv Inventeringslogg där typ är korrigering. Visa typ, artikel och datum."
+      ></textarea>
+      <div class="data-fetch-actions">
+        <label>Max rader
+          <input id="dataFetchMaxRows" type="number" min="1" max="5000" value="500" />
+        </label>
+        <button id="dataFetchPlan" type="button" class="primary">Tolka med MiniMax</button>
+        <button id="dataFetchRun" type="button" disabled>Hämta data</button>
+        <button id="dataFetchExport" type="button" disabled>Exportera Excel</button>
+      </div>
+      <p class="note">Sekretess: MiniMax får vy- och kolumnstruktur, men aldrig URL, API-nycklar eller anslutningsvärden.</p>
+      <div id="dataFetchStatus" class="data-fetch-status"></div>
+    </section>
+
+    <section id="dataFetchPlanPanel" class="data-fetch-panel" hidden></section>
+    <section id="dataFetchResultPanel" class="data-fetch-panel" hidden></section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/data_fetch.js"></script>
+</body>
+</html>

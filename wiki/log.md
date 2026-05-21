@@ -49,3 +49,14 @@ Frontend rensar nu apphjalpens lokala `sessionStorage` vid logout, inklusive dia
 
 Apphjalpens backend skickar nu begransad supportkontext om inloggad anvandare till MiniMax: visningsnamn, anvandarnamn, roller, Super User-status, omrade och effektiva vybehorigheter per vy. Syftet ar att chatten ska kunna saga exakt om anvandaren saknar `Harleda`, bara har `view` eller saknar `Bearbeta`. Känslig information som losenord, hashes, sessioncookies, tokens och API-nycklar skickas inte.
 
+## [2026-05-21] feature | Hamta data via extern datakalla och MiniMax
+
+Lade till `Hamta data` som skyddad vy och API-flode for promptstyrd extern dataexport. MiniMax far bara privat vy-/kolumnkatalog och planformat; URL, endpointmall, headernamn, API-nycklar och klientnycklar ligger i servermiljon. Dokumenterade `data-fetch.md`, nya API-vagar, vybehorigheten `dataFetch`, gitignorerad katalogbyggnad och Excel-export.
+
+## [2026-05-21] hardening | Gommer privata dataflodets leverantorsdetaljer
+
+Bytte Hämta data-flodet till generiska `DATA_SOURCE_*`-miljovariabler, neutral API-route `/api/query-data`, generisk klient `external_data_client.py` och katalogfil `data/external_data_catalog.json`. Endpointmall och headernamn ligger nu i env i stallet for kod/wiki, och dokumentationen beskriver bara extern datakalla.
+
+## [2026-05-21] support | Stoppa lokal server
+
+Lade till `stop_local.bat` for att stanga gamla lokala `start_local.bat`/uvicorn-processer och frigora port `8000` nar `app/bemanning_local.db` ar last. Uppdaterade README och anvandarhandelser med kommandot.

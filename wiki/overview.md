@@ -17,6 +17,7 @@ Kort svar: Bemanning ersatter en Excel-bemanningsfil med en gemensam webbapp och
 - Aktiviteter: register over bemanningsaktiviteter, farger, omraden, kategori och summeringsaktivitet.
 - Anvandare: roller, omrade, aktiv/inaktiv, forsta losenord, vybehorigheter och settings.
 - Historik: auditlogg och enkel analytics over andringar.
+- Hamta data: promptstyrd extern data-export via MiniMax-planering, backendvalidering och Excel-export.
 - Produktivitet: lokal analys av stora WMS-loggar mot centrala KPI-mal.
 - Lagerverktyg: uppladdning, allokering/orderkontroller, dela varden och eftersok i WMS-loggar.
 
@@ -44,4 +45,3 @@ Nar en anvandare sager "knappen funkar inte" ska agenten forst hitta vyn i [UI-k
 - `../AGENTS.md`
 - `../APP_MIGRATION_PLAN.md`
 - `../app/frontend/js/common.js`
-

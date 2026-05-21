@@ -15,6 +15,7 @@ Webbaserad ersättning för Excel-bemanningsfilen. Arbetsledare planerar bemanni
 - **Historik förberedd** – alla ändringar loggas i `audit_log` (historik-vy byggs i v1.1).
 
 - **Apphjälp** – sessionssparad chatt i sidomenyn som använder projektwikin och MiniMax via backend.
+- **Hämta data** – promptstyrd datahämtning där MiniMax väljer vy, kolumner och filter från en privat katalog. Resultat visas i tabell och kan exporteras till Excel.
 
 ## Stack
 
@@ -42,15 +43,24 @@ Render-miljon.
 
 Chattknappen i sidomenyn fungerar när backend har en MiniMax-nyckel. Sätt `MINIMAX_API_KEY` i `.env` lokalt eller som hemlig miljövariabel på Render. Standardmodellen är `MiniMax-M2.7` och endpointen är `https://api.minimax.io/v1/chat/completions`.
 
+## Hämta data
 
+Datahämtningsvyn använder samma MiniMax-konfiguration, men skickar aldrig API-länkar, headernamn eller nycklar till modellen. Lägg anslutningen till den externa datakällan i miljövariabler:
 
+- `DATA_SOURCE_API_BASE_URL`
+- `DATA_SOURCE_API_KEY`
+- `DATA_SOURCE_API_CLIENT`
+- `DATA_SOURCE_API_KEY_HEADER`
+- `DATA_SOURCE_API_CLIENT_HEADER`
+- `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE`
 
 Bygg den privata vy-/kolumnkatalogen lokalt med:
 
 ```powershell
-python tools/build_nowaste_catalog.py
+python tools/build_external_data_catalog.py --views <views.xlsx> --columns <columns.xlsx>
 ```
 
+Den skriver `data/external_data_catalog.json`, som är gitignorerad. På Render kan katalogen läggas som `DATA_SOURCE_CATALOG_JSON` eller pekas ut med `DATA_SOURCE_CATALOG_PATH`.
 
 ## Default-inlogg
 
@@ -106,6 +116,8 @@ setx LIVE_DATABASE_URL "postgresql://..."
 ```
 
 Nästa gång `start_local.bat` öppnas ersätts `app/bemanning_local.db` med en ny lokal kopia. Om `LIVE_DATABASE_URL` saknas används den vanliga lokala seed-databasen.
+
+Kör `stop_local.bat` från projektroten om en gammal lokal server fortfarande håller `app/bemanning_local.db` eller port `8000` låst.
 
 ## Mappstruktur
 

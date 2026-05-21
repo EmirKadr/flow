@@ -16,6 +16,7 @@ from .routers import (
     audit_logs,
     auth,
     bulk,
+    data_fetch,
     overview,
     person_schedules,
     persons,
@@ -87,6 +88,7 @@ app.include_router(persons.router)
 app.include_router(person_schedules.router)
 app.include_router(schedule.router)
 app.include_router(bulk.router)
+app.include_router(data_fetch.router)
 app.include_router(overview.router)
 app.include_router(productivity.router)
 app.include_router(app_settings.router)

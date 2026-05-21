@@ -27,6 +27,7 @@ const VIEW_ACCESS_OPTIONS = [
   { id: "schedule", label: "Bemanning" },
   { id: "overview", label: "Översikt" },
   { id: "productivity", label: "Produktivitet" },
+  { id: "dataFetch", label: "Hämta data" },
   { id: "allocationUploads", label: "Uppladdningar" },
   { id: "allocationProcess", label: "Bearbeta" },
   { id: "allocationSplit", label: "Dela" },

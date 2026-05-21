@@ -76,6 +76,7 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("aktiviteter", "/aktiviteter.html", "#acts-body", ("admin", "leader", "staffing")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
     VisualPage("anvandare", "/anvandare.html", "#users-body", ("admin",)),
+    VisualPage("hamta-data", "/hamta-data.html", "#dataFetchPrompt", ("admin",)),
     VisualPage("uppladdningar", "/uppladdningar.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
     VisualPage("bearbeta", "/bearbeta.html", "#allocationRoot .allocation-panel", ("admin",)),
     VisualPage("dela", "/dela.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),

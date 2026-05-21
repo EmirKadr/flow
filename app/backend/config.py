@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     MINIMAX_MODEL: str = "MiniMax-M2.7"
     MINIMAX_MAX_TOKENS: int = 700
     MINIMAX_TIMEOUT_SECONDS: int = 30
+    DATA_SOURCE_API_BASE_URL: str = ""
+    DATA_SOURCE_API_KEY: str = ""
+    DATA_SOURCE_API_CLIENT: str = ""
+    DATA_SOURCE_API_KEY_HEADER: str = ""
+    DATA_SOURCE_API_CLIENT_HEADER: str = ""
+    DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE: str = ""
+    DATA_SOURCE_TIMEOUT_SECONDS: float = 30
+    DATA_SOURCE_MAX_ROWS: int = 1000
+    DATA_SOURCE_CATALOG_PATH: str = ""
+    DATA_SOURCE_CATALOG_JSON: str = ""
 
     @property
     def is_production(self) -> bool:

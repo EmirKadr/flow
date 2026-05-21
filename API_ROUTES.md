@@ -34,6 +34,11 @@ Användar-API:t är bakåtkompatibelt med `role`, men nya klienter kan skicka
 | `auth.set_password` | `POST` | `/api/auth/set-password` | Sätt första lösenord |
 | `assistant.chat` | `POST` | `/api/assistant/chat` | Fråga apphjälpen |
 | `assistant.clear` | `POST` | `/api/assistant/clear` | Rensa apphjälpens dialogkvot |
+| `query_data.health` | `GET` | `/api/query-data/health` | Datahämtning health |
+| `query_data.reload_catalog` | `POST` | `/api/query-data/catalog/reload` | Läs om extern datakatalog |
+| `query_data.plan` | `POST` | `/api/query-data/plan` | Tolka datafråga med MiniMax |
+| `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla |
+| `query_data.export` | `GET` | `/api/query-data/export/{session_id}` | Exportera datahämtning till Excel |
 | `allocation.health` | `GET` | `/api/allokering/health` | Lagerverktyg health |
 | `allocation.flows` | `GET` | `/api/allokering/flows` | Lista lagerverktygsflöden |
 | `allocation.pool` | `GET` | `/api/allokering/pool` | Lista lagerverktygens uppladdningsslots |

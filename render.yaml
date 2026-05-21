@@ -29,5 +29,21 @@ services:
         sync: false
       - key: MINIMAX_MODEL
         value: MiniMax-M2.7
+      - key: DATA_SOURCE_API_BASE_URL
+        sync: false
+      - key: DATA_SOURCE_API_KEY
+        sync: false
+      - key: DATA_SOURCE_API_CLIENT
+        sync: false
+      - key: DATA_SOURCE_API_KEY_HEADER
+        sync: false
+      - key: DATA_SOURCE_API_CLIENT_HEADER
+        sync: false
+      - key: DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE
+        sync: false
+      - key: DATA_SOURCE_CATALOG_JSON
+        sync: false
+      - key: DATA_SOURCE_MAX_ROWS
+        value: "1000"
       - key: PYTHON_VERSION
         value: 3.12.7

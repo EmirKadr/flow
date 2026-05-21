@@ -13,7 +13,7 @@ Kort svar: de flesta sidor delar sidebar, omradesfokus, tema, logg och auth-guar
 
 | Kontroll | Var | Vem ser/far | Vad hander | Vanliga fel/fragor |
 | --- | --- | --- | --- | --- |
-| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Navigerar till Bemanning, Oversikt, Produktivitet, Bearbeta, Dela, Harleda, Personer, Aktiviteter, Historik, Anvandare | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
+| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Navigerar till Bemanning, Oversikt, Produktivitet, Hamta data, Bearbeta, Dela, Harleda, Personer, Aktiviteter, Historik, Anvandare | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
 | Hamburgare | Sidebar topp | Alla inloggade | Faller ihop/oppnar sidebar och sparar `sidebar-collapsed` i `localStorage` | Om menyn ser "for liten" ut ar den troligen hopfallen. |
 | Redigera meny | Sidebar topp, pennikon | Anvandare med edit pa `sidebarLayout` | Oppnar modal dar global menyordning, rubriker och undervyer kan andras | Andringen galler alla efter sparning. |
 | Omradesfokus | Sidebar footer | Alla inloggade | Växlar MG, GG, AS, EH och Alla. Paverkar sortering/standardfilter i flera vyer | Om "fel" omrade visas kan fokus ligga pa annat omrade an forvantat. |
@@ -36,6 +36,7 @@ Kort svar: de flesta sidor delar sidebar, omradesfokus, tema, logg och auth-guar
 | Aktiviteter | `aktiviteter.html` | Ny aktivitet, importmall, importera Excel, hjalp, Redigera, Ta bort | [Aktiviteter och omraden](activities-areas.md) |
 | Anvandare | `anvandare.html` | Ny anvandare, importmall, importera Excel, Vybehorigheter, cell-las, Visa inaktiva | [Anvandare och installningar](users-settings.md) |
 | Historik | `historik.html` | Period, anvandare, typ, atgard, objekt-id, Uppdatera | [Historik och audit](history-audit.md) |
+| Hamta data | `hamta-data.html` | Prompt, max rader, Las om katalog, Tolka med MiniMax, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
 | Produktivitet | `produktivitet.html` | Datum, prev/next, block, sok, filkrav/drag-drop | [Produktivitet](productivity.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |

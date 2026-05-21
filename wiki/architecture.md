@@ -33,6 +33,7 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `activities.py`, `areas.py`: aktiviteter och omraden.
 - `users.py`, `settings.py`: anvandare, appsettings, sidebar och roll-vyatkomst.
 - `audit_logs.py`: historik och summering.
+- `data_fetch.py`: MiniMax-planerad datahamtning fran extern datakalla, katalogstatus och Excel-export.
 - `productivity.py`: produktivitetsstatus, KPI-fil, rapport och session/loggfiler.
 - `allocation.py`: lagerverktyg, filidentifiering, kor flode, resultat, Excel/CSV.
 - `public.py`: enkla publika text/CSV-varden for timmar, personer och summering.
@@ -57,4 +58,3 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `../desktop/local_app_server.py`
 - `../app/README.md`
 - `../APP_MIGRATION_PLAN.md`
-
