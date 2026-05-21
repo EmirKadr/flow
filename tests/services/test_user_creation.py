@@ -30,7 +30,7 @@ def db_session():
 
 @pytest.fixture
 def admin_user():
-    return User(id=999, username="admin", role="admin", is_active=True)
+    return User(id=999, username="regular-admin", role="admin", is_active=True)
 
 
 @pytest.fixture
