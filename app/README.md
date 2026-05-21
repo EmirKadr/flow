@@ -15,7 +15,7 @@ Webbaserad ersättning för Excel-bemanningsfilen. Arbetsledare planerar bemanni
 - **Historik förberedd** – alla ändringar loggas i `audit_log` (historik-vy byggs i v1.1).
 
 - **Apphjälp** – sessionssparad chatt i sidomenyn som använder projektwikin och MiniMax via backend.
-- **Hämta data** – promptstyrd datahämtning där MiniMax väljer vy, kolumner och filter från en privat katalog. Resultat visas i tabell och kan exporteras till Excel.
+- **Hämta data** – promptstyrd datahämtning där MiniMax väljer vy, kolumner och filter från en publicerbar katalog. Resultat visas i tabell och kan exporteras till Excel.
 
 ## Stack
 
@@ -54,13 +54,13 @@ Datahämtningsvyn använder samma MiniMax-konfiguration, men skickar aldrig API-
 - `DATA_SOURCE_API_CLIENT_HEADER`
 - `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE`
 
-Bygg den privata vy-/kolumnkatalogen lokalt med:
+Bygg vy-/kolumnkatalogen med:
 
 ```powershell
 python tools/build_external_data_catalog.py --views <views.xlsx> --columns <columns.xlsx>
 ```
 
-Den skriver `data/external_data_catalog.json`, som är gitignorerad. På Render kan katalogen läggas som `DATA_SOURCE_CATALOG_JSON` eller pekas ut med `DATA_SOURCE_CATALOG_PATH`.
+Den skriver `data/external_data_catalog.json`, som commitas så Render får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/Render secrets.
 
 ## Default-inlogg
 

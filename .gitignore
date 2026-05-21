@@ -3,7 +3,7 @@ demo/
 referens/
 testdata/
 private-data/
-data/external_data_catalog*.json
+data/external_data_catalog.local*.json
 
 # Uppladdade produktivitetsloggar
 data/v_ask_pick_log_full*.csv

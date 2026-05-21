@@ -9,7 +9,7 @@ tags: [datahamtning, extern-data, minimax, api]
 
 Kort svar: Hämta data är en skyddad vy där en användare beskriver på svenska
 vilken extern datavy som ska hämtas, vilka kolumner som ska visas och vilka
-filter som ska användas. MiniMax får bara en privat vy-/kolumnkatalog. URL:er,
+filter som ska användas. MiniMax får bara en publicerbar vy-/kolumnkatalog. URL:er,
 API-nycklar, headernamn, endpointmallar och klientnycklar ligger i
 miljövariabler och skickas aldrig till modellen.
 
@@ -18,7 +18,7 @@ miljövariabler och skickas aldrig till modellen.
 1. Användaren öppnar `hamta-data.html`.
 2. Användaren skriver en prompt, till exempel vilken vy, kolumner och filter som önskas.
 3. `Tolka med MiniMax` skickar prompten och ett begränsat katalogutdrag till MiniMax.
-4. Backend validerar MiniMax-planen mot den privata katalogen.
+4. Backend validerar MiniMax-planen mot katalogen.
 5. Användaren ser vald vy, tekniska kolumner och filter.
 6. `Hämta data` kör API-anropet från backend.
 7. Resultatet visas som tabell och kan exporteras till Excel.
@@ -37,7 +37,7 @@ miljövariabler och skickas aldrig till modellen.
 
 - Hemliga anslutningsvärden ligger i serverns miljövariabler med generiska `DATA_SOURCE_*`-namn.
 - Endpointmall och headernamn ligger också i miljövariabler, så repot inte dokumenterar leverantörens privata API-kontrakt.
-- Katalogen med vyer och kolumner läses från ignorerad fil `data/external_data_catalog.json` eller från `DATA_SOURCE_CATALOG_JSON`.
+- Katalogen med vyer och kolumner läses normalt från den committade filen `data/external_data_catalog.json`. Drift kan även override:a med `DATA_SOURCE_CATALOG_JSON` eller `DATA_SOURCE_CATALOG_PATH`.
 - MiniMax-prompten byggs av `data_fetch_service.py` och innehåller bara användarens prompt, tillåtna operatorer, kandidatvyer, kolumn-id:n och kolumnnamn.
 - MiniMax får inte URL, endpoint-bas, headernamn, API-token, sessioncookie eller databasinfo.
 - Backend validerar alltid att vald vy och alla filter-/utdatakolumner finns i katalogen innan API-anropet körs.
@@ -47,8 +47,8 @@ miljövariabler och skickas aldrig till modellen.
 
 ## Teknisk modell
 
-- `tools/build_external_data_catalog.py` bygger katalogen från privata Excel-filer.
-- `.gitignore` ignorerar `private-data/` och genererade `data/external_data_catalog*.json`.
+- `tools/build_external_data_catalog.py` bygger katalogen från lokala Excel-filer.
+- `.gitignore` ignorerar `private-data/` och lokala katalogvarianter som `data/external_data_catalog.local*.json`; standardkatalogen `data/external_data_catalog.json` commitas.
 - `app/backend/external_data_client.py` är en generisk fetch-klient där provider-specifika detaljer kommer från env.
 - `app/backend/data_fetch_service.py` laddar katalog, bygger MiniMax-prompt och validerar plan.
 - `app/backend/routers/data_fetch.py` kör planering, datahämtning och Excel-export.
@@ -63,7 +63,7 @@ Fråga: Får MiniMax se API-länken?
 Svar: Nej. Backend skickar bara vy-/kolumnstruktur och JSON-formatet som modellen ska returnera. URL, endpointmall, headernamn och nycklar läses från serverns miljövariabler när API-anropet körs.
 
 Fråga: Varför säger den att katalog saknas?
-Svar: Servern hittar inte `data/external_data_catalog.json` och har inte `DATA_SOURCE_CATALOG_JSON`. Bygg katalogen lokalt med `python tools/build_external_data_catalog.py --views <views.xlsx> --columns <columns.xlsx>` eller sätt katalogen som hemligt miljövärde/fil i drift. Detta fel skapar ingen MiniMax-usage.
+Svar: Servern hittar inte `data/external_data_catalog.json` och har inte `DATA_SOURCE_CATALOG_JSON`. Kontrollera att katalogfilen är committad/deployad eller bygg den lokalt med `python tools/build_external_data_catalog.py --views <views.xlsx> --columns <columns.xlsx>`. Detta fel skapar ingen MiniMax-usage.
 
 Fråga: Varför går det inte att klicka på Tolka med MiniMax?
 Svar: Knappen spärras när katalogen saknas eller när `MINIMAX_API_KEY` inte är satt. Då skickas ingen AI-fråga och ingen MiniMax-usage skapas.

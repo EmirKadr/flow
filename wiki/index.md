@@ -27,7 +27,7 @@ Kort svar: Bemanning ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-a
 - [Aktiviteter och omraden](activities-areas.md) - aktivitetsregister, kod, summering och legacy-stalle.
 - [Anvandare och installningar](users-settings.md) - anvandare, roller, vybehorigheter, meny och cell-las.
 - [Historik och audit](history-audit.md) - filter, statistik och auditlogg.
-- [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med privat katalog och Excel-export.
+- [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med publicerbar katalog och Excel-export.
 - [Produktivitet](productivity.md) - lokala loggfiler, KPI-mal, berakningar och vanliga stopp.
 - [Lagerverktyg](warehouse-tools.md) - Uppladdningar, Bearbeta, Dela, Harleda och allokeringsfloden.
 

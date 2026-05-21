@@ -51,7 +51,7 @@ Apphjalpens backend skickar nu begransad supportkontext om inloggad anvandare ti
 
 ## [2026-05-21] feature | Hamta data via extern datakalla och MiniMax
 
-Lade till `Hamta data` som skyddad vy och API-flode for promptstyrd extern dataexport. MiniMax far bara privat vy-/kolumnkatalog och planformat; URL, endpointmall, headernamn, API-nycklar och klientnycklar ligger i servermiljon. Dokumenterade `data-fetch.md`, nya API-vagar, vybehorigheten `dataFetch`, gitignorerad katalogbyggnad och Excel-export.
+Lade till `Hamta data` som skyddad vy och API-flode for promptstyrd extern dataexport. MiniMax far bara vy-/kolumnkatalog och planformat; URL, endpointmall, headernamn, API-nycklar och klientnycklar ligger i servermiljon. Dokumenterade `data-fetch.md`, nya API-vagar, vybehorigheten `dataFetch`, katalogbyggnad och Excel-export.
 
 ## [2026-05-21] hardening | Gommer privata dataflodets leverantorsdetaljer
 
@@ -60,6 +60,10 @@ Bytte Hämta data-flodet till generiska `DATA_SOURCE_*`-miljovariabler, neutral 
 ## [2026-05-21] fix | Spärrar Hämta data utan konfiguration
 
 Hämta data-health returnerar nu status utan att kasta 503 nar katalog/env saknas. Frontend spärrar `Tolka med MiniMax` och `Hämta data` tills katalog, MiniMax och extern API-konfiguration finns, sa saknad katalog inte kan skapa AI-usage eller en missvisande arbetsyta.
+
+## [2026-05-21] config | Publicerar Hämta data-katalogen
+
+Katalogen `data/external_data_catalog.json` bedomdes inte vara hemlig och ska commitas sa Render har vy-/kolumnstruktur direkt. API-nycklar, URL:er, headernamn och endpointmallar stannar fortsatt i `.env`/Render secrets.
 
 ## [2026-05-21] support | Stoppa lokal server
 

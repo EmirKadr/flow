@@ -45,9 +45,10 @@ privata data foljer med:
   riktiga varden eller leverantorens privata API-kontrakt.
 - Backend ska lasa privata anslutningsdetaljer fran miljo variabler eller
   driftens secret store. Frontend far aldrig prata direkt med privata externa API:er.
-- Genererade kataloger och privata dataunderlag ska vara ignorerade i git. Om en
-  sadan fil behovs i drift ska den laggas som secret, env-varde eller separat
-  privat fil, inte commitas.
+- Privata dataunderlag ska vara ignorerade i git. En genererad katalog far
+  commitas om Emir uttryckligen bedomer att vy-/kolumnnamnen inte ar hemliga,
+  som `data/external_data_catalog.json` for Hämta data. Katalogen far aldrig
+  innehalla nycklar, URL:er, headernamn, endpointmallar eller rad-/kunddata.
 - Om en hemlighet redan har blivit staged: avbryt committen, unstagea filen och
   flytta vardet till `.env` eller Render/secret store.
 - Om en hemlighet redan har pushats: pusha inte mer ovanpa i panik. Skriv tydligt
@@ -56,8 +57,10 @@ privata data foljer med:
 
 Nar Hämta data eller andra externa datafloden andras ska kod och dokumentation
 fortsatta anvanda generiska namn som `DATA_SOURCE_*`, `external_data_client` och
-`/api/query-data`. Provider-specifika sokvagar, headernamn och riktiga kataloger
-ska stanna i lokala ignorerade filer eller i driftens secrets.
+`/api/query-data`. Provider-specifika sokvagar, headernamn, URL:er och nycklar
+ska stanna i lokala ignorerade filer eller i driftens secrets. Den publika
+standardkatalogen far ligga i `data/external_data_catalog.json` nar den bara
+innehaller vy-/kolumnstruktur.
 
 ## Huvudregel: strikt funktionsparitet
 
