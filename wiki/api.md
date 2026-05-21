@@ -18,7 +18,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `POST /api/auth/set-password` - satt forsta losenord.
 - `POST /api/assistant/chat` - skickar hela apphjalpsdialogen och aktuell sida till MiniMax via backend.
 - `POST /api/assistant/clear` - nollstaller apphjalpens serverkvot i aktuell session.
-- `GET /api/query-data/health` - kontrollerar privat extern datakatalog och om API/MiniMax ar konfigurerade.
+- `GET /api/query-data/health` - kontrollerar extern datakatalog och om API/MiniMax ar konfigurerade; returnerar `api_missing` med saknade env-namn.
 - `POST /api/query-data/catalog/reload` - rensar katalogcache och laser om vy-/kolumnkatalogen.
 - `POST /api/query-data/plan` - tolkar en svensk datafraga med MiniMax till validerad vy/filter/kolumn-plan.
 - `POST /api/query-data/run` - kor en validerad plan mot extern datakälla och returnerar tabellpreview.

@@ -41,7 +41,7 @@ function renderDataFetchPlan(plan) {
   const panel = document.getElementById("dataFetchPlanPanel");
   dataFetchState.plan = plan;
   document.getElementById("dataFetchRun").disabled =
-    dataFetchState.busy || !dataFetchState.catalogReady || plan?.status !== "ok";
+    dataFetchState.busy || !dataFetchState.catalogReady || !dataFetchState.apiReady || plan?.status !== "ok";
   if (!plan) {
     panel.hidden = true;
     panel.innerHTML = "";
@@ -123,9 +123,13 @@ async function loadDataFetchHealth() {
     dataFetchState.catalogReady = Boolean(result.catalog_configured);
     dataFetchState.apiReady = Boolean(result.api_configured);
     dataFetchState.minimaxReady = Boolean(result.minimax_configured);
+    const missingApi = Array.isArray(result.api_missing) ? result.api_missing : [];
+    const apiText = result.api_configured
+      ? " API är konfigurerat."
+      : ` API saknar: ${missingApi.length ? missingApi.join(", ") : "miljövärden"}.`;
     health.classList.toggle("error-text", !result.ok);
     health.textContent = `Katalog: ${catalog.views || 0} vyer, ${catalog.columns || 0} kolumner.`
-      + (result.api_configured ? " API är konfigurerat." : " API saknar miljövärden.")
+      + apiText
       + (result.minimax_configured ? " MiniMax är konfigurerat." : " MiniMax saknar API-nyckel.")
       + (result.message ? ` ${result.message}` : "");
     dataFetchSetBusy(false);

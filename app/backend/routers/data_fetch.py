@@ -62,20 +62,33 @@ def _max_rows(value: int) -> int:
     return min(max(1, value), configured)
 
 
+REQUIRED_API_SETTINGS = (
+    "DATA_SOURCE_API_BASE_URL",
+    "DATA_SOURCE_API_KEY",
+    "DATA_SOURCE_API_CLIENT",
+    "DATA_SOURCE_API_KEY_HEADER",
+    "DATA_SOURCE_API_CLIENT_HEADER",
+    "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE",
+)
+
+
+def _missing_api_settings() -> list[str]:
+    return [
+        setting_name
+        for setting_name in REQUIRED_API_SETTINGS
+        if not str(getattr(settings, setting_name, "")).strip()
+    ]
+
+
 def _api_client_or_503() -> ExternalDataClient:
-    base_url = settings.DATA_SOURCE_API_BASE_URL.strip()
-    if not base_url:
+    missing_settings = _missing_api_settings()
+    if missing_settings:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DATA_SOURCE_API_BASE_URL saknas i servermiljön.",
-        )
-    if not settings.DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE.strip():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE saknas i servermiljön.",
+            detail=f"Saknar {', '.join(missing_settings)} i servermiljön.",
         )
     return ExternalDataClient(
-        base_url=base_url,
+        base_url=settings.DATA_SOURCE_API_BASE_URL.strip(),
         api_key=settings.DATA_SOURCE_API_KEY.strip() or None,
         api_client=settings.DATA_SOURCE_API_CLIENT.strip() or None,
         api_key_header=settings.DATA_SOURCE_API_KEY_HEADER.strip() or None,
@@ -164,16 +177,15 @@ def data_fetch_health(
         catalog_info = {"views": 0, "columns": 0}
         message = str(exc)
 
-    api_configured = bool(
-        settings.DATA_SOURCE_API_BASE_URL.strip()
-        and settings.DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE.strip()
-    )
+    api_missing = _missing_api_settings()
+    api_configured = not api_missing
     minimax_configured = bool(settings.MINIMAX_API_KEY.strip())
     return {
         "ok": catalog_ready and api_configured and minimax_configured,
         "catalog": catalog_info,
         "catalog_configured": catalog_ready,
         "api_configured": api_configured,
+        "api_missing": api_missing,
         "minimax_configured": minimax_configured,
         "message": message,
     }

@@ -69,7 +69,7 @@ Fråga: Varför går det inte att klicka på Tolka med MiniMax?
 Svar: Knappen spärras när katalogen saknas eller när `MINIMAX_API_KEY` inte är satt. Då skickas ingen AI-fråga och ingen MiniMax-usage skapas.
 
 Fråga: Varför går det inte att klicka på Hämta data?
-Svar: Knappen kräver en godkänd plan och att den externa datakällan är konfigurerad med `DATA_SOURCE_API_BASE_URL` och `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE` i servermiljön.
+Svar: Knappen kräver en godkänd plan och att den externa datakällan är konfigurerad med alla obligatoriska `DATA_SOURCE_*`-värden i servermiljön: bas-URL, API-nyckel, klientvärde, headernamn för nyckel/klient och endpointmall. Health-raden visar exakt vilka variabelnamn som saknas.
 
 Fråga: Varför stoppas en MiniMax-plan?
 Svar: Backend accepterar bara vyer, kolumner och filteroperatorer som finns i katalogen. Om modellen hittar på något stoppas körningen innan extern datakälla anropas.

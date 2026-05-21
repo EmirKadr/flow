@@ -130,8 +130,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | 404 | "Resultatet hittades inte..." | Export-sessionen saknas | Kor datahamtningen igen. |
 | 502 | "Extern datakälla kunde inte nås." | Extern datakälla svarade med fel eller kunde inte nas | Kontrollera serverns `DATA_SOURCE_*`-miljovarden och API-status. |
 | 503 | "Extern datakatalog saknas..." | Katalogfil/env saknas | Kontrollera att `data/external_data_catalog.json` ar deployad eller satt katalog som env-override. |
-| 503 | "DATA_SOURCE_API_BASE_URL saknas..." | API-bas saknas i servermiljon | Satt `DATA_SOURCE_API_BASE_URL` i Render/env. |
-| 503 | "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE saknas..." | Endpointmall saknas i servermiljon | Satt provider-specifik endpointmall som secret/env, inte i git. |
+| 503 | "Saknar DATA_SOURCE_..." | Ett eller flera externa API-env saknas i servermiljon | Satt alla `DATA_SOURCE_*`-varden som health-raden listar i Render/env. Provider-specifik endpointmall, headernamn, URL och nycklar ska inte ligga i git. |
 | 503 | "Datahamtning saknar MINIMAX_API_KEY..." | MiniMax-nyckel saknas | Satt `MINIMAX_API_KEY` i servermiljon. |
 
 ## Lagerverktyg/allokering

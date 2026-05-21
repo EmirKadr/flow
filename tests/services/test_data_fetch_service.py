@@ -182,8 +182,8 @@ def test_excel_export_writes_data_and_metadata(tmp_path):
 
 def test_health_reports_missing_catalog_without_spending_ai(monkeypatch):
     monkeypatch.setattr(data_fetch, "load_catalog", lambda: (_ for _ in ()).throw(service.DataFetchConfigError("saknas")))
-    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "")
-    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "")
+    for setting_name in data_fetch.REQUIRED_API_SETTINGS:
+        monkeypatch.setattr(settings, setting_name, "")
     monkeypatch.setattr(settings, "MINIMAX_API_KEY", "minimax-key")
 
     result = data_fetch.data_fetch_health(fake_user())
@@ -191,5 +191,25 @@ def test_health_reports_missing_catalog_without_spending_ai(monkeypatch):
     assert result["ok"] is False
     assert result["catalog_configured"] is False
     assert result["api_configured"] is False
+    assert result["api_missing"] == list(data_fetch.REQUIRED_API_SETTINGS)
     assert result["minimax_configured"] is True
     assert result["catalog"] == {"views": 0, "columns": 0}
+
+
+def test_api_client_reports_exact_missing_settings(monkeypatch):
+    for setting_name in data_fetch.REQUIRED_API_SETTINGS:
+        monkeypatch.setattr(settings, setting_name, "")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://secret.example/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+
+    with pytest.raises(HTTPException) as exc_info:
+        data_fetch._api_client_or_503()
+
+    assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert "DATA_SOURCE_API_KEY" in detail
+    assert "DATA_SOURCE_API_CLIENT" in detail
+    assert "DATA_SOURCE_API_KEY_HEADER" in detail
+    assert "DATA_SOURCE_API_CLIENT_HEADER" in detail
+    assert "DATA_SOURCE_API_BASE_URL" not in detail
+    assert "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE" not in detail
