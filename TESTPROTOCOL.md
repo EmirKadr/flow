@@ -44,6 +44,54 @@ python -m tools.release_check
 - `tests/tools/test_visual_tools.py` testar att visuella verktyg fortfarande
   tacker viktiga vyer och att ikon-/manifest-assets finns pa alla HTML-sidor.
 
+## Testkarta for agenter
+
+Den har kartan forklarar vad testfilerna skyddar. Nar en agent andrar kod ska
+den valja minsta relevanta testurval fran tabellen och sedan lagga till bredare
+tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
+
+| Testfil | Syfte | Kor nar du andrar |
+| --- | --- | --- |
+| `tests/conftest.py` | Delad testinfrastruktur, Qt-appfixture och testmiljo. | Testfixtures, Qt/desktop-teststod eller global testkonfiguration. |
+| `tests/desktop/test_app.py` | Windows-skalets startup, health check, felvy, stangning och updateflode. | `desktop/app.py`, update-kod, health check eller desktop-start. |
+| `tests/desktop/test_local_app_server.py` | Desktopens lokala frontendserver, API-proxy och cookie-omskrivning. | `desktop/local_app_server.py`, cookies, proxy eller paketerad frontend. |
+| `tests/services/test_activity_codes.py` | Stabil kodgenerering for aktivitetsnamn och omradesprefix. | Aktivitetsetiketter, kodnormalisering eller omradeskod. |
+| `tests/services/test_activity_import.py` | Aktivitetsimportmallar, Excel-parsning, validering, roller och borttagning. | Aktivitetsimport, aktivitets-CRUD eller importmallar. |
+| `tests/services/test_allocation_bridge.py` | Backendbryggan till lagerverktyg, filidentifiering, sessionsresultat och rollbegransade floden. | `allocation_bridge`, allokeringsrouter, filuppladdning eller lagerfloden. |
+| `tests/services/test_assistant_chat.py` | Apphjalpens MiniMax-konfiguration, promptregler, repo-/wiki-kontext, anvandarkontext och kvot. | Apphjalp, MiniMax, wiki-kontext, behorighetssvar eller chattsession. |
+| `tests/services/test_data_fetch_service.py` | Hamta data-flodets katalog, LLM-plan, hemlighetsbarriar, extern datahamtning och Excel-export. | `Hamta data`, extern datakalla, katalogbyggnad, MiniMax-planering eller export. |
+| `tests/services/test_health_service.py` | Desktop/klient-health URL och felhantering. | Health service eller anslutningskontroll. |
+| `tests/services/test_legacy_activity_routes.py` | Gamla `stallen`-vagar redirectar till nya aktivitetsvyn och statiska filer cachas ratt i dev. | Legacy-redirects, statisk frontendservering eller aktivitetsrutter. |
+| `tests/services/test_live_local_sync.py` | Lokal SQLite-sync fran live-databas och skydd mot fel target. | `prepare_local_database`, live/local sync eller `start_local.bat`-dataflode. |
+| `tests/services/test_person_import.py` | Personimportmallar, Excel-parsning, dubblettskydd, skapa/uppdatera/ta bort person. | Personimport, person-CRUD eller namnvalidering. |
+| `tests/services/test_person_schedules.py` | Timmis/fast schema-regler for personers veckomallar. | Personschema, timmisflagga eller veckomalllogik. |
+| `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, rapportgruppering och tillgangliga datum. | Produktivitet, plock-/pallloggar, KPI-filer eller rapportbyggnad. |
+| `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
+| `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
+| `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
+| `tests/services/test_seed_data.py` | Seed-data for omraden, aktiviteter och dubblettsanering. | `backend.seed`, bootstrap eller standarddata. |
+| `tests/services/test_sidebar_settings.py` | Sidebar-layout och rollbaserad vybehorighet sparas och saneras ratt. | Sidebarinställningar, roll-vy-access eller settingsrouter. |
+| `tests/services/test_template_service.py` | Standardveckomall, saknade dagar och timmis utan ledigmall. | Veckomallar eller schema-template-logik. |
+| `tests/services/test_update_service.py` | Versionsjamforelse och hamtning av release-installationsfil. | Update-check, GitHub release-logik eller installer-download. |
+| `tests/services/test_user_creation.py` | Skapa/uppdatera anvandare, roller, Super User-skydd och passwordless-login. | Anvandare, roller, losenord eller auth-relaterad user-CRUD. |
+| `tests/services/test_user_import.py` | Anvandarimportmallar, svensk rollparsning, flera roller och radfel. | Anvandarimport eller rollformat i Excel. |
+| `tests/services/test_warehouse_tools_local_data.py` | Lagerverktygens lokala fixture-data, flodesregister och regressionsresultat. | `warehouse_tools`, allocate/refill/pallet-space eller lagerfixtures. |
+| `tests/tools/test_access_contracts.py` | Backend/frontend-kontrakt for vy-ID:n, rollistor, default access och legacy-alias. | Vybehorigheter, sidebar pages, roller eller legacy view mapping. |
+| `tests/tools/test_activity_terminology.py` | Terminologikontrakt sa gamla aktivitetsord inte smyger in. | UI-text, docs eller migration fran gammal terminologi. |
+| `tests/tools/test_allocation_split_browser.py` | Playwright-test for Dela-resultattabell och kolumnkopiering. | `dela.html`, split values, tabellrendering eller clipboard for lagerverktyg. |
+| `tests/tools/test_api_route_contracts.py` | Frontendens hardkodade API-anrop finns i FastAPI med ratt metod. | Nya/andrade API-anrop i JS eller backend-rutter. |
+| `tests/tools/test_bemanning_cli.py` | CLI-routekatalog, API_ROUTES-dokumentation, generiska API-call och DB-lookup. | `tools/bemanning_cli.py`, API-rutter, CLI-adapter eller API-dokumentation. |
+| `tests/tools/test_ci_workflows.py` | CI och release workflows kor ratt grindar fore build/deploy. | `.github/workflows/*` eller releasepipeline. |
+| `tests/tools/test_desktop_app_probe_runtime.py` | Desktop-proben kan starta lokal server/proxy och skriva runtime-artifacts. | `tools/desktop_app_probe.py` eller desktop-proxytest. |
+| `tests/tools/test_legacy_activity_browser.py` | Browserkontrakt for legacy `stallen` -> `aktiviteter` och vybehorighetsmodalens text. | Legacy aktivitetssidor, aktivitets-UI eller rollaccessmodal. |
+| `tests/tools/test_persons_view.py` | Personvyns frontendkontrakt: delete-knapp, Ctrl+Z och ingen aktiv/inaktiv-toggle. | `personer.html` eller `persons.js`. |
+| `tests/tools/test_release_check.py` | Release-zippen innehaller nodvandiga filer och frontend. | `tools/release_check.py`, packaging eller release-artefakter. |
+| `tests/tools/test_sidebar_user_browser.py` | Sidebarens footer visar namn, roll och logout i ratt ordning i browser. | Sidebar footer, anvandarvisning eller logoutknapp. |
+| `tests/tools/test_visual_tools.py` | Kontrakt for visual smoke, interaktiv E2E, desktop probes, frontend assets, global UI-wiring och kritiska vyer. | Sidebar/global frontend, visuella verktyg, assets, imports, allokerings-UI eller testprotokoll. |
+
+Om en ny testfil laggs till ska den in i tabellen ovan. Om en testfil byter
+ansvar ska beskrivningen uppdateras i samma commit som testandringen.
+
 ## Visuellt webbscreeningverktyg
 
 Verktyg:
