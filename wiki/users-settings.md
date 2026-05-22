@@ -1,7 +1,7 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [anvandare, settings, roller, ui]
 ---
 
@@ -22,6 +22,8 @@ Kort svar: Anvandare-sidan hanterar konton, roller, omrade, aktiv-status, forsta
 | Visa inaktiva | Checkbox | Laddar anvandare med/utan inaktiva | `GET /api/users?include_inactive=` | Inaktiva visas inte utan checkbox. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas/inaktiveras. |
 | Aktivera/Inaktivera | Bekraftar | Satter `is_active` | `PUT /api/users/{id}` | Sista aktiva admin skyddas. |
+
+Andringar i anvandare, forsta losenord och globala installningar skrivs till Historik. Loggen visar till exempel `user/set_password`, `app_setting/update_lock`, `app_setting/update_sidebar_layout` och `app_setting/update_role_access`, men aldrig sjalva losenordet.
 
 ## Ny/redigera anvandare-modal
 
@@ -84,4 +86,3 @@ Denna finns i sidebar, inte i `anvandare.html`, men hor till settings:
 - `../app/backend/routers/users.py`
 - `../app/backend/routers/settings.py`
 - `../app/backend/settings_service.py`
-

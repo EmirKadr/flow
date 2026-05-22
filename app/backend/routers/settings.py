@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ..audit import log as audit_log
 from ..deps import get_current_user, get_db, require_view_access
 from ..models import User
 from ..schemas import (
@@ -12,6 +13,9 @@ from ..schemas import (
     SidebarLayoutUpdate,
 )
 from ..settings_service import (
+    LOCK_FOREIGN_SCHEDULE_CELLS_KEY,
+    ROLE_VIEW_ACCESS_KEY,
+    SIDEBAR_LAYOUT_KEY,
     get_lock_foreign_schedule_cells,
     get_role_view_access,
     get_sidebar_layout,
@@ -40,6 +44,28 @@ def _sidebar_layout_out(db: Session) -> SidebarLayoutOut:
 
 def _role_view_access_out(db: Session) -> RoleViewAccessOut:
     return RoleViewAccessOut(access=get_role_view_access(db))
+
+
+def _audit_setting_change(
+    db: Session,
+    *,
+    key: str,
+    action: str,
+    old_value: dict,
+    new_value: dict,
+    user_id: int,
+) -> None:
+    if old_value == new_value:
+        return
+    audit_log(
+        db,
+        entity_type="app_setting",
+        entity_id=0,
+        action=action,
+        old_value={"key": key, "value": old_value},
+        new_value={"key": key, "value": new_value},
+        user_id=user_id,
+    )
 
 
 def _clean_sidebar_layout(payload: SidebarLayoutUpdate) -> list[dict]:
@@ -106,9 +132,19 @@ def update_app_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("appSettings", "edit")),
 ) -> AppSettingsOut:
+    before = _settings_out(db).model_dump()
     set_lock_foreign_schedule_cells(
         db,
         payload.lock_foreign_schedule_cells,
+        user_id=admin.id,
+    )
+    after = _settings_out(db).model_dump()
+    _audit_setting_change(
+        db,
+        key=LOCK_FOREIGN_SCHEDULE_CELLS_KEY,
+        action="update_lock",
+        old_value=before,
+        new_value=after,
         user_id=admin.id,
     )
     db.commit()
@@ -129,7 +165,17 @@ def update_sidebar_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("sidebarLayout", "edit")),
 ) -> SidebarLayoutOut:
+    before = {"items": get_sidebar_layout(db)}
     set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id)
+    after = {"items": get_sidebar_layout(db)}
+    _audit_setting_change(
+        db,
+        key=SIDEBAR_LAYOUT_KEY,
+        action="update_sidebar_layout",
+        old_value=before,
+        new_value=after,
+        user_id=admin.id,
+    )
     db.commit()
     return _sidebar_layout_out(db)
 
@@ -148,6 +194,16 @@ def update_role_access_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("roleAccess", "edit")),
 ) -> RoleViewAccessOut:
+    before = {"access": get_role_view_access(db)}
     set_role_view_access(db, _clean_role_view_access(payload), user_id=admin.id)
+    after = {"access": get_role_view_access(db)}
+    _audit_setting_change(
+        db,
+        key=ROLE_VIEW_ACCESS_KEY,
+        action="update_role_access",
+        old_value=before,
+        new_value=after,
+        user_id=admin.id,
+    )
     db.commit()
     return _role_view_access_out(db)

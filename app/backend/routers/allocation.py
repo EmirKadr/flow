@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+import logging
 
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from sqlalchemy.orm import Session
+
+from .. import audit
 from .. import allocation_bridge as bridge
-from ..deps import require_allocation_tools_user
+from ..deps import get_db, require_allocation_tools_user
 from ..models import User
 from ..user_access import can_use_allocation_process
 
@@ -15,6 +19,7 @@ router = APIRouter(
 )
 
 SELF_SERVICE_FLOW_IDS = {"eftersok", "split-values"}
+logger = logging.getLogger(__name__)
 
 
 def _flow_allowed_for_user(flow_id: str, user: User) -> bool:
@@ -24,6 +29,65 @@ def _flow_allowed_for_user(flow_id: str, user: User) -> bool:
 def _assert_flow_allowed(flow_id: str, user: User) -> None:
     if not _flow_allowed_for_user(flow_id, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver Super User")
+
+
+def _flow_audit_payload(
+    flow_id: str,
+    files: dict | None,
+    params: dict | None,
+    *,
+    result: dict | None = None,
+    error_type: str | None = None,
+) -> dict:
+    payload = {
+        "flow_id": flow_id,
+        "file_keys": sorted(str(key) for key in (files or {}).keys()),
+        "param_keys": sorted(str(key) for key in (params or {}).keys()),
+    }
+    if result is not None:
+        payload["table_count"] = len(result.get("tables") or [])
+        payload["has_session"] = bool(result.get("session_id"))
+    if error_type:
+        payload["error_type"] = error_type
+    return payload
+
+
+def _upload_failure_payload(
+    *,
+    flow_id: str | None = None,
+    stage: str,
+    error_type: str,
+    status_code: int | None = None,
+) -> dict:
+    payload = {
+        "stage": stage,
+        "error_type": error_type,
+    }
+    if flow_id:
+        payload["flow_id"] = flow_id
+    if status_code is not None:
+        payload["status_code"] = status_code
+    return payload
+
+
+def _audit_allocation_event(
+    db: Session,
+    user: User,
+    *,
+    action: str,
+    payload: dict,
+) -> None:
+    audit.log_and_commit(
+        db,
+        entity_type="allocation_flow",
+        entity_id=0,
+        action=action,
+        old_value=None,
+        new_value=payload,
+        user_id=getattr(user, "id", None),
+        logger=logger,
+        context=f"allocation audit event action={action}",
+    )
 
 
 @router.get("/health")
@@ -59,12 +123,32 @@ def list_pool(user: User = Depends(require_allocation_tools_user)) -> dict:
 @router.post("/detect")
 async def detect(
     file: UploadFile = File(...),
-    _user: User = Depends(require_allocation_tools_user),
+    user: User = Depends(require_allocation_tools_user),
+    db: Session = Depends(get_db),
 ) -> dict:
-    path = await bridge.save_upload(file)
+    try:
+        path = await bridge.save_upload(file)
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="upload_failed",
+            payload=_upload_failure_payload(
+                stage="save_upload",
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
+            ),
+        )
+        raise
     try:
         file_type = bridge.detect_file_type(path)
-    except Exception:
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="detect_failed",
+            payload=_upload_failure_payload(stage="detect", error_type=type(exc).__name__),
+        )
         file_type = None
     finally:
         path.unlink(missing_ok=True)
@@ -75,15 +159,56 @@ async def detect(
 async def update_observations(
     file: UploadFile = File(...),
     user: User = Depends(require_allocation_tools_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     _assert_flow_allowed("observations-update", user)
     engine_module, _flows_module = bridge.require_available()
-    path = await bridge.save_upload(file)
+    try:
+        path = await bridge.save_upload(file)
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="upload_failed",
+            payload=_upload_failure_payload(
+                flow_id="observations-update",
+                stage="save_upload",
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
+            ),
+        )
+        raise
     try:
         buffer_df = engine_module.read_table(str(path))
         result = engine_module.build_observations_update_result(buffer_df, push_to_github=True)
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="upload_failed",
+            payload=_upload_failure_payload(
+                flow_id="observations-update",
+                stage="process_upload",
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
+            ),
+        )
+        raise
     finally:
         path.unlink(missing_ok=True)
+    _audit_allocation_event(
+        db,
+        user,
+        action="observations_update",
+        payload={
+            "flow_id": "observations-update",
+            "new_rows": int(result.new_row_count),
+            "github_sent_rows": int(result.github_sent_rows),
+            "article_max_rows": int(result.article_max_rows),
+            "article_max_changed_rows": int(result.article_max_changed_rows),
+            "pushed_to_github": bool(result.pushed_to_github),
+        },
+    )
     return {
         "new_rows": int(result.new_row_count),
         "github_sent_rows": int(result.github_sent_rows),
@@ -105,12 +230,42 @@ async def run_flow(
     flow_id: str,
     request: Request,
     user: User = Depends(require_allocation_tools_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     _assert_flow_allowed(flow_id, user)
-    form = await request.form()
-    files, params, temp_paths = await bridge.form_to_flow_payload(form)
     try:
-        return bridge.run_flow_handler(flow_id, files, params)
+        form = await request.form()
+        files, params, temp_paths = await bridge.form_to_flow_payload(form)
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="upload_failed",
+            payload=_upload_failure_payload(
+                flow_id=flow_id,
+                stage="parse_upload",
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
+            ),
+        )
+        raise
+    try:
+        result = bridge.run_flow_handler(flow_id, files, params)
+        _audit_allocation_event(
+            db,
+            user,
+            action="flow_run",
+            payload=_flow_audit_payload(flow_id, files, params, result=result),
+        )
+        return result
+    except Exception as exc:
+        _audit_allocation_event(
+            db,
+            user,
+            action="flow_failed",
+            payload=_flow_audit_payload(flow_id, files, params, error_type=type(exc).__name__),
+        )
+        raise
     finally:
         for path in temp_paths:
             path.unlink(missing_ok=True)

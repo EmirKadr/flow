@@ -1,7 +1,7 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
@@ -71,6 +71,8 @@ Kontroller:
 - Flodesknappen kor Eftersok.
 
 API: `POST /api/allokering/flow/eftersok`.
+
+Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Loggen sparar flodes-id, vilka filslotar/parameternamn som anvandes och hur manga resultattabeller som skapades, men inte filnamn eller inskickade listvarden. Om uppladdningen inte kan sparas, multipart-formularet inte kan lasas eller filen inte kan bearbetas loggas `upload_failed` med steg och feltyp. Om automatisk filidentifiering kraschar loggas `detect_failed`.
 
 ## Resultatkontroller
 

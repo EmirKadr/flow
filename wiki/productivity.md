@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [produktivitet, filer, kpi, ui]
 ---
 
@@ -48,6 +48,7 @@ Vissa anvandare exkluderas hardkodat i frontend/backendlogik for specifika grupp
 3. `productivity.js` laser lokala filer radvis i browsern, bygger dataset och hamtar KPI-mal via `/api/productivity/targets`.
 4. Rapport for vald dag byggs lokalt och cachas. Intilliggande datum kan forhamtas.
 5. Backend har motsvarande service for serverklassning/status och permanenta KPI-mal.
+6. Serverhanterade uppladdningar/rensningar via `/api/productivity/files*` auditloggas som `productivity_file` med filtyp, antal forsokta, antal sparade och antal okanda filer. Om uppladdningen kraschar innan svar loggas `upload_failed` med feltyp och eventuell HTTP-status. Privata filnamn sparas inte i auditloggen.
 
 ## Felsokningssvar for framtida chat
 
@@ -66,4 +67,3 @@ Vissa anvandare exkluderas hardkodat i frontend/backendlogik for specifika grupp
 - `../app/frontend/js/productivity_uploads.js`
 - `../app/backend/productivity_service.py`
 - `../app/backend/routers/productivity.py`
-

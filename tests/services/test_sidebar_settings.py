@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import AppSetting, User
+from app.backend.models import AppSetting, AuditLog, User
 from app.backend.routers import settings as settings_router
-from app.backend.schemas import RoleViewAccessUpdate, SidebarLayoutItem, SidebarLayoutUpdate
+from app.backend.schemas import AppSettingsUpdate, RoleViewAccessUpdate, SidebarLayoutItem, SidebarLayoutUpdate
 from app.backend.settings_service import (
     ROLE_VIEW_ACCESS_KEY,
     SIDEBAR_LAYOUT_KEY,
@@ -18,9 +18,16 @@ def make_session():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     User.__table__.create(engine)
     AppSetting.__table__.create(engine)
+    AuditLog.__table__.create(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = SessionLocal()
     return engine, session
+
+
+def drop_session_tables(engine):
+    AuditLog.__table__.drop(engine)
+    AppSetting.__table__.drop(engine)
+    User.__table__.drop(engine)
 
 
 def test_sidebar_layout_setting_roundtrips():
@@ -44,8 +51,7 @@ def test_sidebar_layout_setting_roundtrips():
         assert get_sidebar_layout(session)[1]["parent_id"] == "schedule"
     finally:
         session.close()
-        AppSetting.__table__.drop(engine)
-        User.__table__.drop(engine)
+        drop_session_tables(engine)
         engine.dispose()
 
 
@@ -69,10 +75,14 @@ def test_sidebar_router_cleans_layout_before_saving():
         assert result.items[1].parent_id == "schedule"
         assert result.items[2].parent_id is None
         assert result.items[3].parent_id == "persons"
+        entry = session.query(AuditLog).filter_by(entity_type="app_setting", action="update_sidebar_layout").one()
+        assert entry.user_id == admin.id
+        assert entry.old_value == {"key": SIDEBAR_LAYOUT_KEY, "value": {"items": []}}
+        assert entry.new_value["key"] == SIDEBAR_LAYOUT_KEY
+        assert entry.new_value["value"]["items"][0]["id"] == "schedule"
     finally:
         session.close()
-        AppSetting.__table__.drop(engine)
-        User.__table__.drop(engine)
+        drop_session_tables(engine)
         engine.dispose()
 
 
@@ -94,8 +104,7 @@ def test_role_view_access_setting_roundtrips():
         assert get_role_view_access(session)["viewer"]["schedule"] == "view"
     finally:
         session.close()
-        AppSetting.__table__.drop(engine)
-        User.__table__.drop(engine)
+        drop_session_tables(engine)
         engine.dispose()
 
 
@@ -117,8 +126,39 @@ def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
             "leader": {"overview": "edit", "personImport": "edit", "activityImport": "view"},
             "admin": {"roleAccess": "edit", "sidebarLayout": "edit", "appSettings": "edit"},
         }
+        entry = session.query(AuditLog).filter_by(entity_type="app_setting", action="update_role_access").one()
+        assert entry.user_id == admin.id
+        assert entry.old_value == {"key": ROLE_VIEW_ACCESS_KEY, "value": {"access": {}}}
+        assert entry.new_value["value"]["access"]["viewer"]["users"] == "edit"
     finally:
         session.close()
-        AppSetting.__table__.drop(engine)
-        User.__table__.drop(engine)
+        drop_session_tables(engine)
+        engine.dispose()
+
+
+def test_app_settings_update_writes_audit_log():
+    engine, session = make_session()
+    try:
+        admin = User(id=7, username="root", role="admin", roles=["super_user"], is_active=True)
+
+        result = settings_router.update_app_settings(
+            AppSettingsUpdate(lock_foreign_schedule_cells=True),
+            session,
+            admin,
+        )
+
+        assert result.lock_foreign_schedule_cells is True
+        entry = session.query(AuditLog).filter_by(entity_type="app_setting", action="update_lock").one()
+        assert entry.user_id == admin.id
+        assert entry.old_value == {
+            "key": "lock_foreign_schedule_cells",
+            "value": {"lock_foreign_schedule_cells": False},
+        }
+        assert entry.new_value == {
+            "key": "lock_foreign_schedule_cells",
+            "value": {"lock_foreign_schedule_cells": True},
+        }
+    finally:
+        session.close()
+        drop_session_tables(engine)
         engine.dispose()

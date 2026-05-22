@@ -11,7 +11,16 @@ const ENTITY_LABELS = {
   activity: "Aktivitet",
   area: "Område",
   user: "Användare",
+  app_setting: "Inställning",
   data_fetch: "Hämta data",
+  productivity_file: "Produktivitetsfil",
+  allocation_flow: "Lagerverktyg",
+};
+
+const SETTING_LABELS = {
+  lock_foreign_schedule_cells: "Lås bemanningsceller",
+  sidebar_layout: "Meny",
+  role_view_access: "Vybehörigheter",
 };
 
 function escapeHtml(value) {
@@ -83,12 +92,31 @@ function summarizeChanges(oldValue, newValue) {
     .join(" | ");
 }
 
+function settingLabel(key) {
+  return SETTING_LABELS[key] || key || "Inställning";
+}
+
+function formatSettingValue(key, value) {
+  if (!value) return "-";
+  if (key === "lock_foreign_schedule_cells") {
+    return value.lock_foreign_schedule_cells ? "Ja" : "Nej";
+  }
+  if (key === "sidebar_layout" && Array.isArray(value.items)) {
+    return `${value.items.length} menyval`;
+  }
+  if (key === "role_view_access" && value.access && typeof value.access === "object") {
+    return `${Object.keys(value.access).length} roller`;
+  }
+  return summarizeChanges(null, value);
+}
+
 function objectSummary(entry) {
   const snapshot = entry.new_value || entry.old_value || {};
   if (entry.entity_type === "person") return snapshot.name || `Person #${entry.entity_id}`;
   if (entry.entity_type === "activity") return snapshot.label || snapshot.code || `Aktivitet #${entry.entity_id}`;
   if (entry.entity_type === "area") return snapshot.name || snapshot.code || `Område #${entry.entity_id}`;
   if (entry.entity_type === "user") return snapshot.username || `Användare #${entry.entity_id}`;
+  if (entry.entity_type === "app_setting") return settingLabel(snapshot.key);
   if (entry.entity_type === "schedule_cell") {
     const person = snapshot.person_id ? personName(snapshot.person_id) : `Cell #${entry.entity_id}`;
     const hour = snapshot.hour != null ? ` ${String(snapshot.hour).padStart(2, "0")}:00` : "";
@@ -100,6 +128,12 @@ function objectSummary(entry) {
   }
   if (entry.entity_type === "data_fetch") {
     return snapshot.view_label || snapshot.view || "Hämta data";
+  }
+  if (entry.entity_type === "productivity_file") {
+    return snapshot.file_type || (snapshot.saved_types || []).join(", ") || "Produktivitetsfil";
+  }
+  if (entry.entity_type === "allocation_flow") {
+    return snapshot.flow_id || "Lagerverktyg";
   }
   return `${entityLabel(entry.entity_type)} #${entry.entity_id}`;
 }
@@ -124,6 +158,32 @@ function detailSummary(entry) {
     if (snapshot.error_id) parts.push(`Fel-id ${snapshot.error_id}`);
     if (snapshot.total_rows != null) parts.push(`${snapshot.total_rows} rader`);
     return parts.join(" | ") || "Hämta data";
+  }
+  if (entry.entity_type === "app_setting") {
+    const key = entry.new_value?.key || entry.old_value?.key;
+    return `${formatSettingValue(key, entry.old_value?.value)} -> ${formatSettingValue(key, entry.new_value?.value)}`;
+  }
+  if (entry.entity_type === "productivity_file") {
+    const parts = [];
+    if (snapshot.saved_count != null) parts.push(`${snapshot.saved_count} sparade`);
+    if (snapshot.saved_types?.length) parts.push(`Typ: ${snapshot.saved_types.join(", ")}`);
+    if (snapshot.file_type) parts.push(`Typ: ${snapshot.file_type}`);
+    if (snapshot.scope) parts.push(`Läge: ${snapshot.scope}`);
+    if (snapshot.unknown_count) parts.push(`${snapshot.unknown_count} okända`);
+    if (snapshot.attempted_count != null) parts.push(`${snapshot.attempted_count} försökta`);
+    if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    return parts.join(" | ") || "Produktivitetsfil";
+  }
+  if (entry.entity_type === "allocation_flow") {
+    const parts = [];
+    if (snapshot.stage) parts.push(`Steg: ${snapshot.stage}`);
+    if (snapshot.file_keys?.length) parts.push(`${snapshot.file_keys.length} filslotar`);
+    if (snapshot.param_keys?.length) parts.push(`${snapshot.param_keys.length} parametrar`);
+    if (snapshot.table_count != null) parts.push(`${snapshot.table_count} tabeller`);
+    if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    return parts.join(" | ") || "Lagerverktyg";
   }
   return summarizeChanges(entry.old_value, entry.new_value);
 }

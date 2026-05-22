@@ -1,12 +1,15 @@
 from datetime import date
+import logging
 import tempfile
 from pathlib import Path
 import re
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from sqlalchemy.orm import Session
 
-from ..deps import require_view_access
+from .. import audit
+from ..deps import get_db, require_view_access
 from ..models import User
 from ..productivity_service import (
     ProductivitySourceError,
@@ -22,6 +25,7 @@ from ..productivity_service import (
 
 
 router = APIRouter(prefix="/api/productivity", tags=["productivity"])
+logger = logging.getLogger(__name__)
 
 LOCAL_FILE_TYPES = {"pick", "trans", "pallet"}
 
@@ -143,6 +147,51 @@ def _save_classified_productivity_file(
     ], []
 
 
+def _saved_file_types(saved: list[dict]) -> list[str]:
+    return sorted({str(item.get("key") or "") for item in saved if item.get("key")})
+
+
+def _audit_productivity_files(
+    db: Session,
+    user: User,
+    *,
+    action: str,
+    attempted_count: int | None = None,
+    saved: list[dict] | None = None,
+    unknown: list[str] | None = None,
+    file_type: str | None = None,
+    scope: str | None = None,
+    error_type: str | None = None,
+    status_code: int | None = None,
+) -> None:
+    payload = {
+        "saved_types": _saved_file_types(saved or []),
+        "saved_count": len(saved or []),
+        "unknown_count": len(unknown or []),
+    }
+    if attempted_count is not None:
+        payload["attempted_count"] = max(0, attempted_count)
+    if file_type:
+        payload["file_type"] = file_type
+    if scope:
+        payload["scope"] = scope
+    if error_type:
+        payload["error_type"] = error_type
+    if status_code is not None:
+        payload["status_code"] = status_code
+    audit.log_and_commit(
+        db,
+        entity_type="productivity_file",
+        entity_id=0,
+        action=action,
+        old_value=None,
+        new_value=payload,
+        user_id=getattr(user, "id", None),
+        logger=logger,
+        context=f"productivity audit event action={action}",
+    )
+
+
 @router.get("/files")
 def get_productivity_files(
     request: Request,
@@ -173,27 +222,50 @@ def get_productivity_targets(
 async def upload_productivity_files(
     request: Request,
     files: list[UploadFile] = File(...),
-    _: User = Depends(require_view_access("productivity", "edit")),
+    user: User = Depends(require_view_access("productivity", "edit")),
+    db: Session = Depends(get_db),
 ) -> dict:
     if not files:
+        _audit_productivity_files(
+            db,
+            user,
+            action="upload_failed",
+            attempted_count=0,
+            error_type="HTTPException",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades")
 
     saved: list[dict] = []
     unknown: list[str] = []
-    for upload in files:
-        temp_path, sample = await _save_upload_temp(upload)
-        try:
-            saved_items, unknown_items = _save_classified_productivity_file(
-                request=request,
-                temp_path=temp_path,
-                filename=upload.filename,
-                sample=sample,
-            )
-            saved.extend(saved_items)
-            unknown.extend(unknown_items)
-        finally:
-            temp_path.unlink(missing_ok=True)
+    try:
+        for upload in files:
+            temp_path, sample = await _save_upload_temp(upload)
+            try:
+                saved_items, unknown_items = _save_classified_productivity_file(
+                    request=request,
+                    temp_path=temp_path,
+                    filename=upload.filename,
+                    sample=sample,
+                )
+                saved.extend(saved_items)
+                unknown.extend(unknown_items)
+            finally:
+                temp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _audit_productivity_files(
+            db,
+            user,
+            action="upload_failed",
+            attempted_count=len(files),
+            saved=saved,
+            unknown=unknown,
+            error_type=type(exc).__name__,
+            status_code=getattr(exc, "status_code", None),
+        )
+        raise
 
+    _audit_productivity_files(db, user, action="upload", attempted_count=len(files), saved=saved, unknown=unknown)
     return {
         "saved": saved,
         "unknown": unknown,
@@ -205,19 +277,32 @@ async def upload_productivity_files(
 async def upload_productivity_file_raw(
     request: Request,
     filename: str = Query(default=""),
-    _: User = Depends(require_view_access("productivity", "edit")),
+    user: User = Depends(require_view_access("productivity", "edit")),
+    db: Session = Depends(get_db),
 ) -> dict:
-    temp_path, sample = await _save_raw_upload_temp(request, filename)
     try:
-        saved, unknown = _save_classified_productivity_file(
-            request=request,
-            temp_path=temp_path,
-            filename=filename,
-            sample=sample,
+        temp_path, sample = await _save_raw_upload_temp(request, filename)
+        try:
+            saved, unknown = _save_classified_productivity_file(
+                request=request,
+                temp_path=temp_path,
+                filename=filename,
+                sample=sample,
+            )
+        finally:
+            temp_path.unlink(missing_ok=True)
+    except Exception as exc:
+        _audit_productivity_files(
+            db,
+            user,
+            action="upload_failed",
+            attempted_count=1,
+            error_type=type(exc).__name__,
+            status_code=getattr(exc, "status_code", None),
         )
-    finally:
-        temp_path.unlink(missing_ok=True)
+        raise
 
+    _audit_productivity_files(db, user, action="upload", attempted_count=1, saved=saved, unknown=unknown)
     return {
         "saved": saved,
         "unknown": unknown,
@@ -229,13 +314,15 @@ async def upload_productivity_file_raw(
 def delete_productivity_file(
     file_type: str,
     request: Request,
-    _: User = Depends(require_view_access("productivity", "edit")),
+    user: User = Depends(require_view_access("productivity", "edit")),
+    db: Session = Depends(get_db),
 ) -> dict:
     if file_type not in LOCAL_FILE_TYPES:
         try:
             clear_productivity_file(file_type)
         except ProductivitySourceError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        _audit_productivity_files(db, user, action="delete", file_type=file_type, scope="server")
         return build_productivity_session_file_status(_session_log_files(request))
     existing = request.session.get("productivity_files") or {}
     old_path = existing.pop(file_type, None)
@@ -243,6 +330,7 @@ def delete_productivity_file(
         Path(str(old_path)).unlink(missing_ok=True)
     request.session["productivity_files"] = existing
     clear_productivity_cache()
+    _audit_productivity_files(db, user, action="delete", file_type=file_type, scope="session")
     return build_productivity_session_file_status(_session_log_files(request))
 
 

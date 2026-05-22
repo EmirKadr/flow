@@ -5,10 +5,10 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import Area, User
+from app.backend.models import Area, AuditLog, User
 from app.backend.routers import auth as auth_router
 from app.backend.routers import users as users_router
-from app.backend.schemas import LoginRequest, UserCreate, UserUpdate
+from app.backend.schemas import LoginRequest, PasswordSetRequest, UserCreate, UserUpdate
 from app.backend.security import verify_password
 
 
@@ -17,12 +17,14 @@ def db_session():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Area.__table__.create(engine)
     User.__table__.create(engine)
+    AuditLog.__table__.create(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = SessionLocal()
     try:
         yield session
     finally:
         session.close()
+        AuditLog.__table__.drop(engine)
         User.__table__.drop(engine)
         Area.__table__.drop(engine)
         engine.dispose()
@@ -315,3 +317,32 @@ def test_passwordless_user_rejects_non_empty_password(db_session):
 
     assert exc_info.value.status_code == 401
     assert "tomt" in exc_info.value.detail
+
+
+def test_set_password_writes_audit_without_password_value(db_session):
+    user = User(
+        username="cecilia",
+        password_hash=None,
+        display_name="Cecilia",
+        role="leader",
+        is_active=True,
+        must_change_password=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    result = auth_router.set_password(
+        PasswordSetRequest(password="nyttlosen123"),
+        user,
+        db_session,
+    )
+
+    assert result.must_change_password is False
+    entry = db_session.query(AuditLog).filter_by(entity_type="user", action="set_password").one()
+    assert entry.entity_id == user.id
+    assert entry.user_id == user.id
+    assert entry.old_value["password_hash_set"] is False
+    assert entry.new_value["password_hash_set"] is True
+    assert "nyttlosen123" not in str(entry.old_value)
+    assert "nyttlosen123" not in str(entry.new_value)

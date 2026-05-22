@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
 from ..models import User
 from ..schemas import LoginRequest, PasswordSetRequest, UserOut
@@ -45,8 +46,28 @@ def set_password(
 ) -> UserOut:
     if not user_needs_password_setup(user):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lösenord är redan skapat")
+    before = {
+        "id": user.id,
+        "username": user.username,
+        "must_change_password": True,
+        "password_hash_set": user.password_hash is not None,
+    }
     user.password_hash = hash_password(payload.password)
     user.must_change_password = False
+    audit_log(
+        db,
+        entity_type="user",
+        entity_id=user.id,
+        action="set_password",
+        old_value=before,
+        new_value={
+            "id": user.id,
+            "username": user.username,
+            "must_change_password": False,
+            "password_hash_set": True,
+        },
+        user_id=user.id,
+    )
     db.commit()
     db.refresh(user)
     return user_out(user)

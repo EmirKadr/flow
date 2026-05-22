@@ -7,6 +7,10 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-22] feature | Fyller auditluckor for anvandarfloden
+
+Utökade Historik/audit-dokumentationen för nya auditrader: första lösenord på konto, globala inställningar, serverhanterade produktivitetsfiler och körda lagerverktygsflöden. Misslyckade uppladdningar som når backend loggas nu också som `upload_failed`/`detect_failed`. Loggarna ska ge felsökningssignal men undvika lösenord, API-detaljer och privata filnamn/listvärden.
+
 ## [2026-05-22] rename | Bytte programnamn fran Bemanning till flow
 
 Programmet bytte namn fran "Bemanning" till "flow" (sma bokstaver). Bevarade
