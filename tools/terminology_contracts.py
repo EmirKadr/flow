@@ -21,6 +21,20 @@ class TerminologyRule:
 
 TERMINOLOGY_RULES: tuple[TerminologyRule, ...] = (
     TerminologyRule(
+        key="schedule_view",
+        canonical_terms=("Bemanning",),
+        role_access_terms=("Bemanning",),
+        forbidden_terms=(
+            'label: "flow"',
+            "flow (`schedule`)",
+            "flow: dagsschema",
+            "flow dagsschema",
+        ),
+        compatibility_paths=(
+            "tools/terminology_contracts.py",
+        ),
+    ),
+    TerminologyRule(
         key="activities",
         canonical_terms=("Aktiviteter", "Aktivitetsimport"),
         role_access_terms=("Aktiviteter", "Aktivitetsimport"),
@@ -65,6 +79,18 @@ TERMINOLOGY_RULES: tuple[TerminologyRule, ...] = (
         compatibility_paths=(
             "app/backend/routers/activities.py",
             "app/backend/routers/users.py",
+            "tools/terminology_contracts.py",
+        ),
+    ),
+    TerminologyRule(
+        key="businesses",
+        canonical_terms=("Verksamhet", "Verksamheter"),
+        role_access_terms=("Verksamheter",),
+        forbidden_terms=("Affärsenheter", "Affärsenhet"),
+        compatibility_paths=(
+            "app/backend/user_access.py",
+            "app/frontend/js/common.js",
+            "app/frontend/js/users.js",
             "tools/terminology_contracts.py",
         ),
     ),

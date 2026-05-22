@@ -39,6 +39,8 @@ python -m tools.release_check
 
 - `tests/services/` testar backendregler, roller, import, schema, mallar,
   updater och public API.
+- `tests/services/test_business_scope.py` testar verksamhetsisolering, många
+  användare, korsverksamhetsvalidering, settings, Super User och public API.
 - `tests/desktop/test_app.py` testar Windows-skalets health check,
   fellage och uppdateringsflode.
 - `tests/tools/test_visual_tools.py` testar att visuella verktyg fortfarande
@@ -59,6 +61,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_activity_import.py` | Aktivitetsimportmallar, Excel-parsning, validering, roller och borttagning. | Aktivitetsimport, aktivitets-CRUD eller importmallar. |
 | `tests/services/test_allocation_bridge.py` | Backendbryggan till lagerverktyg, filidentifiering, sessionsresultat och rollbegransade floden. | `allocation_bridge`, allokeringsrouter, filuppladdning eller lagerfloden. |
 | `tests/services/test_assistant_chat.py` | Apphjalpens MiniMax-konfiguration, promptregler, repo-/wiki-kontext, anvandarkontext och kvot. | Apphjalp, MiniMax, wiki-kontext, behorighetssvar eller chattsession. |
+| `tests/services/test_business_scope.py` | Verksamhetsisolering, många användare, listfilter, främmande id, korsverksamhetswrites, Super User-create, settings och public API. | `business_scope`, schemawrites, registerfilter, Super User-filter, settings eller nya verksamheter. |
 | `tests/services/test_data_fetch_service.py` | Hamta data-flodets katalog, LLM-plan, hemlighetsbarriar, extern datahamtning och Excel-export. | `Hamta data`, extern datakalla, katalogbyggnad, MiniMax-planering eller export. |
 | `tests/services/test_health_service.py` | Desktop/klient-health URL och felhantering. | Health service eller anslutningskontroll. |
 | `tests/services/test_legacy_activity_routes.py` | Gamla aktivitetsvagar redirectar till nya aktivitetsvyn och statiska filer cachas ratt i dev. | Legacy-redirects, statisk frontendservering eller aktivitetsrutter. |
@@ -69,7 +72,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
 | `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
 | `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
-| `tests/services/test_seed_data.py` | Seed-data for omraden, aktiviteter och dubblettsanering. | `backend.seed`, bootstrap eller standarddata. |
+| `tests/services/test_seed_data.py` | Seed-data, lokal SQLite-bootstrap, verksamhetsbackfill och dubblettsanering. | `backend.seed`, `bootstrap_local`, verksamheter eller standarddata. |
 | `tests/services/test_sidebar_settings.py` | Sidebar-layout och rollbaserad vybehorighet sparas och saneras ratt. | Sidebarinställningar, roll-vy-access eller settingsrouter. |
 | `tests/services/test_template_service.py` | Standardveckomall, saknade dagar och timmis utan ledigmall. | Veckomallar eller schema-template-logik. |
 | `tests/services/test_update_service.py` | Versionsjamforelse och hamtning av release-installationsfil. | Update-check, GitHub release-logik eller installer-download. |
@@ -79,8 +82,10 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/tools/test_access_contracts.py` | Backend/frontend-kontrakt for vy-ID:n, rollistor, default access och legacy-alias. | Vybehorigheter, sidebar pages, roller eller legacy view mapping. |
 | `tests/tools/test_activity_terminology.py` | Terminologikontrakt sa gamla aktivitetsord inte smyger in. | UI-text, docs eller migration fran gammal terminologi. |
 | `tests/tools/test_allocation_split_browser.py` | Playwright-test for Dela-resultattabell och kolumnkopiering. | `dela.html`, split values, tabellrendering eller clipboard for lagerverktyg. |
+| `tests/tools/test_compare_warehouse_results.py` | CSV/XLSX-jamforelse for Flow mot Allokera, inklusive exportnormalisering. | `tools/compare_warehouse_results.py`, parityjamforelser eller lagerexportformat. |
 | `tests/tools/test_api_route_contracts.py` | Frontendens hardkodade API-anrop finns i FastAPI med ratt metod. | Nya/andrade API-anrop i JS eller backend-rutter. |
 | `tests/tools/test_flow_cli.py` | CLI-routekatalog, API_ROUTES-dokumentation, generiska API-call och DB-lookup. | `tools/flow_cli.py`, API-rutter, CLI-adapter eller API-dokumentation. |
+| `tests/tools/test_warehouse_cli.py` | Lokal Bearbeta/Dela-CLI, scenariofiler, automatisk filmatchning och outputfiler. | `warehouse_tools/cli.py`, lagerflodes-CLI eller lokala regressionskommandon. |
 | `tests/tools/test_ci_workflows.py` | CI och release workflows kor ratt grindar fore build/deploy. | `.github/workflows/*` eller releasepipeline. |
 | `tests/tools/test_desktop_app_probe_runtime.py` | Desktop-proben kan starta lokal server/proxy och skriva runtime-artifacts. | `tools/desktop_app_probe.py` eller desktop-proxytest. |
 | `tests/tools/test_legacy_activity_browser.py` | Browserkontrakt for legacy-aktivitetssidor och vybehorighetsmodalens text. | Legacy aktivitetssidor, aktivitets-UI eller rollaccessmodal. |
@@ -128,16 +133,30 @@ python -m tools.visual_smoke --output artifacts\visual\manual-check
 
 ## Lagerverktyg / lokal flow-data
 
-Bearbeta, Dela och Harleda kor flows egna `warehouse_tools`-paket.
+Bearbeta och Dela kor flows egna `warehouse_tools`-paket.
 Lagerflodena testas mot lokal fixture-data i `testdata/warehouse_tools`, sa
 testsviten inte kraver nagot sibling-projekt.
 
 ```powershell
 python -m pytest tests\services\test_warehouse_tools_local_data.py
+python -m pytest tests\tools\test_warehouse_cli.py tests\tools\test_compare_warehouse_results.py tests\tools\test_flow_cli.py
 ```
 
 Testet kontrollerar publikt flodesregister, datapool, summaries, tabellnycklar,
 radantal och representativa cellvarden for de deterministiska flodena.
+
+For manuell parity mot gamla Allokera-CLI:t finns tre terminalspår:
+
+```powershell
+python -m warehouse_tools.cli list-flows
+python -m warehouse_tools.cli allocate --auto-file orders.csv --auto-file buffer.csv --auto-file item_option.csv --format both --out artifacts\allocate
+python -m tools.flow_cli allocation run allocate --file orders=orders.csv --file buffer=buffer.csv --file items=item_option.csv --out artifacts\api-allocate
+python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj8twk6_allocated_orders.xlsx
+```
+
+`warehouse_tools.cli` kor flodet lokalt utan server. `tools.flow_cli allocation`
+kor samma API som webb/desktop. `compare_warehouse_results` jamfor CSV/XLSX
+efter normalisering av typiskt exportbrus som `1.0` mot `1` och NaN mot tomt.
 
 ## Read-only databasuppslag
 
@@ -161,21 +180,23 @@ Windows-appens lokala appyta, cookies, API-proxy eller paketerad frontend.
 Bas-screenshots som ska granskas:
 
 - Login.
-- flow i admin-, arbetsledar- och visningsroll.
+- Bemanning i admin-, arbetsledar- och visningsroll.
 - Oversikt i admin-, arbetsledar- och visningsroll.
 - Personer.
 - Aktiviteter.
 - Historik.
 - Anvandare.
-- Uppladdningar, Bearbeta, Dela och Harleda for admin/super user och
-  Lagerkontorist.
+- Uppladdningar och Dela for Lagerkontorist samt Bearbeta for admin/super user.
 
 Scenario-screenshots som ska granskas:
 
-- flow med Alla områden.
-- flow med Mestergruppen.
-- flow med Autostore.
-- flow med tomt personfilter.
+- Bemanning med Alla områden.
+- Bemanning som Stigamo-användare med `∞`, där bara Stigamo-data syns.
+- Bemanning som R3-användare, där bara R3-toggle finns.
+- Bemanning som Super User med globalt `∞` och verksamhetsfilter.
+- Bemanning med Mestergruppen.
+- Bemanning med Autostore.
+- Bemanning med tomt personfilter.
 - Kopiera dag-modal.
 - Bemanningskalkyl med Alla.
 - Kompakt/sidebar-collapse.
@@ -189,6 +210,7 @@ Scenario-screenshots som ska granskas:
 - Redigera aktivitet-modal.
 - Ny anvandare-modal.
 - Redigera anvandare-modal.
+- Verksamheter-vyn for Super User, inklusive omraden per verksamhet.
 - Historik med filter.
 - Nekad atkomst for visningsroll till Personer, Aktiviteter, Anvandare och Historik.
 - Nekad atkomst for arbetsledare till Anvandare och Historik.
@@ -199,7 +221,7 @@ Granska visuellt att:
 - Text inte kapas eller overlappar.
 - Sidebar, kontroller och tabeller ligger ratt i desktop och mobil.
 - Rollerna visar ratt navigation och ratt vyer.
-- Otillgangliga sidor skickar anvandaren till flow och visar feltoast.
+- Otillgangliga sidor skickar anvandaren till Bemanning och visar feltoast.
 - Databasikonen, uppladdningsnotis och uppladdningspilen syns pa Lager-sidorna.
 - Lagerverktygsvyerna kan visas via desktop-proxyn utan att sidebar blinkar bort.
 - Farger, halvceller, schemalagda/lediga celler och kalkyl syns begripligt.
@@ -234,6 +256,44 @@ Det testar bland annat:
 - Filtrera Historik.
 - Logga in som visningsroll och verifiera att den ar read-only.
 - Verifiera att visningsroll och arbetsledare stoppas fran otillatna sidor.
+
+## Verksamhetsscope
+
+När en ändring rör personer, aktiviteter, användare, schema, översikt,
+settings, public API eller områdestoggle ska relevanta tester bevisa:
+
+- Stigamo-användare ser inte R3-data och R3-användare ser inte Stigamo-data.
+- Flera användare i Stigamo respektive R3 är dolda för varandra i listor och
+  detail/update/delete.
+- En vanlig admin behöver inte välja verksamhet vid create/import; backend
+  använder användarens verksamhet.
+- Super User kan lista allt med `∞`, filtrera med `business_id` och måste välja
+  verksamhet när den inte kan härledas.
+- Områden, personer, aktiviteter och settings är scopeade per verksamhet, medan
+  användarnamn är globalt unika.
+- R3 kan fa nya omraden utan att Stigamo paverkas, samma omradeskod kan finnas i
+  olika verksamheter och omraden med kopplad data inaktiveras vid delete.
+- Publika `/api/public/*` defaultar till `STIGAMO`, kan köras explicit mot `R3`
+  och gör aldrig global summering utan verksamhet.
+
+Obligatoriska regressioner för verksamhetsscope:
+
+```powershell
+python -m pytest tests\services\test_business_scope.py -q
+python -m pytest tests\services\test_person_import.py tests\services\test_activity_import.py tests\services\test_user_import.py -q
+python -m pytest tests\tools\test_visual_tools.py tests\tools\test_api_route_contracts.py -q
+python -m tools.visual_smoke --roles admin,leader,r3 --output artifacts\visual\business-scope
+python -m tools.visual_smoke --via-desktop-proxy --roles admin,r3 --output artifacts\visual\business-scope-desktop
+```
+
+`test_business_scope.py` ska skapa data i båda verksamheterna och täcka många
+användare, listfilter, främmande id, korsverksamhetswrites, dubbletter per
+verksamhet, Super User-create, settings per verksamhet och public API-defaults.
+`test_persons_view.py` ska skydda att Personer-vyn skickar `area_id` och laddar
+om vid områdesfokus, så Super User inte kan se Stigamo-personer när fokus står
+på R3. `test_visual_tools.py` ska skydda dynamisk area focus, R3-toggle,
+Super User-`∞`, Verksamheter-vyn med omraden samt verksamhetsfält i Personer,
+Aktiviteter och Användare.
 
 Vanliga varianter:
 

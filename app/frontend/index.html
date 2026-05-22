@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>flow</title>
+  <title>Bemanning - flow</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/app-icon-192.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
@@ -38,9 +38,6 @@
       </div>
       <button id="nextDayBtn" class="date-nav-btn" type="button" aria-label="Nästa dag" title="Nästa dag">›</button>
     </div>
-    <label>Område
-      <select id="areaSelect"></select>
-    </label>
     <button id="copyBtn">Kopiera dag…</button>
     <button id="clearBtn" class="danger">Rensa dag</button>
     <button id="undoBtn" class="icon-btn" type="button" title="Ångra (Ctrl+Z)" aria-label="Ångra" disabled>↶</button>
@@ -48,7 +45,7 @@
   </section>
 
   <main>
-    <div class="section-title" id="sectionTitle">flow</div>
+    <div class="section-title" id="sectionTitle">Bemanning</div>
     <div class="table-wrap">
       <table class="matrix" id="scheduleTable">
         <thead>
@@ -79,9 +76,6 @@
       <div class="card calc-card">
         <div class="calc-card-header">
           <h3>Bemanningskalkyl</h3>
-          <label class="calc-area-picker">Område
-            <select id="calcAreaSelect"></select>
-          </label>
         </div>
         <div id="calcPanels" class="calc-panels"></div>
       </div>

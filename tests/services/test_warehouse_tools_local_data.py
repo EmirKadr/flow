@@ -21,7 +21,6 @@ REGISTRY_FLOW_IDS = (
     "overview-check",
     "dispatch-check",
     "vecka27-check",
-    "eftersok",
     "prognos-report",
     "observations-update",
     "observations-sync",
@@ -40,7 +39,6 @@ EXPECTED_SUMMARIES = {
         "Pallplatser": 220,
     },
     "dispatch-check": {"Avvikelser": 0},
-    "eftersok": {"Inköp": "999109415", "Artikel": "200847340", "Rapportrader": 22},
     "hib-koppling": {"Ändringar": 49, "Missade avgångar": 1},
     "lyx": {"LYX-artiklar": 264, "Filtrerade rader": 5510},
     "observations-update": {"Nya observationer": 24047, "Skickade pallid": 0, "Artikel-max-rader": 3026, "Ändrade maxvärden": 0},
@@ -61,7 +59,6 @@ EXPECTED_TABLE_ROWS = {
         "pallet_spaces": 220,
     },
     "dispatch-check": {"diff": 0},
-    "eftersok": {"report": 22},
     "hib-koppling": {"changes": 49, "missed": 1},
     "lyx": {"articles": 264},
     "observations-update": {"new_rows": 24047},
@@ -81,7 +78,6 @@ EXPECTED_FIRST_VALUES = {
         "refill_autostore": (0, "2000515"),
         "pallet_spaces": (0, "110"),
     },
-    "eftersok": {"report": (0, "Analys för Ink")},
     "hib-koppling": {"changes": (0, "PR100500372"), "missed": (0, "324042")},
     "lyx": {"articles": (0, "10010")},
     "observations-update": {"new_rows": (0, "10001")},
@@ -99,11 +95,7 @@ LEGACY_FIXTURE_NAMES = {
     "items": "item_option-20260317145203.csv",
     "overview": "v_ask_order_overview-20260317145114.csv",
     "dispatch": "v_ask_dispatch_pallet-20260316130458.csv",
-    "wms_receive": "v_ask_receive_log-20260317145157.csv",
     "wms_booking": "v_ask_booking_putaway-20260317145232.csv",
-    "wms_trans": "v_ask_trans_log-20260317170854.csv",
-    "wms_pick": "v_ask_pick_log_full-20260317170910.csv",
-    "wms_correct": "v_ask_correct_log-20260317145302.csv",
 }
 
 
@@ -120,12 +112,7 @@ def _testdata() -> dict[str, Path]:
         "dispatch": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["dispatch"],
         "prognos": next(WAREHOUSE_TESTDATA.glob("Prognos idag_*.xlsx")),
         "campaign": next(WAREHOUSE_TESTDATA.glob("Granng*prognos*.xlsx")),
-        "wms_receive": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["wms_receive"],
         "wms_booking": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["wms_booking"],
-        "wms_buffert": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["buffer"],
-        "wms_trans": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["wms_trans"],
-        "wms_pick": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["wms_pick"],
-        "wms_correct": WAREHOUSE_TESTDATA / LEGACY_FIXTURE_NAMES["wms_correct"],
     }
 
 
@@ -154,17 +141,6 @@ def _scenario_payloads() -> dict[str, tuple[dict[str, Path], dict[str, str]]]:
             {},
         ),
         "vecka27-check": ({"orders": files["orders"]}, {}),
-        "eftersok": (
-            {
-                "wms_receive": files["wms_receive"],
-                "wms_booking": files["wms_booking"],
-                "wms_buffert": files["wms_buffert"],
-                "wms_trans": files["wms_trans"],
-                "wms_pick": files["wms_pick"],
-                "wms_correct": files["wms_correct"],
-            },
-            {"purchase": "999109415", "article": "200847340"},
-        ),
         "prognos-report": (
             {
                 "prognos": files["prognos"],
@@ -210,6 +186,28 @@ def test_allocate_display_summary_formats_fixed_labels_in_order():
     }
 
 
+def test_read_cache_reuses_same_file_without_shared_dataframe_mutation(tmp_path, monkeypatch):
+    source = tmp_path / "orders.csv"
+    source.write_text("Artikel;Antal\nA1;2\n", encoding="utf-8")
+    calls = []
+
+    def fake_read(path: str):
+        calls.append(path)
+        return pd.DataFrame({"Artikel": ["A1"], "Antal": [2]})
+
+    flows._read_cached.cache_clear()
+    monkeypatch.setattr(flows.E, "_read_cli_table", fake_read)
+    try:
+        first = flows._read(source)
+        first.loc[0, "Artikel"] = "changed"
+        second = flows._read(source)
+    finally:
+        flows._read_cached.cache_clear()
+
+    assert calls == [str(source.resolve())]
+    assert second.iloc[0].to_dict() == {"Artikel": "A1", "Antal": 2}
+
+
 @pytest.mark.filterwarnings(
     "ignore:Workbook contains no default style, apply openpyxl's default:UserWarning:openpyxl.styles.stylesheet"
 )
@@ -237,6 +235,66 @@ def test_allocate_display_summary_matches_current_local_fixture_data():
     }
 
 
+def test_pallet_spaces_counts_hib_separately_from_autostore_like_allokera():
+    rows = [
+        {
+            "Kund": "Butik F",
+            "Kund.1": "Butik F",
+            "Artikel": f"F{i}",
+            "Zon (ber\u00e4knad)": "F",
+            "Palltyp (matchad)": "EURO",
+            "Ej Staplingsbar": "",
+        }
+        for i in range(21)
+    ]
+
+    result = flows.E.compute_pallet_spaces(pd.DataFrame(rows))
+
+    assert result["Kund"].tolist() == ["Butik F"]
+    assert result["HIB"].tolist() == [2]
+    assert result["autostore"].tolist() == [0]
+    assert result["Topp Pallar"].tolist() == [2]
+    assert result["Totalt Pallar"].tolist() == [2]
+    assert result["Pallplatser"].tolist() == [2]
+
+
+def test_ordersaldo_shortage_includes_helpall_count_from_article_max(tmp_path):
+    orders_path = tmp_path / "orders.csv"
+    max_path = tmp_path / "artikel_max.csv"
+    pd.DataFrame([
+        {"Ordernr": "O1", "Artikel": "A1", "Antal": 10, "Plock": 2},
+        {"Ordernr": "O2", "Artikel": "A2", "Antal": 1, "Plock": 1},
+    ]).to_csv(orders_path, index=False, encoding="utf-8-sig")
+    pd.DataFrame([
+        {"artikelnummer": "A1", "max": 42.0, "pallid": "P1"},
+        {"artikelnummer": "A2", "max": 12.0, "pallid": "P2"},
+    ]).to_csv(max_path, index=False, encoding="utf-8-sig")
+
+    result = flows.FLOW_BY_ID["ordersaldo"]["handler"](
+        {"orders": orders_path, "max_csv": max_path},
+        {},
+    )
+    tables = {key: table for key, _label, table in result["tables"]}
+    shortage = tables["shortage"]
+
+    assert list(shortage.columns) == [
+        "Artikel",
+        "Total beställt",
+        "Tillgängligt saldo (Plock)",
+        "Antal på Helpall",
+        "Utbeställt",
+        "Underskott",
+    ]
+    assert shortage.iloc[0].to_dict() == {
+        "Artikel": "A1",
+        "Total beställt": 10.0,
+        "Tillgängligt saldo (Plock)": 2.0,
+        "Antal på Helpall": 42.0,
+        "Utbeställt": 0.0,
+        "Underskott": 8.0,
+    }
+
+
 def test_warehouse_tool_testdata_is_local_to_flow():
     if not WAREHOUSE_TESTDATA.is_dir():
         pytest.skip("Lokala warehouse-regressionsfiler saknas.")
@@ -251,6 +309,40 @@ def test_warehouse_registry_is_loaded_from_flow_package():
     public_registry = flows.public_registry()
     assert [flow["id"] for flow in public_registry] == list(REGISTRY_FLOW_IDS)
     assert all("handler" not in flow for flow in public_registry)
+    ordersaldo = next(flow for flow in public_registry if flow["id"] == "ordersaldo")
+    assert any(input_def["key"] == "max_csv" for input_def in ordersaldo["inputs"])
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Workbook contains no default style, apply openpyxl's default:UserWarning:openpyxl.styles.stylesheet"
+)
+def test_overview_check_preserves_avvikelse_type_column_for_allokera_parity():
+    overview = next(iter(sorted(WAREHOUSE_TESTDATA.glob("v_ask_order_overview-*.csv"))), None)
+    details = next(iter(sorted(WAREHOUSE_TESTDATA.glob("v_ask_customer_order_details_all-*.csv"))), None)
+    if overview is None or details is None:
+        pytest.skip("Aktuella orderoversiktsfiler saknas.")
+
+    result = flows.FLOW_BY_ID["overview-check"]["handler"](
+        {"overview": overview, "details": details},
+        {},
+    )
+    tables = {key: table for key, _label, table in result["tables"]}
+    expected_columns = [
+        "Avvikelsetyp",
+        "Ordernr",
+        "S\u00e4ndningsnr",
+        "Ordertyp",
+        "Status",
+        "Anm\u00e4rkning",
+        "Kundnamn",
+    ]
+
+    for key in ("orderkontroll", "hib_utan_butikss\u00e4ndning"):
+        assert list(tables[key].columns) == expected_columns
+
+    assert set(tables["hib_utan_butikss\u00e4ndning"]["Avvikelsetyp"].astype(str)) == {
+        "HIB \u00f6ver status 31 utan butikss\u00e4ndning"
+    }
 
 
 @pytest.mark.filterwarnings(
@@ -262,9 +354,12 @@ def test_warehouse_flows_run_against_local_fixture_data(flow_id: str):
 
     result = flows.FLOW_BY_ID[flow_id]["handler"](dict(files), dict(params))
     tables = {key: table for key, _label, table in result.get("tables", [])}
+    labels = {key: label for key, label, _table in result.get("tables", [])}
 
     assert result.get("summary") == EXPECTED_SUMMARIES[flow_id]
     assert {key: len(table) for key, table in tables.items()} == EXPECTED_TABLE_ROWS[flow_id]
+    if flow_id == "allocate":
+        assert labels["result"] == "Allokerade pallar"
 
     for table_key, (column_index, expected_prefix) in EXPECTED_FIRST_VALUES.get(flow_id, {}).items():
         assert _first_value(tables[table_key], column_index).startswith(expected_prefix)

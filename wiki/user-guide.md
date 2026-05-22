@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandbok
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [handbok, anvandare, support, chat]
 ---
 
@@ -13,12 +13,12 @@ Kort svar: denna sida beskriver hur en vanlig anvandare faktiskt anvander flow. 
 
 | Roll | Vad personen normalt gor | Viktiga begransningar |
 | --- | --- | --- |
-| Visning | Tittar pa flow och Oversikt | Kan inte spara, rensa, dra, kopiera eller andra celler. |
+| Visning | Tittar pa Bemanning och Oversikt | Kan inte spara, rensa, dra, kopiera eller andra celler. |
 | Arbetsledare | Planerar dag/vecka, andrar celler, personer och aktiviteter om rollen har edit | Kan stoppas av cell-las om annan anvandare fyllt cellen. |
 | Bemanningsansvarig | Samma planeringsfloden som arbetsledare, ofta bredare ansvar | Beror pa vybehorigheter. |
 | Administrator | Skapar anvandare, personer, aktiviteter och settings | Kan inte automatiskt allt som Super User om rollen saknas. |
 | Super User | Historik, produktivitet, avancerade importer och vissa kodandringar | Ska anvandas varsamt eftersom rollen kan andra mer. |
-| Lagerkontorist | Uppladdningar, Dela och Harleda | Bearbeta-floden kan vara blockerade utan processbehorighet. |
+| Lagerkontorist | Uppladdningar och Dela | Bearbeta-floden kan vara blockerade utan processbehorighet. |
 | Artikelplacerare | Lagerverktyg for artikel-/lagerarbete | Samma princip som lagerkontorist. |
 
 ## Kom igang
@@ -26,14 +26,14 @@ Kort svar: denna sida beskriver hur en vanlig anvandare faktiskt anvander flow. 
 1. Oppna appen via webbadress eller Windows-appen.
 2. Logga in med anvandarnamn och losenord.
 3. Om det ar forsta inloggningen och kontot saknar losenord: lamna losenord tomt pa login, ga vidare till "Skapa losenord" och valj ett losenord pa minst 8 tecken.
-4. Kontrollera omradesfokus nere i sidomenyn. Det paverkar vilka omraden som prioriteras i flera vyer.
+4. Kontrollera omradesfokus nere i sidomenyn. Det styr vilka omraden som visas i vyer med omradesdata; `∞` visar alla.
 5. Anvand sidomenyn for att ga till ratt vy.
 
-## flow: planera en dag
+## Bemanning: planera en dag
 
-1. Ga till `flow`.
+1. Ga till `Bemanning`.
 2. Valj ar, vecka och dag eller klicka datumet och valj datum direkt.
-3. Valj omrade. Tomt/Alla visar alla personer.
+3. Vaxla omradesfokus i sidebar om du vill byta omrade eller visa alla.
 4. Hitta personen med personfiltret i rubriken.
 5. Klicka i cellens dropdown och valj aktivitet.
 6. Hogerklicka eller dubbelklicka pa en timme om den ska delas i tva halvtimmar.
@@ -50,13 +50,13 @@ Viktigt: celler sparas automatiskt. Det finns ingen separat Spara-knapp.
 1. Ga till `Oversikt`.
 2. Valj `Vecka` eller `Manad`.
 3. Valj ar och vecka/manad.
-4. Valj omrade om du vill filtrera.
+4. Vaxla omradesfokus i sidebar om du vill filtrera omrade eller visa alla.
 5. I en dagcell: valj aktivitet for att bemanna hela dagen enligt personens veckomall.
 6. Om dagen ar blandad fragar systemet innan den skrivs over.
 7. Dra over flera dagceller om samma aktivitet ska fyllas pa flera personer/dagar.
 8. Anvand undo/redo om du angrar en oversiktsandring.
 
-Oversikt ar grovplanering. Om du behover halvtimmar eller exakt timme: ga till flow.
+Oversikt ar grovplanering. Om du behover halvtimmar eller exakt timme: ga till Bemanning.
 
 ## Personer: lagg till och underhall personal
 
@@ -67,7 +67,7 @@ Oversikt ar grovplanering. Om du behover halvtimmar eller exakt timme: ga till f
 5. Anvand `Standard 07-16` om personen normalt jobbar standarddag.
 6. Markera dagar som lediga om personen inte ska ha malltid.
 7. Om personen ar timmis utan fast schema: stang av fast schema i modalens checkbox.
-8. For massimport: ladda ner importmall, fyll Excel och klicka `Importera Excel`.
+8. For flera nya personer: klicka `Flera nya personer` och fyll tabellen direkt, eller ladda ner importmall, fyll Excel och klicka `Importera Excel`.
 
 Inline-redigering: klicka direkt pa namn, hemomrade, huvudaktivitet eller sortering i tabellen. Andringen sparas nar faltet tappar fokus eller Enter anvands.
 
@@ -78,7 +78,7 @@ Inline-redigering: klicka direkt pa namn, hemomrade, huvudaktivitet eller sorter
 3. Fyll etikett, omrade, farg, kategori och sortering.
 4. Valj `Summeras som` om aktiviteten ska raknas ihop med en annan aktivitet i summeringar.
 5. Super User kan hantera aktivitetskoder; andra ser normalt kod som read-only eller inte alls.
-6. Import fungerar med mall pa samma satt som Personer.
+6. For flera aktiviteter: klicka `Flera nya aktiviteter` och fyll tabellen direkt, eller anvand importmall pa samma satt som Personer.
 
 Tips: om en aktivitet inte dyker upp dar anvandaren forvantar sig, kontrollera omrade, aktiv-status och vy/omradesfokus.
 
@@ -89,20 +89,22 @@ Tips: om en aktivitet inte dyker upp dar anvandaren forvantar sig, kontrollera o
 3. Fyll anvandarnamn, visningsnamn, roller, omrade och eventuellt losenord.
 4. Om losenord lamnas tomt maste anvandaren skapa losenord vid forsta inloggning.
 5. Anvand `Vybehorigheter` for att styra vilka roller som far se/redigera olika vyer.
-6. Anvand checkboxen `Las bemanningsceller som andra anvandare har fyllt i` for att hindra arbetsledare fran att skriva over varandras celler.
-7. `Visa inaktiva` visar anvandare som annars ar dolda.
+6. For flera nya konton: klicka `Flera nya anvandare` och fyll anvandarnamn, visningsnamn, roller och omrade direkt i tabellen, eller anvand importmall.
+7. Anvand checkboxen `Las bemanningsceller som andra anvandare har fyllt i` for att hindra arbetsledare fran att skriva over varandras celler.
+8. `Visa inaktiva` visar anvandare som annars ar dolda.
 
 Sista aktiva administratören kan inte inaktiveras eller nedgraderas.
 
 ## Historik
 
 1. Ga till `Historik`.
-2. Valj period.
-3. Filtrera pa anvandare, typ, atgard eller objekt-id.
-4. Klicka `Uppdatera`.
-5. Anvand tabellen for att forklara vem som andrade objektet och nar.
+2. Valj om du vill se `Anvandarhistorik`, `Analys` eller `Felkoder`.
+3. Valj period.
+4. Filtrera pa anvandare, typ, atgard eller objekt-id.
+5. Klicka `Uppdatera`.
+6. Anvand tabellen, analysen eller felkodsdashboarden for att forklara vad som hande.
 
-Historik ar inte en generell "fel-logg"; den visar auditlogg for muterande appfloden.
+Felkodsvyn ar en felsokningsvy ovanpa auditloggen. Den visar klientrapporterade API-fel och backendfloden som auditloggats som misslyckade.
 
 ## Hamta data
 
@@ -121,7 +123,7 @@ MiniMax far bara vy-/kolumnstruktur och exempel pa fragor. API-lank och nycklar 
 2. Lagg in Plocklogg, Translogg och Palllastningslogg via dropzoner eller filval.
 3. Kontrollera att KPI-mal finns. KPI ar permanent serverdata.
 4. Valj datum.
-5. Filtrera med `Block` och `Sok`.
+5. Filtrera omrade med togglen i sidebar och text med `Sok`.
 6. Byt datum med pilarna om datasetet har narliggande datum.
 
 Stora loggfiler ar lokala per dator/browserprofil. Tva anvandare kan darfor ha olika produktivitetsunderlag men samma KPI-mal.
@@ -134,7 +136,6 @@ Stora loggfiler ar lokala per dator/browserprofil. Tva anvandare kan darfor ha o
 4. Flodesknappen blir aktiv nar alla kravda underlag finns.
 5. Efter korning kan resultat oppnas i Excel eller laddas ner som CSV.
 6. Ga till `Dela` for att dela en lang lista i kolumner.
-7. Ga till `Harleda` for att soka inkop/artikel genom WMS-loggar.
 
 Om filen inte sorteras automatiskt: anvand `Valj` pa exakt filruta.
 

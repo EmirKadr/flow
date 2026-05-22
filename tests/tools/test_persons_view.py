@@ -1,7 +1,14 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _function_body(source: str, name: str) -> str:
+    match = re.search(rf"function {name}\([^)]*\) {{(?P<body>.*?)\n}}\n", source, re.S)
+    assert match, f"Missing function {name}"
+    return match.group("body")
 
 
 def test_persons_view_uses_delete_button_without_active_toggle():
@@ -41,5 +48,22 @@ def test_persons_view_has_no_active_inactive_modes():
     assert 'data-person-status="all"' not in persons_html
     assert 'id="show-inactive"' not in persons_html
     assert "statusMode" not in persons_js
-    assert 'api.get("/api/persons")' in persons_js
+    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in persons_js
     assert ".person-status-tabs" not in styles
+
+
+def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
+    persons_js = (ROOT / "app" / "frontend" / "js" / "persons.js").read_text(encoding="utf-8")
+
+    load_body = _function_body(persons_js, "loadPersons")
+    render_body = _function_body(persons_js, "renderRows")
+    matches_body = _function_body(persons_js, "matchesAreaFocus")
+
+    assert "const areaId = focusedAreaId();" in load_body
+    assert 'params.set("area_id", String(areaId))' in load_body
+    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in load_body
+    assert 'api.get("/api/persons")' not in load_body
+    assert "persons.filter(matchesAreaFocus).filter(passesFilter)" in render_body
+    assert "Number(person?.home_area_id) === Number(areaId)" in matches_body
+    assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons_js
+    assert 'window.addEventListener("flow:areaFocusChanged", () => renderRows())' not in persons_js

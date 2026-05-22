@@ -22,11 +22,9 @@ const SHARED_ALLOCATION_FILE_TYPE_KEYS = {
   not_putaway: ["not_putaway"],
   prognos: ["prognos"],
   campaign: ["campaign"],
-  wms_receive: ["wms_receive"],
   wms_booking: ["wms_booking"],
   wms_trans: ["wms_trans"],
   wms_pick: ["wms_pick"],
-  wms_correct: ["wms_correct"],
   productivity_pallet: ["productivity_pallet"],
 };
 const SHARED_ALLOCATION_SLOT_MIRRORS = {
@@ -43,11 +41,9 @@ const SHARED_ALLOCATION_FILE_WORDS = {
   not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
-  wms_receive: ["v_ask_receive_log", "receive_log", "mottagningslogg"],
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  wms_correct: ["v_ask_correct_log", "correct_log", "korrigeringslogg"],
   productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
 };
 const AREA_FOCUS_STORAGE_KEY = "flow-area-focus";
@@ -64,6 +60,7 @@ const AREA_FOCUS_FALLBACK_NAMES = {
   AS: "Autostore",
   EH: "E-Handel",
 };
+let dynamicAreaFocusOptions = null;
 const appLogEntries = [];
 
 const THEME_ICONS = {
@@ -133,11 +130,11 @@ const SIDEBAR_DEFAULT_LAYOUT = [
   { id: "dataFetch" },
   { id: "allocationProcess" },
   { id: "allocationSplit" },
-  { id: "allocationTrace" },
   { id: "persons" },
   { id: "activities" },
   { id: "analytics" },
   { id: "users" },
+  { id: "businesses" },
 ];
 
 const VIEW_ID_ALIASES = {
@@ -153,7 +150,6 @@ const ROLE_VIEW_IDS = [
   "allocationUploads",
   "allocationProcess",
   "allocationSplit",
-  "allocationTrace",
   "persons",
   "personImport",
   "activities",
@@ -162,6 +158,7 @@ const ROLE_VIEW_IDS = [
   "analytics",
   "users",
   "userImport",
+  "businesses",
   "appSettings",
   "sidebarLayout",
   "roleAccess",
@@ -208,12 +205,10 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
   warehouse_clerk: {
     allocationUploads: "edit",
     allocationSplit: "edit",
-    allocationTrace: "edit",
   },
   article_placer: {
     allocationUploads: "edit",
     allocationSplit: "edit",
-    allocationTrace: "edit",
   },
   viewer: {
     schedule: "view",
@@ -260,20 +255,74 @@ function initThemeToggle() {
 
 applyTheme(readTheme(), { persist: false });
 
+function areaFocusOptions() {
+  return Array.isArray(dynamicAreaFocusOptions) && dynamicAreaFocusOptions.length
+    ? dynamicAreaFocusOptions
+    : AREA_FOCUS_OPTIONS;
+}
+
+function areaFocusValueForArea(area) {
+  const id = Number(area?.id);
+  return Number.isInteger(id) ? `AREA:${id}` : "";
+}
+
+function buildAreaFocusOptions(areas = [], user = null) {
+  const preferredOrder = ["MG", "GG", "AS", "EH", "R3"];
+  const visibleAreas = (areas || [])
+    .filter((area) => area?.is_active !== false)
+    .filter((area) => String(area?.code || "").trim().toUpperCase() !== "ANNAT")
+    .slice()
+    .sort((a, b) => {
+      const ac = String(a?.code || "").trim().toUpperCase();
+      const bc = String(b?.code || "").trim().toUpperCase();
+      const ai = preferredOrder.includes(ac) ? preferredOrder.indexOf(ac) : 99;
+      const bi = preferredOrder.includes(bc) ? preferredOrder.indexOf(bc) : 99;
+      return ai - bi || (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0) || ac.localeCompare(bc, "sv");
+    });
+  const options = visibleAreas.map((area) => ({
+    value: areaFocusValueForArea(area),
+    label: String(area?.code || area?.name || "").trim(),
+    title: String(area?.name || area?.code || "").trim(),
+    code: String(area?.code || "").trim().toUpperCase(),
+    areaId: Number(area?.id),
+  })).filter((option) => option.value && option.label);
+  const isStigamo = String(user?.business_code || "").toUpperCase() === "STIGAMO";
+  if (user?.is_super_user || (isStigamo && options.length > 1)) {
+    options.push({ value: "ALLT", label: "∞", title: "Alla områden", code: null, areaId: null });
+  }
+  return options.length ? options : AREA_FOCUS_OPTIONS;
+}
+
+function setAreaFocusAreas(areas = [], user = null) {
+  dynamicAreaFocusOptions = buildAreaFocusOptions(areas, user);
+  const current = readAreaFocus();
+  try { localStorage.setItem(AREA_FOCUS_STORAGE_KEY, current); } catch (e) {}
+  updateAreaFocusToggle(current);
+  return dynamicAreaFocusOptions;
+}
+
 function normalizeAreaFocus(value) {
   const normalized = String(value || "").trim().toUpperCase();
-  return AREA_FOCUS_OPTIONS.some((option) => option.value === normalized) ? normalized : "ALLT";
+  const options = areaFocusOptions();
+  const exact = options.find((option) => String(option.value || "").toUpperCase() === normalized);
+  if (exact) return exact.value;
+  const byCode = options.find((option) => option.code && option.code === normalized);
+  if (byCode) return byCode.value;
+  const allOption = options.find((option) => option.value === "ALLT");
+  return allOption ? allOption.value : (options[0]?.value || "ALLT");
 }
 
 function areaFocusOption(value) {
   const normalized = normalizeAreaFocus(value);
-  return AREA_FOCUS_OPTIONS.find((option) => option.value === normalized) || AREA_FOCUS_OPTIONS[AREA_FOCUS_OPTIONS.length - 1];
+  const options = areaFocusOptions();
+  return options.find((option) => option.value === normalized) || options[options.length - 1];
 }
 
 function nextAreaFocus(value = readAreaFocus()) {
   const normalized = normalizeAreaFocus(value);
-  const index = AREA_FOCUS_OPTIONS.findIndex((option) => option.value === normalized);
-  return AREA_FOCUS_OPTIONS[(index + 1) % AREA_FOCUS_OPTIONS.length].value;
+  const options = areaFocusOptions();
+  const index = options.findIndex((option) => option.value === normalized);
+  return options[(index + 1) % options.length].value;
 }
 
 function readAreaFocus() {
@@ -294,7 +343,8 @@ function writeAreaFocus(value) {
 
 function areaFocusCode() {
   const focus = readAreaFocus();
-  return focus === "ALLT" ? null : focus;
+  if (focus === "ALLT") return null;
+  return areaFocusOption(focus)?.code || null;
 }
 
 function findAreaByCode(areas, code) {
@@ -304,17 +354,27 @@ function findAreaByCode(areas, code) {
 }
 
 function preferredAreaIdFromFocus(areas) {
-  const focus = areaFocusCode();
-  if (!focus) return null;
-  const area = findAreaByCode(areas, focus);
+  const focus = readAreaFocus();
+  if (focus === "ALLT") return null;
+  const option = areaFocusOption(focus);
+  if (option?.areaId != null) return Number(option.areaId);
+  const areaIdMatch = String(focus || "").match(/^AREA:(\d+)$/i);
+  if (areaIdMatch) return Number(areaIdMatch[1]);
+  const area = findAreaByCode(areas, option?.code || focus);
   return area ? Number(area.id) : null;
+}
+
+function areaFocusAreaId(areas) {
+  return preferredAreaIdFromFocus(areas);
 }
 
 function areaFocusName(areas, value = readAreaFocus()) {
   const focus = normalizeAreaFocus(value);
   if (focus === "ALLT") return "Alla områden";
-  const area = findAreaByCode(areas || [], focus);
-  return area?.name || AREA_FOCUS_FALLBACK_NAMES[focus] || focus;
+  const option = areaFocusOption(focus);
+  if (option?.title) return option.title;
+  const area = findAreaByCode(areas || [], option?.code || focus);
+  return area?.name || AREA_FOCUS_FALLBACK_NAMES[option?.code || focus] || focus;
 }
 
 function activityAreaCode(activity, areas) {
@@ -331,8 +391,7 @@ function normalizeExistingAreaId(value, areas) {
 }
 
 function preferredActivityAreaId(areas, userAreaId = null) {
-  const focusedAreaId = preferredAreaIdFromFocus(areas);
-  return focusedAreaId != null ? focusedAreaId : normalizeExistingAreaId(userAreaId, areas);
+  return preferredAreaIdFromFocus(areas);
 }
 
 function activityFocusRank(activity, areas, userAreaId = null) {
@@ -375,10 +434,13 @@ function updateAreaFocusToggle(value = readAreaFocus()) {
   toggle.setAttribute("aria-pressed", normalized === "ALLT" ? "false" : "true");
 }
 
-function initAreaFocusToggle() {
+function initAreaFocusToggle(user = null) {
   const toggle = document.getElementById("area-focus-toggle");
   if (!toggle) return;
   updateAreaFocusToggle(readAreaFocus());
+  api.get("/api/areas")
+    .then((areas) => setAreaFocusAreas(areas, user))
+    .catch(() => {});
   toggle.addEventListener("click", () => writeAreaFocus(nextAreaFocus()));
 }
 
@@ -388,6 +450,67 @@ window.addEventListener("storage", (event) => {
   updateAreaFocusToggle(value);
   window.dispatchEvent(new CustomEvent("flow:areaFocusChanged", { detail: { value } }));
 });
+
+function setupSyncedHorizontalScroll(target) {
+  const element = typeof target === "string" ? document.querySelector(target) : target;
+  const wrap = element?.classList?.contains("table-wrap") ? element : element?.closest?.(".table-wrap");
+  if (!wrap?.parentNode) return null;
+
+  let top = wrap.previousElementSibling;
+  if (!top || !top.classList?.contains("synced-scrollbar-top")) {
+    top = document.createElement("div");
+    top.className = "synced-scrollbar-top";
+    top.setAttribute("aria-hidden", "true");
+    const spacer = document.createElement("div");
+    spacer.className = "synced-scrollbar-spacer";
+    top.appendChild(spacer);
+    wrap.parentNode.insertBefore(top, wrap);
+  }
+
+  const spacer = top.querySelector(".synced-scrollbar-spacer") || top.appendChild(document.createElement("div"));
+  spacer.classList.add("synced-scrollbar-spacer");
+
+  if (wrap.__flowSyncedHorizontalScroll) {
+    wrap.__flowSyncedHorizontalScroll.update();
+    return top;
+  }
+
+  let syncing = false;
+  const update = () => {
+    const scrollWidth = wrap.scrollWidth || 0;
+    spacer.style.width = `${scrollWidth}px`;
+    top.hidden = scrollWidth <= wrap.clientWidth + 1;
+    if (!top.hidden) top.scrollLeft = wrap.scrollLeft;
+  };
+  const syncFromTop = () => {
+    if (syncing) return;
+    syncing = true;
+    wrap.scrollLeft = top.scrollLeft;
+    syncing = false;
+  };
+  const syncFromWrap = () => {
+    if (syncing) return;
+    syncing = true;
+    top.scrollLeft = wrap.scrollLeft;
+    syncing = false;
+  };
+
+  top.addEventListener("scroll", syncFromTop, { passive: true });
+  wrap.addEventListener("scroll", syncFromWrap, { passive: true });
+
+  let observer = null;
+  if ("ResizeObserver" in window) {
+    observer = new ResizeObserver(update);
+    observer.observe(wrap);
+    Array.from(wrap.children || []).forEach((child) => observer.observe(child));
+  } else {
+    window.addEventListener("resize", update);
+  }
+
+  wrap.__flowSyncedHorizontalScroll = { update, observer };
+  requestAnimationFrame(update);
+  return top;
+}
 
 async function loadCurrentUser() {
   try {
@@ -688,7 +811,6 @@ function canUseAllocationTools(user) {
   return (
     canViewPage(user, "allocationUploads")
     || canViewPage(user, "allocationSplit")
-    || canViewPage(user, "allocationTrace")
     || canViewPage(user, "allocationProcess")
   );
 }
@@ -709,7 +831,7 @@ function sidebarPageDefinitions(user, activePage) {
   return [
     {
       id: "schedule",
-      label: "flow",
+      label: "Bemanning",
       href: "/index.html",
       icon: "📋",
       visible: canViewPage(user, "schedule"),
@@ -756,14 +878,6 @@ function sidebarPageDefinitions(user, activePage) {
       active: activePage === "allocationSplit",
     },
     {
-      id: "allocationTrace",
-      label: "Härleda",
-      href: "/harleda.html",
-      icon: "⌕",
-      visible: canViewPage(user, "allocationTrace"),
-      active: activePage === "allocationTrace",
-    },
-    {
       id: "persons",
       label: "Personer",
       href: "/personer.html",
@@ -794,6 +908,14 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "👤",
       visible: canViewPage(user, "users"),
       active: activePage === "users",
+    },
+    {
+      id: "businesses",
+      label: "Verksamheter",
+      href: "/verksamheter.html",
+      icon: "⌘",
+      visible: Boolean(user?.is_super_user),
+      active: activePage === "businesses",
     },
   ];
 }
@@ -1813,7 +1935,7 @@ function renderSidebar(user, activePage) {
     </div>
   `;
 
-  initAreaFocusToggle();
+  initAreaFocusToggle(user);
   initThemeToggle();
   ensureLogSidebar(app);
   initLogSidebarToggle();
@@ -1946,12 +2068,10 @@ function openImportHelpModal(title = "Importera") {
   backdrop.innerHTML = `
     <div class="modal">
       <h2>${title}</h2>
-      <p class="note">Importen görs via Excel-mallen som hör till vyn.</p>
+      <p class="note">Importen kan göras via Excel-mallen eller direkt i vyn.</p>
       <ol class="import-help-list">
-        <li>Ladda ner importmallen.</li>
-        <li>Fyll i värdena i filen utan att ändra rubrikerna.</li>
-        <li>Spara Excel-filen.</li>
-        <li>Klicka på Importera Excel och välj filen.</li>
+        <li>Excel: ladda ner mallen, fyll i värdena utan att ändra rubrikerna och välj filen med Importera Excel.</li>
+        <li>Direkt i vyn: öppna flera nya rader, fyll tabellen och skapa.</li>
       </ol>
       <p class="note">Efter importen visas hur många rader som skapades och vilka rader som hoppades över.</p>
       <div class="actions">
@@ -1966,6 +2086,162 @@ function setupImportHelpButton(buttonId, title = "Importera") {
   const button = document.getElementById(buttonId);
   if (!button) return;
   button.addEventListener("click", () => openImportHelpModal(title));
+}
+
+function modalEnterTargetButton(modal) {
+  return modal.querySelector("[data-enter-default]:not(:disabled)")
+    || modal.querySelector(".actions button.primary:not(:disabled)")
+    || modal.querySelector("button.primary:not(:disabled)");
+}
+
+function shouldIgnoreModalEnterTarget(target) {
+  if (!target) return true;
+  if (target.closest("button, [role='button'], a[href]")) return true;
+  if (target.closest("[contenteditable='true']")) return true;
+  if (target.matches("textarea")) return true;
+  if (target.matches("input[type='checkbox'], input[type='radio']")) return true;
+  return false;
+}
+
+function handleModalEnterKeydown(event) {
+  if (event.key !== "Enter" || event.repeat || event.isComposing) return;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const modal = event.target?.closest?.(".modal");
+  if (!modal || shouldIgnoreModalEnterTarget(event.target)) return;
+  const button = modalEnterTargetButton(modal);
+  if (!button) return;
+  event.preventDefault();
+  button.click();
+}
+
+document.addEventListener("keydown", handleModalEnterKeydown);
+
+function bulkImportOptionHtml(option) {
+  const normalized = typeof option === "string" ? { value: option, label: option } : option;
+  return `<option value="${escapeHtml(normalized.value ?? "")}">${escapeHtml(normalized.label ?? normalized.value ?? "")}</option>`;
+}
+
+function bulkImportControlHtml(column) {
+  const key = escapeHtml(column.key);
+  const label = escapeHtml(column.label || column.key);
+  if (column.type === "select") {
+    return `
+      <select data-bulk-key="${key}" aria-label="${label}">
+        <option value=""></option>
+        ${(column.options || []).map(bulkImportOptionHtml).join("")}
+      </select>
+    `;
+  }
+  if (column.type === "number") {
+    return `<input data-bulk-key="${key}" type="number" step="${escapeHtml(column.step || 1)}" aria-label="${label}" />`;
+  }
+  return `<input data-bulk-key="${key}" type="text" autocomplete="off" aria-label="${label}" />`;
+}
+
+function collectBulkImportRows(tbody, columns) {
+  const rows = [];
+  tbody.querySelectorAll("tr").forEach((tr) => {
+    const row = {};
+    let hasValue = false;
+    columns.forEach((column) => {
+      const input = tr.querySelector(`[data-bulk-key="${column.key}"]`);
+      const value = String(input?.value || "").trim();
+      row[column.key] = value;
+      if (value) hasValue = true;
+    });
+    if (hasValue) rows.push(row);
+  });
+  return rows;
+}
+
+function refreshBulkImportRowNumbers(tbody) {
+  tbody.querySelectorAll("tr").forEach((tr, index) => {
+    const cell = tr.querySelector(".bulk-import-row-number");
+    if (cell) cell.textContent = String(index + 1);
+  });
+}
+
+function openBulkImportGrid({ title, columns, submitLabel = "Skapa", initialRows = 8, onSubmit }) {
+  const safeColumns = Array.isArray(columns) ? columns : [];
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide bulk-import-modal">
+      <h2>${escapeHtml(title || "Flera nya rader")}</h2>
+      <div class="modal-table-scroll bulk-import-scroll">
+        <table class="bulk-import-table">
+          <thead>
+            <tr>
+              <th class="bulk-import-row-number">#</th>
+              ${safeColumns.map((column) => `<th>${escapeHtml(column.label || column.key)}</th>`).join("")}
+              <th class="bulk-import-actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="actions bulk-import-footer">
+        <div class="bulk-import-actions-left">
+          <button type="button" id="bulk-import-add">+ Lägg till rad</button>
+          <button type="button" id="bulk-import-prune">Ta bort tomma</button>
+        </div>
+        <button type="button" id="bulk-import-cancel">Avbryt</button>
+        <button type="button" class="primary" id="bulk-import-submit">${escapeHtml(submitLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  const tbody = backdrop.querySelector("tbody");
+  const addRow = () => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="bulk-import-row-number"></td>
+      ${safeColumns.map((column) => `<td>${bulkImportControlHtml(column)}</td>`).join("")}
+      <td class="bulk-import-actions">
+        <button type="button" class="bulk-import-remove" title="Ta bort rad" aria-label="Ta bort rad">&times;</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector(".bulk-import-remove").addEventListener("click", () => {
+      if (tbody.querySelectorAll("tr").length <= 1) return;
+      tr.remove();
+      refreshBulkImportRowNumbers(tbody);
+    });
+    refreshBulkImportRowNumbers(tbody);
+  };
+
+  for (let index = 0; index < Math.max(1, Number(initialRows) || 8); index += 1) {
+    addRow();
+  }
+
+  backdrop.querySelector("#bulk-import-add").addEventListener("click", addRow);
+  backdrop.querySelector("#bulk-import-prune").addEventListener("click", () => {
+    tbody.querySelectorAll("tr").forEach((tr) => {
+      const hasValue = safeColumns.some((column) => {
+        const input = tr.querySelector(`[data-bulk-key="${column.key}"]`);
+        return String(input?.value || "").trim();
+      });
+      if (!hasValue && tbody.querySelectorAll("tr").length > 1) tr.remove();
+    });
+    refreshBulkImportRowNumbers(tbody);
+  });
+  backdrop.querySelector("#bulk-import-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#bulk-import-submit").addEventListener("click", async () => {
+    const submitButton = backdrop.querySelector("#bulk-import-submit");
+    const rows = collectBulkImportRows(tbody, safeColumns);
+    if (!rows.length) {
+      showToast("Fyll minst en rad.", "warn", 3000);
+      return;
+    }
+    submitButton.disabled = true;
+    try {
+      await onSubmit(rows);
+      backdrop.remove();
+    } catch (error) {
+      showToast(error.message || "Kunde inte importera raderna.", "error", 7000);
+      submitButton.disabled = false;
+    }
+  });
 }
 
 // ---- Date-selection persistence (sessionStorage) ----
@@ -2022,11 +2298,15 @@ window.canUseAllocationProcess = canUseAllocationProcess;
 window.readAreaFocus = readAreaFocus;
 window.writeAreaFocus = writeAreaFocus;
 window.areaFocusCode = areaFocusCode;
+window.areaFocusAreaId = areaFocusAreaId;
 window.areaFocusName = areaFocusName;
+window.setAreaFocusAreas = setAreaFocusAreas;
 window.preferredAreaIdFromFocus = preferredAreaIdFromFocus;
 window.compareActivitiesForAreaFocus = compareActivitiesForAreaFocus;
 window.comparePersonsForAreaFocus = comparePersonsForAreaFocus;
+window.setupSyncedHorizontalScroll = setupSyncedHorizontalScroll;
 window.setupImportHelpButton = setupImportHelpButton;
+window.openBulkImportGrid = openBulkImportGrid;
 window.appendAppLog = appendAppLog;
 window.clearAllUploadedFiles = clearAllUploadedFiles;
 window.sharedAllocationUploads = {

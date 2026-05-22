@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -34,14 +36,17 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="leader")
     roles: Mapped[list[str] | None] = mapped_column(JsonField)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    business: Mapped["Business | None"] = relationship(back_populates="users")
 
-class Area(Base):
-    __tablename__ = "areas"
+
+class Business(Base):
+    __tablename__ = "businesses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
@@ -49,6 +54,26 @@ class Area(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    users: Mapped[list[User]] = relationship(back_populates="business")
+    areas: Mapped[list["Area"]] = relationship(back_populates="business")
+    persons: Mapped[list["Person"]] = relationship(back_populates="business")
+    activities: Mapped[list["Activity"]] = relationship(back_populates="business")
+
+
+class Area(Base):
+    __tablename__ = "areas"
+    __table_args__ = (
+        UniqueConstraint("business_id", "code", name="uq_areas_business_code"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    business: Mapped[Business | None] = relationship(back_populates="areas")
     persons: Mapped[list["Person"]] = relationship(back_populates="home_area")
     activities: Mapped[list["Activity"]] = relationship(back_populates="area")
 
@@ -57,6 +82,7 @@ class Person(Base):
     __tablename__ = "persons"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     home_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     home_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
@@ -70,14 +96,19 @@ class Person(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    business: Mapped[Business | None] = relationship(back_populates="persons")
     home_area: Mapped[Area | None] = relationship(back_populates="persons")
 
 
 class Activity(Base):
     __tablename__ = "activities"
+    __table_args__ = (
+        UniqueConstraint("business_id", "code", name="uq_activities_business_code"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    code: Mapped[str] = mapped_column(String(40), nullable=False)
     label: Mapped[str] = mapped_column(String(60), nullable=False)
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     summary_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
@@ -87,6 +118,7 @@ class Activity(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     required_competency: Mapped[str | None] = mapped_column(String(40))
 
+    business: Mapped[Business | None] = relationship(back_populates="activities")
     area: Mapped[Area | None] = relationship(back_populates="activities")
 
 
@@ -136,6 +168,7 @@ class AuditLog(Base):
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
     entity_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -147,7 +180,11 @@ class AuditLog(Base):
 
 class AppSetting(Base):
     __tablename__ = "app_settings"
+    __table_args__ = (
+        UniqueConstraint("business_id", "key", name="uq_app_settings_business_key"),
+    )
 
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), primary_key=True)
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

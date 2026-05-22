@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandelser
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [anvandare, handelser, toast, state, chat]
 ---
 
@@ -18,9 +18,11 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Saknar vybehorighet | Toast "Sidan kraver behorighet" och redirect | Rollen har inte `view` pa vyn | Be admin/Super User andra Vybehorigheter. Vanlig anvandare kan normalt inte gora det sjalv. |
 | Saknar redigeringsbehorighet | Knapp dold/disabled eller toast | Rollen har bara `view` | Be om `edit` for vyn eller anvand laslage. |
 | Server kan inte nas | "Kunde inte ansluta till servern..." | Backend nere, fel adress eller appen oppnad som fil | Oppna ratt URL/starta lokal server/kontrollera natverk. |
+| API-fel loggas | Ingen extra UI-storning | Frontend far 4xx/5xx eller natverksfel fran API | Felet rapporteras tyst som `client_error` nar anvandaren ar inloggad, sa Super User kan felsoka i Historik > Felkoder. |
 | Tema andras | Ikon/vy byter ljust/morkt | Tema sparas lokalt | Inget fel; per enhet/browser. |
 | Sidebar kollapsas | Bara ikoner syns | Anvandaren klickade hamburgare | Klicka hamburgare igen. |
-| Omradesfokus andras | Listor/filter prioriterar annat omrade | MG/GG/AS/EH/Alla toggle | Vaxla fokus nere i sidebar. |
+| Omradesfokus andras | Berorda vyer filtreras till valt omrade eller alla | MG/GG/AS/EH/Alla toggle | Vaxla fokus nere i sidebar. Bemanning och Oversikt anvander bakgrundscache for snabb vaxling nar perioden redan ar hamtad. `∞` visar alla synliga omraden. |
+| Enter i dialogruta | Primar knapp klickas | Fokus ligger i en modal och anvandaren trycker Enter | Anvands for att spara, skapa eller stanga. Shift+Enter och flerradiga textfalt paverkas inte. |
 | Apphjalp oppnas/stangs | Liten chattpanel visas eller doljs | Anvandaren klickar pratbubbelikonen under omradesfokus | Panelen kan vara oppen medan anvandaren navigerar. |
 | Apphjalp skickar fraga | Fragan laggs i dialogen och svar hamtas | Anvandaren trycker Enter i textfaltet eller klickar `Skicka` | `Shift+Enter` ger ny rad om anvandaren vill skriva flera rader. |
 
@@ -34,7 +36,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Losenord matchar inte | "Losenorden matchar inte" | Bekraftelse skiljer sig | Skriv samma losenord i bada falt. |
 | Losenord redan skapat | "Losenord ar redan skapat" | Konto forsoker set-password trots att det redan finns | Logga in vanligt eller aterstall via adminflode. |
 
-## flow
+## Bemanning
 
 | Handelse | Text/reaktion | Orsak | Atgard |
 | --- | --- | --- | --- |
@@ -56,7 +58,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Read-only | "Visningslage: du kan se oversikten men inte andra den." | Rollen har bara `view` | Be om edit-atkomst. |
 | Blandad dag confirm | "Denna dag har flera olika aktiviteter. Skriv over med samma varde?" | Dagen har flera aktiviteter/segment | OK skriver over hela dagen; Avbryt bevarar. |
 | Drag for stort | "For manga celler (max 100)" | For manga dagceller markerade | Dela upp draget. |
-| Heldag sparad | "Bemannade X h, tog bort Y h" | Oversikt skrev/tomde dag enligt mall | Kontrollera flow om timmarna ser ovantade ut. |
+| Heldag sparad | "Bemannade X h, tog bort Y h" | Oversikt skrev/tomde dag enligt mall | Kontrollera Bemanning om timmarna ser ovantade ut. |
 | Drag klar med fel | "Drag klar: skrev X h, tog bort Y h, Z fel" | Bulk gjorde vissa dagar men inte alla | Kontrollera dagarna som inte andrades. |
 
 ## Register: personer, aktiviteter, anvandare
@@ -70,7 +72,8 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Kort losenord | "Losenord maste vara minst 8 tecken" | Admin anger for kort losenord | Ange minst 8 tecken eller lamna tomt. |
 | Import skapade rader | "X importerades" | Import lyckades | Kontrollera listan. |
 | Import hoppade rader | "X importerades. Y rad(er) hoppades over." | Delvis import med radfel | Oppna resultatmodal och korrigera. |
-| Import tom | "Excel-filen inneholl inga..." | Filen hade inga giltiga rader | Kontrollera rubrikrad och innehall. |
+| Direktimport utan rader | "Fyll minst en rad." | Anvandaren klickade skapa i direkttabellen utan ifyllda rader | Fyll minst en rad eller avbryt. |
+| Import tom | "Importen inneholl inga..." | Filen eller direkttabellen hade inga giltiga rader | Kontrollera rubrikrad/innehall eller fyll direkttabellen. |
 | Ta bort confirm | "Ta bort ... permanent?" | UI-confirm fore soft delete | Trots texten inaktiveras objektet i backend. |
 | Sista admin stoppas | "Det maste finnas minst en aktiv administrator kvar" | Skyddsregel | Skapa/aktivera annan admin forst. |
 
@@ -104,8 +107,8 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Okant flode | "Okant flode: ..." | Frontend/backend-katalog ur synk | Ladda om, kontrollera deploy/version. |
 | Resultatet hittades inte | "Resultatet hittades inte (kor flodet igen)" | Resultatsession saknas/stadad | Kor flodet igen. |
 | Saknar Excel-skrivare | "Saknar Excel-skrivare..." | Servermiljo saknar openpyxl/xlsxwriter | Anvand CSV eller installera beroende. |
-| Eftersok saknar input | "Ange bade inkopsnummer och artikelnummer." | Obligatoriska textfalt saknas | Fyll bada. |
-| Eftersok saknar logg | "Mottagningslogg kravs." | Mottagningslogg saknas | Lagg in `v_ask_receive_log`. |
+| Excel oppnas | "Excel oppnas" | `/open-excel` skapade filen och skickade oppningskommando till OS | Vanta pa Excel eller kontrollera aktivitetsfaltet. |
+| Excel kunde inte oppnas | "Kunde inte oppna Excel-filen automatiskt..." | OS/Excel kunde inte starta filen eller exporten misslyckades | Kor om flodet, kontrollera lokal Excel-installation eller anvand CSV. |
 | Dela saknar varden | "Inga varden angivna..." | Tom textarea/fil | Klistra in varden eller valj textfil. |
 
 ## Desktop

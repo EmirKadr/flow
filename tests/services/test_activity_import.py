@@ -15,11 +15,12 @@ from app.backend.routers.activities import (
     delete_activity,
     download_import_template,
     import_activities,
+    import_activity_rows,
     list_activities,
     parse_activity_import_excel,
     update_activity,
 )
-from app.backend.schemas import ActivityCreate, ActivityUpdate
+from app.backend.schemas import ActivityCreate, ActivityImportRowInput, ActivityImportRowsRequest, ActivityUpdate
 
 
 def workbook_bytes(rows):
@@ -74,12 +75,12 @@ def test_build_activity_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_activity_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet["A1"].value, sheet["B1"].value, sheet["C1"].value, sheet["D1"].value, sheet["E1"].value] == [
+    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+        "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
         "sortering (frivillig)",
-        None,
     ]
 
 
@@ -166,17 +167,18 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     workbook = load_workbook(io.BytesIO(response.body))
     assert workbook.active.title == "Aktiviteter"
     sheet = workbook.active
-    assert [sheet.cell(1, column).value for column in range(1, 5)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+        "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
         "sortering (frivillig)",
     ]
 
-    sheet.append(["Test utan frivilligt", "GG", None, None])
-    sheet.append(["Test med allt", "MG", "Ledigt", 42])
-    sheet.append(["Test bara summeras", None, "Ledigt", None])
-    sheet.append(["Test bara sortering", "GG", None, 77])
+    sheet.append([None, "Test utan frivilligt", "GG", None, None])
+    sheet.append([None, "Test med allt", "MG", "Ledigt", 42])
+    sheet.append([None, "Test bara summeras", None, "Ledigt", None])
+    sheet.append([None, "Test bara sortering", "GG", None, 77])
     stream = io.BytesIO()
     workbook.save(stream)
 
@@ -208,6 +210,31 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     for activity in imported.values():
         assert activity.category == "work"
         assert activity.color == "#ffffff"
+
+
+def test_import_activity_rows_creates_from_direct_table(import_db):
+    gg, _mg, summary, admin, _staffing = seed_activity_import_base(import_db)
+
+    result = import_activity_rows(
+        ActivityImportRowsRequest(
+            rows=[
+                ActivityImportRowInput(label="Direkt plock", area="GG", summary_activity="Ledigt", sort_order="31"),
+                ActivityImportRowInput(label="Direkt plock", area="GG"),
+            ]
+        ),
+        db=import_db,
+        admin=admin,
+    )
+
+    assert result.created == 1
+    assert result.skipped == 1
+    assert result.errors[0].row == 2
+    assert result.errors[0].error == "Dubblett i tabellen"
+    activity = import_db.query(Activity).filter(Activity.label == "Direkt plock").one()
+    assert activity.area_id == gg.id
+    assert activity.summary_activity_id == summary.id
+    assert activity.sort_order == 31
+    assert activity.category == "work"
 
 
 def test_bemanningsansvarig_can_manage_activities(import_db):

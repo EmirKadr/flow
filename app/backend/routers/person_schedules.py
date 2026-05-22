@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
+from ..business_scope import scoped_get
 from ..deps import get_db, require_view_access
 from ..models import Person, PersonScheduleTemplate, User
 from ..schemas import TemplateDay, TemplateOut, TemplateUpdate
@@ -67,11 +68,9 @@ def _template_rows(db: Session, person_id: int) -> list[PersonScheduleTemplate]:
 def get_schedule(
     person_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_view_access("persons", "view")),
+    user: User = Depends(require_view_access("persons", "view")),
 ) -> TemplateOut:
-    person = db.get(Person, person_id)
-    if not person:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
+    person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
 
     return TemplateOut(
         person_id=person_id,
@@ -87,9 +86,7 @@ def put_schedule(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("persons", "edit")),
 ) -> TemplateOut:
-    person = db.get(Person, person_id)
-    if not person:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
+    person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
 
     seen = set()
     for day in payload.days:

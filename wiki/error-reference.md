@@ -7,7 +7,7 @@ tags: [felkoder, http, support, api, chat]
 
 # Felkoder och felmeddelanden
 
-Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statuskod + text oversattas till enkel atgard. Den har sidan ar referensen.
+Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statuskod + text oversattas till enkel atgard. Super User kan se vanliga anvandartraffade fel i Historik > Felkoder.
 
 ## HTTP/statuskoder i appen
 
@@ -53,9 +53,9 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | 403 | "Super User required" | Endpoint kraver super user | Ge super-user-roll/vyatkomst. |
 | 403 | "Sidan kraver ..." | Rollens vyatkomst racker inte | Be admin/Super User andra Vybehorigheter; vanlig anvandare kan normalt inte gora det sjalv. |
 | 403 | "Visningsrollen kan inte andra bemanningen" | Viewer forsoker spara | Anvand edit-roll. |
-| 403 | "Bearbeta kraver Super User" | Lagerprocessflode utan processbehorighet | Be Super User kora Bearbeta eller anvand sjalvservicefloden som Dela/Harleda om de racker. |
+| 403 | "Bearbeta kraver Super User" | Lagerprocessflode utan processbehorighet | Be Super User kora Bearbeta eller anvand sjalvserviceflodet Dela om det racker. |
 
-## flow och schema
+## Bemanning och schema
 
 | Status | Text | Orsak | Atgard |
 | --- | --- | --- | --- |
@@ -76,7 +76,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 
 | Status | Text | Orsak | Atgard |
 | --- | --- | --- | --- |
-| 400 | Dag/person saknar schematimmar | Heldagsandring pa person utan mall/timmis | Satt veckomall eller planera i flow. |
+| 400 | Dag/person saknar schematimmar | Heldagsandring pa person utan mall/timmis | Satt veckomall eller planera i Bemanning. |
 | 400 | "For manga dagar (max 100)" | Drag over for manga dagceller | Dela upp draget. |
 | 404 | "Person ... hittades inte" | Person saknas | Ladda om. |
 | 404 | "Aktivitet ... hittades inte" | Aktivitet saknas | Ladda om. |
@@ -90,8 +90,10 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | Personimport | 400 | "Excel-filen maste ha kolumnen namn" | Obligatorisk rubrik saknas | Lagg till `namn`. |
 | Personimport | 400 | "Excel-filen kunde inte lasas" | Fel format/skadad fil | Spara om som `.xlsx`. |
 | Personimport | 413 | "Excel-filen ar for stor" | Over maxstorlek | Dela upp filen. |
+| Personimport | Resultatmodal | "Dubblett i tabellen" | Samma namn finns flera ganger i direktimporten | Ta bort eller andra en av raderna. |
 | Personer | 409 | "Person med samma namn finns redan" | Dubblett | Andra namn eller uppdatera befintlig. |
 | Aktivitetsimport | 400 | "Excel-filen maste ha kolumnen etikett" | Obligatorisk rubrik saknas | Anvand mall. |
+| Aktivitetsimport | Resultatmodal | "Dubblett i tabellen" | Samma etikett finns flera ganger i direktimporten | Ta bort eller andra en av raderna. |
 | Aktiviteter | 403 | "Endast Super User kan ange/andra aktivitetskod" | Icke-super-user forsoker kod | Lat Super User andra kod. |
 | Aktiviteter | 400 | "Aktivitetskod saknar giltiga tecken" | Kod blir tom/ogiltig efter normalisering | Anvand bokstaver/siffror/giltiga tecken. |
 | Aktiviteter | 409 | "Aktivitet med samma kod finns redan" | Kod dubblett | Valj annan kod. |
@@ -99,6 +101,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | Aktiviteter | 409 | "Summeringskoppling skapar en loop" | A summeras som B och B tillbaka till A | Bryt kedjan. |
 | Omraden | 409 | "Omrade med samma kod finns redan" | Dubblettkod | Valj annan kod. |
 | Anvandare | 400 | "Excel-filen maste ha kolumnerna anvandarnamn, namn och roll" | Importmall foljs inte | Anvand mall. |
+| Anvandare | Resultatmodal | "Dubblett i tabellen" | Samma anvandarnamn finns flera ganger i direktimporten | Ta bort eller andra en av raderna. |
 | Anvandare | 403 | "Endast Super User kan andra Super User-rollen" | Icke-super-user andrar super_user | Lat Super User gora andringen. |
 | Anvandare | 409 | "Anvandarnamnet anvands redan" | Dubblett username | Valj annat anvandarnamn. |
 | Anvandare | 409 | "Det maste finnas minst en aktiv administrator kvar" | Sista admin skyddas | Skapa/aktivera annan admin forst. |
@@ -140,14 +143,13 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | Status | Text | Orsak | Atgard |
 | --- | --- | --- | --- |
 | 400 | `message` fran flode | Flodet saknar input eller data ar fel | Las texten och kontrollera kravda filer/falt. |
-| 403 | "Bearbeta kraver Super User" | Roll saknar processatkomst | Anvand Super User eller Dela/Harleda. |
+| 403 | "Bearbeta kraver Super User" | Roll saknar processatkomst | Anvand Super User eller Dela. |
 | 404 | "Okant flode: ..." | Flode saknas i backend | Ladda om, kontrollera version. |
 | 404 | "Resultatet hittades inte..." | Resultatsession saknas | Kor flodet igen. |
 | 404 | "Kolumnen hittades inte." | Tabellen saknar begard kolumn | Ladda om/kor om flode. |
+| 500 | "Kunde inte oppna Excel-filen automatiskt..." | Excel-filen kunde skapas men OS/Excel-starten misslyckades, eller Excel-exporten stoppades av fil-/bladnamn/beroende | Las feltoast/serverlogg, kor om flodet och testa CSV om Excel inte kan startas lokalt. |
 | 503 | Lagerverktyg unavailable payload | Motor/beroenden kunde inte laddas | Kontrollera serverlogg och `warehouse_tools`. |
 | Runtime | "Saknar Excel-skrivare..." | `openpyxl`/`xlsxwriter` saknas | Ladda ner CSV eller installera beroende. |
-| Flode | "Ange bade inkopsnummer och artikelnummer." | Harleda saknar textfalt | Fyll bada. |
-| Flode | "Mottagningslogg kravs." | Harleda saknar receive-logg | Lagg in `v_ask_receive_log`. |
 | Flode | "Ange minst en prognosfil eller en kampanjfil." | Prognosrapport saknar input | Lagg in prognos/kampanj. |
 | Flode | "Saldo/automation kravs..." | Prognosrapport saknar saldo | Lagg in Saldo ink. Automation. |
 | Flode | "Inga varden angivna..." | Dela saknar lista | Klistra in eller ladda textfil. |

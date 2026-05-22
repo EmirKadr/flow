@@ -5,7 +5,6 @@ let productivityTargetsSignature = "";
 let productivityDataset = null;
 let productivityDatasetSignature = "";
 let productivityDatasetPromise = null;
-let productivityGroupFilterManual = false;
 
 const productivityReportCache = new Map();
 const productivityReportRequests = new Map();
@@ -349,8 +348,7 @@ function resetLocalProductivityDataset() {
 }
 
 function activeGroupFilter() {
-  const select = document.getElementById("productivityGroupFilter");
-  return select.value || preferredProductivityGroupFilter();
+  return preferredProductivityGroupFilter();
 }
 
 function activeSearch() {
@@ -1080,12 +1078,6 @@ function prefetchAdjacentReports(report) {
 }
 
 function renderGroupFilter(report) {
-  const select = document.getElementById("productivityGroupFilter");
-  const current = productivityGroupFilterManual ? (select.value || "all") : preferredProductivityGroupFilter();
-  select.innerHTML = '<option value="all">Alla</option>' + (report.groups || [])
-    .map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`)
-    .join("");
-  select.value = Array.from(select.options).some((option) => option.value === current) ? current : "all";
 }
 
 function renderSection(section, hours, search) {
@@ -1229,12 +1221,7 @@ async function handleProductivityUploadsCleared() {
   });
   document.getElementById("productivityPrevDate").addEventListener("click", () => shiftProductivityDate(-1));
   document.getElementById("productivityNextDate").addEventListener("click", () => shiftProductivityDate(1));
-  document.getElementById("productivityGroupFilter").addEventListener("change", () => {
-    productivityGroupFilterManual = true;
-    renderContent();
-  });
   window.addEventListener("flow:areaFocusChanged", () => {
-    productivityGroupFilterManual = false;
     if (productivityReport) {
       renderGroupFilter(productivityReport);
       renderContent();

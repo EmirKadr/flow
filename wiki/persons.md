@@ -1,7 +1,7 @@
 ---
 title: Personer
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [personer, register, ui, import]
 ---
 
@@ -13,7 +13,8 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 
 | Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- |
-| Ny person | Oppnar modal | Skapar person med namn, hemomrade, huvudaktivitet, sortering | `POST /api/persons` | Namn kravs; dubblettnamn stoppas av backend. |
+| Ny person | Oppnar modal | Skapar person med namn, hemomrade, huvudaktivitet, sortering och verksamhet for Super User | `POST /api/persons` | Namn kravs; dubblettnamn stoppas inom verksamheten. |
+| Flera nya personer | Oppnar tabellmodal | Skapar flera personer direkt i appen med samma falt som importmallen | `POST /api/persons/import-rows` | Tomma rader ignoreras; dubbletter och okand verksamhet visas i resultatmodal. |
 | Ladda ner importmall | Laddar Excelmall | Hamter mall | `GET /api/persons/import-template` | Knappen dolds utan importbehorighet. |
 | Importera Excel | Oppnar filval | Skickar vald `.xlsx` | `POST /api/persons/import` | Max 5 MB; dubbletter stoppar import. |
 | Hjalp med import | Oppnar hjalpmodal | Visar generell importhjalp | `setupImportHelpButton` | Ingen serverkoppling. |
@@ -32,6 +33,7 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 Falt:
 
 - Namn.
+- Verksamhet, bara for Super User nar den inte kan harledas.
 - Hemomrade.
 - Huvudaktivitet.
 - Sortering.
@@ -55,17 +57,19 @@ Funktioner:
 
 ## Importregler
 
+- Direktimporten `Flera nya personer` har samma falt som Excelmallen: verksamhet vid behov, namn, hemomrade, huvudaktivitet och sortering.
 - Excelimport matchar svenska och alternativa rubriker.
+- Vanliga anvandare importerar alltid till egen verksamhet. Super User kan ange verksamhet med kod, namn eller id, eller lata omrade/aktivitet harleda den.
 - Import skapar aktiva personer.
-- Dubbletter i fil eller mot befintliga personer stoppar importen.
+- Dubbletter i fil, i direkttabellen eller mot befintliga personer stoppar importen.
 - Resultatmodal visar skapade och hoppade rader.
 
 ## Felsokningssvar for framtida chat
 
 | Fraga | Svar |
 | --- | --- |
-| "Varfor syns inte Importera Excel?" | Anvandaren saknar edit-atkomst till `personImport`. |
-| "Varfor gick importen inte igenom?" | Kontrollera filstorlek, rubriker och dubbletter. Resultatmodalen listar radfel. |
+| "Varfor syns inte importknapparna?" | Anvandaren saknar edit-atkomst till `personImport`. |
+| "Varfor gick importen inte igenom?" | Kontrollera filstorlek/rubriker vid Excel, eller radfel och dubbletter i resultatmodalen vid direktimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
 | "Varfor forsvann personen?" | Ta bort inaktiverar personen. Hamta med `include_inactive=true` for att se den. |
 
@@ -75,4 +79,3 @@ Funktioner:
 - `../app/frontend/js/persons.js`
 - `../app/backend/routers/persons.py`
 - `../app/backend/routers/person_schedules.py`
-

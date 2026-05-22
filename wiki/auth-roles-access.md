@@ -1,13 +1,13 @@
 ---
 title: Roller och behorighet
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [auth, roller, behorighet]
 ---
 
 # Roller och behorighet
 
-Kort svar: inloggning ar sessionsbaserad. Roller styr vad anvandaren ser och far redigera. Nyare klienter anvander `roles` som lista, men `role` finns kvar for bakatkompatibilitet.
+Kort svar: inloggning ar sessionsbaserad. Roller styr vad anvandaren ser och far redigera, och verksamhet styr vilken data anvandaren ens kan se. Nyare klienter anvander `roles` som lista, men `role` finns kvar for bakatkompatibilitet.
 
 ## Inloggningsflode
 
@@ -16,19 +16,29 @@ Kort svar: inloggning ar sessionsbaserad. Roller styr vad anvandaren ser och far
 3. Om anvandaren saknar/far satt forsta losenord markeras `must_change_password`.
 4. Klienten skickar anvandaren till `set-password.html` om losenord maste skapas.
 5. Varje skyddad sida anropar `/api/auth/me` via `initPage`.
-6. `401` leder till `login.html`; `403 password_setup_required` leder till `set-password.html`.
+6. `/api/auth/me` returnerar aven `business_id`, verksamhetskod, verksamhetsnamn och Super User-status.
+7. `401` leder till `login.html`; `403 password_setup_required` leder till `set-password.html`.
+
+## Verksamhetsscope
+
+- Alla icke-Super Users, aven admins, ar lasta till sin egen verksamhet.
+- Stigamo-anvandare ser Stigamo-data och far omradestoggle for Stigamos omraden plus `∞` som betyder alla Stigamo-omraden.
+- R3-anvandare ser bara R3 och far bara R3-toggle.
+- Super User kan se alla verksamheter. I sidebar betyder `∞` globalt allt for Super User.
+- Vid skapande/import behover vanliga anvandare inte ange verksamhet; backend anvander anvandarens verksamhet. Super User maste valja verksamhet om den inte kan harledas fran omrade, person eller aktivitet.
+- API ska svara 404/403 for frammande id utan att exponera den andra verksamhetens data.
 
 ## Roller
 
 | Roll | Svensk etikett | Typisk atkomst |
 | --- | --- | --- |
-| `leader` | Arbetsledare | Redigera flow/Oversikt och normalt Personer/Aktiviteter |
+| `leader` | Arbetsledare | Redigera Bemanning/Oversikt och normalt Personer/Aktiviteter |
 | `staffing_manager` | Bemanningsansvarig | Liknar arbetsledare med planeringsansvar |
 | `admin` | Administrator | Register, anvandare och settings, men inte automatiskt super user |
 | `super_user` | Super User | Kravs for historik och produktivitet enligt skyddade vyer/API |
-| `warehouse_clerk` | Lagerkontorist | Lagerverktyg, framfor allt uppladdning, Dela och Harleda |
+| `warehouse_clerk` | Lagerkontorist | Lagerverktyg, framfor allt uppladdning och Dela |
 | `article_placer` | Artikelplacerare | Lagerverktyg med liknande sjalvservicebehov |
-| `viewer` | Visning | Laslage for flow/Oversikt |
+| `viewer` | Visning | Laslage for Bemanning/Oversikt |
 
 ## Vyatkomst
 
@@ -41,17 +51,17 @@ Apphjalpens LLM-prompt far en begransad supportkontext om inloggad anvandare: ro
 Vyer som kan styras:
 
 - `schedule`, `overview`, `productivity`, `dataFetch`
-- `allocationUploads`, `allocationProcess`, `allocationSplit`, `allocationTrace`
+- `allocationUploads`, `allocationProcess`, `allocationSplit`
 - `persons`, `personImport`
 - `activities`, `activityImport`, `areas`
 - `analytics`, `users`, `userImport`
-- `appSettings`, `sidebarLayout`, `roleAccess`
+- `appSettings`, `sidebarLayout`, `roleAccess`, `businesses`
 
 ## Read-only-lage
 
 Om anvandaren bara har `view`:
 
-- flow visar celler men sparar inte andringar.
+- Bemanning visar celler men sparar inte andringar.
 - Oversikt visar dagar men sparar inte andringar.
 - Knappar som kopiera/rensa kan vara disabled eller ge varning.
 - Toasten forklarar: "Visningslage: du kan se ... men inte andra den."
@@ -63,11 +73,12 @@ Om anvandaren bara har `view`:
 - Importknapp ar dold: importvyn saknar edit-atkomst.
 - Historik/Produktivitet nekas: kraver super user/vyatkomst.
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
-- Bearbeta saknas eller nekas: `allocationProcess` saknas i vyatkomst eller anvandaren ar inte Super User. Lagerroller har som standard Uppladdningar, Dela och Harleda, men inte Bearbeta.
+- Bearbeta saknas eller nekas: `allocationProcess` saknas i vyatkomst eller anvandaren ar inte Super User. Lagerroller har som standard Uppladdningar och Dela, men inte Bearbeta.
 
 ## Kallor
 
 - `../app/backend/deps.py`
+- `../app/backend/business_scope.py`
 - `../app/backend/user_access.py`
 - `../app/frontend/js/common.js`
 - `../app/frontend/js/users.js`

@@ -7,15 +7,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import Person, User
+from app.backend.models import Activity, Area, Person, User
 from app.backend.routers.persons import (
     build_person_import_template_excel,
     create_person,
     delete_person,
+    import_person_rows,
     parse_person_import_excel,
     update_person,
 )
-from app.backend.schemas import PersonCreate, PersonUpdate
+from app.backend.schemas import PersonCreate, PersonImportRowInput, PersonImportRowsRequest, PersonUpdate
 
 
 def workbook_bytes(rows):
@@ -32,7 +33,8 @@ def test_build_person_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_person_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet["A1"].value, sheet["B1"].value, sheet["C1"].value, sheet["D1"].value] == [
+    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+        "verksamhet (frivillig)",
         "namn (obligatorisk)",
         "hemomr\u00e5de (frivillig)",
         "huvudaktivitet (frivillig)",
@@ -121,6 +123,44 @@ def test_create_person_rejects_duplicate_name(person_db):
         create_person(PersonCreate(name=" anna andersson "), db=person_db, user=admin)
 
     assert exc.value.status_code == 409
+
+
+def test_import_person_rows_creates_from_direct_table(person_db):
+    admin = User(username="admin", role="admin", roles=["admin"], is_active=True)
+    area = Area(code="GG", name="Granngården", sort_order=1)
+    person_db.add_all([admin, area])
+    person_db.flush()
+    activity = Activity(
+        code="GG_PLOCK",
+        label="GG Plock",
+        area_id=area.id,
+        color="#bfdbfe",
+        category="work",
+        sort_order=2,
+        is_active=True,
+    )
+    person_db.add(activity)
+    person_db.flush()
+
+    result = import_person_rows(
+        PersonImportRowsRequest(
+            rows=[
+                PersonImportRowInput(name="Mira Multi", home_area="GG", home_activity="GG Plock", sort_order="7"),
+                PersonImportRowInput(name="Mira Multi", home_area="GG"),
+            ]
+        ),
+        db=person_db,
+        user=admin,
+    )
+
+    assert result.created == 1
+    assert result.skipped == 1
+    assert result.errors[0].row == 2
+    assert result.errors[0].error == "Dubblett i tabellen"
+    person = person_db.query(Person).filter(Person.name == "Mira Multi").one()
+    assert person.home_area_id == area.id
+    assert person.home_activity_id == activity.id
+    assert person.sort_order == 7
 
 
 def test_create_person_rejects_inactive_duplicate_name(person_db):

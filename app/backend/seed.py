@@ -8,8 +8,9 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from .business_scope import DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE, ensure_seed_businesses
 from .database import SessionLocal
-from .models import Activity, Area, Person, PersonScheduleTemplate, ScheduleCell, User
+from .models import Activity, AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, ScheduleCell, User
 from .security import hash_password
 
 
@@ -19,6 +20,10 @@ AREAS: list[dict] = [
     {"code": "AS", "name": "Autostore", "sort_order": 3},
     {"code": "EH", "name": "E-Handel", "sort_order": 4},
     {"code": "ANNAT", "name": "Annat", "sort_order": 9},
+]
+
+R3_AREAS: list[dict] = [
+    {"code": "R3", "name": "R3", "sort_order": 1},
 ]
 
 ACTIVITIES: list[dict] = [
@@ -77,29 +82,51 @@ PERSONS: list[str] = [
 ]
 
 
-def seed_areas(db: Session) -> dict[str, Area]:
+def _business_id(businesses: dict[str, Business] | None, code: str = DEFAULT_BUSINESS_CODE) -> int | None:
+    if not businesses:
+        return None
+    business = businesses.get(code)
+    return business.id if business is not None else None
+
+
+def backfill_existing_to_stigamo(db: Session, stigamo_id: int) -> None:
+    for model in (User, Area, Person, Activity, AuditLog):
+        db.query(model).filter(model.business_id.is_(None)).update(
+            {model.business_id: stigamo_id},
+            synchronize_session=False,
+        )
+    db.query(AppSetting).filter(AppSetting.business_id.is_(None)).update(
+        {AppSetting.business_id: stigamo_id},
+        synchronize_session=False,
+    )
+
+
+def seed_areas(db: Session, business: Business, specs: list[dict]) -> dict[str, Area]:
     by_code: dict[str, Area] = {}
-    for spec in AREAS:
-        area = db.query(Area).filter_by(code=spec["code"]).one_or_none()
+    for spec in specs:
+        area = db.query(Area).filter_by(business_id=business.id, code=spec["code"]).one_or_none()
         if area is None:
-            area = Area(**spec)
+            area = Area(**spec, business_id=business.id)
             db.add(area)
         else:
+            area.business_id = business.id
             area.name = spec["name"]
             area.sort_order = spec["sort_order"]
+            area.is_active = spec.get("is_active", True)
         by_code[spec["code"]] = area
     db.flush()
     return by_code
 
 
-def seed_activities(db: Session, areas: dict[str, Area]) -> None:
-    for spec in ACTIVITIES:
+def seed_activities(db: Session, business: Business, areas: dict[str, Area], specs: list[dict]) -> None:
+    for spec in specs:
         area_code = spec.get("area")
         area_id = areas[area_code].id if area_code else None
-        existing = db.query(Activity).filter_by(code=spec["code"]).one_or_none()
+        existing = db.query(Activity).filter_by(business_id=business.id, code=spec["code"]).one_or_none()
         payload = {
             "code": spec["code"],
             "label": spec["label"],
+            "business_id": business.id,
             "area_id": area_id,
             "color": spec["color"],
             "category": spec.get("category", "work"),
@@ -113,8 +140,9 @@ def seed_activities(db: Session, areas: dict[str, Area]) -> None:
                 setattr(existing, key, value)
 
 
-def seed_admin(db: Session) -> None:
-    if db.query(User).filter_by(username="admin").one_or_none() is None:
+def seed_admin(db: Session, business: Business) -> None:
+    admin = db.query(User).filter_by(username="admin").one_or_none()
+    if admin is None:
         db.add(
             User(
                 username="admin",
@@ -122,16 +150,19 @@ def seed_admin(db: Session) -> None:
                 display_name="Administratör",
                 role="admin",
                 roles=["admin"],
+                business_id=business.id,
             )
         )
+    elif admin.business_id is None:
+        admin.business_id = business.id
 
 
 def remove_duplicate_persons(db: Session) -> None:
-    keep_by_name: dict[str, int] = {}
+    keep_by_name: dict[tuple[int | None, str], int] = {}
     duplicate_ids: list[int] = []
     duplicate_people: list[Person] = []
     for person in db.query(Person).order_by(Person.id).all():
-        key = person.name.strip().lower()
+        key = (person.business_id, person.name.strip().lower())
         if key not in keep_by_name:
             keep_by_name[key] = person.id
             continue
@@ -150,22 +181,38 @@ def remove_duplicate_persons(db: Session) -> None:
         db.expunge(person)
 
 
-def seed_persons(db: Session, areas: dict[str, Area]) -> None:
+def seed_persons(db: Session, business: Business, areas: dict[str, Area]) -> None:
     gg = areas["GG"].id
-    gg_vm = db.query(Activity).filter_by(code="GG_VM").one_or_none()
+    gg_vm = db.query(Activity).filter_by(business_id=business.id, code="GG_VM").one_or_none()
     gg_vm_id = gg_vm.id if gg_vm else None
     for i, name in enumerate(PERSONS, start=1):
-        existing = db.query(Person).filter(func.lower(func.trim(Person.name)) == name.strip().lower()).one_or_none()
+        existing = (
+            db.query(Person)
+            .filter(Person.business_id == business.id)
+            .filter(func.lower(func.trim(Person.name)) == name.strip().lower())
+            .one_or_none()
+        )
         if existing is None:
-            db.add(Person(name=name, home_area_id=gg, home_activity_id=gg_vm_id, sort_order=i, competencies=[]))
+            db.add(
+                Person(
+                    name=name,
+                    business_id=business.id,
+                    home_area_id=gg,
+                    home_activity_id=gg_vm_id,
+                    sort_order=i,
+                    competencies=[],
+                )
+            )
         elif existing.home_area_id == gg and existing.home_activity_id is None:
             existing.home_activity_id = gg_vm_id
 
 
 def backfill_home_activities(db: Session) -> None:
-    activities_by_code = {activity.code: activity for activity in db.query(Activity).all()}
-    fallback_by_area: dict[int | None, Activity] = {}
-    for activity in sorted(activities_by_code.values(), key=lambda a: (a.sort_order, a.label)):
+    activities_by_business_code = {
+        (activity.business_id, activity.code): activity for activity in db.query(Activity).all()
+    }
+    fallback_by_area: dict[int, Activity] = {}
+    for activity in sorted(activities_by_business_code.values(), key=lambda a: (a.sort_order, a.label)):
         if activity.area_id is None or activity.category == "absence":
             continue
         fallback_by_area.setdefault(activity.area_id, activity)
@@ -176,7 +223,7 @@ def backfill_home_activities(db: Session) -> None:
         home_area = area_by_id.get(person.home_area_id)
         if home_area is None:
             continue
-        preferred = activities_by_code.get(f"{home_area.code}_VM")
+        preferred = activities_by_business_code.get((person.business_id, f"{home_area.code}_VM"))
         fallback = preferred or fallback_by_area.get(home_area.id)
         if fallback is not None:
             person.home_activity_id = fallback.id
@@ -185,11 +232,18 @@ def backfill_home_activities(db: Session) -> None:
 def run() -> None:
     db = SessionLocal()
     try:
-        areas = seed_areas(db)
-        seed_activities(db, areas)
-        seed_admin(db)
+        businesses = ensure_seed_businesses(db)
+        stigamo = businesses[DEFAULT_BUSINESS_CODE]
+        r3 = businesses[R3_BUSINESS_CODE]
+        backfill_existing_to_stigamo(db, stigamo.id)
+
+        stigamo_areas = seed_areas(db, stigamo, AREAS)
+        r3_areas = seed_areas(db, r3, R3_AREAS)
+        seed_activities(db, stigamo, stigamo_areas, ACTIVITIES)
+        seed_activities(db, r3, r3_areas, [spec for spec in ACTIVITIES if spec.get("category") == "absence"])
+        seed_admin(db, stigamo)
         remove_duplicate_persons(db)
-        seed_persons(db, areas)
+        seed_persons(db, stigamo, stigamo_areas)
         backfill_home_activities(db)
         db.commit()
         print("Seed OK")

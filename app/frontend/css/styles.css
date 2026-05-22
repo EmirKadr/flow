@@ -1486,6 +1486,22 @@ button.danger:hover { background: #fef2f2; border-color: #fecaca; }
   -ms-overflow-style: auto;
 }
 
+.synced-scrollbar-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  height: 14px;
+  margin: 0 0 6px;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+.synced-scrollbar-top[hidden] {
+  display: none !important;
+}
+.synced-scrollbar-spacer {
+  height: 1px;
+}
+
 table {
   border-collapse: separate;
   border-spacing: 0;
@@ -1512,6 +1528,137 @@ thead th {
 
 tbody tr:hover td { background: #fafbfd; }
 tbody tr:last-child td { border-bottom: none; }
+
+.business-row td {
+  background: var(--surface);
+}
+.business-areas-row td {
+  background: var(--surface-2);
+  padding: 12px 14px 16px;
+}
+.business-areas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.business-areas-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  background: var(--surface);
+}
+.business-areas-table {
+  box-shadow: none;
+  border: 0;
+  min-width: 680px;
+}
+.business-areas-table th,
+.business-areas-table td {
+  padding: 8px 12px;
+}
+.business-area-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.business-areas-empty {
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+@media (max-width: 700px) {
+  .businesses-table > thead {
+    display: none;
+  }
+  .businesses-table,
+  .businesses-table > tbody,
+  .businesses-table > tbody > tr,
+  .businesses-table > tbody > tr > td {
+    display: block;
+    width: 100%;
+  }
+  .businesses-table > tbody > tr.business-row {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .businesses-table > tbody > tr.business-row > td {
+    border: 0;
+    padding: 5px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .businesses-table > tbody > tr.business-row > td::before,
+  .business-areas-table td::before {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .businesses-table > tbody > tr.business-row > td:nth-child(1)::before { content: "Kod"; }
+  .businesses-table > tbody > tr.business-row > td:nth-child(2)::before { content: "Namn"; }
+  .businesses-table > tbody > tr.business-row > td:nth-child(3)::before { content: "Sortering"; }
+  .businesses-table > tbody > tr.business-row > td:nth-child(4)::before { content: "Aktiv"; }
+  .businesses-table > tbody > tr.business-row > td:nth-child(5)::before { content: ""; }
+  .businesses-table > tbody > tr.business-areas-row > td {
+    padding: 12px 14px 16px;
+  }
+  .business-areas-header {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .business-areas-table {
+    min-width: 0;
+  }
+  .business-areas-table thead {
+    display: none;
+  }
+  .business-areas-table,
+  .business-areas-table tbody,
+  .business-areas-table tr,
+  .business-areas-table td {
+    display: block;
+    width: 100%;
+  }
+  .business-areas-table tr {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .business-areas-table tr:last-child {
+    border-bottom: 0;
+  }
+  .business-areas-table td {
+    border: 0;
+    padding: 5px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .business-areas-table td:nth-child(1)::before { content: "Kod"; }
+  .business-areas-table td:nth-child(2)::before { content: "Namn"; }
+  .business-areas-table td:nth-child(3)::before { content: "Sortering"; }
+  .business-areas-table td:nth-child(4)::before { content: "Aktiv"; }
+  .business-areas-table td:nth-child(5)::before { content: ""; }
+  .business-area-actions {
+    justify-content: flex-start;
+    padding-top: 8px;
+  }
+}
 
 /* Åtgärdskolumn (sista td) – knappar på en rad utan radbryt */
 table.data td:last-child,
@@ -2034,6 +2181,54 @@ body.dragging-ov select { pointer-events: none; }
   margin-top: 14px;
 }
 
+.history-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  flex-wrap: wrap;
+}
+
+.history-mode-btn {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.history-mode-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.history-mode-btn.active {
+  background: var(--accent);
+  color: var(--white);
+}
+
+.history-panel[hidden] {
+  display: none;
+}
+
+.history-error-table {
+  margin-top: 14px;
+}
+
+@media (max-width: 700px) {
+  .history-mode-toggle {
+    width: 100%;
+  }
+  .history-mode-btn {
+    flex: 1 1 120px;
+  }
+}
+
 .stat-card {
   display: flex;
   flex-direction: column;
@@ -2323,6 +2518,58 @@ tr.filter-row input {
   border-radius: var(--r-sm);
 }
 .modal-table-scroll table { box-shadow: none; border: 0; }
+.bulk-import-modal {
+  width: min(980px, 94vw);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+.bulk-import-scroll {
+  max-height: min(58vh, 520px);
+}
+.bulk-import-table {
+  table-layout: fixed;
+  min-width: 760px;
+}
+.bulk-import-table th,
+.bulk-import-table td {
+  padding: 7px 8px;
+  vertical-align: middle;
+}
+.bulk-import-table th:first-child,
+.bulk-import-table td.bulk-import-row-number {
+  width: 42px;
+  text-align: center;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bulk-import-table th.bulk-import-actions,
+.bulk-import-table td.bulk-import-actions {
+  width: 44px;
+  text-align: center;
+}
+.bulk-import-table input,
+.bulk-import-table select {
+  width: 100%;
+  min-width: 0;
+}
+.bulk-import-remove {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+.bulk-import-footer {
+  flex-wrap: wrap;
+}
+.bulk-import-actions-left {
+  margin-right: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .modal .actions {
   margin-top: 20px;
   display: flex;
@@ -2985,31 +3232,87 @@ tr.filter-row input {
 .allocation-table-wrap {
   max-height: 430px;
 }
+.allocation-column-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: max-content;
+  white-space: nowrap;
+}
+.allocation-column-head span {
+  font-weight: 600;
+}
 .allocation-copy-column {
+  align-items: center;
   appearance: none;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
   background: transparent;
-  color: inherit;
-  display: inline;
-  font: inherit;
-  letter-spacing: inherit;
-  line-height: inherit;
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
   padding: 0;
-  text-align: inherit;
   text-decoration: none;
-  text-transform: inherit;
+  width: 28px;
   cursor: pointer;
 }
 .allocation-copy-column:hover,
 .allocation-copy-column:focus {
-  background: transparent;
-  color: inherit;
+  background: var(--bg-2);
+  color: var(--text);
   text-decoration: none;
 }
 .allocation-copy-column:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.allocation-copy-column svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.allocation-text-result-wrap {
+  position: relative;
+}
+.allocation-text-result-wrap .allocation-text-result {
+  padding-right: 54px;
+}
+.allocation-copy-text {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 34px;
+}
+.allocation-copy-text:hover,
+.allocation-copy-text:focus {
+  background: var(--bg-2);
+  color: var(--text);
+}
+.allocation-copy-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.allocation-copy-text svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 .allocation-text-result,
 .allocation-log {

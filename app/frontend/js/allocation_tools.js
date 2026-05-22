@@ -15,11 +15,9 @@ const ALLOCATION_FILE_WORDS = {
   not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
-  wms_receive: ["v_ask_receive_log", "receive_log", "mottagningslogg"],
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  wms_correct: ["v_ask_correct_log", "correct_log", "korrigeringslogg"],
   productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
   remote_file: ["observations", "observationer"],
   values_file: ["values", "varden", "värden"],
@@ -47,19 +45,17 @@ const ALLOCATION_SLOT_LABELS = {
   prognos: "Prognosfil",
   campaign: "Kampanjfil",
   max_csv: "artikel_max.csv",
-  wms_receive: "Mottagningslogg",
   wms_booking: "Inlagringslogg",
   wms_trans: "Transaktionslogg",
   wms_pick: "Plocklogg",
-  wms_correct: "Korrigeringslogg",
   productivity_pallet: "Palllastningslogg",
   remote_file: "Observationsfil",
   values_file: "Textfil med värden",
 };
 const ALLOCATION_SLOT_ORDER = [
   "orders", "buffer", "overview", "dispatch", "saldo", "items", "not_putaway",
-  "prognos", "campaign", "max_csv", "wms_receive", "wms_booking", "wms_trans",
-  "wms_pick", "productivity_pallet", "wms_correct", "remote_file", "values_file",
+  "prognos", "campaign", "max_csv", "wms_booking", "wms_trans", "wms_pick",
+  "productivity_pallet", "remote_file", "values_file",
 ];
 const PRODUCTIVITY_UPLOAD_SLOTS = [
   { key: "productivity_pallet", label: "Palllastningslogg", detect: [] },
@@ -76,6 +72,12 @@ const ALLOCATION_CORE_FILES = {
     sizeLabel: "Kärnfil",
   },
 };
+const ALLOCATION_COPY_ICON = `
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+    <rect x="8" y="8" width="10" height="10" rx="2"></rect>
+    <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+  </svg>
+`;
 
 const allocationState = {
   user: null,
@@ -124,7 +126,6 @@ function allocationPrimaryTitle(page) {
   if (page === "uploads") return "Uppladdningar";
   if (page === "process") return "Bearbeta";
   if (page === "split") return "Dela";
-  if (page === "trace") return "Härleda";
   return "Allokering";
 }
 
@@ -132,7 +133,6 @@ function allocationPageActiveName(page) {
   if (page === "uploads") return "allocationUploads";
   if (page === "process") return "allocationProcess";
   if (page === "split") return "allocationSplit";
-  if (page === "trace") return "allocationTrace";
   return "allocationUploads";
 }
 
@@ -703,12 +703,32 @@ async function runAllocationFlow(flow) {
     const data = await allocationPostForm(`${ALLOCATION_API}/flow/${encodeURIComponent(flow.id)}`, fd);
     allocationState.result = { label: flow.label, data };
     allocationState.status = `Klart: ${flow.label}`;
+    await copyOrdersaldoCompleteOrders(data);
   } catch (error) {
     showToast(error.message, "error");
     allocationState.status = "";
   } finally {
     allocationState.busyId = "";
     renderAllocationPage();
+  }
+}
+
+async function copyOrdersaldoCompleteOrders(data) {
+  if (data?.flow_id !== "ordersaldo") return;
+  const completeTable = (data.tables || []).find((entry) => entry.key === "complete");
+  const orderCount = Number(completeTable?.table?.row_count || 0);
+  if (!data.session_id || !orderCount) {
+    showToast("Inga kompletta ordrar att kopiera", "info", 2500);
+    return;
+  }
+  try {
+    const columnData = await allocationJson(
+      `${ALLOCATION_API}/table-column/${encodeURIComponent(data.session_id)}/complete/0`,
+    );
+    await writeClipboardText(columnData.text || "");
+    showToast(`${orderCount} kompletta ordrar kopierade`, "success", 2500);
+  } catch (error) {
+    showToast(error.message || "Kunde inte kopiera kompletta ordrar.", "error", 7000);
   }
 }
 
@@ -719,9 +739,19 @@ function allocationResultSummaryEntries(data) {
 }
 
 function allocationResultTables(data) {
-  const tables = data.tables || [];
-  if (data.flow_id === "allocate") return tables.filter((entry) => entry.key !== "result");
-  return tables;
+  return data.tables || [];
+}
+
+function renderTextResult(text) {
+  if (!text) return "";
+  return `
+    <div class="allocation-text-result-wrap">
+      <pre class="allocation-text-result" data-result-text>${allocationEscape(text)}</pre>
+      <button type="button" class="allocation-copy-text" data-copy-text-result aria-label="Kopiera text" title="Kopiera text">
+        ${ALLOCATION_COPY_ICON}
+      </button>
+    </div>
+  `;
 }
 
 function renderResultPanel(result) {
@@ -741,7 +771,7 @@ function renderResultPanel(result) {
           `).join("")}
         </div>
       ` : ""}
-      ${data.text ? `<pre class="allocation-text-result">${allocationEscape(data.text)}</pre>` : ""}
+      ${renderTextResult(data.text)}
       ${tables.map((entry) => renderResultTable(data.session_id, entry)).join("")}
       ${data.log?.length ? `<pre class="allocation-log">${allocationEscape(data.log.join("\n"))}</pre>` : ""}
     </section>
@@ -763,7 +793,12 @@ function renderResultTable(sessionId, entry) {
         <table>
           <thead><tr>${(table.columns || []).map((column, index) => `
             <th>
-              <button type="button" class="allocation-copy-column" data-copy-column="${index}" data-copy-key="${allocationEscape(entry.key)}" data-copy-label="${allocationEscape(column)}">Kopiera</button>
+              <div class="allocation-column-head">
+                <span>${allocationEscape(column)}</span>
+                <button type="button" class="allocation-copy-column" data-copy-column="${index}" data-copy-key="${allocationEscape(entry.key)}" data-copy-label="${allocationEscape(column)}" aria-label="Kopiera kolumn ${allocationEscape(column)}" title="Kopiera kolumn">
+                  ${ALLOCATION_COPY_ICON}
+                </button>
+              </div>
             </th>
           `).join("")}</tr></thead>
           <tbody>
@@ -782,7 +817,7 @@ async function writeClipboardText(text) {
       await navigator.clipboard.writeText(text);
       return;
     } catch (error) {
-      // Fallback nedan hanterar webblÃ¤sare som visar sidan utan clipboard-rÃ¤ttighet.
+      // Fallback nedan hanterar webbläsare som visar sidan utan clipboard-rättighet.
     }
   }
   const textarea = document.createElement("textarea");
@@ -794,10 +829,21 @@ async function writeClipboardText(text) {
   textarea.select();
   const copied = document.execCommand("copy");
   textarea.remove();
-  if (!copied) throw new Error("Urklipp kunde inte anvÃ¤ndas.");
+  if (!copied) throw new Error("Urklipp kunde inte användas.");
 }
 
 function bindResultActions(root) {
+  root.querySelectorAll("[data-copy-text-result]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        const text = button.closest(".allocation-text-result-wrap")?.querySelector("[data-result-text]")?.textContent || "";
+        await writeClipboardText(text);
+        showToast("Text kopierad", "success", 2000);
+      } catch (error) {
+        showToast(error.message || "Kunde inte kopiera texten.", "error", 7000);
+      }
+    });
+  });
   root.querySelectorAll("[data-copy-column]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {
@@ -823,6 +869,7 @@ function bindResultActions(root) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: allocationState.result.data.session_id, key: button.dataset.openExcel }),
         });
+        showToast("Excel öppnas", "success", 2500);
       } catch (error) {
         showToast(error.message, "error");
       }
@@ -948,7 +995,7 @@ function renderSoloFlowView(flowId) {
   const slots = slotsForFlow(flow);
   const missing = missingForFlow(flow);
   const ready = missing.length === 0 && !allocationState.busyId;
-  const compact = flowId === "eftersok";
+  const compact = false;
   const hasFileSlots = slots.length > 0;
   const hasUploadedFile = slots.some((slot) => allocationDisplayFile(slot.key));
   const fileActionLabel = hasUploadedFile ? "Välj fler filer" : "Välj filer";
@@ -1002,7 +1049,6 @@ function renderAllocationPage() {
   if (allocationState.page === "uploads") renderUploadsView();
   else if (allocationState.page === "process") renderCombinedView();
   else if (allocationState.page === "split") renderSoloFlowView("split-values");
-  else if (allocationState.page === "trace") renderSoloFlowView("eftersok");
 }
 
 function renderAllocationUnavailable(message) {

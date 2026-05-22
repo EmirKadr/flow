@@ -14,14 +14,58 @@ class CliTestHandler(BaseHTTPRequestHandler):
     def log_message(self, _format, *_args):  # noqa: A002
         return
 
+    def _json(self, payload, status=200):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):  # noqa: N802
         if self.path == "/api/health":
-            body = json.dumps({"status": "ok", "environment": "cli-test"}).encode("utf-8")
+            self._json({"status": "ok", "environment": "cli-test"})
+            return
+        if self.path == "/api/allokering/flows":
+            self._json({"flows": [{"id": "split-values", "label": "Dela varden"}]})
+            return
+        if self.path == "/api/allokering/pool":
+            self._json({"pool": [{"key": "orders", "label": "Detalj Kundorder"}]})
+            return
+        if self.path == "/api/allokering/download/abc/result":
+            body = b"Kolumn 1,Kolumn 2\nA,C\nB,\n"
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "text/csv")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):  # noqa: N802
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length:
+            self.rfile.read(length)
+        if self.path == "/api/allokering/detect":
+            self._json({"file_type": "orders"})
+            return
+        if self.path == "/api/allokering/flow/split-values":
+            self._json(
+                {
+                    "flow_id": "split-values",
+                    "session_id": "abc",
+                    "summary": {"Antal varden": 3},
+                    "tables": [
+                        {
+                            "key": "result",
+                            "label": "Delade varden",
+                            "table": {"columns": ["Kolumn 1"], "rows": [["A"]], "row_count": 1},
+                        }
+                    ],
+                    "log": [],
+                }
+            )
             return
         self.send_response(404)
         self.end_headers()
@@ -120,6 +164,37 @@ def test_cli_command_groups_work_against_local_app(tmp_path, capsys):
     assert '"status": "ok"' in output
     assert '"username": "admin"' in output
     assert "GG Plock" in output
+
+
+def test_cli_allocation_aliases_can_run_and_download_results(tmp_path, capsys):
+    server, thread = start_cli_test_server()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        common = ["--base-url", base_url, "--cookie-jar", str(tmp_path / "cookies.txt")]
+        assert flow_cli.main([*common, "allocation", "flows"]) == 0
+        result = flow_cli.main(
+            [
+                *common,
+                "allocation",
+                "run",
+                "split-values",
+                "--param",
+                "values=A\nB\nC",
+                "--out",
+                str(tmp_path / "out"),
+                "--json",
+            ]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert '"session_id": "abc"' in output
+    assert '"downloads"' in output
+    assert (tmp_path / "out" / "result.csv").read_text(encoding="utf-8") == "Kolumn 1,Kolumn 2\nA,C\nB,\n"
 
 
 def test_cli_db_lookup_finds_hidden_people_users_and_activities(tmp_path, capsys):

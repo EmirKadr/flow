@@ -9,6 +9,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
+from ..business_scope import scoped_get, visible_business_id
 from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
 from ..models import Activity, Area, Person, ScheduleCell, User
@@ -33,6 +34,7 @@ class OverviewCell(BaseModel):
 class OverviewOut(BaseModel):
     year: int
     week: int
+    revision_key: str | None = None
     persons: list[PersonOut]
     matrix: list[OverviewCell]
 
@@ -56,9 +58,100 @@ class MonthOverviewCell(BaseModel):
 class MonthOverviewOut(BaseModel):
     year: int
     month: int
+    revision_key: str | None = None
     days: list[MonthDay]
     persons: list[PersonOut]
     matrix: list[MonthOverviewCell]
+
+
+def _iso(value) -> str:
+    return value.isoformat() if value is not None else ""
+
+
+def _visible_overview_persons(
+    db: Session,
+    user: User,
+    area_id: int | None = None,
+    business_id: int | None = None,
+) -> tuple[list[Person], int | None]:
+    scoped_business_id = visible_business_id(db, user, business_id)
+    persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
+    if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
+        persons_q = persons_q.where(Person.home_area_id == area_id)
+    persons_q = persons_q.order_by(Person.sort_order, Person.name)
+    return db.execute(persons_q).scalars().all(), scoped_business_id
+
+
+def _overview_revision_key_from_parts(
+    *,
+    person_count: int,
+    person_latest,
+    cell_count: int,
+    cell_latest,
+    version_sum: int,
+) -> str:
+    return (
+        f"p:{person_count}:{_iso(person_latest)}|"
+        f"c:{cell_count}:{_iso(cell_latest)}:{int(version_sum or 0)}"
+    )
+
+
+def _overview_revision_for_persons(
+    db: Session,
+    *,
+    persons: list[Person],
+    year_week_weekdays: list[tuple[int, int, int]],
+) -> str:
+    person_ids = [person.id for person in persons]
+    if not person_ids or not year_week_weekdays:
+        return _overview_revision_key_from_parts(
+            person_count=len(persons),
+            person_latest=max((person.updated_at for person in persons if person.updated_at is not None), default=None),
+            cell_count=0,
+            cell_latest=None,
+            version_sum=0,
+        )
+    cell_count, cell_latest, version_sum = (
+        db.query(
+            func.count(ScheduleCell.id),
+            func.max(ScheduleCell.updated_at),
+            func.coalesce(func.sum(ScheduleCell.version), 0),
+        )
+        .filter(
+            ScheduleCell.person_id.in_(person_ids),
+            tuple_(ScheduleCell.year, ScheduleCell.week, ScheduleCell.weekday).in_(year_week_weekdays),
+        )
+        .one()
+    )
+    return _overview_revision_key_from_parts(
+        person_count=len(persons),
+        person_latest=max((person.updated_at for person in persons if person.updated_at is not None), default=None),
+        cell_count=int(cell_count or 0),
+        cell_latest=cell_latest,
+        version_sum=int(version_sum or 0),
+    )
+
+
+def _month_days(year: int, month: int) -> list[MonthDay]:
+    first = date(year, month, 1)
+    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    days_list: list[MonthDay] = []
+    current_day = first
+    while current_day < next_month:
+        iso_year, iso_week, iso_weekday = current_day.isocalendar()
+        days_list.append(
+            MonthDay(
+                date=current_day.isoformat(),
+                year=iso_year,
+                week=iso_week,
+                weekday=iso_weekday,
+            )
+        )
+        current_day += timedelta(days=1)
+    return days_list
 
 
 class OverviewDayRequest(BaseModel):
@@ -454,16 +547,65 @@ def _apply_day_impl(
     }
 
 
+@router.get("/revision")
+def get_overview_revision(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("overview", "view")),
+) -> dict[str, str | int | None]:
+    persons, _scoped_business_id = _visible_overview_persons(db, user, area_id, business_id)
+    return {
+        "year": year,
+        "week": week,
+        "area_id": area_id,
+        "revision_key": _overview_revision_for_persons(
+            db,
+            persons=persons,
+            year_week_weekdays=[(year, week, weekday) for weekday in range(1, 8)],
+        ),
+    }
+
+
+@router.get("/revision/month")
+def get_month_overview_revision(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("overview", "view")),
+) -> dict[str, str | int | None]:
+    persons, _scoped_business_id = _visible_overview_persons(db, user, area_id, business_id)
+    return {
+        "year": year,
+        "month": month,
+        "area_id": area_id,
+        "revision_key": _overview_revision_for_persons(
+            db,
+            persons=persons,
+            year_week_weekdays=[(day.year, day.week, day.weekday) for day in _month_days(year, month)],
+        ),
+    }
+
+
 @router.get("", response_model=OverviewOut)
 def get_overview(
     year: int = Query(..., ge=2000, le=2100),
     week: int = Query(..., ge=1, le=53),
     area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_view_access("overview", "view")),
+    user: User = Depends(require_view_access("overview", "view")),
 ) -> OverviewOut:
+    scoped_business_id = visible_business_id(db, user, business_id)
     persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         persons_q = persons_q.where(Person.home_area_id == area_id)
     persons_q = persons_q.order_by(Person.sort_order, Person.name)
     persons = db.execute(persons_q).scalars().all()
@@ -503,7 +645,12 @@ def get_overview(
                     covered_minutes[(pid, wd)].get(hour, 0) + int(cnt),
                 )
 
-    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
+    activity_query = db.query(Activity)
+    area_query = db.query(Area)
+    if scoped_business_id is not None:
+        activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
+        area_query = area_query.filter(Area.business_id == scoped_business_id)
+    home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
     template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
     matrix: list[OverviewCell] = []
     for person in persons:
@@ -532,6 +679,11 @@ def get_overview(
     return OverviewOut(
         year=year,
         week=week,
+        revision_key=_overview_revision_for_persons(
+            db,
+            persons=persons,
+            year_week_weekdays=[(year, week, weekday) for weekday in range(1, 8)],
+        ),
         persons=[person_out_with_home_activity(person, home_activity_for(person)) for person in persons],
         matrix=matrix,
     )
@@ -542,9 +694,11 @@ def get_month_overview(
     year: int = Query(..., ge=2000, le=2100),
     month: int = Query(..., ge=1, le=12),
     area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_view_access("overview", "view")),
+    user: User = Depends(require_view_access("overview", "view")),
 ) -> MonthOverviewOut:
+    scoped_business_id = visible_business_id(db, user, business_id)
     first = date(year, month, 1)
     next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     days_list: list[MonthDay] = []
@@ -562,7 +716,10 @@ def get_month_overview(
         current_day += timedelta(days=1)
 
     persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         persons_q = persons_q.where(Person.home_area_id == area_id)
     persons_q = persons_q.order_by(Person.sort_order, Person.name)
     persons = db.execute(persons_q).scalars().all()
@@ -606,7 +763,12 @@ def get_month_overview(
                     covered_minutes[(pid, iso_year, iso_week, iso_weekday)].get(hour, 0) + int(cnt),
                 )
 
-    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
+    activity_query = db.query(Activity)
+    area_query = db.query(Area)
+    if scoped_business_id is not None:
+        activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
+        area_query = area_query.filter(Area.business_id == scoped_business_id)
+    home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
     template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
     matrix: list[MonthOverviewCell] = []
     for person in persons:
@@ -635,6 +797,11 @@ def get_month_overview(
     return MonthOverviewOut(
         year=year,
         month=month,
+        revision_key=_overview_revision_for_persons(
+            db,
+            persons=persons,
+            year_week_weekdays=[(day.year, day.week, day.weekday) for day in days_list],
+        ),
         days=days_list,
         persons=[person_out_with_home_activity(person, home_activity_for(person)) for person in persons],
         matrix=matrix,
@@ -648,10 +815,11 @@ def set_day(
     user: User = Depends(require_view_access("overview", "edit")),
 ) -> dict:
     try:
-        if not db.get(Person, payload.person_id):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
-        if payload.activity_id is not None and not db.get(Activity, payload.activity_id):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Aktivitet hittades inte")
+        person = scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
+        if payload.activity_id is not None:
+            activity = scoped_get(db, Activity, payload.activity_id, user, detail="Aktivitet hittades inte")
+            if activity.business_id != person.business_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
         template_hours = get_template_hours_map(
             db,
@@ -696,9 +864,12 @@ def set_days_bulk(
     activity_ids = {item.activity_id for item in payload.days if item.activity_id is not None}
     weekdays = {item.weekday for item in payload.days}
 
-    existing_person_ids = set(
-        db.execute(select(Person.id).where(Person.id.in_(person_ids))).scalars().all()
-    )
+    scoped_business_id = visible_business_id(db, user)
+    person_query = select(Person).where(Person.id.in_(person_ids))
+    if scoped_business_id is not None:
+        person_query = person_query.where(Person.business_id == scoped_business_id)
+    persons_by_id = {person.id: person for person in db.execute(person_query).scalars().all()}
+    existing_person_ids = set(persons_by_id)
     missing_person_ids = sorted(person_ids - existing_person_ids)
     if missing_person_ids:
         raise HTTPException(
@@ -707,15 +878,22 @@ def set_days_bulk(
         )
 
     if activity_ids:
-        existing_activity_ids = set(
-            db.execute(select(Activity.id).where(Activity.id.in_(activity_ids))).scalars().all()
-        )
+        activity_query = select(Activity).where(Activity.id.in_(activity_ids))
+        if scoped_business_id is not None:
+            activity_query = activity_query.where(Activity.business_id == scoped_business_id)
+        activities_by_id = {activity.id: activity for activity in db.execute(activity_query).scalars().all()}
+        existing_activity_ids = set(activities_by_id)
         missing_activity_ids = sorted(activity_ids - existing_activity_ids)
         if missing_activity_ids:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,
                 detail=f"Aktivitet {missing_activity_ids[0]} hittades inte",
             )
+        for item in payload.days:
+            if item.activity_id is None:
+                continue
+            if activities_by_id[item.activity_id].business_id != persons_by_id[item.person_id].business_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
     template_hours_map = get_template_hours_map(db, person_ids, weekdays)
     applied: list[dict] = []

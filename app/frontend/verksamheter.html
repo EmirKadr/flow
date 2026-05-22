@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verksamheter - flow</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <section class="controls">
+    <button class="primary" id="new-business">+ Ny verksamhet</button>
+    <label class="table-checkbox-label"><input type="checkbox" id="show-inactive" /> Visa inaktiva</label>
+  </section>
+
+  <main>
+    <div class="section-title">Verksamheter och områden</div>
+    <div class="table-wrap">
+      <table class="businesses-table">
+        <thead>
+          <tr>
+            <th>Kod</th>
+            <th>Namn</th>
+            <th>Sortering</th>
+            <th>Aktiv</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="businesses-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/businesses.js"></script>
+</body>
+</html>

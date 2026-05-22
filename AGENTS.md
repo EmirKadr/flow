@@ -139,6 +139,28 @@ Nar beteende tas bort eller byts ut ska agenten aktivt leta efter gamla tester
 som bara skyddar det borttagna beteendet. Sadana tester ska tas bort eller
 skrivas om, sa testsviten inte tvingar kvar gammal produktlogik av misstag.
 
+## Riskgenomgang efter nytt bygge
+
+Nar en agent anser sig klar med ett nytt bygge, stor andring eller nytt
+arbetsflode ska agenten stanna upp innan slutrapport och fraga sig:
+
+- Vad kan ga fel for en riktig anvandare?
+- Vilka roller, verksamheter, vyer, importer, toggles, cachelagen eller
+  klientskillnader kan paverkas?
+- Finns det gamla antaganden i tester, dokumentation, lokal data eller
+  desktop/webb-paritet som nu kan vara fel?
+- Vilka fel skulle vara svara att upptacka visuellt eller manuellt?
+
+Agenten ska sedan anvanda tillgangliga verktyg for att undersoka de riskerna,
+till exempel `rg`, riktade enhetstester, API-kontraktstester, full pytest,
+Playwright/visual smoke, desktop-proxy, lokal databasinspektion eller CLI-verktyg.
+
+Om ett rimligt felutfall inte redan tacks av tester ska agenten lagga till eller
+uppdatera tester innan arbetet lamnas. Testerna ska vara formulerade sa att de
+hade fangat felet om andringen hade gjorts fel. Om nagot inte gar att testa
+automatiskt ska agenten skriva vad som undersoktes manuellt, vilket verktyg som
+anvandes och vilken kvarvarande risk som finns.
+
 ## Beslutsregel
 
 Om en uppgift verkar bara namna `app/` eller bara `desktop/`, men andringen

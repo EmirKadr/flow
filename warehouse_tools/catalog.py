@@ -30,6 +30,7 @@ CATALOG_FLOWS: list[dict] = [
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "saldo", "label": "Saldo ink. Automation (Utbeställt)", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "max_csv", "label": "artikel_max.csv (kärnfil)", "type": "file", "required": False, "detect": []},
         ],
     },
     {
@@ -95,22 +96,6 @@ CATALOG_FLOWS: list[dict] = [
         ],
     },
     {
-        "id": "eftersok",
-        "label": "Eftersök",
-        "category": "Sökning & prognos",
-        "description": "Spåra en artikel/pall genom WMS-loggarna utifrån inköps- och artikelnummer.",
-        "inputs": [
-            {"key": "purchase", "label": "Inköpsnummer", "type": "text", "required": True},
-            {"key": "article", "label": "Artikelnummer", "type": "text", "required": True},
-            {"key": "wms_receive", "label": "Mottagningslogg", "type": "file", "required": True, "detect": ["wms_receive"]},
-            {"key": "wms_booking", "label": "Inlagringslogg", "type": "file", "required": False, "detect": ["wms_booking"]},
-            {"key": "wms_buffert", "label": "Buffertpallar", "type": "file", "required": False, "detect": ["buffer"]},
-            {"key": "wms_trans", "label": "Transaktionslogg", "type": "file", "required": False, "detect": ["wms_trans"]},
-            {"key": "wms_pick", "label": "Plocklogg", "type": "file", "required": False, "detect": ["wms_pick"]},
-            {"key": "wms_correct", "label": "Korrigeringslogg", "type": "file", "required": False, "detect": ["wms_correct"]},
-        ],
-    },
-    {
         "id": "prognos-report",
         "label": "Prognosrapport",
         "category": "Sökning & prognos",
@@ -163,7 +148,6 @@ CATALOG_FLOWS: list[dict] = [
 FLOW_BY_ID: dict[str, dict] = {flow["id"]: flow for flow in CATALOG_FLOWS}
 
 SOLO_FLOWS = {
-    "eftersok",
     "observations-update",
     "observations-sync",
     "split-values",

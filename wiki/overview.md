@@ -1,7 +1,7 @@
 ---
 title: Projektoversikt
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [produkt, oversikt]
 ---
 
@@ -11,15 +11,15 @@ Kort svar: flow ersatter en Excel-bemanningsfil med en gemensam webbapp och Wind
 
 ## Produktens huvuddelar
 
-- flow: dagsmatris med personer som rader och timmar 06-23 som kolumner. Celler sparas automatiskt.
+- Bemanning: dagsmatris med personer som rader och timmar 06-23 som kolumner. Celler sparas automatiskt.
 - Oversikt: vecka/manad per person dar hela dagar kan bemannas enligt personens veckomall.
 - Personer: register med hemomrade, huvudaktivitet, sortering och veckomall.
 - Aktiviteter: register over bemanningsaktiviteter, farger, omraden, kategori och summeringsaktivitet.
 - Anvandare: roller, omrade, aktiv/inaktiv, forsta losenord, vybehorigheter och settings.
-- Historik: auditlogg och enkel analytics over andringar.
+- Historik: auditlogg, enkel analytics och felkodsdashboard over anvandartraffade API-fel.
 - Hamta data: promptstyrd extern data-export via MiniMax-planering, backendvalidering och Excel-export.
 - Produktivitet: lokal analys av stora WMS-loggar mot centrala KPI-mal.
-- Lagerverktyg: uppladdning, allokering/orderkontroller, dela varden och eftersok i WMS-loggar.
+- Lagerverktyg: uppladdning, allokering/orderkontroller och dela varden.
 
 ## Viktiga produktprinciper
 

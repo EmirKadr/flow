@@ -476,7 +476,7 @@ VECKA27_ROOF_TO_MOWERS: dict[str, frozenset[str]] = {
 
 NEAR_MISS_PCT: float = 0.30  # 30 % över behov
 
-# Artiklar som undantas från R+F-räkningen i compute_pallet_spaces
+# Artiklar som undantas från R-räkningen i compute_pallet_spaces
 RF_PALLPLATS_EXCLUDE_ARTICLES: set[str] = {
     "1075621","1154474","1265531","1265532","1265533","1265534","1265535","1265536","1265537","1265539",
     "1265541","1265542","1265543","1265545","1265547","1265548","1265549","1265550","1265551","1265552",
@@ -2453,7 +2453,7 @@ def compute_pallet_spaces(result_df: pd.DataFrame) -> pd.DataFrame:
         result_df: DataFrame med allokerade orderrader efter saldofil-omklassificering och item/ej staplingsbar-sammanfogning.
 
     Returnerar:
-        Ett DataFrame med kolumnerna ["Kund", "Kund1", "Botten Pallar", "Topp Pallar", "Totalt Pallar", "Pallplatser"].
+        Ett DataFrame med pallplatser per kund, inklusive separata delkolumner for t.ex. Plockpall, autostore och HIB.
         Om nödvändiga kolumner saknas returneras ett tomt DataFrame.
     """
     if result_df is None or result_df.empty:
@@ -2520,7 +2520,12 @@ def compute_pallet_spaces(result_df: pd.DataFrame) -> pd.DataFrame:
             top_A = 0
         mask_topH = (sub[zone_col] == "H") & (sub[stack_col] == "Y") & (sub[palltyp_col] != "SJÖ")
         top_H = int(mask_topH.sum())
-        mask_rf = sub[zone_col].isin({"R", "F"})
+        rows_F = int((sub[zone_col] == "F").sum())
+        if rows_F > 0:
+            top_F = math.ceil(rows_F / 20.0)
+        else:
+            top_F = 0
+        mask_rf = sub[zone_col] == "R"
         if art_col_ps and art_col_ps in sub.columns:
             mask_rf = mask_rf & ~sub[art_col_ps].astype(str).str.strip().isin(RF_PALLPLATS_EXCLUDE_ARTICLES)
         rows_R = int(mask_rf.sum())
@@ -2549,7 +2554,7 @@ def compute_pallet_spaces(result_df: pd.DataFrame) -> pd.DataFrame:
             top_S = 5
         mask_sjo = (sub[zone_col] == "H") & (sub[palltyp_col] == "SJÖ")
         S_rows = int(mask_sjo.sum())
-        T = top_A + top_H + top_R + top_S
+        T = top_A + top_H + top_R + top_S + top_F
         half_sum = (B + T) / 2.0
         P_component = math.ceil(half_sum)
         max_val = T if T > P_component else P_component
@@ -2561,6 +2566,7 @@ def compute_pallet_spaces(result_df: pd.DataFrame) -> pd.DataFrame:
         skrymme_pallar = top_S
         plockpall = top_A
         autostore_pallar = top_R
+        hib_pallar = top_F
         record = {
             "Kund": kund_val,
             "Kund1": kund1_val,
@@ -2570,6 +2576,7 @@ def compute_pallet_spaces(result_df: pd.DataFrame) -> pd.DataFrame:
             "Skrymme": skrymme_pallar,
             "Plockpall": plockpall,
             "autostore": autostore_pallar,
+            "HIB": hib_pallar,
             "Botten Pallar": B,
             "Topp Pallar": T,
             "Totalt Pallar": total_pallar,

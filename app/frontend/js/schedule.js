@@ -35,7 +35,6 @@ const state = {
   allSummaryRows: [],
   lockForeignScheduleCells: false,
   calcSelection: "",
-  calcSelectionManual: false,
   calcInputs: {
     GG: { rows: "", time: "", goal: "" },
     MG: { rows: "", time: "", goal: "" },
@@ -77,9 +76,263 @@ const scheduleLoadState = {
   requestSeq: 0,
 };
 
+const scheduleAllCache = new Map();
+const scheduleAllFetchState = {
+  controller: null,
+  key: "",
+};
+const SCHEDULE_ALL_CACHE_LIMIT = 4;
+const SCHEDULE_REVALIDATE_ACTIVE_MS = 10000;
+const SCHEDULE_REVALIDATE_IDLE_MS = 30000;
+const SCHEDULE_REVALIDATE_SOON_MS = 1500;
+const SCHEDULE_REVALIDATE_ACTIVE_WINDOW_MS = 60000;
+const scheduleRevalidateState = {
+  timer: null,
+  controller: null,
+  lastActivityAt: Date.now(),
+  errorCount: 0,
+  toastAt: 0,
+};
+
 function scheduleIsReadOnly() {
   if (typeof isReadOnlyUser === "function") return isReadOnlyUser(state.currentUser);
   return state.currentUser?.role === "viewer" && !state.currentUser?.is_super_user;
+}
+
+function scheduleScopeKey() {
+  const user = state.currentUser || {};
+  return [
+    user.id ?? user.username ?? "anonymous",
+    user.is_super_user ? "super" : "scoped",
+    user.business_id ?? "global",
+  ].join(":");
+}
+
+function scheduleCacheKey() {
+  return `${scheduleScopeKey()}|${state.year}|${state.week}|${state.weekday}`;
+}
+
+function scheduleUrl(areaId = state.areaId) {
+  return `/api/schedule?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
+    (areaId ? `&area_id=${areaId}` : "");
+}
+
+function scheduleRevisionUrl(areaId = null) {
+  return `/api/schedule/revision?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
+    (areaId ? `&area_id=${areaId}` : "");
+}
+
+function setScheduleAllCache(key, data) {
+  scheduleAllCache.delete(key);
+  scheduleAllCache.set(key, data);
+  while (scheduleAllCache.size > SCHEDULE_ALL_CACHE_LIMIT) {
+    scheduleAllCache.delete(scheduleAllCache.keys().next().value);
+  }
+}
+
+function invalidateScheduleAllCache() {
+  scheduleAllCache.clear();
+  scheduleAllFetchState.controller?.abort();
+  scheduleRevalidateState.controller?.abort();
+  scheduleAllFetchState.controller = null;
+  scheduleAllFetchState.key = "";
+  scheduleRevalidateState.controller = null;
+  scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
+}
+
+function filterScheduleDataForArea(data, areaId) {
+  const source = data || {};
+  const persons = Array.isArray(source.persons) ? source.persons : [];
+  const cells = Array.isArray(source.cells) ? source.cells : [];
+  const copyScheduledFor = (personIds, scheduled) => Object.fromEntries(
+    Object.entries(scheduled || {}).filter(([personId]) => personIds.has(Number(personId)))
+  );
+
+  if (areaId == null) {
+    return {
+      ...source,
+      area_id: null,
+      persons: persons.map((person) => ({ ...person })),
+      cells: cells.map((cell) => ({ ...cell })),
+      scheduled_hours: { ...(source.scheduled_hours || {}) },
+      scheduled_defaults: { ...(source.scheduled_defaults || {}) },
+    };
+  }
+
+  const selectedAreaId = Number(areaId);
+  const visiblePersons = persons.filter((person) => Number(person.home_area_id) === selectedAreaId);
+  const personIds = new Set(visiblePersons.map((person) => Number(person.id)));
+  return {
+    ...source,
+    area_id: selectedAreaId,
+    persons: visiblePersons.map((person) => ({ ...person })),
+    cells: cells.filter((cell) => personIds.has(Number(cell.person_id))).map((cell) => ({ ...cell })),
+    scheduled_hours: copyScheduledFor(personIds, source.scheduled_hours),
+    scheduled_defaults: copyScheduledFor(personIds, source.scheduled_defaults),
+  };
+}
+
+function setupScheduleHorizontalScroll() {
+  if (typeof setupSyncedHorizontalScroll === "function") {
+    setupSyncedHorizontalScroll(document.getElementById("scheduleTable"));
+  }
+}
+
+function markScheduleActivity() {
+  scheduleRevalidateState.lastActivityAt = Date.now();
+}
+
+function scheduleRevalidateDelay() {
+  return Date.now() - scheduleRevalidateState.lastActivityAt < SCHEDULE_REVALIDATE_ACTIVE_WINDOW_MS
+    ? SCHEDULE_REVALIDATE_ACTIVE_MS
+    : SCHEDULE_REVALIDATE_IDLE_MS;
+}
+
+function scheduleIsBusyForBackgroundUpdate() {
+  return drag.active || drag.pending || Boolean(document.querySelector("#scheduleBody .pending-save"));
+}
+
+function scheduleNextScheduleRevalidate(delay = scheduleRevalidateDelay()) {
+  clearTimeout(scheduleRevalidateState.timer);
+  scheduleRevalidateState.timer = null;
+  if (document.hidden) return;
+  scheduleRevalidateState.timer = setTimeout(() => {
+    scheduleRevalidateState.timer = null;
+    void revalidateSchedule();
+  }, delay);
+}
+
+function notifyScheduleBackgroundUpdate(changedCount) {
+  if (!changedCount) return;
+  const now = Date.now();
+  if (now - scheduleRevalidateState.toastAt < 10000) return;
+  scheduleRevalidateState.toastAt = now;
+  showToast("Bemanningen uppdaterades i bakgrunden.", "info", 2500);
+}
+
+function schedulePersonSignature(persons) {
+  return JSON.stringify((persons || []).map((person) => [
+    Number(person.id),
+    person.name || "",
+    Number(person.home_area_id) || 0,
+    Number(person.home_activity_id) || 0,
+    person.has_fixed_schedule !== false,
+    Number(person.sort_order) || 0,
+  ]));
+}
+
+function scheduleMapPayloadSignature() {
+  const hours = Object.fromEntries(
+    Object.entries(state.scheduledHours || {}).map(([personId, values]) => [
+      personId,
+      Array.from(values || []).map(Number).sort((a, b) => a - b),
+    ])
+  );
+  const defaults = Object.fromEntries(
+    Object.entries(state.scheduledDefaults || {}).map(([personId, values]) => [
+      personId,
+      Object.fromEntries(Array.from(values || []).sort((a, b) => Number(a[0]) - Number(b[0]))),
+    ])
+  );
+  return JSON.stringify({ hours, defaults });
+}
+
+function scheduleDataPayloadSignature(data) {
+  return JSON.stringify({
+    hours: data?.scheduled_hours || {},
+    defaults: data?.scheduled_defaults || {},
+  });
+}
+
+function normalizeScheduleSegment(segment) {
+  return {
+    person_id: Number(segment.person_id),
+    hour: Number(segment.hour),
+    minute_start: Number(segment.minute_start),
+    minute_end: Number(segment.minute_end),
+    activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
+    empty_override: !!segment.empty_override,
+    version: Number(segment.version) || 0,
+    updated_at: segment.updated_at || null,
+    updated_by: segment.updated_by == null ? null : Number(segment.updated_by),
+  };
+}
+
+function scheduleSegmentSignature(segment) {
+  const normalized = normalizeScheduleSegment(segment);
+  return [
+    normalized.minute_start,
+    normalized.minute_end,
+    normalized.activity_id ?? "",
+    normalized.empty_override ? 1 : 0,
+    normalized.version,
+    normalized.updated_at || "",
+    normalized.updated_by ?? "",
+  ].join(":");
+}
+
+function scheduleHourSignature(segments) {
+  return (segments || [])
+    .map((segment) => scheduleSegmentSignature(segment))
+    .sort()
+    .join("|");
+}
+
+function scheduleGroupsFromCells(cells) {
+  const groups = new Map();
+  (cells || []).forEach((cell) => {
+    const normalized = normalizeScheduleSegment(cell);
+    const key = hourKey(normalized.person_id, normalized.hour);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(normalized);
+  });
+  groups.forEach((segments, key) => groups.set(key, sortSegments(segments)));
+  return groups;
+}
+
+function scheduleHourIsFocused(personId, hour) {
+  return Number(state.focusedCell?.personId) === Number(personId)
+    && Number(state.focusedCell?.hour) === Number(hour)
+    && document.activeElement?.closest("#scheduleBody");
+}
+
+function patchScheduleFromAllData(allData) {
+  const data = filterScheduleDataForArea(allData, state.areaId);
+  const personsChanged = schedulePersonSignature(state.allPersons) !== schedulePersonSignature(data.persons || []);
+  const scheduledChanged = scheduleMapPayloadSignature() !== scheduleDataPayloadSignature(data);
+  if (personsChanged || scheduledChanged) {
+    applyScheduleData(data);
+    return { changed: true, patched: false };
+  }
+
+  state.allPersons = data.persons || [];
+  state.lockForeignScheduleCells = !!data.lock_foreign_schedule_cells;
+  const nextGroups = scheduleGroupsFromCells(data.cells || []);
+  const keys = new Set([...Array.from(state.hourCells.keys()), ...Array.from(nextGroups.keys())]);
+  let changedCount = 0;
+  let skippedFocused = false;
+
+  keys.forEach((key) => {
+    const [personId, hour] = key.split(":").map(Number);
+    const current = state.hourCells.get(key) || [];
+    const next = nextGroups.get(key) || [];
+    if (scheduleHourSignature(current) === scheduleHourSignature(next)) return;
+    if (scheduleHourIsFocused(personId, hour)) {
+      skippedFocused = true;
+      return;
+    }
+    replaceHourSegments(personId, hour, next);
+    const td = getHourTd(personId, hour);
+    if (td) renderHourCell(td);
+    changedCount += 1;
+  });
+
+  if (changedCount) {
+    refreshCurrentHourHighlight();
+    scheduleSummaryRefresh(0);
+  }
+  if (skippedFocused) scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
+  return { changed: changedCount > 0 || skippedFocused, patched: changedCount > 0, skippedFocused };
 }
 
 function showReadOnlyToast() {
@@ -101,16 +354,7 @@ function applyScheduleReadOnlyMode() {
 }
 
 function preferredAreaIdForCurrentUser() {
-  const hasFocusedArea = typeof areaFocusCode === "function" && areaFocusCode();
-  if (hasFocusedArea && typeof preferredAreaIdFromFocus === "function") {
-    const focusedAreaId = preferredAreaIdFromFocus(state.areas);
-    if (focusedAreaId != null) return focusedAreaId;
-  }
-  const userAreaId = Number(state.currentUser?.area_id);
-  if (Number.isInteger(userAreaId) && state.areas.some((area) => Number(area.id) === userAreaId)) {
-    return userAreaId;
-  }
-  return state.areas.length > 0 ? Number(state.areas[0].id) : null;
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(state.areas) : null;
 }
 
 
@@ -509,6 +753,7 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
   action.snapshots.forEach((snapshot) => setHourPending(getHourTd(snapshot.personId, snapshot.hour), true));
   try {
     const resp = await api.put("/api/schedule/hours/restore", { action: "undo_restore", hours });
+    invalidateScheduleAllCache();
     applyRestoredHours(resp.hours);
     oppositeStack.push({ label: action.label, snapshots: inverseSnapshots });
     if (oppositeStack.length > 50) oppositeStack.shift();
@@ -821,8 +1066,7 @@ function updateCalcPanel(panel, areaKey) {
 
 function renderCalculator() {
   const container = document.getElementById("calcPanels");
-  const select = document.getElementById("calcAreaSelect");
-  if (!container || !select) return;
+  if (!container) return;
 
   const active = document.activeElement;
   let focusState = null;
@@ -897,38 +1141,17 @@ function renderCalculator() {
 }
 
 function setupCalculator() {
-  const select = document.getElementById("calcAreaSelect");
-  if (!select) return;
-
-  select.innerHTML = [
-    '<option value="ALL">Alla</option>',
-    ...CALC_AREA_KEYS.map((code) => `<option value="${code}">${escapeHtml(areaNameByCode(code))}</option>`),
-  ].join("");
-
   if (!state.calcSelection) {
     const currentAreaCode = areaCodeById(state.areaId);
     state.calcSelection = CALC_AREA_KEYS.includes(currentAreaCode) ? currentAreaCode : "ALL";
-  }
-
-  select.value = state.calcSelection;
-  if (select.dataset.bound !== "1") {
-    select.addEventListener("change", (e) => {
-      state.calcSelection = e.target.value;
-      state.calcSelectionManual = true;
-      renderCalculator();
-    });
-    select.dataset.bound = "1";
   }
 
   renderCalculator();
 }
 
 function syncCalculatorWithSelectedArea() {
-  if (state.calcSelectionManual) return;
   const currentAreaCode = areaCodeById(state.areaId);
   state.calcSelection = CALC_AREA_KEYS.includes(currentAreaCode) ? currentAreaCode : "ALL";
-  const select = document.getElementById("calcAreaSelect");
-  if (select) select.value = state.calcSelection;
   renderCalculator();
 }
 
@@ -1532,6 +1755,7 @@ async function onSegmentChange(td, minuteStart, minuteEnd) {
     const others = segmentsForHour(personId, hour).filter(
       (item) => !(item.minute_start === minuteStart && item.minute_end === minuteEnd)
     );
+    invalidateScheduleAllCache();
     pushScheduleUndo("celländring", [undoSnapshot]);
     replaceHourSegments(personId, hour, [...others, updated]);
     renderHourCell(td);
@@ -1590,6 +1814,7 @@ async function toggleHourSplit(td, mergeMinuteStart = 0) {
       })),
     });
     const updatedSegments = resp.segments || [];
+    invalidateScheduleAllCache();
     pushScheduleUndo(isSplitHour(updatedSegments) ? "dela timme" : "slå ihop timme", [undoSnapshot]);
     replaceHourSegments(personId, hour, updatedSegments);
     renderHourCell(td);
@@ -1650,6 +1875,7 @@ async function copyFocused(cut = false) {
       const others = segmentsForHour(personId, hour).filter(
         (item) => !(item.minute_start === minuteStart && item.minute_end === minuteEnd)
       );
+      invalidateScheduleAllCache();
       pushScheduleUndo("klipp ut", [undoSnapshot]);
       replaceHourSegments(personId, hour, [...others, resp.cell]);
       renderHourCell(td);
@@ -1697,6 +1923,7 @@ async function pasteFocused() {
     const others = segmentsForHour(personId, hour).filter(
       (item) => !(item.minute_start === minuteStart && item.minute_end === minuteEnd)
     );
+    invalidateScheduleAllCache();
     pushScheduleUndo("klistra in", [undoSnapshot]);
     replaceHourSegments(personId, hour, [...others, resp.cell]);
     renderHourCell(td);
@@ -2002,6 +2229,7 @@ async function finishDrag() {
 
   try {
     const resp = await api.post("/api/schedule/cells", { cells, atomic: true, action: "drag_fill" });
+    invalidateScheduleAllCache();
     pushScheduleUndo("drag-fyll", snapshots);
     applySegmentsByHourResponse(resp.applied);
     scheduleSummaryRefresh(0);
@@ -2186,24 +2414,128 @@ async function loadAreasAndActivities() {
   state.activitiesActive = activities;
   state.activities = activitiesAll;
 
-  const sel = document.getElementById("areaSelect");
-  sel.innerHTML = "";
-  const allOpt = document.createElement("option");
-  allOpt.value = "";
-  allOpt.textContent = "Alla";
-  sel.appendChild(allOpt);
-  areas.forEach((a) => {
-    const opt = document.createElement("option");
-    opt.value = a.id;
-    opt.textContent = a.name;
-    sel.appendChild(opt);
-  });
   state.areaId = preferredAreaIdForCurrentUser();
-  sel.value = state.areaId == null ? "" : String(state.areaId);
   setupCalculator();
 }
 
+function applyScheduleData(data) {
+  state.allPersons = data.persons || [];
+  state.lockForeignScheduleCells = !!data.lock_foreign_schedule_cells;
+  refreshPersons();
+  setAllSegments(data.cells || []);
+  state.scheduledHours = {};
+  Object.entries(data.scheduled_hours || {}).forEach(([pid, hours]) => {
+    state.scheduledHours[Number(pid)] = new Set(hours);
+  });
+  state.scheduledDefaults = {};
+  Object.entries(data.scheduled_defaults || {}).forEach(([pid, hours]) => {
+    state.scheduledDefaults[Number(pid)] = new Map(
+      Object.entries(hours || {}).map(([hour, activityId]) => [Number(hour), Number(activityId)])
+    );
+  });
+
+  const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
+  document.getElementById("sectionTitle").textContent =
+  `${DAYS[state.weekday]} – ${areaName} – V${state.week}/${state.year}`;
+
+  buildRows();
+  setupScheduleHorizontalScroll();
+  refreshCurrentHourHighlight();
+  scheduleSummaryRefresh(0);
+  scheduleNextScheduleRevalidate();
+}
+
+function renderScheduleFromAllCache() {
+  const cached = scheduleAllCache.get(scheduleCacheKey());
+  if (!cached) return false;
+  cancelSummaryRefresh({ abortInFlight: true });
+  scheduleLoadState.controller?.abort();
+  scheduleLoadState.requestSeq += 1;
+  applyScheduleData(filterScheduleDataForArea(cached, state.areaId));
+  scheduleNextScheduleRevalidate(500);
+  return true;
+}
+
+async function prefetchAllSchedule() {
+  const key = scheduleCacheKey();
+  if (scheduleAllCache.has(key) || scheduleAllFetchState.key === key) return;
+  scheduleAllFetchState.controller?.abort();
+  const controller = new AbortController();
+  scheduleAllFetchState.controller = controller;
+  scheduleAllFetchState.key = key;
+  try {
+    const data = await api.get(scheduleUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    setScheduleAllCache(key, filterScheduleDataForArea(data, null));
+    scheduleNextScheduleRevalidate();
+  } catch (err) {
+    if (err?.name !== "AbortError") console.warn("Kunde inte forhämta hela bemanningen", err);
+  } finally {
+    if (scheduleAllFetchState.controller === controller) {
+      scheduleAllFetchState.controller = null;
+      scheduleAllFetchState.key = "";
+    }
+  }
+}
+
+async function revalidateSchedule() {
+  if (document.hidden) return;
+  if (scheduleIsBusyForBackgroundUpdate()) {
+    scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
+    return;
+  }
+
+  const key = scheduleCacheKey();
+  const cached = scheduleAllCache.get(key);
+  if (!cached) {
+    await prefetchAllSchedule();
+    scheduleNextScheduleRevalidate();
+    return;
+  }
+  const cachedPatch = patchScheduleFromAllData(cached);
+  if (cachedPatch.skippedFocused) {
+    scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
+    return;
+  }
+  notifyScheduleBackgroundUpdate(cachedPatch.patched ? 1 : 0);
+
+  scheduleRevalidateState.controller?.abort();
+  const controller = new AbortController();
+  scheduleRevalidateState.controller = controller;
+  try {
+    const revision = await api.get(scheduleRevisionUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted || key !== scheduleCacheKey()) return;
+    if (revision?.revision_key && revision.revision_key === cached.revision_key) {
+      scheduleRevalidateState.errorCount = 0;
+      scheduleNextScheduleRevalidate();
+      return;
+    }
+
+    const fresh = await api.get(scheduleUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted || key !== scheduleCacheKey()) return;
+    setScheduleAllCache(key, filterScheduleDataForArea(fresh, null));
+    const result = patchScheduleFromAllData(fresh);
+    notifyScheduleBackgroundUpdate(result.patched ? 1 : 0);
+    scheduleRevalidateState.errorCount = 0;
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      scheduleRevalidateState.errorCount += 1;
+      console.warn("Kunde inte kontrollera färsk bemanning", err);
+    }
+  } finally {
+    if (scheduleRevalidateState.controller === controller) {
+      scheduleRevalidateState.controller = null;
+    }
+    const backoff = Math.min(scheduleRevalidateState.errorCount, 3) * 10000;
+    scheduleNextScheduleRevalidate(scheduleRevalidateDelay() + backoff);
+  }
+}
+
 async function loadSchedule() {
+  if (renderScheduleFromAllCache()) {
+    void prefetchAllSchedule();
+    return true;
+  }
   cancelSummaryRefresh({ abortInFlight: true });
   const requestSeq = ++scheduleLoadState.requestSeq;
   scheduleLoadState.controller?.abort();
@@ -2211,35 +2543,14 @@ async function loadSchedule() {
   scheduleLoadState.controller = controller;
 
   try {
-    const data = await api.get(
-      `/api/schedule?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
-        (state.areaId ? `&area_id=${state.areaId}` : ""),
-      { signal: controller.signal }
-    );
+    const data = await api.get(scheduleUrl(state.areaId), { signal: controller.signal });
     if (controller.signal.aborted || requestSeq !== scheduleLoadState.requestSeq) return false;
 
-    state.allPersons = data.persons;
-    state.lockForeignScheduleCells = !!data.lock_foreign_schedule_cells;
-    refreshPersons();
-    setAllSegments(data.cells || []);
-    state.scheduledHours = {};
-    Object.entries(data.scheduled_hours || {}).forEach(([pid, hours]) => {
-      state.scheduledHours[Number(pid)] = new Set(hours);
-    });
-    state.scheduledDefaults = {};
-    Object.entries(data.scheduled_defaults || {}).forEach(([pid, hours]) => {
-      state.scheduledDefaults[Number(pid)] = new Map(
-        Object.entries(hours || {}).map(([hour, activityId]) => [Number(hour), Number(activityId)])
-      );
-    });
-
-    const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
-    document.getElementById("sectionTitle").textContent =
-    `${DAYS[state.weekday]} – ${areaName} – V${state.week}/${state.year}`;
-
-    buildRows();
-    refreshCurrentHourHighlight();
-    scheduleSummaryRefresh(0);
+    if (state.areaId == null) {
+      setScheduleAllCache(scheduleCacheKey(), filterScheduleDataForArea(data, null));
+    }
+    applyScheduleData(data);
+    void prefetchAllSchedule();
     return true;
   } catch (err) {
     if (err?.name === "AbortError") return false;
@@ -2300,13 +2611,23 @@ async function loadSchedule() {
   await loadSchedule();
   setupDrag();
   setupKeyboard();
+  document.addEventListener("pointerdown", markScheduleActivity, { passive: true });
+  document.addEventListener("keydown", markScheduleActivity, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(scheduleRevalidateState.timer);
+      scheduleRevalidateState.controller?.abort();
+      return;
+    }
+    markScheduleActivity();
+    scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
+  });
 
   const onControlChange = async () => {
+    markScheduleActivity();
     state.year = Number(document.getElementById("yearInput").value) || state.year;
     state.week = Number(document.getElementById("weekInput").value) || state.week;
     state.weekday = Number(document.getElementById("daySelect").value);
-    const areaVal = document.getElementById("areaSelect").value;
-    state.areaId = areaVal === "" ? null : Number(areaVal);
     syncCalculatorWithSelectedArea();
     syncDateInputFromState();
     persistState();
@@ -2315,6 +2636,7 @@ async function loadSchedule() {
   };
 
   const onDateChange = async () => {
+    markScheduleActivity();
     const date = dateFromYmd(document.getElementById("dateInput").value);
     if (!date) return;
     const { year, week, weekday } = isoWeek(date);
@@ -2326,6 +2648,7 @@ async function loadSchedule() {
   };
 
   const stepDay = async (delta) => {
+    markScheduleActivity();
     const date = dateFromYWD(state.year, state.week, state.weekday);
     date.setUTCDate(date.getUTCDate() + delta);
     const { year, week, weekday } = isoWeek(date);
@@ -2339,12 +2662,9 @@ async function loadSchedule() {
   document.getElementById("yearInput").addEventListener("change", onControlChange);
   document.getElementById("weekInput").addEventListener("change", onControlChange);
   document.getElementById("daySelect").addEventListener("change", onControlChange);
-  document.getElementById("areaSelect").addEventListener("change", onControlChange);
   window.addEventListener("flow:areaFocusChanged", async () => {
+    markScheduleActivity();
     state.areaId = preferredAreaIdForCurrentUser();
-    const areaSelect = document.getElementById("areaSelect");
-    if (areaSelect) areaSelect.value = state.areaId == null ? "" : String(state.areaId);
-    state.calcSelectionManual = false;
     syncCalculatorWithSelectedArea();
     await loadSchedule();
   });
@@ -2366,6 +2686,7 @@ async function loadSchedule() {
         weekday: state.weekday,
         area_id: state.areaId,
       });
+      invalidateScheduleAllCache();
       if (r.cleared) pushScheduleUndo("rensa dag", undoSnapshots);
       showToast(`Rensade ${r.cleared} celler`);
       await loadSchedule();
@@ -2389,6 +2710,7 @@ async function loadSchedule() {
     state.nameFilter = e.target.value;
     refreshPersons();
     buildRows();
+    setupScheduleHorizontalScroll();
   });
   document.getElementById("nameFilter").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("nameFilter").addEventListener("click", (e) => e.stopPropagation());
@@ -2407,6 +2729,7 @@ async function loadSchedule() {
       }
       refreshPersons();
       buildRows();
+      setupScheduleHorizontalScroll();
     });
   });
 })();
@@ -2448,6 +2771,7 @@ function openCopyModal() {
     };
     try {
       const r = await api.post("/api/schedule/copy", copyPayload);
+      invalidateScheduleAllCache();
       showToast(`Kopierade ${r.copied} celler`);
       backdrop.remove();
       if (targetMatchesCurrentDay(copyPayload.to_year, copyPayload.to_week, copyPayload.to_weekday)) {

@@ -15,7 +15,7 @@ Kort svar: Produktivitet analyserar stora lokala CSV-loggar i klienten och kombi
 | --- | --- | --- | --- | --- |
 | Datum | Valjer rapportdatum | Renderar rapport for datumet | `loadProductivity`, lokal cache | Om filerna saknar datumet visas tom/ingen data. |
 | Foregaende/nasta datum | Klickar pilar | Hoppar till narliggande datum som finns i datasetet | `shiftProductivityDate` | Disabled om inget fore/efter-datum finns. |
-| Block | Valjer Alla/GG/AS/EH/MG | Filtrerar rapportsektioner | `productivityGroupFilter` | Om omradesfokus andras nollas manuellt filter. |
+| Omradesfokus i sidebar | Valjer Alla/GG/AS/EH/MG | Filtrerar rapportsektioner; `∞` visar alla block | `flow:areaFocusChanged`, `preferredProductivityGroupFilter` | Om fel block visas, kontrollera togglen nere i sidebar. |
 | Sok | Skriver text | Filtrerar sektioner/rader klient-side | `activeSearch`, `renderContent` | Sokningen ar lokal och paverkar inte datan. |
 | Filkrav/dropzoner | Drar filer till kravslot | Sparar lokal fil i IndexedDB | `productivityUploads.saveFiles` | Okand filtyp om namn/header inte matchar. |
 | Välj per filslot | Oppnar filval for viss filtyp | Sparar vald fil pa den sloten | IndexedDB `flow-productivity-files` | Vald fel fil kan klassas om targetKey anvands. |

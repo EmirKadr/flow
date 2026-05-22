@@ -5,8 +5,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
+from ..business_scope import scoped_get, visible_business_id
 from ..deps import get_db, require_view_access
-from ..models import Person, ScheduleCell, User
+from ..models import Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..schemas import ClearRequest, CopyRequest, FillFromLeftRequest
 
@@ -27,10 +28,17 @@ def _segment_to_dict(cell: ScheduleCell) -> dict:
     }
 
 
-def _person_ids_for_area(db: Session, area_id: int | None) -> list[int] | None:
-    if area_id is None:
+def _person_ids_for_area(db: Session, area_id: int | None, user: User) -> list[int] | None:
+    business_id = visible_business_id(db, user)
+    if area_id is None and business_id is None:
         return None
-    rows = db.execute(select(Person.id).where(Person.home_area_id == area_id)).scalars().all()
+    query = select(Person.id)
+    if business_id is not None:
+        query = query.where(Person.business_id == business_id)
+    if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
+        query = query.where(Person.home_area_id == area_id)
+    rows = db.execute(query).scalars().all()
     return list(rows)
 
 
@@ -50,7 +58,7 @@ def copy_schedule(
         [payload.to_weekday] if payload.to_weekday is not None else [1, 2, 3, 4, 5, 6, 7]
     )
 
-    area_person_ids = _person_ids_for_area(db, payload.area_id)
+    area_person_ids = _person_ids_for_area(db, payload.area_id, user)
     if area_person_ids is not None and not area_person_ids:
         return {"copied": 0, "applied": []}
 
@@ -170,9 +178,10 @@ def clear_schedule(
         ScheduleCell.weekday == payload.weekday,
     )
     if payload.person_id is not None:
+        scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
         q = q.where(ScheduleCell.person_id == payload.person_id)
     elif payload.area_id is not None:
-        pids = _person_ids_for_area(db, payload.area_id)
+        pids = _person_ids_for_area(db, payload.area_id, user)
         if not pids:
             return {"cleared": 0}
         q = q.where(ScheduleCell.person_id.in_(pids))
@@ -203,7 +212,7 @@ def fill_from_left(
     user: User = Depends(require_view_access("schedule", "edit")),
 ) -> dict:
     """För varje person: kopiera senaste icke-tomma aktivitet till efterföljande tomma celler samma dag."""
-    pids = _person_ids_for_area(db, payload.area_id)
+    pids = _person_ids_for_area(db, payload.area_id, user)
     q = select(ScheduleCell).where(
         ScheduleCell.year == payload.year,
         ScheduleCell.week == payload.week,

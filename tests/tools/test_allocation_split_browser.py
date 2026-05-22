@@ -61,29 +61,42 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
         assert "Kolumn 1" not in header_text
         assert "Kolumn 2" not in header_text
         assert "Kolumn 3" not in header_text
-        expect(page.locator(".allocation-result [data-copy-column]")).to_have_text(["Kopiera", "Kopiera", "Kopiera"])
+        copy_buttons = page.locator(".allocation-result [data-copy-column]")
+        expect(copy_buttons).to_have_count(3)
+        copy_button_contract = copy_buttons.evaluate_all(
+            """(buttons) => buttons.map((button) => ({
+              aria: button.getAttribute("aria-label"),
+              title: button.getAttribute("title"),
+              hasIcon: Boolean(button.querySelector("svg")),
+              visibleText: button.textContent.trim(),
+            }))"""
+        )
+        assert [item["title"] for item in copy_button_contract] == ["Kopiera kolumn"] * 3
+        assert [item["hasIcon"] for item in copy_button_contract] == [True, True, True]
+        assert [item["visibleText"] for item in copy_button_contract] == ["", "", ""]
+        assert all(item["aria"].startswith("Kopiera kolumn ") for item in copy_button_contract)
 
-        style_contract = page.locator(".allocation-result [data-copy-column]").first.evaluate(
+        style_contract = copy_buttons.first.evaluate(
             """(button) => {
-              const th = button.closest("th");
               const buttonStyle = getComputedStyle(button);
-              const thStyle = getComputedStyle(th);
               return {
-                fontSizeMatches: buttonStyle.fontSize === thStyle.fontSize,
-                fontWeightMatches: buttonStyle.fontWeight === thStyle.fontWeight,
-                textTransformMatches: buttonStyle.textTransform === thStyle.textTransform,
+                display: buttonStyle.display,
+                width: buttonStyle.width,
+                height: buttonStyle.height,
+                padding: buttonStyle.padding,
                 textDecorationLine: buttonStyle.textDecorationLine,
               };
             }"""
         )
+        assert style_contract.pop("display") in {"inline-flex", "flex"}
         assert style_contract == {
-            "fontSizeMatches": True,
-            "fontWeightMatches": True,
-            "textTransformMatches": True,
+            "width": "28px",
+            "height": "28px",
+            "padding": "0px",
             "textDecorationLine": "none",
         }
 
-        page.locator(".allocation-result [data-copy-column]").nth(1).click()
+        copy_buttons.nth(1).click()
         expect(page.locator(".toast.success")).to_have_text("Kolumn kopierad")
         copied_text = page.evaluate("navigator.clipboard.readText()")
         assert copied_text.replace("\r\n", "\n") == "C\nD"

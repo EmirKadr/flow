@@ -18,7 +18,11 @@ def user_can_bypass_schedule_cell_lock(user: User) -> bool:
 
 
 def foreign_schedule_cell_lock_applies(db: Session, user: User) -> bool:
-    return get_lock_foreign_schedule_cells(db) and not user_can_bypass_schedule_cell_lock(user)
+    try:
+        enabled = get_lock_foreign_schedule_cells(db, business_id=user.business_id)
+    except TypeError:
+        enabled = get_lock_foreign_schedule_cells(db)
+    return enabled and not user_can_bypass_schedule_cell_lock(user)
 
 
 def is_foreign_schedule_cell(cell: ScheduleCell, user: User) -> bool:

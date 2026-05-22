@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import hashlib
 import importlib
 import math
 import os
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -37,6 +40,9 @@ _NATIVE_FLOWS_MODULE: ModuleType | None = None
 _NATIVE_TABLES_MODULE: ModuleType | None = None
 _LOAD_ERROR: str | None = None
 SESSIONS: dict[str, dict] = {}
+UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
+UPLOAD_CACHE_TTL_SECONDS = 6 * 60 * 60
+UPLOAD_CACHE_MAX_FILES = 64
 
 
 def _default_warehouse_tools_dir() -> Path:
@@ -209,11 +215,130 @@ def _safe_upload_stem(filename: str | None) -> str:
     return (safe or "upload")[:80]
 
 
-async def save_upload(upload: UploadFile) -> Path:
+def _upload_cache_index_dir() -> Path:
+    return UPLOAD_CACHE_DIR / ".index"
+
+
+def _upload_cache_reference_path(cache_key: str) -> Path:
+    digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
+    return _upload_cache_index_dir() / f"{digest}.txt"
+
+
+def _upload_cache_referenced_names() -> set[str]:
+    index_dir = _upload_cache_index_dir()
+    if not index_dir.exists():
+        return set()
+    names: set[str] = set()
+    for path in index_dir.iterdir():
+        try:
+            if path.is_file():
+                value = path.read_text(encoding="utf-8").strip()
+                if value:
+                    names.add(value)
+        except OSError:
+            continue
+    return names
+
+
+def _remember_upload_cache(cache_key: str | None, target: Path) -> None:
+    if not cache_key:
+        return
+    index_dir = _upload_cache_index_dir()
+    index_dir.mkdir(parents=True, exist_ok=True)
+    index_path = _upload_cache_reference_path(cache_key)
+    previous = ""
+    try:
+        previous = index_path.read_text(encoding="utf-8").strip() if index_path.exists() else ""
+    except OSError:
+        previous = ""
+    if previous == target.name:
+        return
+
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=index_dir,
+        prefix="pending_",
+        suffix=".txt",
+        mode="w",
+        encoding="utf-8",
+    )
+    try:
+        tmp.write(target.name)
+        tmp.close()
+        Path(tmp.name).replace(index_path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+
+    if previous and previous not in _upload_cache_referenced_names():
+        try:
+            (UPLOAD_CACHE_DIR / previous).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _cleanup_upload_cache(now: float | None = None) -> None:
+    try:
+        if not UPLOAD_CACHE_DIR.exists():
+            return
+        now_ts = time.time() if now is None else now
+        retained: list[tuple[float, Path]] = []
+        for path in UPLOAD_CACHE_DIR.iterdir():
+            try:
+                if not path.is_file():
+                    continue
+                stat = path.stat()
+                if now_ts - stat.st_mtime > UPLOAD_CACHE_TTL_SECONDS:
+                    path.unlink(missing_ok=True)
+                    continue
+                retained.append((stat.st_mtime, path))
+            except OSError:
+                continue
+
+        overflow = len(retained) - UPLOAD_CACHE_MAX_FILES
+        if overflow > 0:
+            for _mtime, path in sorted(retained)[:overflow]:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    continue
+        index_dir = _upload_cache_index_dir()
+        if index_dir.exists():
+            existing = {path.name for path in UPLOAD_CACHE_DIR.iterdir() if path.is_file()}
+            for path in index_dir.iterdir():
+                try:
+                    if path.is_file() and path.read_text(encoding="utf-8").strip() not in existing:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    continue
+    except OSError:
+        return
+
+
+async def save_upload(upload: UploadFile, *, cache: bool = False, cache_key: str | None = None) -> Path:
     suffix = Path(upload.filename or "").suffix or ".csv"
+    content = await upload.read()
+    if cache:
+        digest = hashlib.sha256(content).hexdigest()
+        UPLOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _cleanup_upload_cache()
+        target = UPLOAD_CACHE_DIR / f"{digest}{suffix}"
+        if not target.exists():
+            tmp = tempfile.NamedTemporaryFile(delete=False, dir=UPLOAD_CACHE_DIR, prefix="pending_", suffix=suffix)
+            try:
+                tmp.write(content)
+                tmp.close()
+                Path(tmp.name).replace(target)
+            except Exception:
+                Path(tmp.name).unlink(missing_ok=True)
+                raise
+        _remember_upload_cache(cache_key, target)
+        _cleanup_upload_cache()
+        return target
+
     prefix = f"bem_allok_upload_{_safe_upload_stem(upload.filename)}_"
     tmp = tempfile.NamedTemporaryFile(delete=False, prefix=prefix, suffix=suffix)
-    tmp.write(await upload.read())
+    tmp.write(content)
     tmp.close()
     return Path(tmp.name)
 
@@ -226,8 +351,8 @@ def open_path(path: str) -> None:
             subprocess.Popen(["open", path])
         else:
             subprocess.Popen(["xdg-open", path])
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Kunde inte öppna filen automatiskt: {exc}") from exc
 
 
 def excel_writer_engine() -> str:
@@ -238,47 +363,70 @@ def excel_writer_engine() -> str:
     raise RuntimeError("Saknar Excel-skrivare (installera openpyxl eller xlsxwriter).")
 
 
-def open_df_in_excel_without_header(df, label: str) -> str:
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{label}.xlsx")
+def _safe_excel_sheet_name(label: str) -> str:
+    cleaned = re.sub(r"[\[\]:*?/\\]+", " ", str(label or "Sheet1"))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:31] or "Sheet1"
+
+
+def _safe_excel_file_label(label: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", str(label or "excel"))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ._")
+    return (cleaned or "excel")[:80]
+
+
+def write_table_to_excel(table, label: str, *, include_header: bool = True) -> str:
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{_safe_excel_file_label(label)}.xlsx")
     path = tmp.name
     tmp.close()
+    sheet_name = _safe_excel_sheet_name(label)
+
+    if _is_simple_table(table):
+        try:
+            from openpyxl import Workbook
+        except Exception as exc:  # noqa: BLE001
+            raise AllocationBridgeUnavailable("Openpyxl saknas for Excel-export.") from exc
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = sheet_name
+        if include_header:
+            sheet.append([_cell(column) for column in table.columns])
+        for row in table.rows:
+            sheet.append([_cell(value) for value in row])
+        workbook.save(path)
+        return path
+
     import pandas as pd  # type: ignore
 
+    df = table if isinstance(table, pd.DataFrame) else pd.DataFrame(table)
     with pd.ExcelWriter(path, engine=excel_writer_engine()) as writer:
-        df.to_excel(writer, sheet_name=str(label)[:31] or "Sheet1", index=False, header=False)
+        df.to_excel(writer, sheet_name=sheet_name, index=False, header=include_header)
+    return path
+
+
+def open_df_in_excel_without_header(df, label: str) -> str:
+    path = write_table_to_excel(df, label, include_header=False)
     open_path(path)
     return path
 
 
 def open_simple_table_in_excel_without_header(table, label: str) -> str:
-    try:
-        from openpyxl import Workbook
-    except Exception as exc:  # noqa: BLE001
-        raise AllocationBridgeUnavailable("Openpyxl saknas for Excel-export.") from exc
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{label}.xlsx")
-    path = tmp.name
-    tmp.close()
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = str(label)[:31] or "Sheet1"
-    for row in table.rows:
-        sheet.append([_cell(value) for value in row])
-    workbook.save(path)
+    path = write_table_to_excel(table, label, include_header=False)
     open_path(path)
     return path
 
 
-async def form_to_flow_payload(form) -> tuple[dict[str, Path], dict[str, str], list[Path]]:
+async def form_to_flow_payload(form, *, cache_scope: str | None = None) -> tuple[dict[str, Path], dict[str, str], list[Path]]:
     files: dict[str, Path] = {}
     params: dict[str, str] = {}
     temp_paths: list[Path] = []
     for key, value in form.multi_items():
         if isinstance(value, StarletteUploadFile):
             if value.filename:
-                path = await save_upload(value)
+                upload_cache_key = f"{cache_scope or 'global'}:{key}:{value.filename}"
+                path = await save_upload(value, cache=True, cache_key=upload_cache_key)
                 files[key] = path
-                temp_paths.append(path)
         elif isinstance(value, str) and value.strip() != "":
             params[key] = value
     return files, params, temp_paths
@@ -330,13 +478,17 @@ def open_excel_result(req: OpenAllocationExcelRequest) -> dict:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte (kör flödet igen).")
     label = session["labels"].get(req.key, req.key)
     table = session["tables"][req.key]
-    if _is_simple_table(table):
-        path = open_simple_table_in_excel_without_header(table, label=label)
-    elif session.get("flow_id") == "split-values":
-        path = open_df_in_excel_without_header(table, label=label)
-    else:
-        engine_module, _flows_module = require_available()
-        path = engine_module.open_df_in_excel({label: table}, label=label)
+    include_header = session.get("flow_id") != "split-values"
+    try:
+        path = write_table_to_excel(table, label, include_header=include_header)
+        open_path(path)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Kunde inte öppna Excel-filen automatiskt. {exc}",
+        ) from exc
     return {"opened": True, "path": path}
 
 
@@ -366,6 +518,10 @@ def download_result(session_id: str, key: str):
     if _is_simple_table(table):
         table.write_csv(tmp.name)
     else:
-        table.to_csv(tmp.name, index=False, encoding="utf-8-sig")
+        with open(tmp.name, "w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle)
+            writer.writerow([str(column) for column in table.columns])
+            for row in table.itertuples(index=False, name=None):
+                writer.writerow([_cell(value) for value in row])
     tmp.close()
     return FileResponse(tmp.name, filename=f"{label}.csv", media_type="text/csv")

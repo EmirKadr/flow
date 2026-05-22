@@ -13,6 +13,9 @@ hemsidan. Hemsidan ska alltså vara facit under övergången.
   den centrala servern via API.
 - All gemensam sanning ligger kvar centralt: användare, roller, schema,
   personer, aktiviteter, historik, inställningar och KPI-mål.
+- Verksamhet är ny isoleringsnivå ovanför område. Webben och Windows-appen ska
+  alltid få samma verksamhetsscope från API:t; en Stigamo-användare ska inte se
+  R3 och tvärtom.
 - Stora produktivitetsloggar är lokala i klienten tills vi bygger planerad
   API-hämtning/import.
 - Ingen riskfylld funktion får tas bort för att appen byggs om. Om appen och
@@ -25,7 +28,13 @@ hemsidan. Hemsidan ska alltså vara facit under övergången.
 - `/api/auth/login` loggar in aktiva användare och lägger `user_id` i sessionen.
 - Användare utan lösenord måste först gå igenom lösenordssättning.
 - `/api/auth/me` används av varje sida för att rita sidebar, rollstyrning och
-  rätt användarnamn.
+  rätt användarnamn. Svaret innehåller också `business_id`, verksamhetskod och
+  verksamhetsnamn.
+- Icke-Super Users, inklusive admins, är låsta till sin egen verksamhet i API
+  och vyer. Försök att komma åt främmande verksamhets id ska nekas utan att
+  avslöja datan.
+- Super User kan se alla verksamheter och använder `∞` som globalt läge, men
+  måste välja verksamhet vid skapande/import när den inte kan härledas.
 - `viewer` får läsa schema/översikt men inte ändra.
 - `leader` får ändra planering men får inte gå in i adminhistorik/användare.
 - `admin` får administrera vanliga objekt.
@@ -38,6 +47,11 @@ Extra test senare: logga in som admin, leader, viewer och super_user i både
 hemsida och app. Kontrollera att varje roll ser samma menyer och nekas samma
 sidor.
 
+Extra verksamhetstest: logga in som Stigamo-admin och R3-admin och verifiera att
+toggle, register, schema, översikt, historik och settings bara visar respektive
+verksamhet. Logga sedan in som Super User och verifiera globalt `∞` samt filter
+per verksamhet.
+
 ### Sidebar, tema och datum
 
 - Sidebar ritas av `common.js` på alla sidor.
@@ -45,17 +59,19 @@ sidor.
   blink när man byter vy.
 - Tema sparas i `localStorage` som `flow-theme`.
 - Sidebar collapse sparas i `localStorage` som `sidebar-collapsed`.
-- Valt datum i flow/översikt sparas i `sessionStorage` som
+- Valt datum i Bemanning/Oversikt sparas i `sessionStorage` som
   `flow-selected-date`.
 - Logout rensar sidebar-cache och skickar användaren till login.
 
 Extra test senare: byt mellan alla vyer snabbt, växla ljust/mörkt tema,
 collapsa sidebar, logga ut och logga in igen. App och hemsida ska kännas lika.
 
-### flow: dagsschema
+### Bemanning: dagsschema
 
 - `GET /api/schedule` hämtar aktiva personer, explicita celler, schemalagda
   standardtider och låsflagga.
+- Svaret är verksamhetsscopeat: vanliga användare får bara egen verksamhet,
+  Super User kan filtrera med `business_id` eller se globalt `∞`.
 - Timmar är 06-23.
 - En cell kan vara hel timme `0-60` eller två halvor `0-30` och `30-60`.
 - Om en person har fast schemamall visas mallens aktivitet även utan explicit
@@ -96,12 +112,15 @@ låst cell skapad av annan användare.
 - Översiktens undo/redo använder också `/api/schedule/hours/restore`.
 
 Extra test senare: veckovy, månadsvy, områdesfilter, ändra hel dag, dra över
-flera dagar, timmis utan mall, undo/redo och jämför timmar mot flow.
+flera dagar, timmis utan mall, undo/redo och jämför timmar mot Bemanning.
 
 ### Personer och veckomallar
 
 - `GET /api/persons` kräver planeringsrätt och visar aktiva personer om inte
   `include_inactive=true`.
+- Personer tillhör alltid en verksamhet. Vanliga användare skapar i egen
+  verksamhet utan extra val; Super User måste välja eller låta området/aktivitet
+  härleda verksamheten.
 - Excelimport max 5 MB och matchar svenska/alternativa rubriker.
 - Import skapar aktiva personer och standardkompetenser.
 - Dubbletter i fil eller mot befintliga personer stoppar import.
@@ -117,7 +136,10 @@ inaktivera, visa inaktiva, ändra veckomall, timmis utan fast schema.
 ### Aktiviteter och områden
 
 - `GET /api/areas` och `GET /api/activities` kräver inloggning.
-- Skapa/ändra/inaktivera kräver admin.
+- Skapa/ändra/inaktivera kräver admin eller Super User med rätt vyåtkomst. Super User administrerar områden under Verksamheter-vyn.
+- `DELETE /api/areas/{area_id}` hårdraderar tomma områden men inaktiverar områden som redan används av personer, aktiviteter eller användare.
+- Områden och aktiviteter är unika per verksamhet, inte globalt. Samma kod eller
+  namn kan återanvändas i Stigamo och R3.
 - Aktivitetskod skapas automatiskt om den inte anges.
 - Endast `super_user` får sätta/ändra aktivitetskod manuellt.
 - Dubblettkod stoppas.
@@ -130,12 +152,15 @@ super_user, kod spärrad för vanlig admin, summary activity utan loop.
 ### Användare och inställningar
 
 - `GET /api/users` kräver admin.
+- Användarnamn är fortsatt globalt unikt, men användarlistan och områdeval är
+  verksamhetsscopeade för alla som inte är Super User.
 - Import kräver `super_user`, max 5 MB.
 - Importerade användare utan lösenord får `must_change_password=true`.
 - Skapa användare kan ske med eller utan lösenord.
 - Rollerna är `admin`, `leader`, `viewer`.
 - Det går inte att inaktivera eller nedgradera sista aktiva admin.
-- Användarinställningar hämtas/sparas via `/api/settings`.
+- Användarinställningar, sidebar-layout, vybehörigheter och cell-lås hämtas och
+  sparas per verksamhet via `/api/settings`.
 
 Extra test senare: skapa användare, skapa utan lösenord, lösenordssättning,
 ändra roll, inaktivera, sista-admin-spärr, importmall/import.

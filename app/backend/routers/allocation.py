@@ -18,7 +18,7 @@ router = APIRouter(
     dependencies=[Depends(require_allocation_tools_user)],
 )
 
-SELF_SERVICE_FLOW_IDS = {"eftersok", "split-values"}
+SELF_SERVICE_FLOW_IDS = {"split-values"}
 logger = logging.getLogger(__name__)
 
 
@@ -88,6 +88,39 @@ def _audit_allocation_event(
         logger=logger,
         context=f"allocation audit event action={action}",
     )
+
+
+def _session_owner_payload(user: User) -> dict:
+    return {
+        "user_id": getattr(user, "id", None),
+        "business_id": getattr(user, "business_id", None),
+    }
+
+
+def _upload_cache_scope(user: User) -> str:
+    user_id = getattr(user, "id", None)
+    if user_id is not None:
+        return f"user:{user_id}"
+    return f"business:{getattr(user, 'business_id', None)}"
+
+
+def _assert_session_allowed(session_id: str, user: User) -> None:
+    session = bridge.SESSIONS.get(session_id)
+    owner = session.get("owner") if session is not None else None
+    if not owner:
+        return
+
+    user_id = getattr(user, "id", None)
+    owner_user_id = owner.get("user_id")
+    if owner_user_id is not None:
+        if user_id == owner_user_id:
+            return
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
+
+    owner_business_id = owner.get("business_id")
+    if owner_business_id is None or owner_business_id == getattr(user, "business_id", None):
+        return
+    raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
 
 
 @router.get("/health")
@@ -235,7 +268,7 @@ async def run_flow(
     _assert_flow_allowed(flow_id, user)
     try:
         form = await request.form()
-        files, params, temp_paths = await bridge.form_to_flow_payload(form)
+        files, params, temp_paths = await bridge.form_to_flow_payload(form, cache_scope=_upload_cache_scope(user))
     except Exception as exc:
         _audit_allocation_event(
             db,
@@ -251,6 +284,9 @@ async def run_flow(
         raise
     try:
         result = bridge.run_flow_handler(flow_id, files, params)
+        session_id = result.get("session_id")
+        if session_id in bridge.SESSIONS:
+            bridge.SESSIONS[session_id]["owner"] = _session_owner_payload(user)
         _audit_allocation_event(
             db,
             user,
@@ -274,8 +310,9 @@ async def run_flow(
 @router.post("/open-excel")
 def open_excel(
     req: bridge.OpenAllocationExcelRequest,
-    _user: User = Depends(require_allocation_tools_user),
+    user: User = Depends(require_allocation_tools_user),
 ) -> dict:
+    _assert_session_allowed(req.session_id, user)
     return bridge.open_excel_result(req)
 
 
@@ -284,8 +321,9 @@ def table_column(
     session_id: str,
     key: str,
     column_index: int,
-    _user: User = Depends(require_allocation_tools_user),
+    user: User = Depends(require_allocation_tools_user),
 ) -> dict:
+    _assert_session_allowed(session_id, user)
     return bridge.table_column_text(session_id, key, column_index)
 
 
@@ -293,6 +331,7 @@ def table_column(
 def download(
     session_id: str,
     key: str,
-    _user: User = Depends(require_allocation_tools_user),
+    user: User = Depends(require_allocation_tools_user),
 ):
+    _assert_session_allowed(session_id, user)
     return bridge.download_result(session_id, key)

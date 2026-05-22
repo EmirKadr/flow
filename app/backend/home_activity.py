@@ -8,7 +8,9 @@ def build_home_activity_resolver(
     activities: Iterable[Activity],
     areas: Iterable[Area],
 ):
-    activities_by_code = {activity.code: activity for activity in activities}
+    activities_by_business_code = {
+        (activity.business_id, activity.code): activity for activity in activities
+    }
     areas_by_id = {area.id: area for area in areas}
     activities_by_area: dict[int | None, list[Activity]] = {}
 
@@ -23,7 +25,12 @@ def build_home_activity_resolver(
             return person.home_activity_id
 
         home_area = areas_by_id.get(person.home_area_id)
-        preferred = activities_by_code.get(f"{home_area.code}_VM") if home_area else None
+        preferred = (
+            activities_by_business_code.get((person.business_id, f"{home_area.code}_VM"))
+            or activities_by_business_code.get((home_area.business_id, f"{home_area.code}_VM"))
+            if home_area
+            else None
+        )
         if preferred is not None:
             return preferred.id
 

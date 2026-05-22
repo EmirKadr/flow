@@ -16,6 +16,7 @@ from app.backend.models import (
     Activity,
     Area,
     AuditLog,
+    Business,
     Person,
     PersonScheduleTemplate,
     ScheduleCell,
@@ -31,25 +32,47 @@ def _next_id(db, model) -> int:
     return int(db.scalar(select(func.max(model.id))) or 0) + 1
 
 
-def _area_by_code(db, code: str) -> Area:
-    area = db.scalar(select(Area).where(Area.code == code))
+def _business_by_code(db, code: str) -> Business:
+    business = db.scalar(select(Business).where(Business.code == code))
+    if business is None:
+        raise RuntimeError(f"Missing business: {code}")
+    return business
+
+
+def _area_by_code(db, code: str, business: Business | None = None) -> Area:
+    query = select(Area).where(Area.code == code)
+    if business is not None:
+        query = query.where(Area.business_id == business.id)
+    area = db.scalar(query)
     if area is None:
         raise RuntimeError(f"Missing area: {code}")
     return area
 
 
-def _activity_by_code(db, code: str) -> Activity:
-    activity = db.scalar(select(Activity).where(Activity.code == code))
+def _activity_by_code(db, code: str, business: Business | None = None) -> Activity:
+    query = select(Activity).where(Activity.code == code)
+    if business is not None:
+        query = query.where(Activity.business_id == business.id)
+    activity = db.scalar(query)
     if activity is None:
         raise RuntimeError(f"Missing activity: {code}")
     return activity
 
 
-def _ensure_user(db, *, username: str, display_name: str, role: str, area: Area | None) -> User:
+def _ensure_user(
+    db,
+    *,
+    username: str,
+    display_name: str,
+    role: str,
+    area: Area | None,
+    business: Business | None = None,
+) -> User:
     user = db.scalar(select(User).where(User.username == username))
     if user is None:
         user = User(username=username, password_hash=hash_password(VISUAL_PASSWORD))
         db.add(user)
+    user.business_id = area.business_id if area is not None else (business.id if business is not None else None)
     user.display_name = display_name
     user.role = role
     user.roles = [role]
@@ -73,6 +96,7 @@ def _ensure_person(
     if person is None:
         person = Person(name=name, competencies=[])
         db.add(person)
+    person.business_id = area.business_id
     person.home_area_id = area.id
     person.home_activity_id = home_activity.id
     person.sort_order = sort_order
@@ -202,6 +226,7 @@ def _log_visual_seed(db, user: User) -> None:
             old_value=None,
             new_value={"tool": "tools.visual_data"},
             user_id=user.id,
+            business_id=user.business_id,
         )
     )
 
@@ -215,14 +240,18 @@ def seed_visual_data() -> None:
 
     db = SessionLocal()
     try:
-        gg = _area_by_code(db, "GG")
-        mg = _area_by_code(db, "MG")
-        as_area = _area_by_code(db, "AS")
+        stigamo = _business_by_code(db, "STIGAMO")
+        r3 = _business_by_code(db, "R3")
+        gg = _area_by_code(db, "GG", stigamo)
+        mg = _area_by_code(db, "MG", stigamo)
+        as_area = _area_by_code(db, "AS", stigamo)
+        r3_area = _area_by_code(db, "R3", r3)
 
         admin = db.scalar(select(User).where(User.username == "admin"))
         if admin is None:
             raise RuntimeError("Base seed must create admin before visual seed")
         admin.display_name = "Visual Admin"
+        admin.business_id = stigamo.id
         admin.area_id = gg.id
         admin.is_active = True
         admin.must_change_password = False
@@ -230,15 +259,17 @@ def seed_visual_data() -> None:
         _ensure_user(db, username="visual_leader", display_name="Visual Arbetsledare", role="leader", area=gg)
         _ensure_user(db, username="visual_staffing", display_name="Visual Bemanningsansvarig", role="staffing_manager", area=gg)
         _ensure_user(db, username="visual_viewer", display_name="Visual Visning", role="viewer", area=mg)
-        _ensure_user(db, username="visual_lager", display_name="Visual Lagerkontorist", role="warehouse_clerk", area=None)
-        _ensure_user(db, username="visual_artikel", display_name="Visual Artikelplacerare", role="article_placer", area=None)
+        _ensure_user(db, username="visual_lager", display_name="Visual Lagerkontorist", role="warehouse_clerk", area=None, business=stigamo)
+        _ensure_user(db, username="visual_artikel", display_name="Visual Artikelplacerare", role="article_placer", area=None, business=stigamo)
+        r3_admin = _ensure_user(db, username="visual_r3_admin", display_name="Visual R3 Admin", role="admin", area=r3_area)
 
-        gg_vm = _activity_by_code(db, "GG_VM")
-        gg_plock = _activity_by_code(db, "GG_PLOCK")
-        gg_op = _activity_by_code(db, "GG_OP")
-        mg_vm = _activity_by_code(db, "MG_VM")
-        mg_stod = _activity_by_code(db, "MG_STOD")
-        as_plock = _activity_by_code(db, "AS_PLOCK")
+        gg_vm = _activity_by_code(db, "GG_VM", stigamo)
+        gg_plock = _activity_by_code(db, "GG_PLOCK", stigamo)
+        gg_op = _activity_by_code(db, "GG_OP", stigamo)
+        mg_vm = _activity_by_code(db, "MG_VM", stigamo)
+        mg_stod = _activity_by_code(db, "MG_STOD", stigamo)
+        as_plock = _activity_by_code(db, "AS_PLOCK", stigamo)
+        r3_ledig = _activity_by_code(db, "LEDIG", r3)
 
         people = [
             _ensure_person(db, name="Visual GG Plock", area=gg, home_activity=gg_plock, sort_order=1),
@@ -247,11 +278,12 @@ def seed_visual_data() -> None:
             _ensure_person(db, name="Visual MG VM", area=mg, home_activity=mg_vm, sort_order=4),
             _ensure_person(db, name="Visual MG Stod", area=mg, home_activity=mg_stod, sort_order=5),
             _ensure_person(db, name="Visual AS Plock", area=as_area, home_activity=as_plock, sort_order=6),
+            _ensure_person(db, name="Visual R3 Person", area=r3_area, home_activity=r3_ledig, sort_order=1),
         ]
         db.flush()
 
         for person in people:
-            _set_template(db, person, admin)
+            _set_template(db, person, r3_admin if person.business_id == r3.id else admin)
 
         plans = [
             (people[0], gg_plock, gg_vm),
@@ -260,6 +292,7 @@ def seed_visual_data() -> None:
             (people[3], mg_vm, mg_stod),
             (people[4], mg_stod, mg_vm),
             (people[5], as_plock, as_plock),
+            (people[6], r3_ledig, r3_ledig),
         ]
         for weekday in range(1, 6):
             for person, morning, afternoon in plans:
@@ -274,7 +307,7 @@ def seed_visual_data() -> None:
                         minute_end=60,
                         person=person,
                         activity=morning,
-                        updated_by=admin,
+                        updated_by=r3_admin if person.business_id == r3.id else admin,
                     )
                 for hour in (13, 14, 15):
                     _upsert_cell(
@@ -287,7 +320,7 @@ def seed_visual_data() -> None:
                         minute_end=60,
                         person=person,
                         activity=afternoon,
-                        updated_by=admin,
+                        updated_by=r3_admin if person.business_id == r3.id else admin,
                     )
             _replace_hour_with_halves(
                 db,

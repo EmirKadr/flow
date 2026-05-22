@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer", "super_user"]
 
 
-class AreaOut(BaseModel):
+class BusinessOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     code: str
@@ -17,7 +17,32 @@ class AreaOut(BaseModel):
     is_active: bool
 
 
+class BusinessCreate(BaseModel):
+    code: str
+    name: str
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class BusinessUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class AreaOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    business_id: int | None = None
+    code: str
+    name: str
+    sort_order: int
+    is_active: bool
+
+
 class AreaCreate(BaseModel):
+    business_id: int | None = None
     code: str
     name: str
     sort_order: int = 0
@@ -25,6 +50,7 @@ class AreaCreate(BaseModel):
 
 
 class AreaUpdate(BaseModel):
+    business_id: int | None = None
     code: str | None = None
     name: str | None = None
     sort_order: int | None = None
@@ -34,6 +60,7 @@ class AreaUpdate(BaseModel):
 class ActivityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    business_id: int | None = None
     code: str
     label: str
     area_id: int | None
@@ -46,6 +73,7 @@ class ActivityOut(BaseModel):
 
 
 class ActivityCreate(BaseModel):
+    business_id: int | None = None
     code: str | None = None
     label: str
     area_id: int | None = None
@@ -57,6 +85,7 @@ class ActivityCreate(BaseModel):
 
 
 class ActivityUpdate(BaseModel):
+    business_id: int | None = None
     code: str | None = None
     label: str | None = None
     area_id: int | None = None
@@ -79,9 +108,22 @@ class ActivityImportResult(BaseModel):
     errors: list[ActivityImportError] = Field(default_factory=list)
 
 
+class ActivityImportRowInput(BaseModel):
+    business: str | int | float | None = None
+    label: str | int | float | None = None
+    area: str | int | float | None = None
+    summary_activity: str | int | float | None = None
+    sort_order: str | int | float | None = None
+
+
+class ActivityImportRowsRequest(BaseModel):
+    rows: list[ActivityImportRowInput] = Field(default_factory=list, max_length=500)
+
+
 class PersonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    business_id: int | None = None
     name: str
     home_area_id: int | None
     home_activity_id: int | None = None
@@ -93,6 +135,7 @@ class PersonOut(BaseModel):
 
 
 class PersonCreate(BaseModel):
+    business_id: int | None = None
     name: str
     home_area_id: int | None = None
     home_activity_id: int | None = None
@@ -104,6 +147,7 @@ class PersonCreate(BaseModel):
 
 
 class PersonUpdate(BaseModel):
+    business_id: int | None = None
     name: str | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
@@ -126,6 +170,18 @@ class PersonImportResult(BaseModel):
     errors: list[PersonImportError] = Field(default_factory=list)
 
 
+class PersonImportRowInput(BaseModel):
+    business: str | int | float | None = None
+    name: str | int | float | None = None
+    home_area: str | int | float | None = None
+    home_activity: str | int | float | None = None
+    sort_order: str | int | float | None = None
+
+
+class PersonImportRowsRequest(BaseModel):
+    rows: list[PersonImportRowInput] = Field(default_factory=list, max_length=500)
+
+
 class CellOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     person_id: int
@@ -144,6 +200,7 @@ class ScheduleOut(BaseModel):
     week: int
     weekday: int
     area_id: int | None
+    revision_key: str | None = None
     persons: list[PersonOut]
     cells: list[CellOut]
     scheduled_hours: dict[int, list[int]] = Field(default_factory=dict)  # person_id → [7,8,9,...]
@@ -301,6 +358,9 @@ class UserOut(BaseModel):
     display_name: str | None
     role: str
     roles: list[str] = Field(default_factory=list)
+    business_id: int | None = None
+    business_code: str | None = None
+    business_name: str | None = None
     area_id: int | None = None
     must_change_password: bool = False
     is_super_user: bool = False
@@ -313,6 +373,9 @@ class UserAdminOut(BaseModel):
     display_name: str | None
     role: str
     roles: list[str] = Field(default_factory=list)
+    business_id: int | None = None
+    business_code: str | None = None
+    business_name: str | None = None
     area_id: int | None = None
     is_active: bool
     must_change_password: bool = False
@@ -326,6 +389,7 @@ class UserCreate(BaseModel):
     display_name: str | None = None
     role: UserRole = "leader"
     roles: list[UserRole] | None = None
+    business_id: int | None = None
     area_id: int | None = None
     is_active: bool = True
 
@@ -370,6 +434,7 @@ class UserUpdate(BaseModel):
     display_name: str | None = None
     role: UserRole | None = None
     roles: list[UserRole] | None = None
+    business_id: int | None = None
     area_id: int | None = None
     is_active: bool | None = None
 
@@ -414,6 +479,19 @@ class UserImportResult(BaseModel):
     errors: list[UserImportError] = Field(default_factory=list)
 
 
+class UserImportRowInput(BaseModel):
+    business: str | int | float | None = None
+    username: str | int | float | None = None
+    display_name: str | int | float | None = None
+    role: str | int | float | None = None
+    roles: str | list[str] | None = None
+    area: str | int | float | None = None
+
+
+class UserImportRowsRequest(BaseModel):
+    rows: list[UserImportRowInput] = Field(default_factory=list, max_length=500)
+
+
 class AuditEntryOut(BaseModel):
     id: int
     entity_type: str
@@ -440,6 +518,45 @@ class AuditSummaryOut(BaseModel):
     top_users: list[AuditSummaryBucket]
     top_actions: list[AuditSummaryBucket]
     top_entities: list[AuditSummaryBucket]
+
+
+class AuditClientErrorIn(BaseModel):
+    path: str = Field(max_length=300)
+    method: str = Field(default="GET", max_length=10)
+    status: int | None = Field(default=None, ge=0, le=599)
+    error_code: str | None = Field(default=None, max_length=120)
+    message: str | None = Field(default=None, max_length=500)
+    detail: Any | None = None
+    page_path: str | None = Field(default=None, max_length=300)
+
+
+class AuditErrorEventOut(BaseModel):
+    id: int
+    created_at: datetime
+    user_id: int | None = None
+    username: str | None = None
+    display_name: str | None = None
+    entity_type: str
+    entity_id: int
+    action: str
+    error_code: str
+    error_type: str
+    status_code: int | None = None
+    path: str | None = None
+    message: str | None = None
+
+
+class AuditErrorSummaryOut(BaseModel):
+    total_errors: int
+    events_last_24h: int
+    unique_users: int
+    scanned_events: int
+    truncated: bool = False
+    top_error_codes: list[AuditSummaryBucket]
+    top_actions: list[AuditSummaryBucket]
+    top_paths: list[AuditSummaryBucket]
+    top_users: list[AuditSummaryBucket]
+    recent: list[AuditErrorEventOut]
 
 
 class AppSettingsOut(BaseModel):

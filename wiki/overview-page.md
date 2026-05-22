@@ -1,13 +1,13 @@
 ---
 title: Oversikt
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [oversikt, ui, knappar]
 ---
 
 # Oversikt
 
-Kort svar: Oversikt visar flow pa dag-niva i vecka eller manad. En cell representerar en persons dag och skriver/tommer hela dagen enligt personens veckomall.
+Kort svar: Oversikt visar Bemanning pa dag-niva i vecka eller manad. En cell representerar en persons dag och skriver/tommer hela dagen enligt personens veckomall.
 
 ## Knappar och kontroller
 
@@ -18,7 +18,8 @@ Kort svar: Oversikt visar flow pa dag-niva i vecka eller manad. En cell represen
 | Ar | Valjer ar | Laddar aktuell vecka/manad i nytt ar | `GET /api/overview` eller `/month` | ISO-vecka kan ligga over arsskifte. |
 | Vecka | Valjer vecka | Laddar veckoversikt | `/api/overview` | Visas bara i veckovy. |
 | Manad | Valjer manad | Laddar manadsoversikt | `/api/overview/month` | Visas bara i manadsvy. |
-| Omrade | Filtrerar personer | Skickar `area_id` till API | `areaSelect` | Tomt varde = alla omraden. |
+| Omradesfokus i sidebar | Valjer MG/GG/AS/EH eller Alla | Visar cachat all-data filtrerat klient-side nar det finns; annars hamtas vald vy och all-data forhamtas | `flow:areaFocusChanged`, `filterOverviewDataForArea`, `prefetchAllOverview` | `∞` betyder alla synliga omraden; for Super User kan det vara globalt enligt verksamhetsscope. |
+| Ovre horisontell scrollbar | Drar tabellen i sidled ovanfor oversikten | Synkar med tabellens vanliga scroll nederst | `setupSyncedHorizontalScroll` | Visas bara nar tabellen ar bredare an ytan. |
 | Undo/Redo | Angra/gor om dagandringar | Restore av snapshots via schema-API | `/api/schedule/hours/restore` | Disabled om stacken ar tom eller read-only. |
 | Personfilter | Skriver soktext | Filtrerar personer klient-side | `refreshPersons` | Shift-klick pa header sorterar. |
 | Dagcell-dropdown | Valjer aktivitet/tomt for hel dag | Skriver/tommer personens schematimmar for dagen | `POST /api/overview/day` | Om dagen ar blandad visas confirm innan overskrivning. |
@@ -38,6 +39,8 @@ Kort svar: Oversikt visar flow pa dag-niva i vecka eller manad. En cell represen
 - Heldagsandring anvander personens veckomall. Om personen saknar fast mall/timmis kan API stoppa andringen.
 - Vid blandad dag fragar klienten innan den skriver over med ett enda varde.
 - Drag skapar manga heldagsandringar och pushar undo-snapshot for de lyckade.
+- Oversikt cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Cachen ar separat for veckovy och manadsvy och ogiltigforklaras vid dagandring, drag och undo/redo.
+- Nar en period finns i cache kontrollerar klienten `/api/overview/revision` eller `/api/overview/revision/month` tyst i bakgrunden. Aktiv vy kontrollerar ungefär var 10:e sekund, idle-vy ungefär var 30:e sekund, och dold browserflik pausar. Vid ny revision hamtas all-data och bara andrade synliga dagceller patchas om anvandaren inte haller pa i just den cellen.
 
 ## Felsokningssvar for framtida chat
 
@@ -46,7 +49,7 @@ Kort svar: Oversikt visar flow pa dag-niva i vecka eller manad. En cell represen
 | "Varfor far jag inte andra en dag?" | Anvandaren kan vara read-only, personen kan sakna fast schema, eller API nekade rollen. |
 | "Vad betyder randig/blandad dag?" | Dagen innehaller flera aktiviteter eller segment och kan skrivas over med confirm. |
 | "Varfor raknas inte timmis som ledig?" | Timmis utan fast mall betraktas inte som en standardledig dag for heldagsandring. |
-| "Varfor visar Oversikt andra timmar an flow?" | Kontrollera att samma ar/vecka/dag/omrade anvands och att malltider plus explicita celler raknas. |
+| "Varfor visar Oversikt andra timmar an Bemanning?" | Kontrollera att samma ar/vecka/dag/omrade anvands och att malltider plus explicita celler raknas. |
 
 ## Kallor
 
@@ -54,4 +57,3 @@ Kort svar: Oversikt visar flow pa dag-niva i vecka eller manad. En cell represen
 - `../app/frontend/js/overview.js`
 - `../app/backend/routers/overview.py`
 - `../APP_MIGRATION_PLAN.md`
-

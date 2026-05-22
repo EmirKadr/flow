@@ -1,11 +1,16 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import AuditLog
-from app.backend.routers import allocation, productivity
+from app.backend.database import Base
+from app.backend.models import AuditLog, Business, User
+from app.backend.routers import allocation, audit_logs, productivity
+from app.backend.schemas import AuditClientErrorIn
 
 
 class FakeAuditDb:
@@ -22,6 +27,20 @@ class FakeAuditDb:
 
     def rollback(self):
         self.rolled_back = True
+
+
+@pytest.fixture
+def audit_db_session():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_productivity_upload_audit_omits_file_names():
@@ -172,3 +191,131 @@ def test_allocation_endpoint_logs_failed_upload_parse():
         "error_type": "OSError",
         "flow_id": "split-values",
     }
+
+
+def test_client_error_report_writes_sanitized_audit_event(audit_db_session):
+    business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    audit_db_session.add(business)
+    audit_db_session.flush()
+    user = User(
+        username="admin",
+        display_name="Admin",
+        role="super_user",
+        roles=["super_user"],
+        business_id=business.id,
+        is_active=True,
+    )
+    audit_db_session.add(user)
+    audit_db_session.commit()
+    audit_db_session.refresh(user)
+
+    response = audit_logs.report_client_error(
+        AuditClientErrorIn(
+            path="/api/persons?token=secret",
+            method="put",
+            status=500,
+            error_code="HTTP 500",
+            message="Kunde inte spara",
+            detail={"message": "Serverfel", "token": "secret"},
+            page_path="/personer.html?token=secret",
+        ),
+        db=audit_db_session,
+        user=user,
+    )
+
+    entry = audit_db_session.query(AuditLog).filter_by(entity_type="client_error").one()
+    assert response.status_code == 204
+    assert entry.business_id == business.id
+    assert entry.user_id == user.id
+    assert entry.entity_id == 500
+    assert entry.action == "client_error"
+    assert entry.new_value == {
+        "path": "/api/persons",
+        "method": "PUT",
+        "status_code": 500,
+        "error_code": "HTTP 500",
+        "message": "Kunde inte spara",
+        "detail": "Serverfel",
+        "page_path": "/personer.html",
+    }
+    assert "secret" not in json.dumps(entry.new_value, ensure_ascii=False)
+
+
+def test_audit_errors_groups_client_and_failed_events(audit_db_session):
+    business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    audit_db_session.add(business)
+    audit_db_session.flush()
+    user = User(
+        username="admin",
+        display_name="Admin",
+        role="super_user",
+        roles=["super_user"],
+        business_id=business.id,
+        is_active=True,
+    )
+    audit_db_session.add(user)
+    audit_db_session.flush()
+    now = datetime.now(timezone.utc)
+    audit_db_session.add_all(
+        [
+            AuditLog(
+                business_id=business.id,
+                entity_type="client_error",
+                entity_id=500,
+                action="client_error",
+                old_value=None,
+                new_value={
+                    "path": "/api/persons",
+                    "method": "PUT",
+                    "status_code": 500,
+                    "error_code": "HTTP 500",
+                    "message": "Kunde inte spara",
+                },
+                user_id=user.id,
+                created_at=now,
+            ),
+            AuditLog(
+                business_id=business.id,
+                entity_type="productivity_file",
+                entity_id=0,
+                action="upload_failed",
+                old_value=None,
+                new_value={"error_type": "OSError", "status_code": 400},
+                user_id=user.id,
+                created_at=now,
+            ),
+            AuditLog(
+                business_id=business.id,
+                entity_type="person",
+                entity_id=1,
+                action="update",
+                old_value={"name": "A"},
+                new_value={"name": "B"},
+                user_id=user.id,
+                created_at=now,
+            ),
+        ]
+    )
+    audit_db_session.commit()
+
+    summary = audit_logs.audit_errors(
+        limit=100,
+        scan_limit=5000,
+        user_id=None,
+        entity_type=None,
+        action=None,
+        entity_id=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=user,
+    )
+
+    assert summary.total_errors == 2
+    assert summary.events_last_24h == 2
+    assert summary.unique_users == 1
+    assert summary.truncated is False
+    assert {bucket.label for bucket in summary.top_error_codes} == {"HTTP 500", "OSError"}
+    assert {bucket.label for bucket in summary.top_actions} == {"client_error", "upload_failed"}
+    assert any(bucket.label == "/api/persons" for bucket in summary.top_paths)
+    assert {event.action for event in summary.recent} == {"client_error", "upload_failed"}

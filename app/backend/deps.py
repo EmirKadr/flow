@@ -86,7 +86,7 @@ def require_view_access(view_id: str, min_level: str = "view"):
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        if not can_access_view(user, get_role_view_access(db), view_id, min_level):
+        if not can_access_view(user, get_role_view_access(db, business_id=user.business_id), view_id, min_level):
             label = "redigeringsbehörighet" if min_level == "edit" else "behörighet"
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sidan kräver {label}")
         return user

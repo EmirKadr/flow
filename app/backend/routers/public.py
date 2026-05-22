@@ -25,6 +25,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..business_scope import DEFAULT_BUSINESS_CODE, get_business_by_input
 from ..config import settings
 from ..deps import get_db
 from ..models import Activity, Person, ScheduleCell
@@ -115,11 +116,19 @@ def _format_number(value: float) -> str:
     return f"{value:.2f}"
 
 
+def _resolve_public_business_id(db: Session, business: str | int | float | None) -> int:
+    resolved = get_business_by_input(db, business or DEFAULT_BUSINESS_CODE)
+    if resolved is None or not resolved.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Business not found")
+    return resolved.id
+
+
 def _calc_activity_hours(
     db: Session,
     year: int,
     week: int,
     weekdays: list[int],
+    business_id: int,
     activity_id: int | None = None,
 ) -> dict[int, float]:
     """Returnerar {activity_id: hours} aggregerat över givna weekdays.
@@ -139,6 +148,7 @@ def _calc_activity_hours(
         ScheduleCell.week == week,
         ScheduleCell.weekday.in_(weekdays),
         ScheduleCell.activity_id.is_not(None),
+        ScheduleCell.activity_id.in_(select(Activity.id).where(Activity.business_id == business_id)),
     ).group_by(ScheduleCell.activity_id)
     if activity_id is not None:
         explicit_q = explicit_q.where(ScheduleCell.activity_id == activity_id)
@@ -150,6 +160,7 @@ def _calc_activity_hours(
     # 2. Implicit standard per (person, weekday) - täcker timmar utan explicit segment
     persons_q = select(Person).where(
         Person.is_active.is_(True),
+        Person.business_id == business_id,
         Person.home_activity_id.is_not(None),
     )
     if activity_id is not None:
@@ -180,8 +191,8 @@ def _calc_activity_hours(
     return {aid: m / 60.0 for aid, m in minutes_by_activity.items()}
 
 
-def _resolve_activity(db: Session, code: str) -> Activity:
-    act = db.query(Activity).filter_by(code=code).one_or_none()
+def _resolve_activity(db: Session, code: str, business_id: int) -> Activity:
+    act = db.query(Activity).filter_by(business_id=business_id, code=code).one_or_none()
     if not act:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Aktivitet '{code}' hittades inte")
     return act
@@ -196,15 +207,17 @@ def get_hours_day(
     week: int | None = Query(None, ge=1, le=53),
     weekday: int | None = Query(None, ge=1, le=7),
     activity: str = Query(..., description="Aktivitetskod, t.ex. GG_PLOCK"),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week, resolved_weekday = _resolve_day_params(day, year, week, weekday)
-    act = db.query(Activity).filter_by(code=activity).one_or_none()
+    act = db.query(Activity).filter_by(business_id=business_id, code=activity).one_or_none()
     if not act:
         return "0"
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday], activity_id=act.id)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday], business_id, activity_id=act.id)
     return _format_number(result.get(act.id, 0.0))
 
 
@@ -214,15 +227,17 @@ def get_hours_week(
     year: int | None = Query(None, ge=2000, le=2100),
     week: int | None = Query(None, ge=1, le=53),
     activity: str = Query(...),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week = _resolve_week_params(day, year, week)
-    act = db.query(Activity).filter_by(code=activity).one_or_none()
+    act = db.query(Activity).filter_by(business_id=business_id, code=activity).one_or_none()
     if not act:
         return "0"
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7], activity_id=act.id)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7], business_id, activity_id=act.id)
     return _format_number(result.get(act.id, 0.0))
 
 
@@ -235,15 +250,17 @@ def get_persons_day(
     week: int | None = Query(None, ge=1, le=53),
     weekday: int | None = Query(None, ge=1, le=7),
     activity: str = Query(...),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week, resolved_weekday = _resolve_day_params(day, year, week, weekday)
-    act = db.query(Activity).filter_by(code=activity).one_or_none()
+    act = db.query(Activity).filter_by(business_id=business_id, code=activity).one_or_none()
     if not act:
         return "0"
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday], activity_id=act.id)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday], business_id, activity_id=act.id)
     return _format_number(result.get(act.id, 0.0) / HOURS_PER_FTE)
 
 
@@ -253,24 +270,26 @@ def get_persons_week(
     year: int | None = Query(None, ge=2000, le=2100),
     week: int | None = Query(None, ge=1, le=53),
     activity: str = Query(...),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week = _resolve_week_params(day, year, week)
-    act = db.query(Activity).filter_by(code=activity).one_or_none()
+    act = db.query(Activity).filter_by(business_id=business_id, code=activity).one_or_none()
     if not act:
         return "0"
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7], activity_id=act.id)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7], business_id, activity_id=act.id)
     return _format_number(result.get(act.id, 0.0) / HOURS_PER_FTE)
 
 
 # ---------- Summary (CSV, alla aktiviteter) ----------
 
-def _build_summary_csv(db: Session, hours_by_activity: dict[int, float]) -> str:
+def _build_summary_csv(db: Session, hours_by_activity: dict[int, float], business_id: int) -> str:
     if not hours_by_activity:
         return "activity_code,activity_label,hours,persons\n"
-    activities = {a.id: a for a in db.query(Activity).all()}
+    activities = {a.id: a for a in db.query(Activity).filter(Activity.business_id == business_id).all()}
     rows = ["activity_code,activity_label,hours,persons"]
     sorted_items = sorted(
         hours_by_activity.items(),
@@ -291,13 +310,15 @@ def get_summary_day(
     year: int | None = Query(None, ge=2000, le=2100),
     week: int | None = Query(None, ge=1, le=53),
     weekday: int | None = Query(None, ge=1, le=7),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week, resolved_weekday = _resolve_day_params(day, year, week, weekday)
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday])
-    return _build_summary_csv(db, result)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [resolved_weekday], business_id)
+    return _build_summary_csv(db, result, business_id)
 
 
 @router.get("/summary/week", response_class=PlainTextResponse)
@@ -305,10 +326,12 @@ def get_summary_week(
     day: date | None = Query(None, alias="date", description="Datum i veckan, format YYYY-MM-DD"),
     year: int | None = Query(None, ge=2000, le=2100),
     week: int | None = Query(None, ge=1, le=53),
+    business: str | None = Query(None),
     token: str = Query(...),
     db: Session = Depends(get_db),
 ) -> str:
     _verify_token(token)
+    business_id = _resolve_public_business_id(db, business)
     resolved_year, resolved_week = _resolve_week_params(day, year, week)
-    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7])
-    return _build_summary_csv(db, result)
+    result = _calc_activity_hours(db, resolved_year, resolved_week, [1, 2, 3, 4, 5, 6, 7], business_id)
+    return _build_summary_csv(db, result, business_id)

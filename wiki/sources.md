@@ -1,7 +1,7 @@
 ---
 title: Kallmanifest
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [wiki, kallor]
 ---
 
@@ -24,14 +24,15 @@ Kort svar: wikin ar syntetiserad fran repo-filerna nedan. Raa kallor ska normalt
 
 ## Frontend-kallor
 
-- `../app/frontend/index.html`, `../app/frontend/js/schedule.js` - flow dagsschema.
+- `../app/frontend/index.html`, `../app/frontend/js/schedule.js` - Bemanning dagsschema.
 - `../app/frontend/overblick.html`, `../app/frontend/js/overview.js` - Oversikt.
 - `../app/frontend/personer.html`, `../app/frontend/js/persons.js` - Personregister och veckomallar.
 - `../app/frontend/aktiviteter.html`, `../app/frontend/js/activities.js` - Aktiviteter.
 - `../app/frontend/anvandare.html`, `../app/frontend/js/users.js` - Anvandare, settings och vybehorigheter.
+- `../app/frontend/verksamheter.html`, `../app/frontend/js/businesses.js` - Super User-vyn for verksamheter.
 - `../app/frontend/historik.html`, `../app/frontend/js/analytics.js` - Historik/audit.
 - `../app/frontend/produktivitet.html`, `../app/frontend/js/productivity.js`, `../app/frontend/js/productivity_uploads.js` - Produktivitet och filval.
-- `../app/frontend/uppladdningar.html`, `../app/frontend/bearbeta.html`, `../app/frontend/dela.html`, `../app/frontend/harleda.html`, `../app/frontend/js/allocation_tools.js` - lagerverktyg.
+- `../app/frontend/uppladdningar.html`, `../app/frontend/bearbeta.html`, `../app/frontend/dela.html`, `../app/frontend/js/allocation_tools.js` - lagerverktyg.
 - `../app/frontend/js/common.js` - sidebar, tema, omradesfokus, toast, logg, gemensam filuppladdning och auth-guard.
 - `../app/frontend/js/api.js` - fetch-wrapper, auth-redirects och nedladdningar.
 
@@ -41,7 +42,8 @@ Kort svar: wikin ar syntetiserad fran repo-filerna nedan. Raa kallor ska normalt
 - `../app/backend/models.py` - SQLAlchemy-tabeller.
 - `../app/backend/schemas.py` - Pydantic-kontrakt.
 - `../app/backend/deps.py`, `../app/backend/user_access.py` - auth, roller och vyatkomst.
-- `../app/backend/settings_service.py`, `../app/backend/routers/settings.py` - globala settings.
+- `../app/backend/business_scope.py`, `../app/backend/routers/businesses.py`, `../app/alembic/versions/0018_businesses.py` - verksamheter, isolering och backfill.
+- `../app/backend/settings_service.py`, `../app/backend/routers/settings.py` - verksamhetsspecifika settings.
 - `../app/backend/routers/schedule.py`, `../app/backend/routers/bulk.py`, `../app/backend/routers/overview.py` - schema och oversikt.
 - `../app/backend/routers/persons.py`, `../app/backend/routers/person_schedules.py`, `../app/backend/routers/activities.py`, `../app/backend/routers/areas.py`, `../app/backend/routers/users.py` - register.
 - `../app/backend/routers/audit_logs.py`, `../app/backend/audit.py` - auditlogg.
@@ -54,3 +56,7 @@ Kort svar: wikin ar syntetiserad fran repo-filerna nedan. Raa kallor ska normalt
 - `../warehouse_tools/catalog.py`, `../warehouse_tools/flows.py`, `../warehouse_tools/detect.py` - lagerfloden, filslotar och filidentifiering.
 - `../tools/flow_cli.py`, `../tools/visual_smoke.py`, `../tools/interactive_e2e.py`, `../tools/desktop_app_probe.py` - agentverktyg och teststod.
 
+## Testkallor
+
+- `../tests/services/test_business_scope.py` - verksamhetsisolering mellan Stigamo och R3.
+- `../tests/tools/test_visual_tools.py` - visuella kontrakt for dynamisk toggle, Verksamheter-vyn och Super User-falt.

@@ -7,20 +7,30 @@ tags: [databas, modeller]
 
 # Datamodell
 
-Kort svar: bemanningen bygger pa personer, aktiviteter, omraden, schemaceller, personliga veckomallar, anvandare, auditlogg och appsettings. Schemaceller ar segmenterade per timme och kan vara hel timme eller tva halvtimmar.
+Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, schemaceller, personliga veckomallar, anvandare, auditlogg och verksamhetsspecifika appsettings. Schemaceller ar segmenterade per timme och kan vara hel timme eller tva halvtimmar.
 
 ## Centrala tabeller
 
 | Tabell | Modell | Syfte | Viktiga falt |
 | --- | --- | --- | --- |
-| `users` | `User` | Inloggning, roller och omrade | `username`, `password_hash`, `role`, `roles`, `area_id`, `is_active`, `must_change_password` |
-| `areas` | `Area` | Omraden/stallen | `code`, `name`, `sort_order`, `is_active` |
-| `persons` | `Person` | Planerbara personer | `name`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
-| `activities` | `Activity` | Aktiviteter som kan bemannas | `code`, `label`, `area_id`, `summary_activity_id`, `color`, `category`, `sort_order`, `is_active` |
+| `businesses` | `Business` | Verksamheter/isoleringsniva | `code`, `name`, `sort_order`, `is_active` |
+| `users` | `User` | Inloggning, roller, verksamhet och omrade | `business_id`, `username`, `password_hash`, `role`, `roles`, `area_id`, `is_active`, `must_change_password` |
+| `areas` | `Area` | Omraden/stallen inom en verksamhet | `business_id`, `code`, `name`, `sort_order`, `is_active` |
+| `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
+| `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `color`, `category`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
-| `audit_log` | `AuditLog` | Historik over muterande handelser | `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
-| `app_settings` | `AppSetting` | Global settings JSON/text | `key`, `value`, `updated_by` |
+| `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
+| `app_settings` | `AppSetting` | Verksamhetsspecifika settings JSON/text | `business_id`, `key`, `value`, `updated_by` |
+
+## Verksamheter
+
+- `STIGAMO` ar bakatkompatibel standardverksamhet. Migration/seed kopplar befintliga anvandare, omraden, personer, aktiviteter, auditlogg och settings dit.
+- `R3` skapas som egen verksamhet med ett aktivt omrade `R3` och egna franvaroaktiviteter, men utan Stigamos personer, anvandare eller arbetsaktiviteter.
+- Icke-Super Users filtreras alltid till sin egen `business_id`.
+- Super User kan se allt med `∞`, eller filtrera pa `business_id`.
+- Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
+- Schemaceller pekar fortfarande pa person och aktivitet, men writes validerar att person och aktivitet tillhor samma verksamhet.
 
 ## Schemaceller
 
@@ -49,13 +59,13 @@ Kort svar: bemanningen bygger pa personer, aktiviteter, omraden, schemaceller, p
 Viktiga settings:
 
 - `lock_foreign_schedule_cells`: ledare far inte andra celler som annan anvandare fyllt, admin/super user kan passera.
-- sidebar-layout: global menyordning/rubrik/undervyer.
-- role-view-access: global matris for rollernas vyatkomst (`none`, `view`, `edit`).
+- sidebar-layout: menyordning/rubrik/undervyer per verksamhet.
+- role-view-access: matris per verksamhet for rollernas vyatkomst (`none`, `view`, `edit`).
 
 ## Kallor
 
 - `../app/backend/models.py`
+- `../app/backend/business_scope.py`
 - `../app/backend/template_service.py`
 - `../app/backend/schedule_locks.py`
 - `../app/backend/settings_service.py`
-

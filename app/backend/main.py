@@ -16,6 +16,7 @@ from .routers import (
     audit_logs,
     auth,
     bulk,
+    businesses,
     data_fetch,
     overview,
     person_schedules,
@@ -81,6 +82,7 @@ def sync_allocation_observations_on_startup() -> None:
 app.include_router(auth.router)
 app.include_router(allocation.router)
 app.include_router(assistant.router)
+app.include_router(businesses.router)
 app.include_router(areas.router)
 app.include_router(activities.router)
 app.include_router(audit_logs.router)

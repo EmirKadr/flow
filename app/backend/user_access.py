@@ -30,13 +30,13 @@ ROLE_VIEW_IDS = {
     "allocationUploads",
     "allocationProcess",
     "allocationSplit",
-    "allocationTrace",
     "persons",
     "personImport",
     "activities",
     "activityImport",
     "areas",
     "analytics",
+    "businesses",
     "users",
     "userImport",
     "appSettings",
@@ -74,12 +74,10 @@ ROLE_VIEW_DEFAULT_ACCESS = {
     WAREHOUSE_CLERK_ROLE: {
         "allocationUploads": "edit",
         "allocationSplit": "edit",
-        "allocationTrace": "edit",
     },
     ARTICLE_PLACER_ROLE: {
         "allocationUploads": "edit",
         "allocationSplit": "edit",
-        "allocationTrace": "edit",
     },
     VIEWER_ROLE: {
         "schedule": "view",
@@ -212,12 +210,16 @@ def can_use_allocation_process(user: User) -> bool:
 
 
 def user_out(user: User) -> UserOut:
+    business = getattr(user, "business", None)
     return UserOut(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
         role=primary_role(user_roles(user)),
         roles=[role for role in user_roles(user) if role in ASSIGNABLE_ROLES],
+        business_id=user.business_id,
+        business_code=getattr(business, "code", None),
+        business_name=getattr(business, "name", None),
         area_id=user.area_id,
         must_change_password=user_needs_password_setup(user),
         is_super_user=is_super_user(user),
@@ -225,12 +227,16 @@ def user_out(user: User) -> UserOut:
 
 
 def user_admin_out(user: User) -> UserAdminOut:
+    business = getattr(user, "business", None)
     return UserAdminOut(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
         role=primary_role(user_roles(user)),
         roles=[role for role in user_roles(user) if role in ASSIGNABLE_ROLES],
+        business_id=user.business_id,
+        business_code=getattr(business, "code", None),
+        business_name=getattr(business, "name", None),
         area_id=user.area_id,
         is_active=user.is_active,
         must_change_password=user_needs_password_setup(user),

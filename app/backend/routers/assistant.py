@@ -103,13 +103,13 @@ PAGE_WIKI_DOCS = {
     "/aktivitetimport.html": ["activities-areas.md"],
     "/anvandare.html": ["users-settings.md"],
     "/anvandarimport.html": ["users-settings.md"],
+    "/verksamheter.html": ["users-settings.md"],
     "/installningar.html": ["users-settings.md"],
     "/historik.html": ["history-audit.md"],
     "/produktivitet.html": ["productivity.md"],
     "/uppladdningar.html": ["warehouse-tools.md"],
     "/bearbeta.html": ["warehouse-tools.md"],
     "/dela.html": ["warehouse-tools.md"],
-    "/harleda.html": ["warehouse-tools.md"],
 }
 
 PAGE_VIEW_IDS = {
@@ -122,13 +122,13 @@ PAGE_VIEW_IDS = {
     "/aktivitetimport.html": "activityImport",
     "/anvandare.html": "users",
     "/anvandarimport.html": "userImport",
+    "/verksamheter.html": "businesses",
     "/installningar.html": "appSettings",
     "/historik.html": "analytics",
     "/produktivitet.html": "productivity",
     "/uppladdningar.html": "allocationUploads",
     "/bearbeta.html": "allocationProcess",
     "/dela.html": "allocationSplit",
-    "/harleda.html": "allocationTrace",
 }
 
 ROLE_LABELS = {
@@ -143,13 +143,12 @@ ROLE_LABELS = {
 }
 
 VIEW_LABELS = {
-    "schedule": "flow",
+    "schedule": "Bemanning",
     "overview": "Översikt",
     "productivity": "Produktivitet",
     "allocationUploads": "Uppladdningar",
     "allocationProcess": "Bearbeta",
     "allocationSplit": "Dela",
-    "allocationTrace": "Härleda",
     "persons": "Personer",
     "personImport": "Personimport",
     "activities": "Aktiviteter",
@@ -170,7 +169,6 @@ VIEW_CONTEXT_ORDER = [
     "allocationUploads",
     "allocationProcess",
     "allocationSplit",
-    "allocationTrace",
     "persons",
     "personImport",
     "activities",
@@ -217,10 +215,10 @@ Regler:
   admin eller annan skyddad inställning: säg tydligt att en vanlig användare
   inte kan göra det själv. Formulera som "Be en admin/Super User kontrollera..."
   i stället för att instruera användaren att själv gå dit.
-- Bearbeta är en egen sidebar-vy (`bearbeta.html`) och inte samma sak som Dela
-  eller Härleda. Om Bearbeta saknas krävs normalt Super User eller vyåtkomst till
-  `allocationProcess`; lagerroller har som standard Uppladdningar, Dela och
-  Härleda men inte Bearbeta.
+- Bearbeta är en egen sidebar-vy (`bearbeta.html`) och inte samma sak som Dela.
+  Om Bearbeta saknas krävs normalt Super User eller vyåtkomst till
+  `allocationProcess`; lagerroller har som standard Uppladdningar och Dela men
+  inte Bearbeta.
 - Om du behöver mer information: be om exakt vy, knapp, feltext/toast och om det
   gäller webb eller Windows-appen.
 - Namn på knappar, vyer och feltexter ska matcha appen när de finns i kontexten.
@@ -637,10 +635,14 @@ async def chat_with_assistant(
             area = db.get(Area, user.area_id)
             if area is not None:
                 area_label = f"{area.name} ({area.code})"
+        try:
+            role_access = get_role_view_access(db, business_id=getattr(user, "business_id", None))
+        except TypeError:
+            role_access = get_role_view_access(db)
         minimax_payload = build_minimax_payload(
             payload,
             user,
-            role_access=get_role_view_access(db),
+            role_access=role_access,
             area_label=area_label,
         )
     except Exception as exc:

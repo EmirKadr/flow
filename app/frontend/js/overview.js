@@ -45,9 +45,229 @@ const loadState = {
   requestSeq: 0,
 };
 
+const overviewAllCache = new Map();
+const overviewAllFetchState = {
+  controller: null,
+  key: "",
+};
+const OVERVIEW_ALL_CACHE_LIMIT = 4;
+const OVERVIEW_REVALIDATE_ACTIVE_MS = 10000;
+const OVERVIEW_REVALIDATE_IDLE_MS = 30000;
+const OVERVIEW_REVALIDATE_SOON_MS = 1500;
+const OVERVIEW_REVALIDATE_ACTIVE_WINDOW_MS = 60000;
+const overviewRevalidateState = {
+  timer: null,
+  controller: null,
+  lastActivityAt: Date.now(),
+  errorCount: 0,
+  toastAt: 0,
+};
+
 function overviewIsReadOnly() {
   if (typeof isReadOnlyUser === "function") return isReadOnlyUser(state.currentUser);
   return state.currentUser?.role === "viewer" && !state.currentUser?.is_super_user;
+}
+
+function overviewScopeKey() {
+  const user = state.currentUser || {};
+  return [
+    user.id ?? user.username ?? "anonymous",
+    user.is_super_user ? "super" : "scoped",
+    user.business_id ?? "global",
+  ].join(":");
+}
+
+function overviewCacheKey() {
+  const period = state.view === "week"
+    ? `week:${state.year}:${state.week}`
+    : `month:${state.year}:${state.month}`;
+  return `${overviewScopeKey()}|${period}`;
+}
+
+function overviewUrl(areaId = state.areaId) {
+  if (state.view === "week") {
+    return `/api/overview?year=${state.year}&week=${state.week}` +
+      (areaId ? `&area_id=${areaId}` : "");
+  }
+  return `/api/overview/month?year=${state.year}&month=${state.month}` +
+    (areaId ? `&area_id=${areaId}` : "");
+}
+
+function overviewRevisionUrl(areaId = null) {
+  if (state.view === "week") {
+    return `/api/overview/revision?year=${state.year}&week=${state.week}` +
+      (areaId ? `&area_id=${areaId}` : "");
+  }
+  return `/api/overview/revision/month?year=${state.year}&month=${state.month}` +
+    (areaId ? `&area_id=${areaId}` : "");
+}
+
+function setOverviewAllCache(key, data) {
+  overviewAllCache.delete(key);
+  overviewAllCache.set(key, data);
+  while (overviewAllCache.size > OVERVIEW_ALL_CACHE_LIMIT) {
+    overviewAllCache.delete(overviewAllCache.keys().next().value);
+  }
+}
+
+function invalidateOverviewAllCache() {
+  overviewAllCache.clear();
+  overviewAllFetchState.controller?.abort();
+  overviewRevalidateState.controller?.abort();
+  overviewAllFetchState.controller = null;
+  overviewAllFetchState.key = "";
+  overviewRevalidateState.controller = null;
+  scheduleNextOverviewRevalidate(OVERVIEW_REVALIDATE_SOON_MS);
+}
+
+function filterOverviewDataForArea(data, areaId) {
+  const source = data || {};
+  const persons = Array.isArray(source.persons) ? source.persons : [];
+  const matrix = Array.isArray(source.matrix) ? source.matrix : [];
+  if (areaId == null) {
+    return {
+      ...source,
+      persons: persons.map((person) => ({ ...person })),
+      matrix: matrix.map((cell) => ({ ...cell })),
+      days: (source.days || []).map((day) => ({ ...day })),
+    };
+  }
+  const selectedAreaId = Number(areaId);
+  const visiblePersons = persons.filter((person) => Number(person.home_area_id) === selectedAreaId);
+  const personIds = new Set(visiblePersons.map((person) => Number(person.id)));
+  return {
+    ...source,
+    persons: visiblePersons.map((person) => ({ ...person })),
+    matrix: matrix.filter((cell) => personIds.has(Number(cell.person_id))).map((cell) => ({ ...cell })),
+    days: (source.days || []).map((day) => ({ ...day })),
+  };
+}
+
+function setupOverviewHorizontalScroll() {
+  if (typeof setupSyncedHorizontalScroll === "function") {
+    setupSyncedHorizontalScroll(document.getElementById("overviewTable"));
+  }
+}
+
+function markOverviewActivity() {
+  overviewRevalidateState.lastActivityAt = Date.now();
+}
+
+function overviewRevalidateDelay() {
+  return Date.now() - overviewRevalidateState.lastActivityAt < OVERVIEW_REVALIDATE_ACTIVE_WINDOW_MS
+    ? OVERVIEW_REVALIDATE_ACTIVE_MS
+    : OVERVIEW_REVALIDATE_IDLE_MS;
+}
+
+function overviewIsBusyForBackgroundUpdate() {
+  return drag.active || drag.pending || Boolean(document.querySelector("#overviewBody .pending-save"));
+}
+
+function scheduleNextOverviewRevalidate(delay = overviewRevalidateDelay()) {
+  clearTimeout(overviewRevalidateState.timer);
+  overviewRevalidateState.timer = null;
+  if (document.hidden) return;
+  overviewRevalidateState.timer = setTimeout(() => {
+    overviewRevalidateState.timer = null;
+    void revalidateOverview();
+  }, delay);
+}
+
+function notifyOverviewBackgroundUpdate(changedCount) {
+  if (!changedCount) return;
+  const now = Date.now();
+  if (now - overviewRevalidateState.toastAt < 10000) return;
+  overviewRevalidateState.toastAt = now;
+  showToast("Översikten uppdaterades i bakgrunden.", "info", 2500);
+}
+
+function overviewPersonSignature(persons) {
+  return JSON.stringify((persons || []).map((person) => [
+    Number(person.id),
+    person.name || "",
+    Number(person.home_area_id) || 0,
+    Number(person.home_activity_id) || 0,
+    person.has_fixed_schedule !== false,
+    Number(person.sort_order) || 0,
+  ]));
+}
+
+function overviewDaysSignature(days) {
+  return JSON.stringify((days || []).map((day) => [day.date || "", Number(day.year), Number(day.week), Number(day.weekday)]));
+}
+
+function overviewCellKey(cell) {
+  return state.view === "week"
+    ? `${Number(cell.person_id)}:${Number(cell.weekday)}`
+    : `${Number(cell.person_id)}:${cell.date || ""}`;
+}
+
+function overviewCellSignature(cell) {
+  return [
+    cell.activity_id == null ? "" : Number(cell.activity_id),
+    cell.mixed ? 1 : 0,
+    Number(cell.hours_total) || 0,
+    Number(cell.template_hours) || 0,
+  ].join(":");
+}
+
+function overviewMatrixMap(cells) {
+  const map = new Map();
+  (cells || []).forEach((cell) => map.set(overviewCellKey(cell), cell));
+  return map;
+}
+
+function overviewTdForCell(cell) {
+  if (state.view === "week") {
+    return document.querySelector(
+      `#overviewBody td.day[data-person-id="${Number(cell.person_id)}"][data-weekday="${Number(cell.weekday)}"]`
+    );
+  }
+  return document.querySelector(
+    `#overviewBody td.day[data-person-id="${Number(cell.person_id)}"][data-date="${cell.date || ""}"]`
+  );
+}
+
+function overviewCellIsFocused(td) {
+  return td && state.focusedCell?.td === td && document.activeElement?.closest("#overviewBody");
+}
+
+function patchOverviewFromAllData(allData) {
+  const data = filterOverviewDataForArea(allData, state.areaId);
+  const personsChanged = overviewPersonSignature(state.allPersons) !== overviewPersonSignature(data.persons || []);
+  const daysChanged = overviewDaysSignature(state.days) !== overviewDaysSignature(data.days || []);
+  if (personsChanged || daysChanged) {
+    applyOverviewData(data);
+    return { changed: true, patched: false };
+  }
+
+  state.allPersons = (data.persons || []).map((person) => ({ ...person }));
+  const currentMap = overviewMatrixMap(state.cells);
+  const nextMap = overviewMatrixMap(data.matrix || []);
+  let changedCount = 0;
+  let skippedFocused = false;
+
+  nextMap.forEach((cell, key) => {
+    const current = currentMap.get(key);
+    if (current && overviewCellSignature(current) === overviewCellSignature(cell)) return;
+    const td = overviewTdForCell(cell);
+    if (!td) return;
+    if (overviewCellIsFocused(td)) {
+      skippedFocused = true;
+      return;
+    }
+    renderDayCell(td, cell);
+    changedCount += 1;
+  });
+
+  state.cells = state.cells.filter((cell) => {
+    const keep = nextMap.has(overviewCellKey(cell));
+    if (!keep) changedCount += 1;
+    return keep;
+  });
+
+  if (skippedFocused) scheduleNextOverviewRevalidate(OVERVIEW_REVALIDATE_SOON_MS);
+  return { changed: changedCount > 0 || skippedFocused, patched: changedCount > 0, skippedFocused };
 }
 
 function showReadOnlyToast() {
@@ -65,16 +285,7 @@ function applyOverviewReadOnlyMode() {
 }
 
 function preferredAreaIdForCurrentUser() {
-  const hasFocusedArea = typeof areaFocusCode === "function" && areaFocusCode();
-  if (hasFocusedArea && typeof preferredAreaIdFromFocus === "function") {
-    const focusedAreaId = preferredAreaIdFromFocus(state.areas);
-    if (focusedAreaId != null) return focusedAreaId;
-  }
-  const userAreaId = Number(state.currentUser?.area_id);
-  if (Number.isInteger(userAreaId) && state.areas.some((area) => Number(area.id) === userAreaId)) {
-    return userAreaId;
-  }
-  return state.areas.length > 0 ? Number(state.areas[0].id) : null;
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(state.areas) : null;
 }
 
 
@@ -630,6 +841,7 @@ async function applyOverviewHistory(action, direction) {
   if (!hours.length) return true;
   try {
     await api.put("/api/schedule/hours/restore", { action: "overview_undo_restore", hours });
+    invalidateOverviewAllCache();
     await load();
     return true;
   } catch (e) {
@@ -696,6 +908,7 @@ async function onDayChange(td, sel, cell) {
       Number(td.dataset.weekday),
       newActivityId,
     );
+    invalidateOverviewAllCache();
     markDayPending(td, false);
     renderDayCell(td, resp.cell);
     pushOverviewUndo("celländring", [{
@@ -844,6 +1057,7 @@ function setupDrag() {
 
     try {
       const resp = await postBulkDays(days, false);
+      invalidateOverviewAllCache();
       const handled = new Set();
 
       (resp.applied || []).forEach((result) => {
@@ -943,22 +1157,121 @@ async function loadInitial() {
   state.activitiesActive = activities;
   state.activities = activitiesAll;
 
-  const sel = document.getElementById("areaSelect");
-  sel.innerHTML = "";
-  const allOpt = document.createElement("option");
-  allOpt.value = "";
-  allOpt.textContent = "Alla";
-  sel.appendChild(allOpt);
-  areas.forEach((a) => {
-    const opt = document.createElement("option");
-    opt.value = a.id; opt.textContent = a.name;
-    sel.appendChild(opt);
-  });
   state.areaId = preferredAreaIdForCurrentUser();
-  sel.value = state.areaId == null ? "" : String(state.areaId);
+}
+
+function applyOverviewData(data) {
+  state.allPersons = (data.persons || []).map((person) => ({ ...person }));
+  refreshPersons();
+  state.cells = (data.matrix || []).map((cell) => ({ ...cell }));
+  state.days = state.view === "month" ? (data.days || []).map((day) => ({ ...day })) : [];
+  state.focusedCell = null;
+  const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
+
+  if (state.view === "week") {
+    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – V${state.week}/${state.year}`;
+    buildWeekHeader();
+    buildWeekBody();
+  } else {
+    const monthName = document.querySelector(`#monthSelect option[value="${state.month}"]`)?.textContent || state.month;
+    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – ${monthName} ${state.year}`;
+    buildMonthHeader();
+    buildMonthBody();
+  }
+  setupOverviewHorizontalScroll();
+  scheduleNextOverviewRevalidate();
+}
+
+function renderOverviewFromAllCache() {
+  const cached = overviewAllCache.get(overviewCacheKey());
+  if (!cached) return false;
+  loadState.controller?.abort();
+  loadState.requestSeq += 1;
+  applyOverviewData(filterOverviewDataForArea(cached, state.areaId));
+  scheduleNextOverviewRevalidate(500);
+  return true;
+}
+
+async function prefetchAllOverview() {
+  const key = overviewCacheKey();
+  if (overviewAllCache.has(key) || overviewAllFetchState.key === key) return;
+  overviewAllFetchState.controller?.abort();
+  const controller = new AbortController();
+  overviewAllFetchState.controller = controller;
+  overviewAllFetchState.key = key;
+  try {
+    const data = await api.get(overviewUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    setOverviewAllCache(key, filterOverviewDataForArea(data, null));
+    scheduleNextOverviewRevalidate();
+  } catch (err) {
+    if (err?.name !== "AbortError") console.warn("Kunde inte forhämta hela översikten", err);
+  } finally {
+    if (overviewAllFetchState.controller === controller) {
+      overviewAllFetchState.controller = null;
+      overviewAllFetchState.key = "";
+    }
+  }
+}
+
+async function revalidateOverview() {
+  if (document.hidden) return;
+  if (overviewIsBusyForBackgroundUpdate()) {
+    scheduleNextOverviewRevalidate(OVERVIEW_REVALIDATE_SOON_MS);
+    return;
+  }
+
+  const key = overviewCacheKey();
+  const cached = overviewAllCache.get(key);
+  if (!cached) {
+    await prefetchAllOverview();
+    scheduleNextOverviewRevalidate();
+    return;
+  }
+  const cachedPatch = patchOverviewFromAllData(cached);
+  if (cachedPatch.skippedFocused) {
+    scheduleNextOverviewRevalidate(OVERVIEW_REVALIDATE_SOON_MS);
+    return;
+  }
+  notifyOverviewBackgroundUpdate(cachedPatch.patched ? 1 : 0);
+
+  overviewRevalidateState.controller?.abort();
+  const controller = new AbortController();
+  overviewRevalidateState.controller = controller;
+  try {
+    const revision = await api.get(overviewRevisionUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted || key !== overviewCacheKey()) return;
+    if (revision?.revision_key && revision.revision_key === cached.revision_key) {
+      overviewRevalidateState.errorCount = 0;
+      scheduleNextOverviewRevalidate();
+      return;
+    }
+
+    const fresh = await api.get(overviewUrl(null), { signal: controller.signal });
+    if (controller.signal.aborted || key !== overviewCacheKey()) return;
+    setOverviewAllCache(key, filterOverviewDataForArea(fresh, null));
+    const result = patchOverviewFromAllData(fresh);
+    notifyOverviewBackgroundUpdate(result.patched ? 1 : 0);
+    overviewRevalidateState.errorCount = 0;
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      overviewRevalidateState.errorCount += 1;
+      console.warn("Kunde inte kontrollera färsk översikt", err);
+    }
+  } finally {
+    if (overviewRevalidateState.controller === controller) {
+      overviewRevalidateState.controller = null;
+    }
+    const backoff = Math.min(overviewRevalidateState.errorCount, 3) * 10000;
+    scheduleNextOverviewRevalidate(overviewRevalidateDelay() + backoff);
+  }
 }
 
 async function load() {
+  if (renderOverviewFromAllCache()) {
+    void prefetchAllOverview();
+    return true;
+  }
   const requestSeq = ++loadState.requestSeq;
   loadState.controller?.abort();
   const controller = new AbortController();
@@ -966,38 +1279,23 @@ async function load() {
   try {
 
   if (state.view === "week") {
-    const data = await api.get(
-      `/api/overview?year=${state.year}&week=${state.week}` +
-        (state.areaId ? `&area_id=${state.areaId}` : ""),
-      { signal: controller.signal }
-    );
+    const data = await api.get(overviewUrl(state.areaId), { signal: controller.signal });
     if (controller.signal.aborted || requestSeq !== loadState.requestSeq) return false;
-    state.allPersons = data.persons;
-    refreshPersons();
-    state.cells = data.matrix;
-    state.days = [];
-    state.focusedCell = null;
-    const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
-    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – V${state.week}/${state.year}`;
-    buildWeekHeader();
-    buildWeekBody();
+    if (state.areaId == null) {
+      setOverviewAllCache(overviewCacheKey(), filterOverviewDataForArea(data, null));
+    }
+    applyOverviewData(data);
+    void prefetchAllOverview();
+    return true;
   } else {
-    const data = await api.get(
-      `/api/overview/month?year=${state.year}&month=${state.month}` +
-        (state.areaId ? `&area_id=${state.areaId}` : ""),
-      { signal: controller.signal }
-    );
+    const data = await api.get(overviewUrl(state.areaId), { signal: controller.signal });
     if (controller.signal.aborted || requestSeq !== loadState.requestSeq) return false;
-    state.allPersons = data.persons;
-    refreshPersons();
-    state.cells = data.matrix;
-    state.days = data.days;
-    state.focusedCell = null;
-    const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
-    const monthName = document.querySelector(`#monthSelect option[value="${state.month}"]`)?.textContent || state.month;
-    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – ${monthName} ${state.year}`;
-    buildMonthHeader();
-    buildMonthBody();
+    if (state.areaId == null) {
+      setOverviewAllCache(overviewCacheKey(), filterOverviewDataForArea(data, null));
+    }
+    applyOverviewData(data);
+    void prefetchAllOverview();
+    return true;
   }
 
     return true;
@@ -1012,6 +1310,7 @@ async function load() {
 }
 
 function shiftPeriod(delta) {
+  markOverviewActivity();
   if (state.view === "week") {
     state.week += delta;
     if (state.week < 1) { state.year -= 1; state.week = 52; }
@@ -1067,13 +1366,23 @@ function updateViewVisibility() {
 
   await load();
   setupDrag();
+  document.addEventListener("pointerdown", markOverviewActivity, { passive: true });
+  document.addEventListener("keydown", markOverviewActivity, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(overviewRevalidateState.timer);
+      overviewRevalidateState.controller?.abort();
+      return;
+    }
+    markOverviewActivity();
+    scheduleNextOverviewRevalidate(OVERVIEW_REVALIDATE_SOON_MS);
+  });
 
   const onControlChange = async () => {
+    markOverviewActivity();
     state.year = Number(document.getElementById("yearInput").value) || state.year;
     state.week = Number(document.getElementById("weekInput").value) || state.week;
     state.month = Number(document.getElementById("monthSelect").value) || state.month;
-    const areaVal = document.getElementById("areaSelect").value;
-    state.areaId = areaVal === "" ? null : Number(areaVal);
     persistOverviewState();
     await load();
   };
@@ -1081,11 +1390,9 @@ function updateViewVisibility() {
   document.getElementById("yearInput").addEventListener("change", onControlChange);
   document.getElementById("weekInput").addEventListener("change", onControlChange);
   document.getElementById("monthSelect").addEventListener("change", onControlChange);
-  document.getElementById("areaSelect").addEventListener("change", onControlChange);
   window.addEventListener("flow:areaFocusChanged", async () => {
+    markOverviewActivity();
     state.areaId = preferredAreaIdForCurrentUser();
-    const areaSelect = document.getElementById("areaSelect");
-    if (areaSelect) areaSelect.value = state.areaId == null ? "" : String(state.areaId);
     await load();
   });
   document.getElementById("prev").addEventListener("click", () => shiftPeriod(-1));
@@ -1110,6 +1417,7 @@ function updateViewVisibility() {
   });
 
   document.getElementById("viewMode").addEventListener("change", (e) => {
+    markOverviewActivity();
     state.view = e.target.value;
     updateViewVisibility();
     persistOverviewState();
@@ -1121,6 +1429,7 @@ function updateViewVisibility() {
     refreshPersons();
     if (state.view === "week") buildWeekBody();
     else buildMonthBody();
+    setupOverviewHorizontalScroll();
   });
   document.getElementById("nameFilter").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("nameFilter").addEventListener("click", (e) => e.stopPropagation());
@@ -1139,5 +1448,6 @@ function updateViewVisibility() {
     refreshPersons();
     if (state.view === "week") buildWeekBody();
     else buildMonthBody();
+    setupOverviewHorizontalScroll();
   });
 })();

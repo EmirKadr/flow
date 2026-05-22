@@ -3,6 +3,7 @@ let users = [];
 let persons = [];
 let activities = [];
 let areas = [];
+let currentHistoryMode = "history";
 
 const ENTITY_LABELS = {
   schedule_cell: "Schema",
@@ -12,6 +13,7 @@ const ENTITY_LABELS = {
   area: "Område",
   user: "Användare",
   app_setting: "Inställning",
+  client_error: "Felkod",
   data_fetch: "Hämta data",
   productivity_file: "Produktivitetsfil",
   allocation_flow: "Lagerverktyg",
@@ -129,6 +131,9 @@ function objectSummary(entry) {
   if (entry.entity_type === "data_fetch") {
     return snapshot.view_label || snapshot.view || "Hämta data";
   }
+  if (entry.entity_type === "client_error") {
+    return snapshot.path || snapshot.page_path || "Felkod";
+  }
   if (entry.entity_type === "productivity_file") {
     return snapshot.file_type || (snapshot.saved_types || []).join(", ") || "Produktivitetsfil";
   }
@@ -158,6 +163,15 @@ function detailSummary(entry) {
     if (snapshot.error_id) parts.push(`Fel-id ${snapshot.error_id}`);
     if (snapshot.total_rows != null) parts.push(`${snapshot.total_rows} rader`);
     return parts.join(" | ") || "Hämta data";
+  }
+  if (entry.entity_type === "client_error") {
+    const parts = [];
+    if (snapshot.error_code) parts.push(String(snapshot.error_code));
+    if (snapshot.status_code != null) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.method && snapshot.path) parts.push(`${snapshot.method} ${snapshot.path}`);
+    if (snapshot.message) parts.push(String(snapshot.message));
+    if (snapshot.detail) parts.push(String(snapshot.detail));
+    return parts.join(" | ") || "Felkod";
   }
   if (entry.entity_type === "app_setting") {
     const key = entry.new_value?.key || entry.old_value?.key;
@@ -271,6 +285,63 @@ function renderAuditRows(entries) {
   });
 }
 
+function setHistoryMode(mode) {
+  currentHistoryMode = mode || "history";
+  document.querySelectorAll("[data-history-mode]").forEach((button) => {
+    const active = button.dataset.historyMode === currentHistoryMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll("[data-history-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.historyPanel !== currentHistoryMode;
+  });
+}
+
+function statusLabel(value) {
+  if (value == null) return "-";
+  const status = Number(value);
+  return Number.isFinite(status) && status > 0 ? `HTTP ${status}` : "-";
+}
+
+function renderErrorRows(entries) {
+  const body = document.getElementById("recentErrorBody");
+  body.innerHTML = "";
+
+  if (!entries.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="7" class="muted-cell">Inga felkoder matchade filtret.</td>`;
+    body.appendChild(tr);
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(formatTimestamp(entry.created_at))}</td>
+      <td>${escapeHtml(userLabel(entry))}</td>
+      <td>${escapeHtml(entry.error_code || entry.error_type || entry.action)}</td>
+      <td>${escapeHtml(statusLabel(entry.status_code))}</td>
+      <td>${escapeHtml(entry.path || "-")}</td>
+      <td>${escapeHtml(entry.action || "-")}</td>
+      <td class="log-detail">${escapeHtml(entry.message || "-")}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+function renderErrorDashboard(summary) {
+  document.getElementById("totalErrors").textContent = String(summary.total_errors || 0);
+  document.getElementById("recentErrors").textContent = String(summary.events_last_24h || 0);
+  document.getElementById("errorUsers").textContent = String(summary.unique_users || 0);
+  const scanned = summary.scanned_events || 0;
+  document.getElementById("errorScanLabel").textContent = summary.truncated
+    ? `Unika användare (${scanned} skannade)`
+    : "Unika användare";
+  renderBuckets("topErrorCodesBody", summary.top_error_codes || []);
+  renderBuckets("topErrorPathsBody", summary.top_paths || []);
+  renderBuckets("topErrorActionsBody", summary.top_actions || []);
+  renderErrorRows(summary.recent || []);
+}
+
 function fillUserFilter() {
   const select = document.getElementById("userFilter");
   select.innerHTML = '<option value="">Alla</option>';
@@ -298,12 +369,14 @@ async function loadLookups() {
 
 async function refreshAnalytics() {
   const params = currentParams();
-  const [summary, entries] = await Promise.all([
+  const [summary, entries, errorSummary] = await Promise.all([
     api.get(`/api/audit/summary?${params.toString()}`),
     api.get(`/api/audit?${params.toString()}`),
+    api.get(`/api/audit/errors?${params.toString()}`),
   ]);
   renderSummary(summary);
   renderAuditRows(entries);
+  renderErrorDashboard(errorSummary);
 }
 
 (async () => {
@@ -311,9 +384,13 @@ async function refreshAnalytics() {
   if (!currentUser) return;
 
   await loadLookups();
+  setHistoryMode(currentHistoryMode);
   await refreshAnalytics();
 
   document.getElementById("refreshAuditBtn").addEventListener("click", refreshAnalytics);
+  document.querySelectorAll("[data-history-mode]").forEach((button) => {
+    button.addEventListener("click", () => setHistoryMode(button.dataset.historyMode));
+  });
   ["periodSelect", "userFilter", "entityFilter"].forEach((id) => {
     document.getElementById(id).addEventListener("change", refreshAnalytics);
   });

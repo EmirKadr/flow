@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
+from ..business_scope import assert_scoped_object, scoped_get, visible_business_id
 from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
 from ..models import Activity, Area, Person, ScheduleCell, User
@@ -29,6 +30,91 @@ HOURS_PER_PERSON_DAY = 8             # för persons_equiv = hours / 8
 FULL_SEGMENT = (0, 60)
 HALF_SEGMENTS = ((0, 30), (30, 60))
 VALID_SEGMENTS = {FULL_SEGMENT, *HALF_SEGMENTS}
+
+
+def _iso(value) -> str:
+    return value.isoformat() if value is not None else ""
+
+
+def _visible_schedule_persons(
+    db: Session,
+    user: User,
+    area_id: int | None = None,
+    business_id: int | None = None,
+) -> tuple[list[Person], int | None]:
+    scoped_business_id = visible_business_id(db, user, business_id)
+    persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
+    if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
+        persons_q = persons_q.where(Person.home_area_id == area_id)
+    persons_q = persons_q.order_by(Person.sort_order, Person.name)
+    return db.execute(persons_q).scalars().all(), scoped_business_id
+
+
+def _schedule_revision_key_from_parts(
+    *,
+    person_count: int,
+    person_latest,
+    cell_count: int,
+    cell_latest,
+    version_sum: int,
+) -> str:
+    return (
+        f"p:{person_count}:{_iso(person_latest)}|"
+        f"c:{cell_count}:{_iso(cell_latest)}:{int(version_sum or 0)}"
+    )
+
+
+def _schedule_revision_key(persons: list[Person], cells: list[ScheduleCell]) -> str:
+    return _schedule_revision_key_from_parts(
+        person_count=len(persons),
+        person_latest=max((person.updated_at for person in persons if person.updated_at is not None), default=None),
+        cell_count=len(cells),
+        cell_latest=max((cell.updated_at for cell in cells if cell.updated_at is not None), default=None),
+        version_sum=sum(int(cell.version or 0) for cell in cells),
+    )
+
+
+def _schedule_revision_for_persons(
+    db: Session,
+    *,
+    year: int,
+    week: int,
+    weekdays: list[int],
+    persons: list[Person],
+) -> str:
+    person_ids = [person.id for person in persons]
+    if not person_ids:
+        return _schedule_revision_key_from_parts(
+            person_count=0,
+            person_latest=None,
+            cell_count=0,
+            cell_latest=None,
+            version_sum=0,
+        )
+    cell_count, cell_latest, version_sum = (
+        db.query(
+            func.count(ScheduleCell.id),
+            func.max(ScheduleCell.updated_at),
+            func.coalesce(func.sum(ScheduleCell.version), 0),
+        )
+        .filter(
+            ScheduleCell.year == year,
+            ScheduleCell.week == week,
+            ScheduleCell.weekday.in_(weekdays),
+            ScheduleCell.person_id.in_(person_ids),
+        )
+        .one()
+    )
+    return _schedule_revision_key_from_parts(
+        person_count=len(persons),
+        person_latest=max((person.updated_at for person in persons if person.updated_at is not None), default=None),
+        cell_count=int(cell_count or 0),
+        cell_latest=cell_latest,
+        version_sum=int(version_sum or 0),
+    )
 
 
 def _cell_to_dict(cell: ScheduleCell) -> dict:
@@ -170,17 +256,52 @@ def _validate_segment(hour: int, minute_start: int, minute_end: int) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltigt segment. Tillåtna värden är 0-60, 0-30 eller 30-60.")
 
 
+@router.get("/revision")
+def get_schedule_revision(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict[str, str | int | None]:
+    if not isinstance(area_id, int):
+        area_id = None
+    if not isinstance(business_id, int):
+        business_id = None
+    persons, _scoped_business_id = _visible_schedule_persons(db, user, area_id, business_id)
+    return {
+        "year": year,
+        "week": week,
+        "weekday": weekday,
+        "area_id": area_id,
+        "revision_key": _schedule_revision_for_persons(
+            db,
+            year=year,
+            week=week,
+            weekdays=[weekday],
+            persons=persons,
+        ),
+    }
+
+
 @router.get("", response_model=ScheduleOut)
 def get_schedule(
     year: int = Query(..., ge=2000, le=2100),
     week: int = Query(..., ge=1, le=53),
     weekday: int = Query(..., ge=1, le=7),
     area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("schedule", "view")),
 ) -> ScheduleOut:
+    scoped_business_id = visible_business_id(db, user, business_id)
     persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         persons_q = persons_q.where(Person.home_area_id == area_id)
     persons_q = persons_q.order_by(Person.sort_order, Person.name)
     persons = db.execute(persons_q).scalars().all()
@@ -202,7 +323,12 @@ def get_schedule(
         )
 
     template_hours_map = get_template_hours_map(db, person_ids, [weekday])
-    home_activity_for = build_home_activity_resolver(db.query(Activity).all(), db.query(Area).all())
+    activity_query = db.query(Activity)
+    area_query = db.query(Area)
+    if scoped_business_id is not None:
+        activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
+        area_query = area_query.filter(Area.business_id == scoped_business_id)
+    home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
     home_activity_by_person_id = {p.id: home_activity_for(p) for p in persons}
 
     scheduled_hours: dict[int, list[int]] = {}
@@ -221,6 +347,7 @@ def get_schedule(
         week=week,
         weekday=weekday,
         area_id=area_id,
+        revision_key=_schedule_revision_key(persons, cells),
         persons=[person_out_with_home_activity(p, home_activity_by_person_id.get(p.id)) for p in persons],
         cells=[CellOut(**_cell_to_dict(c)) for c in sorted(cells, key=lambda c: (c.person_id, c.hour, c.minute_start))],
         scheduled_hours=scheduled_hours,
@@ -237,10 +364,12 @@ def update_cell(
 ):
     _validate_segment(payload.hour, payload.minute_start, payload.minute_end)
 
-    if not db.get(Person, payload.person_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
-    if payload.activity_id is not None and not db.get(Activity, payload.activity_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Aktivitet hittades inte")
+    person = scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
+    activity = None
+    if payload.activity_id is not None:
+        activity = scoped_get(db, Activity, payload.activity_id, user, detail="Aktivitet hittades inte")
+        if activity.business_id != person.business_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
     hour_segments = _load_hour_segments(
         db,
@@ -298,6 +427,7 @@ def update_cell(
             old_value=None,
             new_value=_cell_to_dict(cell),
             user_id=user.id,
+            business_id=person.business_id,
         )
     else:
         cell = matching
@@ -325,6 +455,7 @@ def update_cell(
             old_value=old,
             new_value=_cell_to_dict(cell),
             user_id=user.id,
+            business_id=person.business_id,
         )
 
     db.commit()
@@ -340,8 +471,7 @@ def split_cell(
 ):
     if payload.hour not in HOURS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Timme måste vara {HOURS[0]}-{HOURS[-1]}")
-    if not db.get(Person, payload.person_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
+    person = scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
 
     hour_segments = _load_hour_segments(
         db,
@@ -513,9 +643,12 @@ def bulk_update_cells(
         if item.activity_id is not None:
             activity_ids.add(item.activity_id)
 
-    existing_person_ids = set(
-        db.execute(select(Person.id).where(Person.id.in_(person_ids))).scalars().all()
-    )
+    scoped_business_id = visible_business_id(db, user)
+    person_query = select(Person).where(Person.id.in_(person_ids))
+    if scoped_business_id is not None:
+        person_query = person_query.where(Person.business_id == scoped_business_id)
+    persons_by_id = {person.id: person for person in db.execute(person_query).scalars().all()}
+    existing_person_ids = set(persons_by_id)
     missing_person_ids = sorted(person_ids - existing_person_ids)
     if missing_person_ids:
         raise HTTPException(
@@ -524,15 +657,22 @@ def bulk_update_cells(
         )
 
     if activity_ids:
-        existing_activity_ids = set(
-            db.execute(select(Activity.id).where(Activity.id.in_(activity_ids))).scalars().all()
-        )
+        activity_query = select(Activity).where(Activity.id.in_(activity_ids))
+        if scoped_business_id is not None:
+            activity_query = activity_query.where(Activity.business_id == scoped_business_id)
+        activities_by_id = {activity.id: activity for activity in db.execute(activity_query).scalars().all()}
+        existing_activity_ids = set(activities_by_id)
         missing_activity_ids = sorted(activity_ids - existing_activity_ids)
         if missing_activity_ids:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,
                 detail=f"Aktivitet {missing_activity_ids[0]} hittades inte",
             )
+        for item in payload.cells:
+            if item.activity_id is None:
+                continue
+            if activities_by_id[item.activity_id].business_id != persons_by_id[item.person_id].business_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
     template_hours_map = get_template_hours_map(db, person_ids, weekdays)
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
@@ -813,20 +953,31 @@ def restore_hours(
         person_ids.add(item.person_id)
         activity_ids.update(segment.activity_id for segment in item.segments if segment.activity_id is not None)
 
-    existing_person_ids = set(
-        db.execute(select(Person.id).where(Person.id.in_(person_ids))).scalars().all()
-    )
+    scoped_business_id = visible_business_id(db, user)
+    person_query = select(Person).where(Person.id.in_(person_ids))
+    if scoped_business_id is not None:
+        person_query = person_query.where(Person.business_id == scoped_business_id)
+    persons_by_id = {person.id: person for person in db.execute(person_query).scalars().all()}
+    existing_person_ids = set(persons_by_id)
     missing_person_ids = sorted(person_ids - existing_person_ids)
     if missing_person_ids:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Person {missing_person_ids[0]} hittades inte")
 
     if activity_ids:
-        existing_activity_ids = set(
-            db.execute(select(Activity.id).where(Activity.id.in_(activity_ids))).scalars().all()
-        )
+        activity_query = select(Activity).where(Activity.id.in_(activity_ids))
+        if scoped_business_id is not None:
+            activity_query = activity_query.where(Activity.business_id == scoped_business_id)
+        activities_by_id = {activity.id: activity for activity in db.execute(activity_query).scalars().all()}
+        existing_activity_ids = set(activities_by_id)
         missing_activity_ids = sorted(activity_ids - existing_activity_ids)
         if missing_activity_ids:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Aktivitet {missing_activity_ids[0]} hittades inte")
+        for item in payload.hours:
+            for segment in item.segments:
+                if segment.activity_id is None:
+                    continue
+                if activities_by_id[segment.activity_id].business_id != persons_by_id[item.person_id].business_id:
+                    raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
     restored: list[dict] = []
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
@@ -923,18 +1074,28 @@ def get_summary(
     week: int = Query(..., ge=1, le=53),
     weekday: int = Query(..., ge=1, le=7),
     area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_view_access("schedule", "view")),
+    user: User = Depends(require_view_access("schedule", "view")),
 ) -> list[SummaryRow]:
+    scoped_business_id = visible_business_id(db, user, business_id)
     persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
+        scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         persons_q = persons_q.where(Person.home_area_id == area_id)
     persons = db.execute(persons_q).scalars().all()
     person_ids = [person.id for person in persons]
 
-    activity_rows = db.query(Activity).all()
+    activity_query = db.query(Activity)
+    area_query = db.query(Area)
+    if scoped_business_id is not None:
+        activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
+        area_query = area_query.filter(Area.business_id == scoped_business_id)
+    activity_rows = activity_query.all()
     activities = {activity.id: activity for activity in activity_rows}
-    home_activity_for = build_home_activity_resolver(activity_rows, db.query(Area).all())
+    home_activity_for = build_home_activity_resolver(activity_rows, area_query.all())
     minutes_by_activity: dict[int, int] = {}
 
     if person_ids:

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
+from ..business_scope import visible_business_id
 from ..deps import get_current_user, get_db, require_view_access
 from ..models import User
 from ..schemas import (
@@ -32,18 +33,18 @@ ROLE_VIEW_ACCESS_VIEWS = ROLE_VIEW_IDS
 ROLE_VIEW_ACCESS_LEVELS = set(ROLE_ACCESS_LEVEL_RANK)
 
 
-def _settings_out(db: Session) -> AppSettingsOut:
+def _settings_out(db: Session, business_id: int | None) -> AppSettingsOut:
     return AppSettingsOut(
-        lock_foreign_schedule_cells=get_lock_foreign_schedule_cells(db),
+        lock_foreign_schedule_cells=get_lock_foreign_schedule_cells(db, business_id=business_id),
     )
 
 
-def _sidebar_layout_out(db: Session) -> SidebarLayoutOut:
-    return SidebarLayoutOut(items=get_sidebar_layout(db))
+def _sidebar_layout_out(db: Session, business_id: int | None) -> SidebarLayoutOut:
+    return SidebarLayoutOut(items=get_sidebar_layout(db, business_id=business_id))
 
 
-def _role_view_access_out(db: Session) -> RoleViewAccessOut:
-    return RoleViewAccessOut(access=get_role_view_access(db))
+def _role_view_access_out(db: Session, business_id: int | None) -> RoleViewAccessOut:
+    return RoleViewAccessOut(access=get_role_view_access(db, business_id=business_id))
 
 
 def _audit_setting_change(
@@ -54,6 +55,7 @@ def _audit_setting_change(
     old_value: dict,
     new_value: dict,
     user_id: int,
+    business_id: int | None,
 ) -> None:
     if old_value == new_value:
         return
@@ -65,6 +67,7 @@ def _audit_setting_change(
         old_value={"key": key, "value": old_value},
         new_value={"key": key, "value": new_value},
         user_id=user_id,
+        business_id=business_id,
     )
 
 
@@ -120,10 +123,12 @@ def _clean_role_view_access(payload: RoleViewAccessUpdate) -> dict[str, dict[str
 
 @router.get("", response_model=AppSettingsOut)
 def get_app_settings(
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_view_access("appSettings", "view")),
+    user: User = Depends(require_view_access("appSettings", "view")),
 ) -> AppSettingsOut:
-    return _settings_out(db)
+    scoped_business_id = visible_business_id(db, user, business_id)
+    return _settings_out(db, scoped_business_id)
 
 
 @router.put("", response_model=AppSettingsOut)
@@ -131,14 +136,17 @@ def update_app_settings(
     payload: AppSettingsUpdate,
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("appSettings", "edit")),
+    business_id: int | None = Query(None),
 ) -> AppSettingsOut:
-    before = _settings_out(db).model_dump()
+    scoped_business_id = visible_business_id(db, admin, business_id)
+    before = _settings_out(db, scoped_business_id).model_dump()
     set_lock_foreign_schedule_cells(
         db,
         payload.lock_foreign_schedule_cells,
         user_id=admin.id,
+        business_id=scoped_business_id,
     )
-    after = _settings_out(db).model_dump()
+    after = _settings_out(db, scoped_business_id).model_dump()
     _audit_setting_change(
         db,
         key=LOCK_FOREIGN_SCHEDULE_CELLS_KEY,
@@ -146,17 +154,20 @@ def update_app_settings(
         old_value=before,
         new_value=after,
         user_id=admin.id,
+        business_id=scoped_business_id,
     )
     db.commit()
-    return _settings_out(db)
+    return _settings_out(db, scoped_business_id)
 
 
 @router.get("/sidebar", response_model=SidebarLayoutOut)
 def get_sidebar_settings(
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> SidebarLayoutOut:
-    return _sidebar_layout_out(db)
+    scoped_business_id = visible_business_id(db, user, business_id)
+    return _sidebar_layout_out(db, scoped_business_id)
 
 
 @router.put("/sidebar", response_model=SidebarLayoutOut)
@@ -164,10 +175,12 @@ def update_sidebar_settings(
     payload: SidebarLayoutUpdate,
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("sidebarLayout", "edit")),
+    business_id: int | None = Query(None),
 ) -> SidebarLayoutOut:
-    before = {"items": get_sidebar_layout(db)}
-    set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id)
-    after = {"items": get_sidebar_layout(db)}
+    scoped_business_id = visible_business_id(db, admin, business_id)
+    before = {"items": get_sidebar_layout(db, business_id=scoped_business_id)}
+    set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id, business_id=scoped_business_id)
+    after = {"items": get_sidebar_layout(db, business_id=scoped_business_id)}
     _audit_setting_change(
         db,
         key=SIDEBAR_LAYOUT_KEY,
@@ -175,17 +188,20 @@ def update_sidebar_settings(
         old_value=before,
         new_value=after,
         user_id=admin.id,
+        business_id=scoped_business_id,
     )
     db.commit()
-    return _sidebar_layout_out(db)
+    return _sidebar_layout_out(db, scoped_business_id)
 
 
 @router.get("/role-access", response_model=RoleViewAccessOut)
 def get_role_access_settings(
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> RoleViewAccessOut:
-    return _role_view_access_out(db)
+    scoped_business_id = visible_business_id(db, user, business_id)
+    return _role_view_access_out(db, scoped_business_id)
 
 
 @router.put("/role-access", response_model=RoleViewAccessOut)
@@ -193,10 +209,12 @@ def update_role_access_settings(
     payload: RoleViewAccessUpdate,
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("roleAccess", "edit")),
+    business_id: int | None = Query(None),
 ) -> RoleViewAccessOut:
-    before = {"access": get_role_view_access(db)}
-    set_role_view_access(db, _clean_role_view_access(payload), user_id=admin.id)
-    after = {"access": get_role_view_access(db)}
+    scoped_business_id = visible_business_id(db, admin, business_id)
+    before = {"access": get_role_view_access(db, business_id=scoped_business_id)}
+    set_role_view_access(db, _clean_role_view_access(payload), user_id=admin.id, business_id=scoped_business_id)
+    after = {"access": get_role_view_access(db, business_id=scoped_business_id)}
     _audit_setting_change(
         db,
         key=ROLE_VIEW_ACCESS_KEY,
@@ -204,6 +222,7 @@ def update_role_access_settings(
         old_value=before,
         new_value=after,
         user_id=admin.id,
+        business_id=scoped_business_id,
     )
     db.commit()
-    return _role_view_access_out(db)
+    return _role_view_access_out(db, scoped_business_id)

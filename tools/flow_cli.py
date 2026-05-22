@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 from string import Formatter
@@ -27,6 +29,7 @@ from core.app_info import SERVER_BASE_URL
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COOKIE_JAR = ROOT / ".flow-cli-cookies.txt"
 DEFAULT_LOCAL_DB = ROOT / "app" / "flow_local.db"
+DEFAULT_ALLOCATION_OUT = Path("allocation-api-out")
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,9 @@ class ApiRoute:
 
 ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("health", "GET", "/api/health", "Server health"),
+    ApiRoute("businesses.list", "GET", "/api/businesses", "Lista verksamheter"),
+    ApiRoute("businesses.create", "POST", "/api/businesses", "Skapa verksamhet"),
+    ApiRoute("businesses.update", "PUT", "/api/businesses/{business_id}", "Uppdatera verksamhet"),
     ApiRoute("auth.login", "POST", "/api/auth/login", "Logga in"),
     ApiRoute("auth.logout", "POST", "/api/auth/logout", "Logga ut"),
     ApiRoute("auth.me", "GET", "/api/auth/me", "Aktuell användare"),
@@ -62,23 +68,28 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("areas.list", "GET", "/api/areas", "Lista områden"),
     ApiRoute("areas.create", "POST", "/api/areas", "Skapa område"),
     ApiRoute("areas.update", "PUT", "/api/areas/{area_id}", "Uppdatera område"),
+    ApiRoute("areas.delete", "DELETE", "/api/areas/{area_id}", "Ta bort eller inaktivera område"),
     ApiRoute("activities.list", "GET", "/api/activities", "Lista aktiviteter"),
     ApiRoute("activities.import_template", "GET", "/api/activities/import-template", "Hämta importmall för aktiviteter"),
     ApiRoute("activities.import", "POST", "/api/activities/import", "Importera aktiviteter"),
+    ApiRoute("activities.import_rows", "POST", "/api/activities/import-rows", "Importera aktivitetsrader"),
     ApiRoute("activities.create", "POST", "/api/activities", "Skapa aktivitet"),
     ApiRoute("activities.update", "PUT", "/api/activities/{activity_id}", "Uppdatera aktivitet"),
     ApiRoute("activities.delete", "DELETE", "/api/activities/{activity_id}", "Ta bort aktivitet"),
     ApiRoute("settings.get", "GET", "/api/settings", "Hämta inställningar"),
     ApiRoute("settings.update", "PUT", "/api/settings", "Uppdatera inställningar"),
-    ApiRoute("settings.sidebar_get", "GET", "/api/settings/sidebar", "Hämta global sidomeny"),
-    ApiRoute("settings.sidebar_update", "PUT", "/api/settings/sidebar", "Uppdatera global sidomeny"),
-    ApiRoute("settings.role_access_get", "GET", "/api/settings/role-access", "Hämta rollernas vyåtkomst"),
-    ApiRoute("settings.role_access_update", "PUT", "/api/settings/role-access", "Uppdatera rollernas vyåtkomst"),
+    ApiRoute("settings.sidebar_get", "GET", "/api/settings/sidebar", "Hämta verksamhetens sidomeny"),
+    ApiRoute("settings.sidebar_update", "PUT", "/api/settings/sidebar", "Uppdatera verksamhetens sidomeny"),
+    ApiRoute("settings.role_access_get", "GET", "/api/settings/role-access", "Hämta verksamhetens vyåtkomst"),
+    ApiRoute("settings.role_access_update", "PUT", "/api/settings/role-access", "Uppdatera verksamhetens vyåtkomst"),
     ApiRoute("audit.list", "GET", "/api/audit", "Lista auditlogg"),
     ApiRoute("audit.summary", "GET", "/api/audit/summary", "Audit-summering"),
+    ApiRoute("audit.errors", "GET", "/api/audit/errors", "Felkodsdashboard"),
+    ApiRoute("audit.client_error", "POST", "/api/audit/client-error", "Logga användarens API-fel"),
     ApiRoute("persons.list", "GET", "/api/persons", "Lista personer"),
     ApiRoute("persons.import_template", "GET", "/api/persons/import-template", "Hämta importmall för personer"),
     ApiRoute("persons.import", "POST", "/api/persons/import", "Importera personer"),
+    ApiRoute("persons.import_rows", "POST", "/api/persons/import-rows", "Importera personrader"),
     ApiRoute("persons.create", "POST", "/api/persons", "Skapa person"),
     ApiRoute("persons.get", "GET", "/api/persons/{person_id}", "Hämta person"),
     ApiRoute("persons.update", "PUT", "/api/persons/{person_id}", "Uppdatera person"),
@@ -91,16 +102,20 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("schedule.bulk_cells", "POST", "/api/schedule/cells", "Sätt flera schemaceller"),
     ApiRoute("schedule.restore_hours", "PUT", "/api/schedule/hours/restore", "Återställ timmar"),
     ApiRoute("schedule.summary", "GET", "/api/schedule/summary", "Schema-summering"),
+    ApiRoute("schedule.revision", "GET", "/api/schedule/revision", "Schema-revision"),
     ApiRoute("schedule.copy", "POST", "/api/schedule/copy", "Kopiera dag/vecka"),
     ApiRoute("schedule.clear", "POST", "/api/schedule/clear", "Rensa schema"),
     ApiRoute("schedule.fill_from_left", "POST", "/api/schedule/fill-from-left", "Fyll från vänster"),
     ApiRoute("overview.week", "GET", "/api/overview", "Översikt vecka"),
     ApiRoute("overview.month", "GET", "/api/overview/month", "Översikt månad"),
+    ApiRoute("overview.revision", "GET", "/api/overview/revision", "Översikt revision"),
+    ApiRoute("overview.revision_month", "GET", "/api/overview/revision/month", "Översikt månadsrevision"),
     ApiRoute("overview.set_day", "POST", "/api/overview/day", "Sätt dag i översikt"),
     ApiRoute("overview.bulk_days", "POST", "/api/overview/days/bulk", "Sätt flera dagar i översikt"),
     ApiRoute("users.list", "GET", "/api/users", "Lista användare"),
     ApiRoute("users.import_template", "GET", "/api/users/import-template", "Hämta importmall för användare"),
     ApiRoute("users.import", "POST", "/api/users/import", "Importera användare"),
+    ApiRoute("users.import_rows", "POST", "/api/users/import-rows", "Importera användarrader"),
     ApiRoute("users.create", "POST", "/api/users", "Skapa användare"),
     ApiRoute("users.update", "PUT", "/api/users/{user_id}", "Uppdatera användare"),
     ApiRoute("productivity.files", "GET", "/api/productivity/files", "Produktivitetsfilstatus"),
@@ -224,6 +239,61 @@ def _print_response(response: requests.Response, output: str | None = None) -> i
             if response.content and not response.content.endswith(b"\n"):
                 print()
     return 0 if response.ok else 1
+
+
+def _json_response(response: requests.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise SystemExit(f"API svarade inte med JSON: {response.text[:500]}") from exc
+
+
+def _slug(value: str, fallback: str = "output") -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or fallback)).strip("._-")
+    return safe or fallback
+
+
+def _default_allocation_out(flow_id: str) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return DEFAULT_ALLOCATION_OUT / f"{_slug(flow_id)}-{stamp}"
+
+
+def _allocation_download_keys(payload: dict[str, Any], selector: str) -> list[str]:
+    if selector == "none":
+        return []
+    tables = [str(table.get("key")) for table in payload.get("tables", []) if table.get("key")]
+    if selector == "all":
+        return tables
+    wanted = [item.strip() for item in selector.split(",") if item.strip()]
+    unknown = sorted(set(wanted) - set(tables))
+    if unknown:
+        raise SystemExit(f"Okanda resultattabeller: {', '.join(unknown)}")
+    return wanted
+
+
+def _download_allocation_tables(
+    *,
+    session: requests.Session,
+    base_url: str,
+    session_id: str,
+    keys: list[str],
+    out_dir: Path,
+) -> dict[str, str]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    downloads: dict[str, str] = {}
+    for key in keys:
+        response = _request(
+            session=session,
+            base_url=base_url,
+            method="GET",
+            path=f"/api/allokering/download/{session_id}/{key}",
+        )
+        if not response.ok:
+            raise SystemExit(f"Kunde inte ladda ner {key}: HTTP {response.status_code} {response.text[:300]}")
+        target = out_dir / f"{_slug(key)}.csv"
+        target.write_bytes(response.content)
+        downloads[key] = str(target)
+    return downloads
 
 
 def _normalize_database_url(url: str) -> str:
@@ -393,6 +463,133 @@ def _run_api(args: argparse.Namespace) -> int:
             file_handle.close()
 
 
+def _run_allocation_flows(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    response = _request(session=session, base_url=args.base_url, method="GET", path="/api/allokering/flows")
+    _save_session(session)
+    return _print_response(response, args.output)
+
+
+def _run_allocation_pool(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    response = _request(session=session, base_url=args.base_url, method="GET", path="/api/allokering/pool")
+    _save_session(session)
+    return _print_response(response, args.output)
+
+
+def _run_allocation_detect(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    files = [("file", open(args.path, "rb"))]
+    try:
+        response = _request(session=session, base_url=args.base_url, method="POST", path="/api/allokering/detect", files=files)
+        _save_session(session)
+        return _print_response(response, args.output)
+    finally:
+        for _, file_handle in files:
+            file_handle.close()
+
+
+def _run_allocation_observations_update(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    files = [("file", open(args.path, "rb"))]
+    try:
+        response = _request(
+            session=session,
+            base_url=args.base_url,
+            method="POST",
+            path="/api/allokering/observations/update",
+            files=files,
+        )
+        _save_session(session)
+        return _print_response(response, args.output)
+    finally:
+        for _, file_handle in files:
+            file_handle.close()
+
+
+def _run_allocation_run(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    files = _open_files(args.file)
+    out_dir = Path(args.out) if args.out else _default_allocation_out(args.flow_id)
+    try:
+        response = _request(
+            session=session,
+            base_url=args.base_url,
+            method="POST",
+            path=f"/api/allokering/flow/{args.flow_id}",
+            form=_parse_key_value(args.param),
+            files=files,
+        )
+        _save_session(session)
+        if not response.ok:
+            return _print_response(response, args.output)
+        payload = _json_response(response)
+        downloads: dict[str, str] = {}
+        session_id = str(payload.get("session_id") or "")
+        keys = _allocation_download_keys(payload, args.download)
+        if keys and session_id:
+            downloads = _download_allocation_tables(
+                session=session,
+                base_url=args.base_url,
+                session_id=session_id,
+                keys=keys,
+                out_dir=out_dir,
+            )
+            payload["downloads"] = downloads
+        if args.output:
+            Path(args.output).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        elif args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(f"Klart: {args.flow_id}")
+            print(f"Session: {session_id}")
+            if downloads:
+                print(f"Output: {out_dir}")
+                for key, path in downloads.items():
+                    print(f"- {key}: {path}")
+        return 0
+    finally:
+        for _, file_handle in files:
+            file_handle.close()
+
+
+def _run_allocation_download(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    response = _request(
+        session=session,
+        base_url=args.base_url,
+        method="GET",
+        path=f"/api/allokering/download/{args.session_id}/{args.key}",
+    )
+    _save_session(session)
+    return _print_response(response, args.output)
+
+
+def _run_allocation_column(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    response = _request(
+        session=session,
+        base_url=args.base_url,
+        method="GET",
+        path=f"/api/allokering/table-column/{args.session_id}/{args.key}/{args.column_index}",
+    )
+    _save_session(session)
+    return _print_response(response, args.output)
+
+
+def _run_allocation_open_excel(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    response = _request(
+        session=session,
+        base_url=args.base_url,
+        method="POST",
+        path="/api/allokering/open-excel",
+        json_body={"session_id": args.session_id, "key": args.key},
+    )
+    _save_session(session)
+    return _print_response(response, args.output)
+
+
 def _run_auth(args: argparse.Namespace) -> int:
     session = _session(args.cookie_jar)
     if args.auth_command == "login":
@@ -469,6 +666,63 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     api.add_argument("path")
     _add_request_options(api)
     api.set_defaults(func=_run_api)
+
+    allocation = sub.add_parser("allocation", help="Bekvama alias for Bearbeta/Dela via /api/allokering.")
+    allocation_sub = allocation.add_subparsers(dest="allocation_command", required=True)
+
+    allocation_flows = allocation_sub.add_parser("flows", help="Lista lagerverktygsfloden fran API:t.")
+    allocation_flows.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_flows.set_defaults(func=_run_allocation_flows)
+
+    allocation_pool = allocation_sub.add_parser("pool", help="Lista gemensamma uppladdningsslots.")
+    allocation_pool.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_pool.set_defaults(func=_run_allocation_pool)
+
+    allocation_detect = allocation_sub.add_parser("detect", help="Identifiera en lagerfil via API:t.")
+    allocation_detect.add_argument("path")
+    allocation_detect.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_detect.set_defaults(func=_run_allocation_detect)
+
+    allocation_run = allocation_sub.add_parser("run", help="Kor ett Bearbeta/Dela-flode via API:t.")
+    allocation_run.add_argument("flow_id")
+    allocation_run.add_argument("--file", action="append", help="Multipart-fil som key=path. Kan anges flera ganger.")
+    allocation_run.add_argument("--param", action="append", help="Formfalt som key=value. Kan anges flera ganger.")
+    allocation_run.add_argument("--out", help="Mapp for nedladdade resultat-CSV:er.")
+    allocation_run.add_argument(
+        "--download",
+        default="all",
+        help="Vilka resultattabeller som laddas ner: all, none eller komma-separerade nycklar.",
+    )
+    allocation_run.add_argument("--json", action="store_true", help="Skriv hela API-svaret som JSON.")
+    allocation_run.add_argument("--output", help="Skriv hela API-svaret som JSON-fil.")
+    allocation_run.set_defaults(func=_run_allocation_run)
+
+    allocation_update = allocation_sub.add_parser(
+        "observations-update",
+        help="Kor specialendpointen /api/allokering/observations/update.",
+    )
+    allocation_update.add_argument("path")
+    allocation_update.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_update.set_defaults(func=_run_allocation_observations_update)
+
+    allocation_download = allocation_sub.add_parser("download", help="Ladda ner en resultattabell fran session.")
+    allocation_download.add_argument("session_id")
+    allocation_download.add_argument("key")
+    allocation_download.add_argument("--output", required=True, help="CSV-fil att skriva.")
+    allocation_download.set_defaults(func=_run_allocation_download)
+
+    allocation_column = allocation_sub.add_parser("column", help="Hamta en resultatkolumn fran session.")
+    allocation_column.add_argument("session_id")
+    allocation_column.add_argument("key")
+    allocation_column.add_argument("column_index", type=int)
+    allocation_column.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_column.set_defaults(func=_run_allocation_column)
+
+    allocation_excel = allocation_sub.add_parser("open-excel", help="Oppna en resultattabell i Excel via API:t.")
+    allocation_excel.add_argument("session_id")
+    allocation_excel.add_argument("key")
+    allocation_excel.add_argument("--output", help="Skriv JSON-svar till fil.")
+    allocation_excel.set_defaults(func=_run_allocation_open_excel)
 
     auth = sub.add_parser("auth", help="Inloggning och session.")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)

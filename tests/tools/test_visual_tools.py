@@ -26,21 +26,53 @@ def test_visual_smoke_covers_expected_routes():
         "aktiviteter",
         "historik",
         "anvandare",
+        "verksamheter",
         "hamta-data",
         "uppladdningar",
         "bearbeta",
         "dela",
-        "harleda",
     }
-    assert pages_by_name["flow"].roles == ("admin", "leader", "staffing", "viewer")
+    assert pages_by_name["flow"].roles == ("admin", "leader", "staffing", "viewer", "r3")
     assert pages_by_name["personer"].roles == ("admin", "leader", "staffing")
     assert pages_by_name["produktivitet"].roles == ("admin",)
     assert pages_by_name["anvandare"].roles == ("admin",)
+    assert pages_by_name["verksamheter"].roles == ("admin",)
     assert pages_by_name["hamta-data"].roles == ("admin",)
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
-    assert pages_by_name["harleda"].roles == ("admin", "warehouse", "article")
+
+
+def test_schedule_view_uses_bemanning_label_in_visible_navigation():
+    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    users = (ROOT / "app" / "frontend" / "js" / "users.js").read_text(encoding="utf-8")
+    index = (ROOT / "app" / "frontend" / "index.html").read_text(encoding="utf-8")
+    assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
+
+    assert 'id: "schedule",\n      label: "Bemanning",' in common
+    assert '{ id: "schedule", label: "Bemanning" }' in users
+    assert "<title>Bemanning - flow</title>" in index
+    assert 'id="sectionTitle">Bemanning</div>' in index
+    assert '"schedule": "Bemanning"' in assistant
+
+    assert 'label: "flow"' not in common
+    assert 'label: "flow"' not in users
+
+
+def test_history_view_has_error_dashboard_and_client_error_logging():
+    html = (ROOT / "app" / "frontend" / "historik.html").read_text(encoding="utf-8")
+    analytics = (ROOT / "app" / "frontend" / "js" / "analytics.js").read_text(encoding="utf-8")
+    api = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+
+    assert 'data-history-mode="history"' in html
+    assert 'data-history-mode="analysis"' in html
+    assert 'data-history-mode="errors"' in html
+    assert 'id="recentErrorBody"' in html
+    assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
+    assert "function renderErrorDashboard" in analytics
+    assert 'const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";' in api
+    assert "function reportApiError" in api
+    assert "pathWithoutQuery(path)" in api
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -49,6 +81,9 @@ def test_visual_smoke_covers_critical_scenarios():
     assert {
         "flow-mestergruppen",
         "flow-autostore",
+        "flow-stigamo-infinity",
+        "flow-r3-toggle",
+        "flow-superuser-global-infinity",
         "flow-kopiera-dag-modal",
         "flow-kalkyl-alla",
         "flow-fokus-mestergruppen",
@@ -62,6 +97,7 @@ def test_visual_smoke_covers_critical_scenarios():
         "aktiviteter-redigera-aktivitet-modal",
         "anvandare-redigera-anvandare-modal",
         "anvandare-vybehorigheter-modal",
+        "verksamheter-ny-verksamhet-modal",
         "historik-filter",
         "viewer-nekad-personer",
         "viewer-nekad-produktivitet",
@@ -79,6 +115,8 @@ def test_visual_smoke_covers_critical_scenarios():
 def test_interactive_e2e_covers_mutating_workflows():
     assert {
         "download_import_templates",
+        "create_business",
+        "edit_business",
         "create_user",
         "edit_user",
         "import_user",
@@ -200,7 +238,7 @@ def test_app_migration_plan_documents_high_risk_workflows():
 
     for required in (
         "Inloggning, session och roller",
-        "flow: dagsschema",
+        "Bemanning: dagsschema",
         "Översikt",
         "Produktivitet",
         "Desktop/Windows-app",
@@ -230,7 +268,7 @@ def test_desktop_web_view_accepts_file_downloads():
 def test_visual_smoke_outputs_have_unique_names():
     names = []
     for viewport in visual_smoke.VIEWPORTS:
-        for role in ("public", "admin", "leader", "staffing", "viewer", "warehouse", "article"):
+        for role in ("public", "admin", "leader", "staffing", "viewer", "warehouse", "article", "r3"):
             for page in visual_smoke.PAGES:
                 if role in page.roles:
                     names.append(visual_smoke._safe_name(viewport.name, role, page.name))
@@ -269,7 +307,7 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
 
     with sqlite3.connect(db_path) as connection:
         users = connection.execute(
-            "select username, role from users where username in ('visual_leader', 'visual_staffing', 'visual_viewer', 'visual_lager', 'visual_artikel')"
+            "select username, role from users where username in ('visual_leader', 'visual_staffing', 'visual_viewer', 'visual_lager', 'visual_artikel', 'visual_r3_admin')"
         ).fetchall()
         visual_people = connection.execute(
             "select count(*) from persons where name like 'Visual %'"
@@ -283,6 +321,7 @@ def test_visual_data_seeds_disposable_sqlite_database(tmp_path):
         ("visual_artikel", "article_placer"),
         ("visual_lager", "warehouse_clerk"),
         ("visual_leader", "leader"),
+        ("visual_r3_admin", "admin"),
         ("visual_staffing", "staffing_manager"),
         ("visual_viewer", "viewer"),
     ]
@@ -452,7 +491,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "v_ask_booking_putaway" in allocation_tools
     assert "ALLOCATION_SLOT_MIRRORS" in allocation_tools
     assert 'wms_booking: ["not_putaway"]' in allocation_tools
-    assert "v_ask_receive_log" in allocation_tools
+    assert "v_ask_receive_log" not in allocation_tools
     assert "v_ask_palletloading_log" in allocation_tools
     assert "routeProductivityFilesFromSharedUpload" in allocation_tools
     assert "reportUnknown: false" in allocation_tools
@@ -527,6 +566,10 @@ def test_area_focus_toggle_is_wired_to_views():
     productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
     persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
+    users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
+    schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
+    overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
+    productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
 
     assert "flow-area-focus" in common
     assert '<button class="area-focus-toggle" id="area-focus-toggle"' in common
@@ -536,15 +579,22 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "function nextAreaFocus" in common
     assert 'toggle.addEventListener("click", () => writeAreaFocus(nextAreaFocus()))' in common
     assert "preferredAreaIdFromFocus" in common
+    assert "function areaFocusValueForArea" in common
+    assert "buildAreaFocusOptions" in common
+    assert 'business_code || "").toUpperCase() === "STIGAMO"' in common
+    assert 'code || "").trim().toUpperCase() !== "ANNAT"' in common
+    assert 'code: null, areaId: null' in common
+    assert 'value: "ALLT"' in common
+    assert 'window.areaFocusAreaId = areaFocusAreaId' in common
     assert "preferredActivityAreaId" in common
-    assert "normalizeExistingAreaId(userAreaId, areas)" in common
+    assert "return preferredAreaIdFromFocus(areas);" in common
     assert "compareActivitiesForAreaFocus" in common
     assert "comparePersonsForAreaFocus" in common
     assert ".area-focus-toggle" in styles
 
     assert 'const CALC_AREA_KEYS = ["GG", "MG", "AS", "EH"]' in schedule
-    assert 'typeof areaFocusCode === "function" && areaFocusCode()' in schedule
-    assert 'typeof areaFocusCode === "function" && areaFocusCode()' in overview
+    assert 'preferredAreaIdFromFocus(state.areas) : null' in schedule
+    assert 'preferredAreaIdFromFocus(state.areas) : null' in overview
     assert "compareActivitiesForAreaFocus(a, b, state.areas, state.currentUser?.area_id)" in schedule
     assert "compareActivitiesForAreaFocus(a, b, state.areas, state.currentUser?.area_id)" in overview
     assert '"flow:areaFocusChanged"' in schedule
@@ -552,7 +602,92 @@ def test_area_focus_toggle_is_wired_to_views():
     assert '"flow:areaFocusChanged"' in productivity
     assert '"flow:areaFocusChanged"' in persons
     assert '"flow:areaFocusChanged"' in activities
+    assert '"flow:areaFocusChanged"' in users
+    assert "matchesAreaFocus" in activities
+    assert "matchesAreaFocus" in persons
+    assert "matchesAreaFocus" in users
+    assert 'params.set("area_id", String(areaId))' in persons
+    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in persons
+    assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons
     assert '{ id: "eh", title: "E-Handel" }' in productivity
+    assert 'id="areaSelect"' not in schedule_html
+    assert 'id="areaSelect"' not in overview_html
+    assert 'id="productivityGroupFilter"' not in productivity_html
+    assert 'id="calcAreaSelect"' not in schedule_html
+    assert "productivityGroupFilter" not in productivity
+
+
+def test_planning_views_cache_all_scope_and_have_top_scrollbars():
+    frontend = ROOT / "app" / "frontend"
+    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
+    overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
+
+    assert "function setupSyncedHorizontalScroll" in common
+    assert "window.setupSyncedHorizontalScroll = setupSyncedHorizontalScroll" in common
+    assert ".synced-scrollbar-top" in styles
+    assert "synced-scrollbar-spacer" in styles
+    assert '<table class="matrix" id="scheduleTable">' in schedule_html
+    assert '<table class="overview" id="overviewTable">' in overview_html
+
+    for source, prefix in ((schedule, "Schedule"), (overview, "Overview")):
+        assert f"filter{prefix}DataForArea" in source
+        assert f"prefetchAll{prefix}" in source
+        assert f"render{prefix}FromAllCache" in source
+        assert f"invalidate{prefix}AllCache" in source
+        assert f"revalidate{prefix}" in source
+        assert "setupSyncedHorizontalScroll(document.getElementById" in source
+        assert "user.business_id ?? \"global\"" in source
+        assert "user.is_super_user ? \"super\" : \"scoped\"" in source
+
+    assert "scheduleUrl(null)" in schedule
+    assert "scheduleRevisionUrl(null)" in schedule
+    assert "SCHEDULE_REVALIDATE_ACTIVE_MS = 10000" in schedule
+    assert "SCHEDULE_REVALIDATE_IDLE_MS = 30000" in schedule
+    assert "patchScheduleFromAllData" in schedule
+    assert "overviewUrl(null)" in overview
+    assert "overviewRevisionUrl(null)" in overview
+    assert "OVERVIEW_REVALIDATE_ACTIVE_MS = 10000" in overview
+    assert "OVERVIEW_REVALIDATE_IDLE_MS = 30000" in overview
+    assert "patchOverviewFromAllData" in overview
+    assert "Number(person.home_area_id) === selectedAreaId" in schedule
+    assert "Number(person.home_area_id) === selectedAreaId" in overview
+
+
+def test_super_user_business_fields_are_wired_in_register_ui():
+    frontend = ROOT / "app" / "frontend"
+    persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
+    users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
+    businesses = (frontend / "js" / "businesses.js").read_text(encoding="utf-8")
+    businesses_html = (frontend / "verksamheter.html").read_text(encoding="utf-8")
+
+    for source in (persons, activities, users):
+        assert 'api.get("/api/businesses")' in source
+        assert 'label>Verksamhet</label>' in source
+        assert 'id="m-business"' in source
+        assert "payload.business_id" in source
+        assert 'key: "business", label: "Verksamhet"' in source
+        assert 'value: business.code' in source
+
+    assert 'initPage("businesses", { requireSuperUser: true })' in businesses
+    assert 'api.get(`/api/businesses?include_inactive=${includeInactive}`)' in businesses
+    assert 'api.get("/api/areas?include_inactive=true")' in businesses
+    assert 'api.post("/api/businesses", payload)' in businesses
+    assert 'api.put(`/api/businesses/${business.id}`, payload)' in businesses
+    assert "function renderAreasTable" in businesses
+    assert "function openAreaModal" in businesses
+    assert 'data-new-area="${business.id}"' in businesses
+    assert 'api.post("/api/areas", payload)' in businesses
+    assert 'api.put(`/api/areas/${area.id}`, payload)' in businesses
+    assert 'api.del(`/api/areas/${area.id}`)' in businesses
+    assert "setAreaFocusAreas(loadedAreas, currentUser)" in businesses
+    assert 'id="businesses-body"' in businesses_html
+    assert 'id="new-business"' in businesses_html
+    assert "Verksamheter och områden" in businesses_html
 
 
 def test_frontend_knows_bemanningsansvarig_role():
@@ -605,19 +740,27 @@ def test_import_views_have_templates_and_help_buttons():
     activities_js = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
 
     assert "setupImportHelpButton" in common
-    assert "Ladda ner importmallen" in common
+    assert "openBulkImportGrid" in common
+    assert "Importen kan göras via Excel-mallen eller direkt i vyn" in common
     assert "async function download" in api_js
     assert "URL.createObjectURL(blob)" in api_js
 
+    assert 'id="bulk-persons"' in persons_html
     assert 'id="download-person-template"' in persons_html
     assert 'id="person-import-help"' in persons_html
+    assert "/api/persons/import-rows" in persons_js
+    assert "openBulkPersonsModal" in persons_js
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
     assert 'api.download("/api/persons/import-template", "personer-importmall.xlsx")' in persons_js
     assert 'window.location.href = "/api/persons/import-template"' not in persons_js
 
+    assert 'id="bulk-users"' in users_html
+    assert "+ Flera nya användare" in users_html
     assert 'id="download-user-template"' in users_html
     assert 'id="role-view-access"' in users_html
     assert 'id="user-import-help"' in users_html
+    assert "/api/users/import-rows" in users_js
+    assert "openBulkUsersModal" in users_js
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
     assert 'api.download("/api/users/import-template", "anvandare-importmall.xlsx")' in users_js
     assert 'window.location.href = "/api/users/import-template"' not in users_js
@@ -628,10 +771,13 @@ def test_import_views_have_templates_and_help_buttons():
     assert "nextRoleAccessLevel" in users_js
     assert "select[data-role][data-view]" not in users_js
 
+    assert 'id="bulk-activities"' in activities_html
     assert 'id="download-activity-template"' in activities_html
     assert 'id="import-activities"' in activities_html
     assert 'id="activity-import-help"' in activities_html
     assert "/api/activities/import-template" in activities_js
+    assert "/api/activities/import-rows" in activities_js
+    assert "openBulkActivitiesModal" in activities_js
     assert 'api.download("/api/activities/import-template", "aktiviteter-importmall.xlsx")' in activities_js
     assert 'window.location.href = "/api/activities/import-template"' not in activities_js
     assert "/api/activities/import" in activities_js
@@ -644,13 +790,26 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'setupImportHelpButton("activity-import-help", "Importera aktiviteter")' in activities_js
 
 
+def test_modal_enter_key_uses_primary_dialog_action():
+    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+
+    assert "function handleModalEnterKeydown" in common
+    assert 'event.key !== "Enter"' in common
+    assert 'event.target?.closest?.(".modal")' in common
+    assert ".actions button.primary:not(:disabled)" in common
+    assert "document.addEventListener(\"keydown\", handleModalEnterKeydown)" in common
+    assert "target.matches(\"textarea\")" in common
+    assert "input[type='checkbox'], input[type='radio']" in common
+
+
 def test_api_fetch_failures_get_clear_swedish_message():
     api_js = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
 
     assert "function connectionError" in api_js
     assert "Kunde inte ansluta till servern" in api_js
     assert "Appen måste öppnas via servern" in api_js
-    assert "throw connectionError(path, error)" in api_js
+    assert "const err = connectionError(path, error)" in api_js
+    assert 'error_code: "network_error"' in api_js
     assert "originalError" in api_js
 
 
@@ -682,7 +841,6 @@ def test_allocation_pages_are_wired_to_shared_tool_shell():
         "uppladdningar.html": "uploads",
         "bearbeta.html": "process",
         "dela.html": "split",
-        "harleda.html": "trace",
     }
 
     for filename, view in allocation_pages.items():
@@ -739,6 +897,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "Saldo / automation" not in catalog
     assert '"not_putaway", "wms_booking"' in catalog
     assert '"not_putaway", "wms_booking"' in flows
+    assert "v_ask_receive_log" not in allocation
+    assert "v_ask_correct_log" not in allocation
     assert "ALLOCATION_CORE_FILES" in allocation
     assert "allocationCoreFile" in allocation
     assert "Kärnfil" in allocation
@@ -758,6 +918,9 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "isAllocationUploadsPage()" in common
     assert "window.allocationUploadActivity" in common
     assert "clearAllocationUploadNotice()" in common
+    assert "allocationTrace" not in common
+    assert "harleda.html" not in common
+    assert "eftersok" not in allocation
     assert "trackUploadActivity" in productivity_uploads
     assert "syncAllocationUploads" in productivity_uploads
     assert "syncAllocationUploadsFromStore" in productivity_uploads
@@ -768,13 +931,25 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "syncAllocationUploads: false" in allocation
     assert "allocationResultSummaryEntries" in allocation
     assert "data.display_summary" in allocation
-    assert 'data.flow_id === "allocate"' in allocation
-    assert 'entry.key !== "result"' in allocation
+    assert 'entry.key !== "result"' not in allocation
     assert "data-download-csv" in allocation
     assert "api.download(`${ALLOCATION_API}/download/" in allocation
     assert 'href="${ALLOCATION_API}/download/' not in allocation
+    assert "Excel öppnas" in allocation
+    assert "copyOrdersaldoCompleteOrders" in allocation
+    assert 'data?.flow_id !== "ordersaldo"' in allocation
+    assert 'entry.key === "complete"' in allocation
+    assert "kompletta ordrar kopierade" in allocation
+    assert "renderTextResult" in allocation
+    assert 'class="allocation-copy-text"' in allocation
+    assert "data-copy-text-result" in allocation
+    assert "data-result-text" in allocation
+    assert "ALLOCATION_COPY_ICON" in allocation
+    assert "Text kopierad" in allocation
+    assert 'class="allocation-column-head"' in allocation
     assert 'class="allocation-copy-column"' in allocation
     assert 'data-copy-column="${index}"' in allocation
+    assert 'aria-label="Kopiera kolumn ${allocationEscape(column)}"' in allocation
     assert "/table-column/" in allocation
     assert "writeClipboardText" in allocation
     assert 'document.execCommand("copy")' in allocation
@@ -787,5 +962,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert ".sidebar-upload-link" not in styles
     assert ".allocation-file-slot.drag-over" in styles
     assert ".allocation-flow-chip.drag-over .allocation-flow-chip-row" in styles
+    assert ".allocation-column-head" in styles
+    assert ".allocation-text-result-wrap" in styles
+    assert ".allocation-copy-text" in styles
     assert ".allocation-copy-column" in styles
     assert "text-decoration: none;" in styles

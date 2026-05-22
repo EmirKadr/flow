@@ -1,7 +1,7 @@
 ---
 title: Apphjalp och LLM-chatt
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-22
 tags: [chat, llm, minimax, support, sidebar]
 ---
 
@@ -55,9 +55,9 @@ Backend lagger in en begransad anvandarkontext i prompten for att chatten ska ku
 - om anvandaren ar aktiv och om losenordsskapande fortfarande kravs
 - anvandarens omrade om det finns
 - effektiva vybehorigheter grupperade som `edit`, `view` och `none`
-- aktuell sidas vybehorighet, till exempel `Harleda (allocationTrace) = none`
+- aktuell sidas vybehorighet, till exempel `Dela (allocationSplit) = none`
 
-Kanslig information skickas inte till MiniMax: inga losenord, password hashes, sessioncookies, API-nycklar, tokens eller hemliga env-varden. Chatten ska anvanda anvandarkontexten for att ge direkta svar som "du saknar `Harleda`" eller "du har bara `view`, inte `edit`", men den ska fortfarande saga att admin/Super User maste andrar `Vybehorigheter`.
+Kanslig information skickas inte till MiniMax: inga losenord, password hashes, sessioncookies, API-nycklar, tokens eller hemliga env-varden. Chatten ska anvanda anvandarkontexten for att ge direkta svar som "du saknar `Dela`" eller "du har bara `view`, inte `edit`", men den ska fortfarande saga att admin/Super User maste andrar `Vybehorigheter`.
 
 Svar ska formateras for en smal chattpanel: korta stycken, korta punktlistor, fet kort rubrik hellre an `##`, och inga markdown-tabeller om det gar att undvika. Frontend kan rendera enklare Markdown som fetstil, inline-kod, listor, rubriker och tabeller, men tabeller blir snabbt tranga.
 
@@ -81,7 +81,7 @@ Backend lagger dessutom till sidrelevant dokument, till exempel:
 - `/personer.html` -> `persons.md`
 - `/anvandare.html` -> `users-settings.md`
 - `/produktivitet.html` -> `productivity.md`
-- `/uppladdningar.html`, `/bearbeta.html`, `/dela.html`, `/harleda.html` -> `warehouse-tools.md`
+- `/uppladdningar.html`, `/bearbeta.html`, `/dela.html` -> `warehouse-tools.md`
 
 Darefter rankas fler wiki-filer efter ord i anvandarens senaste fraga. Modellen far alltsa inte direkt kora egen reposokning, men den far en kuraterad wiki-kontext byggd fran repot. Det ar avsiktligt for att inte skicka hemligheter eller hela kodbasen till modellen.
 

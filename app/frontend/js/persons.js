@@ -2,6 +2,7 @@
 
 let areas = [];
 let activities = [];
+let businesses = [];
 let persons = [];
 let currentUser = null;
 let sortKey = "sort_order";
@@ -12,12 +13,15 @@ const PERSON_UNDO_LIMIT = 50;
 let personUndoBusy = false;
 
 async function loadInitial() {
-  const [a, act] = await Promise.all([
+  const requests = [
     api.get("/api/areas"),
     api.get("/api/activities?include_inactive=true"),
-  ]);
+  ];
+  if (currentUser?.is_super_user) requests.push(api.get("/api/businesses"));
+  const [a, act, biz] = await Promise.all(requests);
   areas = a;
   activities = act;
+  businesses = biz || [];
 }
 
 function areaName(id) {
@@ -31,6 +35,45 @@ function activityLabel(id) {
 function activityColor(id) {
   const a = activities.find((x) => x.id === id);
   return a ? a.color : "transparent";
+}
+
+function businessOptions(selectedId, disabled = false) {
+  if (!currentUser?.is_super_user) return "";
+  return `
+      <label>Verksamhet</label>
+      <select id="m-business" ${disabled ? "disabled" : ""}>
+        <option value="">Välj verksamhet</option>
+        ${businesses.map((business) => `<option value="${business.id}" ${Number(selectedId) === Number(business.id) ? "selected" : ""}>${escapeHtml(business.name)}</option>`).join("")}
+      </select>
+  `;
+}
+
+function businessIdFromArea(areaId) {
+  const area = areas.find((item) => Number(item.id) === Number(areaId));
+  return area?.business_id ?? null;
+}
+
+function businessIdFromActivity(activityId) {
+  const activity = activities.find((item) => Number(item.id) === Number(activityId));
+  return activity?.business_id ?? null;
+}
+
+function inferredPersonBusinessId(person = null) {
+  return person?.business_id
+    ?? businessIdFromArea(person?.home_area_id)
+    ?? businessIdFromActivity(person?.home_activity_id)
+    ?? currentUser?.business_id
+    ?? businesses[0]?.id
+    ?? null;
+}
+
+function focusedAreaId() {
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(areas) : null;
+}
+
+function matchesAreaFocus(person) {
+  const areaId = focusedAreaId();
+  return areaId == null || Number(person?.home_area_id) === Number(areaId);
 }
 
 function escapeHtml(s) {
@@ -235,7 +278,7 @@ function editSelect(td, person, field, currentId, options, getId, getLabel) {
 
 // ---- Rendering ----
 function renderRows() {
-  const filtered = persons.filter(passesFilter).sort((a, b) => {
+  const filtered = persons.filter(matchesAreaFocus).filter(passesFilter).sort((a, b) => {
     if (typeof comparePersonsForAreaFocus === "function") {
       const areaCompare = comparePersonsForAreaFocus(a, b, areas);
       if (areaCompare !== 0) return areaCompare;
@@ -333,7 +376,11 @@ function renderRows() {
 
 
 async function loadPersons() {
-  persons = await api.get("/api/persons");
+  const params = new URLSearchParams();
+  const areaId = focusedAreaId();
+  if (areaId != null) params.set("area_id", String(areaId));
+  const query = params.toString();
+  persons = await api.get(`/api/persons${query ? `?${query}` : ""}`);
   renderRows();
 }
 
@@ -387,7 +434,7 @@ function showImportResult(result) {
     openImportResultModal(result);
     return;
   }
-  showToast("Excel-filen innehöll inga personer", "warn");
+  showToast("Importen innehöll inga personer", "warn");
 }
 
 async function importPersonFile(file) {
@@ -406,18 +453,47 @@ async function importPersonFile(file) {
   }
 }
 
+function openBulkPersonsModal() {
+  const businessColumn = currentUser?.is_super_user
+    ? [{ key: "business", label: "Verksamhet", type: "select", options: businesses.map((business) => ({ value: business.code, label: business.name })) }]
+    : [];
+  openBulkImportGrid({
+    title: "Flera nya personer",
+    submitLabel: "Skapa personer",
+    initialRows: 10,
+    columns: [
+      ...businessColumn,
+      { key: "name", label: "Namn" },
+      { key: "home_area", label: "Hemområde", type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
+      { key: "home_activity", label: "Huvudaktivitet", type: "select", options: activities.map((activity) => ({ value: activity.label, label: activity.label })) },
+      { key: "sort_order", label: "Sortering", type: "number" },
+    ],
+    onSubmit: async (rows) => {
+      const result = await api.post("/api/persons/import-rows", { rows });
+      showImportResult(result);
+      await loadPersons();
+    },
+  });
+}
+
 function setupImportControls() {
   const downloadButton = document.getElementById("download-person-template");
   const importButton = document.getElementById("import-persons");
+  const bulkButton = document.getElementById("bulk-persons");
   const helpButton = document.getElementById("person-import-help");
   const fileInput = document.getElementById("person-import-file");
   if (!canEditPage(currentUser, "personImport")) {
     downloadButton.hidden = true;
     importButton.hidden = true;
+    if (bulkButton) bulkButton.hidden = true;
     if (helpButton) helpButton.hidden = true;
     return;
   }
 
+  if (bulkButton) {
+    bulkButton.hidden = false;
+    bulkButton.addEventListener("click", openBulkPersonsModal);
+  }
   setupImportHelpButton("person-import-help", "Importera personer");
   downloadButton.addEventListener("click", async () => {
     try {
@@ -439,17 +515,20 @@ function setupImportControls() {
 // ---- Ny person-modal (kvar för att kunna lägga till) ----
 function openModal(person) {
   const isEdit = !!person;
+  const selectedAreaId = person?.home_area_id ?? focusedAreaId();
+  const selectedBusinessId = isEdit ? inferredPersonBusinessId(person) : (businessIdFromArea(selectedAreaId) ?? inferredPersonBusinessId(person));
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
     <div class="modal">
       <h2>${isEdit ? "Redigera person" : "Ny person"}</h2>
+      ${businessOptions(selectedBusinessId, isEdit)}
       <label>Namn</label>
       <input id="m-name" value="${escapeHtml(person?.name || "")}" />
       <label>Hemområde</label>
       <select id="m-area">
         <option value="">(inget)</option>
-        ${areas.map((a) => `<option value="${a.id}" ${person?.home_area_id === a.id ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
+        ${areas.map((a) => `<option value="${a.id}" ${Number(selectedAreaId) === Number(a.id) ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
       </select>
       <label>Huvudaktivitet</label>
       <select id="m-activity">
@@ -473,6 +552,9 @@ function openModal(person) {
       home_activity_id: document.getElementById("m-activity").value ? Number(document.getElementById("m-activity").value) : null,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
     };
+    if (currentUser?.is_super_user && !isEdit) {
+      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+    }
     if (!payload.name) { showToast("Namn krävs", "error"); return; }
     try {
       if (isEdit) {
@@ -620,7 +702,7 @@ function updateRowDisabled(row) {
   const newPersonButton = document.getElementById("new-person");
   newPersonButton.hidden = !canEditPage(currentUser, "persons");
   if (canEditPage(currentUser, "persons")) newPersonButton.addEventListener("click", () => openModal(null));
-  window.addEventListener("flow:areaFocusChanged", () => renderRows());
+  window.addEventListener("flow:areaFocusChanged", () => loadPersons());
 
   document.querySelectorAll("tr.filter-row input").forEach((inp) => {
     inp.addEventListener("input", () => {

@@ -58,7 +58,7 @@ def test_productivity_targets_are_serializable(tmp_path):
     write(
         tmp_path / "v_ask_kpi_target-20260518080915.csv",
         """
-Bolag\tLager\tFlÃ¶desnamn\tProcessnamn\tBeskrivning\tRader\tKollin\tPallar
+Bolag\tLager\tFlödesnamn\tProcessnamn\tBeskrivning\tRader\tKollin\tPallar
 GG\t404\tOUTBOUND\tManual_Pick\tManuellt plock\t10\t0\t0
 """,
     )

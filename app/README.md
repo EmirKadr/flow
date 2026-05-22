@@ -117,6 +117,12 @@ uvicorn backend.main:app --reload
 
 `start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
 
+Vid schemaändringar kör starten en lätt lokal bootstrap som behåller befintliga
+rader, lägger till saknade kolumner/tabeller och backfyller äldre lokal data till
+standardverksamheten `STIGAMO`. Om något ser fel ut lokalt, stäng den gamla
+servern med `stop_local.bat`, starta `start_local.bat` igen och ladda om
+browsern hårt.
+
 Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa Render-URL som en lokal miljövariabel innan du kör `start_local.bat`:
 
 ```powershell

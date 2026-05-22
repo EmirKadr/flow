@@ -1,4 +1,6 @@
 import os
+import asyncio
+import io
 import subprocess
 import sys
 from pathlib import Path
@@ -6,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.backend import allocation_bridge as bridge
 from app.backend.routers import allocation as allocation_router
@@ -36,6 +39,21 @@ def route_user(role: str):
     return SimpleNamespace(id=1, username=f"{role}-user", role=role, roles=[role], is_active=True)
 
 
+def upload_file(filename: str, content: bytes) -> StarletteUploadFile:
+    return StarletteUploadFile(file=io.BytesIO(content), filename=filename)
+
+
+def business_user(user_id: int, business_id: int, role: str = "super_user"):
+    return SimpleNamespace(
+        id=user_id,
+        username=f"user-{user_id}",
+        role=role,
+        roles=[role],
+        business_id=business_id,
+        is_active=True,
+    )
+
+
 def test_df_to_table_serializes_preview_without_nan_values():
     pd = pytest.importorskip("pandas")
     df = pd.DataFrame(
@@ -53,6 +71,130 @@ def test_df_to_table_serializes_preview_without_nan_values():
         "row_count": 2,
         "truncated": True,
     }
+
+
+def test_save_upload_can_reuse_content_addressed_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
+    content = b"Artikel;Antal\nA1;2\n"
+
+    first = asyncio.run(bridge.save_upload(upload_file("orders.csv", content), cache=True))
+    second = asyncio.run(bridge.save_upload(upload_file("renamed.csv", content), cache=True))
+    uncached = asyncio.run(bridge.save_upload(upload_file("orders.csv", content), cache=False))
+
+    try:
+        assert first == second
+        assert first.is_file()
+        assert first.read_bytes() == content
+        assert first.parent == tmp_path / "upload-cache"
+        assert uncached != first
+    finally:
+        uncached.unlink(missing_ok=True)
+
+
+def test_save_upload_replaces_previous_cache_for_same_scoped_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
+    cache_key = "user:1:orders:orders.csv"
+
+    first = asyncio.run(bridge.save_upload(upload_file("orders.csv", b"Artikel;Antal\nA1;2\n"), cache=True, cache_key=cache_key))
+    second = asyncio.run(bridge.save_upload(upload_file("orders.csv", b"Artikel;Antal\nA1;3\n"), cache=True, cache_key=cache_key))
+
+    assert first != second
+    assert not first.exists()
+    assert second.is_file()
+    assert second.read_bytes() == b"Artikel;Antal\nA1;3\n"
+
+
+def test_upload_cache_cleanup_expires_old_files(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "upload-cache"
+    cache_dir.mkdir()
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_TTL_SECONDS", 10)
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_MAX_FILES", 10)
+    expired = cache_dir / "expired.csv"
+    fresh = cache_dir / "fresh.csv"
+    expired.write_text("old", encoding="utf-8")
+    fresh.write_text("fresh", encoding="utf-8")
+    os.utime(expired, (100, 100))
+    os.utime(fresh, (106, 106))
+
+    bridge._cleanup_upload_cache(now=111)
+
+    assert not expired.exists()
+    assert fresh.exists()
+
+
+def test_upload_cache_cleanup_caps_file_count(tmp_path, monkeypatch):
+    cache_dir = tmp_path / "upload-cache"
+    cache_dir.mkdir()
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_TTL_SECONDS", 1000)
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_MAX_FILES", 2)
+    files = [cache_dir / f"file-{index}.csv" for index in range(3)]
+    for index, path in enumerate(files):
+        path.write_text(str(index), encoding="utf-8")
+        os.utime(path, (100 + index, 100 + index))
+
+    bridge._cleanup_upload_cache(now=150)
+
+    assert not files[0].exists()
+    assert files[1].exists()
+    assert files[2].exists()
+
+
+def test_form_to_flow_payload_uses_cached_uploads_without_temp_cleanup(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
+
+    class FakeForm:
+        def multi_items(self):
+            return [
+                ("orders", upload_file("orders.csv", b"Artikel;Antal\nA1;2\n")),
+                ("chunk_size", "2000"),
+            ]
+
+    files, params, temp_paths = asyncio.run(bridge.form_to_flow_payload(FakeForm()))
+
+    assert sorted(files) == ["orders"]
+    assert files["orders"].is_file()
+    assert files["orders"].parent == tmp_path / "upload-cache"
+    assert params == {"chunk_size": "2000"}
+    assert temp_paths == []
+
+
+def test_allocation_result_session_is_limited_to_owner_user():
+    owner = business_user(1, 10)
+    other_same_business = business_user(2, 10)
+    bridge.SESSIONS["sid"] = {"owner": allocation_router._session_owner_payload(owner)}
+
+    allocation_router._assert_session_allowed("sid", owner)
+    with pytest.raises(HTTPException) as exc_info:
+        allocation_router._assert_session_allowed("sid", other_same_business)
+
+    assert exc_info.value.status_code == 404
+
+
+def test_allocation_run_flow_stores_session_owner(monkeypatch):
+    user = business_user(7, 20)
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {}, {}, []
+
+    def fake_run_flow_handler(flow_id, files, params):
+        bridge.SESSIONS["sid"] = {"flow_id": flow_id, "tables": {}, "labels": {}}
+        return {"session_id": "sid", "tables": [], "summary": {}}
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=object()))
+
+    assert result["session_id"] == "sid"
+    assert bridge.SESSIONS["sid"]["owner"] == {"user_id": 7, "business_id": 20}
 
 
 def test_allocation_bridge_uses_vendored_warehouse_tools_by_default():
@@ -107,7 +249,7 @@ def test_allocation_catalog_loads_without_pandas_when_started_from_app_root():
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().split() == ["14", "10"]
+    assert result.stdout.strip().split() == ["13", "10"]
 
 
 def test_native_detector_recognizes_wms_csv_without_pandas(tmp_path):
@@ -130,7 +272,6 @@ def test_native_detector_recognizes_current_upload_filename_hints(tmp_path):
         "v_ask_article_bufferpallet-20260519090645.csv": "buffer",
         "v_ask_article_buffertpallet-20260519090645.csv": "buffer",
         "v_ask_booking_putaway-20260519090707.csv": "wms_booking",
-        "v_ask_receive_log-20260519090715.csv": "wms_receive",
         "v_ask_trans_log-20260519051930.csv": "wms_trans",
         "ej_inlagrade-20260519090707.csv": "not_putaway",
         "not_putaway-20260519090707.csv": "not_putaway",
@@ -315,6 +456,80 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
     assert bridge.table_column_text(result["session_id"], "main", 0) == {"text": "A100"}
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Workbook contains no default style, apply openpyxl's default:UserWarning:openpyxl.styles.stylesheet"
+)
+def test_run_overview_check_keeps_avvikelse_type_column_in_api_result():
+    testdata = ROOT / "testdata" / "warehouse_tools"
+    overview = next(iter(sorted(testdata.glob("v_ask_order_overview-*.csv"))), None)
+    details = next(iter(sorted(testdata.glob("v_ask_customer_order_details_all-*.csv"))), None)
+    if overview is None or details is None:
+        pytest.skip("Aktuella orderoversiktsfiler saknas.")
+
+    result = bridge.run_flow_handler("overview-check", {"overview": overview, "details": details}, {})
+    orderkontroll = next(table for table in result["tables"] if table["key"] == "orderkontroll")
+
+    assert orderkontroll["table"]["columns"][0] == "Avvikelsetyp"
+    assert orderkontroll["table"]["rows"][0][0] == "HIB \u00f6ver status 31 utan butikss\u00e4ndning"
+    assert list(bridge.SESSIONS[result["session_id"]]["tables"]["orderkontroll"].columns)[0] == "Avvikelsetyp"
+
+
+def test_open_excel_result_writes_safe_xlsx_and_opens_path(monkeypatch):
+    pd = pytest.importorskip("pandas")
+    openpyxl = pytest.importorskip("openpyxl")
+    opened = []
+    bridge.SESSIONS["abc"] = {
+        "flow_id": "prognos-report",
+        "tables": {"report": pd.DataFrame({"Artikel": ["A1"], "Antal": [2]})},
+        "labels": {"report": "Prognos vs Autoplock"},
+    }
+    monkeypatch.setattr(bridge, "open_path", lambda path: opened.append(Path(path)))
+
+    result = bridge.open_excel_result(bridge.OpenAllocationExcelRequest(session_id="abc", key="report"))
+
+    assert result["opened"] is True
+    assert opened == [Path(result["path"])]
+    assert opened[0].suffix == ".xlsx"
+    assert "/" not in opened[0].name
+    workbook = openpyxl.load_workbook(opened[0], read_only=True)
+    try:
+        assert workbook.sheetnames == ["Prognos vs Autoplock"]
+        rows = list(workbook.active.iter_rows(values_only=True))
+        assert rows[:2] == [("Artikel", "Antal"), ("A1", 2)]
+    finally:
+        workbook.close()
+
+
+def test_open_excel_result_reports_open_failure(monkeypatch):
+    pd = pytest.importorskip("pandas")
+    bridge.SESSIONS["abc"] = {
+        "flow_id": "allocate",
+        "tables": {"result": pd.DataFrame({"Artikel": ["A1"]})},
+        "labels": {"result": "Allokerade pallar"},
+    }
+    monkeypatch.setattr(bridge, "open_path", lambda _path: (_ for _ in ()).throw(OSError("boom")))
+
+    with pytest.raises(HTTPException) as exc_info:
+        bridge.open_excel_result(bridge.OpenAllocationExcelRequest(session_id="abc", key="result"))
+
+    assert exc_info.value.status_code == 500
+    assert "Kunde inte öppna Excel-filen automatiskt" in exc_info.value.detail
+
+
+def test_download_result_formats_integer_like_floats_as_in_excel():
+    pd = pytest.importorskip("pandas")
+    bridge.SESSIONS["abc"] = {
+        "flow_id": "allocate",
+        "tables": {"result": pd.DataFrame({"Artikel": ["A1"], "Beställt": [1.0], "Tom": [float("nan")]})},
+        "labels": {"result": "Allokerade pallar"},
+    }
+
+    response = bridge.download_result("abc", "result")
+
+    content = Path(response.path).read_text(encoding="utf-8-sig")
+    assert content == "Artikel,Beställt,Tom\nA1,1,\n"
+
+
 def test_run_split_values_uses_native_flow_without_legacy_runtime(monkeypatch):
     def fail_available():
         raise AssertionError("legacy allocation runtime should not load for split-values")
@@ -356,7 +571,6 @@ def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flo
         "public_registry",
         lambda: [
             {"id": "allocate", "label": "Allokering"},
-            {"id": "eftersok", "label": "Eftersok"},
             {"id": "split-values", "label": "Dela varden"},
         ],
     )
@@ -366,7 +580,6 @@ def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flo
         user = route_user(role)
         assert allocation_router.list_flows(user=user) == {
             "flows": [
-                {"id": "eftersok", "label": "Eftersok"},
                 {"id": "split-values", "label": "Dela varden"},
             ]
         }

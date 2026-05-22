@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from .models import AuditLog
+from .models import AuditLog, User
 
 
 def log(
@@ -17,9 +17,16 @@ def log(
     old_value: dict[str, Any] | None,
     new_value: dict[str, Any] | None,
     user_id: int | None,
+    business_id: int | None = None,
 ) -> None:
+    if business_id is None and user_id is not None:
+        try:
+            business_id = getattr(db.get(User, user_id), "business_id", None)
+        except Exception:
+            business_id = None
     db.add(
         AuditLog(
+            business_id=business_id,
             entity_type=entity_type,
             entity_id=entity_id,
             action=action,
@@ -39,6 +46,7 @@ def log_and_commit(
     new_value: dict[str, Any] | None,
     user_id: int | None,
     *,
+    business_id: int | None = None,
     logger: logging.Logger | None = None,
     context: str = "audit event",
 ) -> bool:
@@ -52,6 +60,7 @@ def log_and_commit(
             old_value=old_value,
             new_value=new_value,
             user_id=user_id,
+            business_id=business_id,
         )
         db.commit()
         return True

@@ -34,6 +34,7 @@
         <option value="area">Område</option>
         <option value="user">Användare</option>
         <option value="app_setting">Inställning</option>
+        <option value="client_error">Felkod</option>
         <option value="data_fetch">Hämta data</option>
         <option value="productivity_file">Produktivitetsfil</option>
         <option value="allocation_flow">Lagerverktyg</option>
@@ -49,68 +50,143 @@
   </section>
 
   <main>
-    <div class="section-title">Historik & analytics</div>
-
-    <div class="analytics-grid">
-      <div class="card stat-card">
-        <div class="stat-value" id="totalEvents">0</div>
-        <div class="stat-label">Händelser i urvalet</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-value" id="recentEvents">0</div>
-        <div class="stat-label">Senaste 24 timmarna</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-value" id="uniqueUsers">0</div>
-        <div class="stat-label">Unika användare</div>
+    <div class="section-title-with-action">
+      <div class="section-title">Historik</div>
+      <div class="history-mode-toggle" role="tablist" aria-label="Historikvy">
+        <button type="button" class="history-mode-btn active" data-history-mode="history" role="tab" aria-selected="true">Användarhistorik</button>
+        <button type="button" class="history-mode-btn" data-history-mode="analysis" role="tab" aria-selected="false">Analys</button>
+        <button type="button" class="history-mode-btn" data-history-mode="errors" role="tab" aria-selected="false">Felkoder</button>
       </div>
     </div>
 
-    <div class="analytics-split">
-      <div class="card">
-        <h3>Topp användare</h3>
-        <table class="small-table">
+    <section class="history-panel" data-history-panel="history">
+      <div class="table-wrap">
+        <table>
           <thead>
-            <tr><th>Användare</th><th>Händelser</th></tr>
+            <tr>
+              <th>Tid</th>
+              <th>Användare</th>
+              <th>Typ</th>
+              <th>Åtgärd</th>
+              <th>Objekt</th>
+              <th>Detalj</th>
+            </tr>
           </thead>
-          <tbody id="topUsersBody"></tbody>
+          <tbody id="auditBody"></tbody>
         </table>
       </div>
-      <div class="card">
-        <h3>Topp åtgärder</h3>
-        <table class="small-table">
-          <thead>
-            <tr><th>Åtgärd</th><th>Händelser</th></tr>
-          </thead>
-          <tbody id="topActionsBody"></tbody>
-        </table>
-      </div>
-      <div class="card">
-        <h3>Topp typer</h3>
-        <table class="small-table">
-          <thead>
-            <tr><th>Typ</th><th>Händelser</th></tr>
-          </thead>
-          <tbody id="topEntitiesBody"></tbody>
-        </table>
-      </div>
-    </div>
+    </section>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Tid</th>
-            <th>Användare</th>
-            <th>Typ</th>
-            <th>Åtgärd</th>
-            <th>Objekt</th>
-            <th>Detalj</th>
-          </tr>
-        </thead>
-        <tbody id="auditBody"></tbody>
-      </table>
-    </div>
+    <section class="history-panel" data-history-panel="analysis" hidden>
+      <div class="analytics-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="totalEvents">0</div>
+          <div class="stat-label">Händelser i urvalet</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="recentEvents">0</div>
+          <div class="stat-label">Senaste 24 timmarna</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="uniqueUsers">0</div>
+          <div class="stat-label">Unika användare</div>
+        </div>
+      </div>
+
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Topp användare</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Användare</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topUsersBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Topp åtgärder</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Åtgärd</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topActionsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Topp typer</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Typ</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topEntitiesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="errors" hidden>
+      <div class="analytics-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="totalErrors">0</div>
+          <div class="stat-label">Felkoder i urvalet</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="recentErrors">0</div>
+          <div class="stat-label">Senaste 24 timmarna</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="errorUsers">0</div>
+          <div class="stat-label" id="errorScanLabel">Unika användare</div>
+        </div>
+      </div>
+
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Topp felkoder</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Felkod</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topErrorCodesBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Topp vyer/API</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Plats</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topErrorPathsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Topp felåtgärder</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Åtgärd</th><th>Händelser</th></tr>
+            </thead>
+            <tbody id="topErrorActionsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-wrap history-error-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Tid</th>
+              <th>Användare</th>
+              <th>Felkod</th>
+              <th>Status</th>
+              <th>Plats</th>
+              <th>Åtgärd</th>
+              <th>Meddelande</th>
+            </tr>
+          </thead>
+          <tbody id="recentErrorBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script src="/js/api.js"></script>

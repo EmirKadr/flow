@@ -45,7 +45,7 @@ def test_sidebar_layout_setting_roundtrips():
         )
         session.commit()
 
-        row = session.get(AppSetting, SIDEBAR_LAYOUT_KEY)
+        row = session.get(AppSetting, {"business_id": 1, "key": SIDEBAR_LAYOUT_KEY})
         assert row is not None
         assert row.updated_by == 12
         assert get_sidebar_layout(session)[1]["parent_id"] == "schedule"
@@ -98,7 +98,7 @@ def test_role_view_access_setting_roundtrips():
         )
         session.commit()
 
-        row = session.get(AppSetting, ROLE_VIEW_ACCESS_KEY)
+        row = session.get(AppSetting, {"business_id": 1, "key": ROLE_VIEW_ACCESS_KEY})
         assert row is not None
         assert row.updated_by == 9
         assert get_role_view_access(session)["viewer"]["schedule"] == "view"

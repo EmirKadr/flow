@@ -8,7 +8,7 @@ och returnerar en standarddict:
   {
     "summary": {etikett: värde, ...},   # visas som kort
     "tables":  [(key, label, DataFrame), ...],
-    "text":    str | None,              # fritext-rapport (eftersök, vecka27)
+    "text":    str | None,              # fritext-rapport (vecka27)
     "log":     [str, ...],
   }
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import tempfile
 import uuid
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -40,9 +41,18 @@ ALLOCATE_DISPLAY_SUMMARY_TYPES = [
     ("HIB", "HIB", "rader"),
 ]
 
+ORDERSALDO_HELPALL_COLUMN = "Antal på Helpall"
+
+
+@lru_cache(maxsize=32)
+def _read_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
+    return E._read_cli_table(path)
+
 
 def _read(path: Path) -> pd.DataFrame:
-    return E._read_cli_table(str(path))
+    source = Path(path).resolve()
+    stat = source.stat()
+    return _read_cached(str(source), stat.st_size, stat.st_mtime_ns).copy(deep=True)
 
 
 def _temp(suffix: str) -> Path:
@@ -85,6 +95,26 @@ def build_allocate_display_summary(
     return summary
 
 
+def add_ordersaldo_helpall_count(shortage_df: pd.DataFrame, max_df: pd.DataFrame | None) -> pd.DataFrame:
+    result = shortage_df.copy()
+    helpall_values = pd.Series("", index=result.index)
+    if isinstance(max_df, pd.DataFrame) and not max_df.empty:
+        try:
+            max_map = E._build_article_max_map(max_df)
+            helpall_values = result.index.to_series().astype(str).str.strip().map(max_map).fillna("")
+        except Exception:
+            helpall_values = pd.Series("", index=result.index)
+
+    if ORDERSALDO_HELPALL_COLUMN in result.columns:
+        result = result.drop(columns=[ORDERSALDO_HELPALL_COLUMN])
+
+    insert_at = len(result.columns)
+    if "Tillgängligt saldo (Plock)" in result.columns:
+        insert_at = list(result.columns).index("Tillgängligt saldo (Plock)") + 1
+    result.insert(insert_at, ORDERSALDO_HELPALL_COLUMN, helpall_values)
+    return result
+
+
 # --- Floden ------------------------------------------------------------------
 
 def flow_allocate(files: dict, params: dict) -> dict:
@@ -118,7 +148,7 @@ def flow_allocate(files: dict, params: dict) -> dict:
         },
         "display_summary": build_allocate_display_summary(result_df, refill_hp_df, refill_autostore_df),
         "tables": [
-            ("result", "Resultat", result_df),
+            ("result", "Allokerade pallar", result_df),
             ("near_miss", "Near-miss", near_miss_df),
             ("refill_hp", "Refill Huvudplock", refill_hp_df),
             ("refill_autostore", "Refill AutoStore", refill_autostore_df),
@@ -135,6 +165,13 @@ def flow_ordersaldo(files: dict, params: dict) -> dict:
     complete_orders, shortage_df = E.compute_ordersaldo_data(
         orders_df, utbest_map=utbest_map, column_names=column_names,
     )
+    log: list[str] = []
+    try:
+        max_path = files["max_csv"] if "max_csv" in files else E._resolve_max_csv_path(None)
+        shortage_df = add_ordersaldo_helpall_count(shortage_df, _read(Path(max_path)))
+    except Exception as exc:  # noqa: BLE001
+        shortage_df = add_ordersaldo_helpall_count(shortage_df, None)
+        log.append(f"Kunde inte läsa artikel_max.csv för Antal på Helpall: {exc}")
     return {
         "summary": {
             "Kompletta ordrar": len(complete_orders),
@@ -144,7 +181,7 @@ def flow_ordersaldo(files: dict, params: dict) -> dict:
             ("complete", "Kompletta ordrar", pd.DataFrame({"Ordernr": complete_orders})),
             ("shortage", "Underskott", E._df_with_named_index(shortage_df, "Artikel")),
         ],
-        "log": [],
+        "log": log,
     }
 
 
@@ -253,26 +290,6 @@ def flow_vecka27_check(files: dict, params: dict) -> dict:
         "tables": [("report", "Avvikelser", result.report_df)],
         "text": result.report_text,
         "log": list(result.log_lines or []),
-    }
-
-
-def flow_eftersok(files: dict, params: dict) -> dict:
-    purchase = (params.get("purchase") or "").strip()
-    article = (params.get("article") or "").strip()
-    if not purchase or not article:
-        raise ValueError("Ange både inköpsnummer och artikelnummer.")
-    if "wms_receive" not in files:
-        raise ValueError("Mottagningslogg (v_ask_receive_log) krävs.")
-    wms_paths = {
-        key: (str(files[key]) if key in files else None)
-        for key in ("wms_receive", "wms_booking", "wms_buffert", "wms_trans", "wms_pick", "wms_correct")
-    }
-    result = E.build_eftersok_result(purchase, article, wms_paths)
-    return {
-        "summary": {"Inköp": purchase, "Artikel": article, "Rapportrader": len(result.report_lines)},
-        "tables": [("report", "Eftersök", result.report_df)],
-        "text": result.report_text,
-        "log": [],
     }
 
 
@@ -417,6 +434,7 @@ FLOWS: list[dict] = [
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "saldo", "label": "Saldo ink. Automation (Utbestallt)", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "max_csv", "label": "artikel_max.csv (kärnfil)", "type": "file", "required": False, "detect": []},
         ],
     },
     {
@@ -476,21 +494,6 @@ FLOWS: list[dict] = [
         ],
     },
     {
-        "id": "eftersok", "label": "Eftersök", "category": "Sökning & prognos",
-        "description": "Spåra en artikel/pall genom WMS-loggarna utifrån inköps- och artikelnummer.",
-        "handler": flow_eftersok,
-        "inputs": [
-            {"key": "purchase", "label": "Inköpsnummer", "type": "text", "required": True},
-            {"key": "article", "label": "Artikelnummer", "type": "text", "required": True},
-            {"key": "wms_receive", "label": "Mottagningslogg", "type": "file", "required": True, "detect": ["wms_receive"]},
-            {"key": "wms_booking", "label": "Inlagringslogg", "type": "file", "required": False, "detect": ["wms_booking"]},
-            {"key": "wms_buffert", "label": "Buffertpallar", "type": "file", "required": False, "detect": ["buffer"]},
-            {"key": "wms_trans", "label": "Transaktionslogg", "type": "file", "required": False, "detect": ["wms_trans"]},
-            {"key": "wms_pick", "label": "Plocklogg", "type": "file", "required": False, "detect": ["wms_pick"]},
-            {"key": "wms_correct", "label": "Korrigeringslogg", "type": "file", "required": False, "detect": ["wms_correct"]},
-        ],
-    },
-    {
         "id": "prognos-report", "label": "Prognosrapport", "category": "Sökning & prognos",
         "description": "Bygg prognos-/kampanjrapport mot autoplock. Saldo krävs (Robot=Y-filter).",
         "handler": flow_prognos_report,
@@ -540,7 +543,6 @@ FLOW_BY_ID: dict[str, dict] = {flow["id"]: flow for flow in FLOWS}
 # Flöden som visas som egna vyer. Allt övrigt samlas i den kombinerade
 # huvudvyn där filerna delas mellan körningarna.
 SOLO_FLOWS = {
-    "eftersok",
     "observations-update",
     "observations-sync",
     "split-values",

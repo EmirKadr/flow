@@ -10,13 +10,11 @@ NAME_HINTS = {
     "v_ask_item_summary_stock_automation": "automation",
     "v_ask_order_overview": "overview",
     "v_ask_dispatch_pallet": "dispatch",
-    "v_ask_receive_log": "wms_receive",
     "v_ask_booking_putaway": "wms_booking",
     "v_ask_article_buffertpallet": "buffer",
     "v_ask_article_bufferpallet": "buffer",
     "v_ask_trans_log": "wms_trans",
     "v_ask_pick_log_full": "wms_pick",
-    "v_ask_correct_log": "wms_correct",
     "item_option": "item",
     "kampanjplock": "campaign",
     "campaign": "campaign",
@@ -138,10 +136,7 @@ def detect_file_type(path: str | os.PathLike[str]) -> str | None:
     has_till = any(col == "till" or col.endswith(" till") or col.startswith("till ") for col in cols)
     has_fran = _has_part(cols, "fran") or _has_part(cols, "från")
     has_plockat = _has_part(cols, "plockat")
-    has_anledning = _has_part(cols, "anledning")
 
-    if has_inkop and has_art and has_pallid and has_mottaget:
-        return "wms_receive"
     if has_inkop and (has_pallnr or has_pallid) and not has_mottaget and not has_plockat:
         return "wms_booking"
     if has_lagerplats and has_pallid and has_inkop:
@@ -150,8 +145,6 @@ def detect_file_type(path: str | os.PathLike[str]) -> str | None:
         return "wms_trans"
     if has_pallid and has_plockat and has_ord:
         return "wms_pick"
-    if has_anledning and has_qty:
-        return "wms_correct"
     if has_art and has_qty and has_lagerplats:
         return "buffer"
 

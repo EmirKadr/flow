@@ -2,6 +2,7 @@
 
 let areas = [];
 let activities = [];
+let businesses = [];
 let currentUser = null;
 
 function escapeHtml(s) {
@@ -24,10 +25,50 @@ function canSeeCodes() {
   return !!currentUser?.is_super_user;
 }
 
+function businessOptions(selectedId, disabled = false) {
+  if (!currentUser?.is_super_user) return "";
+  return `
+      <label>Verksamhet</label>
+      <select id="m-business" ${disabled ? "disabled" : ""}>
+        <option value="">Välj verksamhet</option>
+        ${businesses.map((business) => `<option value="${business.id}" ${Number(selectedId) === Number(business.id) ? "selected" : ""}>${escapeHtml(business.name)}</option>`).join("")}
+      </select>
+  `;
+}
+
+function businessIdFromArea(areaId) {
+  const area = areas.find((item) => Number(item.id) === Number(areaId));
+  return area?.business_id ?? null;
+}
+
+function businessIdFromActivity(activityId) {
+  const activity = activities.find((item) => Number(item.id) === Number(activityId));
+  return activity?.business_id ?? null;
+}
+
+function inferredActivityBusinessId(activity = null) {
+  return activity?.business_id
+    ?? businessIdFromArea(activity?.area_id)
+    ?? businessIdFromActivity(activity?.summary_activity_id)
+    ?? currentUser?.business_id
+    ?? businesses[0]?.id
+    ?? null;
+}
+
+function focusedAreaId() {
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(areas) : null;
+}
+
+function matchesAreaFocus(activity) {
+  const areaId = focusedAreaId();
+  return areaId == null || Number(activity?.area_id) === Number(areaId);
+}
+
 async function load() {
   activities = await api.get("/api/activities");
   const canEditActivities = canEditPage(currentUser, "activities");
   const acts = [...activities]
+    .filter(matchesAreaFocus)
     .sort((a, b) => typeof compareActivitiesForAreaFocus === "function"
       ? compareActivitiesForAreaFocus(a, b, areas)
       : ((Number(a.sort_order) || 0) - (Number(b.sort_order) || 0)));
@@ -68,6 +109,8 @@ async function load() {
 
 function openModal(act) {
   const isEdit = !!act;
+  const selectedAreaId = act?.area_id ?? focusedAreaId();
+  const selectedBusinessId = isEdit ? inferredActivityBusinessId(act) : (businessIdFromArea(selectedAreaId) ?? inferredActivityBusinessId(act));
   const summaryOptions = activities
     .filter((item) => !isEdit || item.id !== act.id)
     .map((item) => `<option value="${item.id}" ${act?.summary_activity_id === item.id ? "selected" : ""}>${escapeHtml(item.label)}</option>`)
@@ -77,6 +120,7 @@ function openModal(act) {
   backdrop.innerHTML = `
     <div class="modal">
       <h2>${isEdit ? "Redigera aktivitet" : "Ny aktivitet"}</h2>
+      ${businessOptions(selectedBusinessId, isEdit)}
       <label>Etikett (visas i celler)</label>
       <input id="m-label" value="${escapeHtml(act?.label || "")}" />
       ${canSeeCodes() && act ? `
@@ -86,7 +130,7 @@ function openModal(act) {
       <label>Område</label>
       <select id="m-area">
         <option value="">(inget)</option>
-        ${areas.map((a) => `<option value="${a.id}" ${act?.area_id === a.id ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
+        ${areas.map((a) => `<option value="${a.id}" ${Number(selectedAreaId) === Number(a.id) ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
       </select>
       <label>Summeras som i summering</label>
       <select id="m-summary">
@@ -119,6 +163,9 @@ function openModal(act) {
       category: document.getElementById("m-cat").value,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
     };
+    if (currentUser?.is_super_user && !isEdit) {
+      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+    }
 
     if (!payload.label) {
       showToast("Etikett krävs", "error");
@@ -181,7 +228,7 @@ function showImportResult(result) {
     openImportResultModal(result);
     return;
   }
-  showToast("Excel-filen innehöll inga aktiviteter", "warn");
+  showToast("Importen innehöll inga aktiviteter", "warn");
 }
 
 async function importActivityFile(file) {
@@ -200,18 +247,44 @@ async function importActivityFile(file) {
   }
 }
 
+function openBulkActivitiesModal() {
+  const businessColumn = currentUser?.is_super_user
+    ? [{ key: "business", label: "Verksamhet", type: "select", options: businesses.map((business) => ({ value: business.code, label: business.name })) }]
+    : [];
+  openBulkImportGrid({
+    title: "Flera nya aktiviteter",
+    submitLabel: "Skapa aktiviteter",
+    initialRows: 10,
+    columns: [
+      ...businessColumn,
+      { key: "label", label: "Etikett" },
+      { key: "area", label: "Område", type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
+      { key: "summary_activity", label: "Summeras som", type: "select", options: activities.map((activity) => ({ value: activity.label, label: activity.label })) },
+      { key: "sort_order", label: "Sortering", type: "number" },
+    ],
+    onSubmit: async (rows) => {
+      const result = await api.post("/api/activities/import-rows", { rows });
+      showImportResult(result);
+      await load();
+    },
+  });
+}
+
 function setupImportControls() {
   const downloadButton = document.getElementById("download-activity-template");
   const importButton = document.getElementById("import-activities");
+  const bulkButton = document.getElementById("bulk-activities");
   const helpButton = document.getElementById("activity-import-help");
   const fileInput = document.getElementById("activity-import-file");
 
   if (!canEditPage(currentUser, "activityImport")) return;
 
+  bulkButton.hidden = false;
   downloadButton.hidden = false;
   importButton.hidden = false;
   helpButton.hidden = false;
 
+  bulkButton.addEventListener("click", openBulkActivitiesModal);
   setupImportHelpButton("activity-import-help", "Importera aktiviteter");
   downloadButton.addEventListener("click", async () => {
     try {
@@ -232,7 +305,11 @@ function setupImportControls() {
 (async () => {
   currentUser = await initPage("activities");
   if (!currentUser) return;
-  areas = await api.get("/api/areas");
+  const requests = [api.get("/api/areas")];
+  if (currentUser?.is_super_user) requests.push(api.get("/api/businesses"));
+  const [loadedAreas, loadedBusinesses] = await Promise.all(requests);
+  areas = loadedAreas;
+  businesses = loadedBusinesses || [];
   await load();
   setupImportControls();
   const newActButton = document.getElementById("new-act");

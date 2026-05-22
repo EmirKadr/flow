@@ -7,7 +7,7 @@ tags: [lagerverktyg, allokering, filer, ui]
 
 # Lagerverktyg
 
-Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar for gemensamma lokala filer, Bearbeta for floden, Dela for listdelning och Harleda for WMS-eftersok. Filer sparas lokalt i IndexedDB och skickas till API nar ett flode kors.
+Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar for gemensamma lokala filer, Bearbeta for floden och Dela for listdelning. Filer sparas lokalt i IndexedDB och skickas till API nar ett flode kors. Backend ateranvander samma uppladdade fil via innehallshash och cachar inlasta tabeller i processen for snabbare upprepade Bearbeta-korning.
 
 ## Vyer
 
@@ -16,7 +16,6 @@ Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar f
 | Uppladdningar | `uppladdningar.html` | Lagg in ASK/WMS/Excel-filer i lokalt filpool | `allocationUploads` |
 | Bearbeta | `bearbeta.html` | Kor kombinerade lagerfloden som Allokering, Ordersaldo, kontroller | `allocationProcess` |
 | Dela | `dela.html` | Dela lang lista i kolumner | `allocationSplit` |
-| Harleda | `harleda.html` | Eftersok inkop/artikel genom WMS-loggar | `allocationTrace` |
 
 ## Gemensamma filkontroller
 
@@ -31,14 +30,14 @@ Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar f
 
 ## Bearbeta-floden
 
-Bearbeta ar en egen sidebar-vy (`bearbeta.html`). Den ska inte beskrivas som en flik inne i Dela eller Harleda. Om anvandaren inte ser Bearbeta i menyn beror det normalt pa att rollen saknar `allocationProcess` i vyatkomst eller att anvandaren inte ar Super User. Vanliga lagerroller ser som standard Uppladdningar, Dela och Harleda.
+Bearbeta ar en egen sidebar-vy (`bearbeta.html`). Den ska inte beskrivas som en flik inne i Dela. Om anvandaren inte ser Bearbeta i menyn beror det normalt pa att rollen saknar `allocationProcess` i vyatkomst eller att anvandaren inte ar Super User. Vanliga lagerroller ser som standard Uppladdningar och Dela.
 
 Att andra `allocationProcess` eller `Vybehorigheter` kraver admin-/Super User-atkomst till Anvandare/installningar. En vanlig anvandare ska kontakta admin eller Super User, inte sjalv ga till Vybehorigheter.
 
 | Flode | Kraver | Resultat |
 | --- | --- | --- |
-| Allokering | Detalj Kundorder, Buffertpallar; valfritt Saldo, Item option, Ej inlagrade | Resultat, near-miss, refill, pallplatser |
-| Ordersaldo | Detalj Kundorder; valfritt Saldo | Kompletta ordrar och underskott |
+| Allokering | Detalj Kundorder, Buffertpallar; valfritt Saldo, Item option, Ej inlagrade | Allokerade pallar, near-miss, refill, pallplatser |
+| Ordersaldo | Detalj Kundorder; valfritt Saldo, `artikel_max.csv` | Kompletta ordrar kopieras automatiskt och underskott visas med Antal pa Helpall |
 | LYX-artiklar | Saldofil; valfritt `artikel_max.csv` | Lista LYX-artiklar |
 | Pafyllnadsprio | Detalj Kundorder; valfritt Saldo, Orderoversikt, `artikel_max.csv` | Pafyllnadsprio, ev. lastningsfonster |
 | HIB-koppling | Detalj Kundorder, Orderoversikt | Andringar och missade avgangar |
@@ -60,19 +59,11 @@ Kontroller:
 
 API: `POST /api/allokering/flow/split-values`.
 
-## Harleda
-
-Kontroller:
-
-- Inkopsnummer.
-- Artikelnummer.
-- Mottagningslogg kravs.
-- Inlagringslogg, Buffertpallar, Transaktionslogg, Plocklogg och Korrigeringslogg ar valfria men ger rikare spar.
-- Flodesknappen kor Eftersok.
-
-API: `POST /api/allokering/flow/eftersok`.
-
 Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Loggen sparar flodes-id, vilka filslotar/parameternamn som anvandes och hur manga resultattabeller som skapades, men inte filnamn eller inskickade listvarden. Om uppladdningen inte kan sparas, multipart-formularet inte kan lasas eller filen inte kan bearbetas loggas `upload_failed` med steg och feltyp. Om automatisk filidentifiering kraschar loggas `detect_failed`.
+
+Bearbeta-uppladdningar sparas content-addressed i serverns temporara cachekatalog utan originalfilnamn. Nar samma fil skickas igen far den samma sokvag, och `warehouse_tools.flows` ateranvander inlast DataFrame sa lange filens storlek och modifieringstid ar oforandrade. Cachelagret rensas opportunistiskt, behaller bara ett begransat antal filer och ska bara paverka hastighet, inte resultat eller verksamhetsscope. Om samma anvandare laddar upp samma slot/filnamn med nytt innehall ersatts den tidigare cacheposten direkt.
+
+Bearbeta-resultat lagras som temporara serversessioner. Sessionen binds till anvandaren som korde flodet, sa `Oppna i Excel`, `Ladda ner CSV` och kolumnkopiering inte kan hamta en annan anvandares resultat aven om ett session-id skulle delas.
 
 ## Resultatkontroller
 
@@ -80,8 +71,35 @@ Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Loggen s
 | --- | --- |
 | Flodesknapp | Disabled tills kravda filer/falt finns. Visar "Kor..." medan API jobbar. |
 | Info `i` | Visar flodesbeskrivning och kravda filer i popover. |
-| Oppna i Excel | Skickar session_id och tabellnyckel till `/api/allokering/open-excel`. |
-| Ladda ner CSV | Hamter `/api/allokering/download/{session_id}/{key}`. |
+| Kopiera text | Fritextrutor, till exempel Vecka 27-rapporten, har en kopieringsikon uppe till hoger som kopierar hela rutans text och visar toasten "Text kopierad". |
+| Resultattabell | Visar kolumnnamn i headern och en kopieringsikon per kolumn. Orderoversiktkontroll behaller `Avvikelsetyp` for samma Excel-/CSV-kontrakt som Allokera. |
+| Oppna i Excel | Skickar session_id och tabellnyckel till `/api/allokering/open-excel`. Vid lyckad OS-start visas toasten "Excel oppnas"; om Windows/Excel inte kan oppna filen visas feltoast. |
+| Ladda ner CSV | Hamter `/api/allokering/download/{session_id}/{key}`. Exporten normaliserar cellvarden som preview/Excel, t.ex. `1.0` skrivs som `1` och tomma NaN-varden blir tomma celler. |
+
+For Allokering visas huvudtabellen `Allokerade pallar` som en vanlig resultattabell med `Oppna i Excel` och `Ladda ner CSV`, samma session som near-miss, refill och pallplatser.
+
+Pallplatser foljer Allokeras berakning: zon `R` raknas som `autostore`, zon `F` raknas separat som `HIB` med 20 rader per toppall, och `Topp Pallar`, `Totalt Pallar` och `Pallplatser` inkluderar HIB-delen.
+
+For Ordersaldo kopieras listan `Kompletta ordrar` till urklipp direkt nar flodet ar klart. Tabellen `Underskott` far kolumnen `Antal pa Helpall` fran `artikel_max.csv`; om anvandaren inte laddar upp en egen fil anvands karnfilen.
+
+## CLI och paritytester
+
+Bearbeta och Dela kan koras pa tva satt fran terminalen:
+
+- `python -m warehouse_tools.cli ...` kor flodena direkt mot `warehouse_tools/flows.py` utan server, browser, IndexedDB eller cookies. Kommandot har `list-flows`, `schema`, `detect`, `run`, `run-scenario`, `validate-scenario` och egna subcommands for varje flode, till exempel `allocate` och `split-values`.
+- `python -m tools.flow_cli allocation ...` kor samma `/api/allokering`-endpoints som webb/desktop. Det anvander CLI:ns cookie jar, kan logga in med `auth login`, kor floden med multipart-filer och laddar ner fulla resultat-CSV:er fran sessionen.
+
+Vanliga regressionskommandon:
+
+```powershell
+python -m warehouse_tools.cli list-flows
+python -m warehouse_tools.cli allocate --auto-file orders.csv --auto-file buffer.csv --auto-file item_option.csv --format both --out artifacts\allocate
+python -m warehouse_tools.cli split-values --values "A`nB`nC" --chunk-size 2 --out artifacts\split
+python -m tools.flow_cli allocation run allocate --file orders=orders.csv --file buffer=buffer.csv --file items=item_option.csv --out artifacts\api-allocate
+python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj8twk6_allocated_orders.xlsx
+```
+
+`tools.compare_warehouse_results` normaliserar exportbrus innan jamforelse: `1.0` jamfors som `1`, och NaN/None/tomma celler blir tomma strängar. Det gor Flow-CSV mot Allokera-XLSX anvandbart som sanningskontroll.
 
 ## Felsokningssvar for framtida chat
 
@@ -89,9 +107,8 @@ Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Loggen s
 | --- | --- |
 | "Varfor ar flodesknappen gra?" | Kravda filer eller textfalt saknas, eller ett annat flode kor. Klicka `i` for att se krav. |
 | "Varfor hamnar filen i fel ruta?" | Automatisk detektion bygger pa filnamn/header. Anvand Välj pa exakt slot for att styra. |
-| "Varfor kan jag inte Bearbeta men kan Harleda?" | Lagerroller utan processbehorighet far bara sjalvservicefloden som Eftersok och Dela. |
 | "Varfor ser jag inte Bearbeta i menyn?" | Rollen saknar normalt `allocationProcess` eller Super User. Be admin/Super User kontrollera roll och Vybehorigheter. |
-| "Varfor oppnas inte Excel?" | Funktionen kraver lokal desktop/OS-stod och servern maste ha kvar resultat-sessionen. Testa Ladda ner CSV. |
+| "Varfor oppnas inte Excel?" | Funktionen kraver lokal desktop/OS-stod och servern maste ha kvar resultat-sessionen. Om servern startade om med `--reload`, kor flodet igen. Om Windows/Excel inte kan oppna filen automatiskt visas feltoast; testa Ladda ner CSV. |
 | "Vad betyder artikel_max karnfil?" | `artikel_max.csv` kan finnas som intern karnfil aven om anvandaren inte laddat upp den. |
 
 ## Kallor
@@ -100,5 +117,8 @@ Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Loggen s
 - `../app/backend/routers/allocation.py`
 - `../app/backend/allocation_bridge.py`
 - `../warehouse_tools/catalog.py`
+- `../warehouse_tools/cli.py`
 - `../warehouse_tools/flows.py`
+- `../tools/flow_cli.py`
+- `../tools/compare_warehouse_results.py`
 - `../../ALLOKERING_FILKUNSKAP.md`

@@ -27,6 +27,8 @@ AGENT_PASSWORD = "AgentTest123"
 
 WEB_WORKFLOW_STEPS = (
     "login_admin",
+    "create_business",
+    "edit_business",
     "download_import_templates",
     "create_user",
     "edit_user",
@@ -87,6 +89,9 @@ class InteractiveRun:
         self.agent_activity = f"Agent Aktivitet {run_id}"
         self.agent_activity_updated = f"Agent Aktivitet Redigerad {run_id}"
         self.agent_activity_imported = f"Agent Importaktivitet {run_id}"
+        self.agent_business_code = f"AGENT{run_id}"
+        self.agent_business_name = f"Agent Verksamhet {run_id}"
+        self.agent_business_updated = f"Agent Verksamhet Redigerad {run_id}"
 
     def url(self, path: str) -> str:
         return self.base_url + path
@@ -115,6 +120,21 @@ class InteractiveRun:
     def goto(self, path: str, selector: str) -> None:
         self.page.goto(self.url(path), wait_until="networkidle")
         self.page.wait_for_selector(selector, timeout=15000)
+
+    def set_area_focus(self, value: str, selector: str) -> None:
+        self.page.evaluate(
+            """(value) => {
+                if (window.writeAreaFocus) {
+                    window.writeAreaFocus(value);
+                } else {
+                    localStorage.setItem('flow-area-focus', value);
+                    window.dispatchEvent(new CustomEvent('flow:areaFocusChanged', { detail: { value } }));
+                }
+            }""",
+            value,
+        )
+        self.page.wait_for_selector(selector, timeout=15000)
+        self.page.wait_for_timeout(700)
 
     def login(self, username: str, password: str) -> None:
         self.goto("/login.html", "#login-form")
@@ -150,6 +170,8 @@ class InteractiveRun:
         self.login("admin", "admin123")
         self.record("login_admin", screenshot=self.screenshot("01-admin-login"))
 
+        self.create_business()
+        self.edit_business()
         self.download_import_templates()
         self.create_user()
         self.edit_user()
@@ -186,6 +208,30 @@ class InteractiveRun:
         self.wait_for_text(self.agent_user)
         self.record("create_user", screenshot=before, detail=self.agent_user)
         self.record("create_user_saved", screenshot=self.screenshot("03-user-created"))
+
+    def create_business(self) -> None:
+        self.goto("/verksamheter.html", "#businesses-body")
+        self.page.click("#new-business")
+        self.page.wait_for_selector("#m-code", timeout=15000)
+        self.page.fill("#m-code", self.agent_business_code)
+        self.page.fill("#m-name", self.agent_business_name)
+        self.page.fill("#m-sort", "90")
+        modal = self.screenshot("02-create-business-modal")
+        self.click_and_expect_api("#save", "/api/businesses", "POST")
+        self.wait_for_text(self.agent_business_code)
+        self.record("create_business", screenshot=modal, detail=self.agent_business_code)
+        self.record("create_business_saved", screenshot=self.screenshot("02-business-created"))
+
+    def edit_business(self) -> None:
+        row = self.page.locator("#businesses-body tr", has_text=self.agent_business_code)
+        row.locator("button[data-edit]").click()
+        self.page.wait_for_selector("#m-name", timeout=15000)
+        self.page.fill("#m-name", self.agent_business_updated)
+        modal = self.screenshot("02b-edit-business-modal")
+        self.click_and_expect_api("#save", "/api/businesses", "PUT")
+        self.wait_for_text(self.agent_business_updated)
+        self.record("edit_business", screenshot=modal)
+        self.record("edit_business_saved", screenshot=self.screenshot("02c-business-edited"))
 
     def download_import_templates(self) -> None:
         downloads = (
@@ -451,8 +497,7 @@ class InteractiveRun:
 
     def edit_schedule(self) -> None:
         self.goto("/index.html", "#scheduleTable")
-        self.page.locator("#areaSelect").select_option(label="Mestergruppen")
-        self.page.wait_for_selector("#scheduleBody tr", timeout=15000)
+        self.set_area_focus("MG", "#scheduleBody tr")
         self.page.fill("#nameFilter", self.agent_person_updated)
         self.wait_for_text(self.agent_person_updated)
 
@@ -513,8 +558,7 @@ class InteractiveRun:
 
     def exercise_overview(self) -> None:
         self.goto("/overblick.html", "#overviewTable")
-        self.page.locator("#areaSelect").select_option(label="Mestergruppen")
-        self.page.wait_for_selector("#overviewBody tr", timeout=15000)
+        self.set_area_focus("MG", "#overviewBody tr")
         self.page.fill("#nameFilter", self.agent_person_updated)
         self.wait_for_text(self.agent_person_updated)
         first_day_select = self.schedule_like_overview_select()
@@ -656,8 +700,7 @@ class InteractiveRun:
     def exercise_viewer_and_guards(self) -> None:
         self.logout()
         self.login("visual_viewer", visual_smoke.VISUAL_PASSWORD)
-        self.page.locator("#areaSelect").select_option(label="Mestergruppen")
-        self.page.wait_for_selector("#scheduleBody tr", timeout=15000)
+        self.set_area_focus("MG", "#scheduleBody tr")
         if not self.page.locator("#copyBtn").is_disabled():
             raise AssertionError("Viewer should not be able to copy schedule days")
         if self.page.locator("#scheduleBody select:not(:disabled)").count() != 0:

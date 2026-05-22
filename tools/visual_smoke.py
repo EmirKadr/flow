@@ -65,26 +65,30 @@ TEST_USERS: dict[str, tuple[str, str]] = {
     "viewer": ("visual_viewer", VISUAL_PASSWORD),
     "warehouse": ("visual_lager", VISUAL_PASSWORD),
     "article": ("visual_artikel", VISUAL_PASSWORD),
+    "r3": ("visual_r3_admin", VISUAL_PASSWORD),
 }
 
 PAGES: tuple[VisualPage, ...] = (
     VisualPage("login", "/login.html", "#login-form", ("public",)),
-    VisualPage("flow", "/index.html", "#scheduleTable", ("admin", "leader", "staffing", "viewer")),
+    VisualPage("flow", "/index.html", "#scheduleTable", ("admin", "leader", "staffing", "viewer", "r3")),
     VisualPage("oversikt", "/overblick.html", "#overviewTable", ("admin", "leader", "staffing", "viewer")),
     VisualPage("produktivitet", "/produktivitet.html", "#productivityStatus", ("admin",)),
     VisualPage("personer", "/personer.html", "#persons-table", ("admin", "leader", "staffing")),
     VisualPage("aktiviteter", "/aktiviteter.html", "#acts-body", ("admin", "leader", "staffing")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),
     VisualPage("anvandare", "/anvandare.html", "#users-body", ("admin",)),
+    VisualPage("verksamheter", "/verksamheter.html", "#businesses-body", ("admin",)),
     VisualPage("hamta-data", "/hamta-data.html", "#dataFetchPrompt", ("admin",)),
     VisualPage("uppladdningar", "/uppladdningar.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
     VisualPage("bearbeta", "/bearbeta.html", "#allocationRoot .allocation-panel", ("admin",)),
     VisualPage("dela", "/dela.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
-    VisualPage("harleda", "/harleda.html", "#allocationRoot .allocation-panel", ("admin", "warehouse", "article")),
 )
 
 STATES: tuple[VisualState, ...] = (
     VisualState("flow-alla-omraden", "/index.html", "#scheduleTable", "schedule_area_all", ("admin", "leader", "staffing")),
+    VisualState("flow-stigamo-infinity", "/index.html", "#scheduleTable", "business_stigamo_infinity", ("leader", "staffing")),
+    VisualState("flow-r3-toggle", "/index.html", "#scheduleTable", "business_r3_toggle", ("r3",)),
+    VisualState("flow-superuser-global-infinity", "/index.html", "#scheduleTable", "business_superuser_global_infinity", ("admin",)),
     VisualState("flow-mestergruppen", "/index.html", "#scheduleTable", "schedule_area_mg", ("admin", "leader", "staffing")),
     VisualState("flow-autostore", "/index.html", "#scheduleTable", "schedule_area_as", ("admin",)),
     VisualState("flow-tomt-filter", "/index.html", "#scheduleTable", "schedule_empty_filter", ("admin",)),
@@ -103,6 +107,7 @@ STATES: tuple[VisualState, ...] = (
     VisualState("anvandare-ny-anvandare-modal", "/anvandare.html", "#new-user", "click_new_user"),
     VisualState("anvandare-redigera-anvandare-modal", "/anvandare.html", "#users-body button[data-edit]", "user_edit_modal"),
     VisualState("anvandare-vybehorigheter-modal", "/anvandare.html", "#role-view-access", "role_access_modal"),
+    VisualState("verksamheter-ny-verksamhet-modal", "/verksamheter.html", "#new-business", "click_new_business", ("admin",)),
     VisualState("historik-filter", "/historik.html", "#auditBody", "analytics_filter", ("admin",)),
     VisualState("viewer-nekad-personer", "/personer.html", "#scheduleTable", "noop", ("viewer",)),
     VisualState("viewer-nekad-aktiviteter", "/aktiviteter.html", "#scheduleTable", "noop", ("viewer",)),
@@ -240,14 +245,22 @@ def _wait_for_page(page, selector: str) -> None:
     page.wait_for_selector(selector, timeout=15000)
 
 
-def _select_by_label(page, selector: str, label: str) -> None:
-    page.locator(selector).select_option(label=label)
-    page.wait_for_load_state("networkidle")
-
-
 def _wait_for_table_rows(page, selector: str) -> None:
     page.wait_for_selector(selector, timeout=15000)
     page.wait_for_timeout(300)
+
+
+def _set_area_focus(page, value: str, wait_for: str) -> None:
+    page.evaluate(
+        """(value) => {
+            localStorage.setItem('flow-area-focus', value);
+            localStorage.removeItem('sidebar-collapsed');
+        }""",
+        value,
+    )
+    page.reload(wait_until="networkidle")
+    _wait_for_page(page, wait_for)
+    page.wait_for_timeout(500)
 
 
 def assert_no_forbidden_terminology(page) -> None:
@@ -279,26 +292,41 @@ def _apply_state(page, state: VisualState) -> None:
         page.wait_for_timeout(500)
         return
     if state.action == "area_focus_mg":
-        page.evaluate(
-            """() => {
-                localStorage.setItem('flow-area-focus', 'MG');
-                localStorage.removeItem('sidebar-collapsed');
-            }"""
-        )
-        page.reload(wait_until="networkidle")
-        _wait_for_page(page, state.wait_for)
-        page.wait_for_timeout(500)
+        _set_area_focus(page, "MG", state.wait_for)
         return
     if state.action == "schedule_area_all":
-        _select_by_label(page, "#areaSelect", "Alla")
+        _set_area_focus(page, "ALLT", "#scheduleTable")
         _wait_for_table_rows(page, "#scheduleBody tr")
         return
+    if state.action == "business_stigamo_infinity":
+        _set_area_focus(page, "ALLT", "#scheduleTable")
+        _wait_for_table_rows(page, "#scheduleBody tr")
+        body_text = page.locator("body").inner_text(timeout=15000)
+        if "Visual R3 Person" in body_text:
+            raise AssertionError("Stigamo-anvandare ska inte se R3-personer med infinity")
+        return
+    if state.action == "business_r3_toggle":
+        _set_area_focus(page, "ALLT", "#scheduleTable")
+        page.wait_for_selector("#area-focus-toggle", timeout=15000)
+        if page.locator("#area-focus-toggle").inner_text(timeout=15000).strip().upper() != "R3":
+            raise AssertionError("R3-anvandare ska bara ha R3-toggle")
+        body_text = page.locator("body").inner_text(timeout=15000)
+        if "Visual GG Plock" in body_text or "Visual MG VM" in body_text:
+            raise AssertionError("R3-anvandare ska inte se Stigamo-personer")
+        return
+    if state.action == "business_superuser_global_infinity":
+        _set_area_focus(page, "ALLT", "#scheduleTable")
+        _wait_for_table_rows(page, "#scheduleBody tr")
+        body_text = page.locator("body").inner_text(timeout=15000)
+        if "Visual R3 Person" not in body_text or "Visual GG Plock" not in body_text:
+            raise AssertionError("Super User ska se bade R3 och Stigamo med global infinity")
+        return
     if state.action == "schedule_area_mg":
-        _select_by_label(page, "#areaSelect", "Mestergruppen")
+        _set_area_focus(page, "MG", "#scheduleTable")
         _wait_for_table_rows(page, "#scheduleBody tr")
         return
     if state.action == "schedule_area_as":
-        _select_by_label(page, "#areaSelect", "Autostore")
+        _set_area_focus(page, "AS", "#scheduleTable")
         _wait_for_table_rows(page, "#scheduleBody tr")
         return
     if state.action == "schedule_empty_filter":
@@ -310,11 +338,11 @@ def _apply_state(page, state: VisualState) -> None:
         page.wait_for_selector(".modal-backdrop .modal", timeout=15000)
         return
     if state.action == "schedule_calc_all":
-        page.select_option("#calcAreaSelect", "ALL")
-        page.wait_for_timeout(300)
+        _set_area_focus(page, "ALLT", "#scheduleTable")
+        _wait_for_table_rows(page, "#scheduleBody tr")
         return
     if state.action == "overview_area_mg":
-        _select_by_label(page, "#areaSelect", "Mestergruppen")
+        _set_area_focus(page, "MG", "#overviewTable")
         _wait_for_table_rows(page, "#overviewBody tr")
         return
     if state.action == "overview_month":
@@ -323,8 +351,8 @@ def _apply_state(page, state: VisualState) -> None:
         page.wait_for_selector("#overviewBody tr", timeout=15000)
         return
     if state.action == "overview_month_mg":
+        _set_area_focus(page, "MG", "#overviewTable")
         page.select_option("#viewMode", "month")
-        _select_by_label(page, "#areaSelect", "Mestergruppen")
         _wait_for_table_rows(page, "#overviewBody tr")
         return
     if state.action == "overview_empty_filter":
@@ -362,6 +390,10 @@ def _apply_state(page, state: VisualState) -> None:
     if state.action == "role_access_modal":
         page.click("#role-view-access")
         page.wait_for_selector(".role-access-modal", timeout=15000)
+        return
+    if state.action == "click_new_business":
+        page.click("#new-business")
+        page.wait_for_selector(".modal-backdrop .modal", timeout=15000)
         return
     if state.action == "analytics_filter":
         page.select_option("#periodSelect", "all")
@@ -455,7 +487,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--roles",
         default="public,admin,leader,staffing,viewer",
-        help="Comma-separated roles to capture: public, admin, leader, staffing, viewer, warehouse, article.",
+        help="Comma-separated roles to capture: public, admin, leader, staffing, viewer, warehouse, article, r3.",
     )
     parser.add_argument("--headful", action="store_true", help="Show the browser while capturing screenshots.")
     parser.add_argument(

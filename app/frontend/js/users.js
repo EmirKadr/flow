@@ -1,6 +1,7 @@
 let currentUser = null;
 let users = [];
 let areas = [];
+let businesses = [];
 let appSettings = {
   lock_foreign_schedule_cells: false,
 };
@@ -24,14 +25,13 @@ const ROLE_ACCESS_LEVEL_OPTIONS = [
 ];
 const ROLE_ACCESS_LEVEL_ORDER = ROLE_ACCESS_LEVEL_OPTIONS.map((option) => option.value);
 const VIEW_ACCESS_OPTIONS = [
-  { id: "schedule", label: "flow" },
+  { id: "schedule", label: "Bemanning" },
   { id: "overview", label: "Översikt" },
   { id: "productivity", label: "Produktivitet" },
   { id: "dataFetch", label: "Hämta data" },
   { id: "allocationUploads", label: "Uppladdningar" },
   { id: "allocationProcess", label: "Bearbeta" },
   { id: "allocationSplit", label: "Dela" },
-  { id: "allocationTrace", label: "Härleda" },
   { id: "persons", label: "Personer" },
   { id: "personImport", label: "Personimport" },
   { id: "activities", label: "Aktiviteter" },
@@ -40,6 +40,7 @@ const VIEW_ACCESS_OPTIONS = [
   { id: "analytics", label: "Historik" },
   { id: "users", label: "Användare" },
   { id: "userImport", label: "Användarimport" },
+  { id: "businesses", label: "Verksamheter" },
   { id: "appSettings", label: "Appinställningar" },
   { id: "sidebarLayout", label: "Menyordning" },
   { id: "roleAccess", label: "Vybehörigheter" },
@@ -84,6 +85,39 @@ function areaName(areaId) {
   return area ? area.name : `Område #${areaId}`;
 }
 
+function businessOptions(selectedId) {
+  if (!currentUser?.is_super_user) return "";
+  return `
+      <label>Verksamhet</label>
+      <select id="m-business">
+        <option value="">Välj verksamhet</option>
+        ${businesses.map((business) => `<option value="${business.id}" ${Number(selectedId) === Number(business.id) ? "selected" : ""}>${escapeHtml(business.name)}</option>`).join("")}
+      </select>
+  `;
+}
+
+function businessIdFromArea(areaId) {
+  const area = areas.find((item) => Number(item.id) === Number(areaId));
+  return area?.business_id ?? null;
+}
+
+function inferredUserBusinessId(user = null, areaId = null) {
+  return user?.business_id
+    ?? businessIdFromArea(areaId ?? user?.area_id)
+    ?? currentUser?.business_id
+    ?? businesses[0]?.id
+    ?? null;
+}
+
+function focusedAreaId() {
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(areas) : null;
+}
+
+function matchesAreaFocus(user) {
+  const areaId = focusedAreaId();
+  return areaId == null || Number(user?.area_id) === Number(areaId);
+}
+
 function passwordStatus(user) {
   return user?.must_change_password ? "Väntar" : "Skapat";
 }
@@ -121,6 +155,10 @@ async function loadRoleViewAccess() {
 
 async function loadAreas() {
   areas = await api.get("/api/areas?include_inactive=true");
+}
+
+async function loadBusinesses() {
+  businesses = currentUser?.is_super_user ? await api.get("/api/businesses") : [];
 }
 
 function setupSettingsControls() {
@@ -265,7 +303,7 @@ function renderUsers() {
   const canEditUsers = canEditPage(currentUser, "users");
   tbody.innerHTML = "";
 
-  users.forEach((user) => {
+  users.filter(matchesAreaFocus).forEach((user) => {
     const tr = document.createElement("tr");
     const selfLabel = user.id === currentUser.id ? " (du)" : "";
     tr.innerHTML = `
@@ -310,6 +348,8 @@ function openModal(user) {
   const isEdit = !!user;
   const selectedRoles = rolesForUser(user);
   const roleOptions = editableRoleOptions();
+  const selectedAreaId = user?.area_id ?? focusedAreaId();
+  const selectedBusinessId = inferredUserBusinessId(user, selectedAreaId);
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
   backdrop.innerHTML = `
@@ -319,6 +359,7 @@ function openModal(user) {
       <input id="m-username" autocomplete="username" value="${escapeHtml(user?.username || "")}" />
       <label>Visningsnamn</label>
       <input id="m-display-name" value="${escapeHtml(user?.display_name || "")}" />
+      ${businessOptions(selectedBusinessId)}
       <label>Roller</label>
       <div class="role-checks" id="m-roles">
         ${roleOptions.map((option) => `
@@ -331,7 +372,7 @@ function openModal(user) {
       <label>Område</label>
       <select id="m-area">
         <option value="">Ingen förinställning</option>
-        ${areas.map((area) => `<option value="${area.id}" ${Number(user?.area_id) === Number(area.id) ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("")}
+        ${areas.map((area) => `<option value="${area.id}" ${Number(selectedAreaId) === Number(area.id) ? "selected" : ""}>${escapeHtml(area.name)}</option>`).join("")}
       </select>
       <label>${isEdit ? "Nytt lösenord" : "Lösenord"}</label>
       <input id="m-password" type="password" autocomplete="new-password" />
@@ -359,6 +400,9 @@ function openModal(user) {
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       is_active: document.getElementById("m-active").checked,
     };
+    if (currentUser?.is_super_user) {
+      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+    }
 
     if (!payload.username) {
       showToast("Användarnamn krävs", "error");
@@ -436,7 +480,7 @@ function showImportResult(result) {
     openImportResultModal(result);
     return;
   }
-  showToast("Excel-filen innehöll inga användare", "warn");
+  showToast("Importen innehöll inga användare", "warn");
 }
 
 async function importUserFile(file) {
@@ -455,18 +499,55 @@ async function importUserFile(file) {
   }
 }
 
+async function openBulkUsersModal() {
+  try {
+    if (!areas.length) {
+      await loadAreas();
+    }
+    if (currentUser?.is_super_user && !businesses.length) {
+      await loadBusinesses();
+    }
+  } catch (error) {
+    showToast(error.message || "Kunde inte läsa områden.", "error", 7000);
+    return;
+  }
+  const businessColumn = currentUser?.is_super_user
+    ? [{ key: "business", label: "Verksamhet", type: "select", options: businesses.map((business) => ({ value: business.code, label: business.name })) }]
+    : [];
+  openBulkImportGrid({
+    title: "Flera nya användare",
+    submitLabel: "Skapa användare",
+    initialRows: 10,
+    columns: [
+      ...businessColumn,
+      { key: "username", label: "Användarnamn" },
+      { key: "display_name", label: "Visningsnamn" },
+      { key: "roles", label: "Roller" },
+      { key: "area", label: "Område", type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
+    ],
+    onSubmit: async (rows) => {
+      const result = await api.post("/api/users/import-rows", { rows });
+      showImportResult(result);
+      await loadUsers();
+    },
+  });
+}
+
 function setupImportControls() {
   const downloadButton = document.getElementById("download-user-template");
   const importButton = document.getElementById("import-users");
+  const bulkButton = document.getElementById("bulk-users");
   const roleAccessButton = document.getElementById("role-view-access");
   const helpButton = document.getElementById("user-import-help");
   const fileInput = document.getElementById("user-import-file");
 
   if (canEditPage(currentUser, "userImport")) {
+    bulkButton.hidden = false;
     downloadButton.hidden = false;
     importButton.hidden = false;
     helpButton.hidden = false;
 
+    bulkButton.addEventListener("click", openBulkUsersModal);
     setupImportHelpButton("user-import-help", "Importera användare");
     downloadButton.addEventListener("click", async () => {
       try {
@@ -500,7 +581,9 @@ function setupImportControls() {
   setupSettingsControls();
   await loadSettings();
   await loadAreas();
+  await loadBusinesses();
   await loadUsers();
   if (canEditPage(currentUser, "users")) newUserButton.addEventListener("click", () => openModal(null));
   document.getElementById("show-inactive").addEventListener("change", loadUsers);
+  window.addEventListener("flow:areaFocusChanged", renderUsers);
 })();

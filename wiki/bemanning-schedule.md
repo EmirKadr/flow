@@ -1,18 +1,18 @@
 ---
-title: flow dagsschema
+title: Bemanning
 status: aktiv
-updated: 2026-05-21
-tags: [flow, schema, ui, knappar]
+updated: 2026-05-22
+tags: [bemanning, schema, ui, knappar]
 ---
 
-# flow dagsschema
+# Bemanning
 
-Kort svar: flow ar huvudmatrisen. Anvandaren valjer ar/vecka/dag/omrade och satter aktivitet per person och timme. Andringar sparas direkt till `/api/schedule/*` med versionsskydd.
+Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr omrade med omradesfokus i sidebar. Sedan satter anvandaren aktivitet per person och timme. Andringar sparas direkt till `/api/schedule/*` med versionsskydd.
 
 ## Anvandarflode
 
 1. Sidan laddar omraden och aktiviteter.
-2. Sidan laddar schema for valt ar, vecka, veckodag och omrade.
+2. Sidan laddar schema for valt ar, vecka och veckodag. Om vald period finns i lokal all-cache filtreras valt omradesfokus direkt i klienten; annars laddas vald vy fran API och alla omraden forhamtas i bakgrunden.
 3. Varje rad ar en person; varje kolumn ar timme 06-23.
 4. Anvandaren valjer aktivitet i cellens dropdown, delar cell i halvtimmar vid behov, drar for att fylla flera celler eller anvander copy/paste.
 5. Summering och bemanningskalkyl uppdateras efter andringar.
@@ -26,7 +26,8 @@ Kort svar: flow ar huvudmatrisen. Anvandaren valjer ar/vecka/dag/omrade och satt
 | Dag | Valjer mandag-sondag | Uppdaterar veckodag och datum | `onControlChange` | Dag ar ISO-veckodag, inte datum. |
 | Datumfalt | Valjer exakt datum | Raknar om ar/vecka/dag och laddar schema | `onDateChange` | Om datum hoppar beror det pa ISO-vecka. |
 | Foregaende/nasta dag | Klick pa pilar | Flyttar datum en dag | `stepDay(-1/1)` | Sparar valt datum i `sessionStorage`. |
-| Omrade | Filtrerar personer/aktiviteter | Satter `area_id` i schemahamtning | `areaSelect`, `GET /api/schedule?...area_id=` | Om "Alla" visar mer an vantat ar filtret tomt. |
+| Omradesfokus i sidebar | Valjer MG/GG/AS/EH eller Alla | Visar cachat all-data filtrerat klient-side nar det finns; annars hamtas vald vy och all-data forhamtas | `flow:areaFocusChanged`, `filterScheduleDataForArea`, `prefetchAllSchedule` | `∞` betyder alla synliga omraden; for Super User kan det vara globalt enligt verksamhetsscope. |
+| Ovre horisontell scrollbar | Drar tabellen i sidled ovanfor matrisen | Synkar med tabellens vanliga scroll nederst | `setupSyncedHorizontalScroll` | Visas bara nar tabellen ar bredare an ytan. |
 | Kopiera dag | Oppnar modal | Kopierar schema fran dag till dag | `POST /api/schedule/copy` | Overskrivning sker bara om checkboxen i modalen ar vald. |
 | Rensa dag | Bekraftar med `confirm` | Rensar valt schema/omrade | `POST /api/schedule/clear` | Read-only kan inte rensa. |
 | Undo | Angrar senaste lokala schemaandring | Restore av tidigare snapshot | `PUT /api/schedule/hours/restore` | Fungerar bara pa samma dag som andringen gjordes. |
@@ -41,7 +42,7 @@ Kort svar: flow ar huvudmatrisen. Anvandaren valjer ar/vecka/dag/omrade och satt
 | Ctrl+X | Klipper fokuserad cell/halva | Kopierar och tommer kallsegment | `copyFocused(true)`, `PUT /api/schedule/cell` | Kan fa konflikt om cellen andrats. |
 | Ctrl+V | Klistrar in | Satter fokuserad cell/halva | `pasteFocused`, `PUT /api/schedule/cell` | Fungerar inte utan kopierat varde och fokus. |
 | Tips-knapp | Oppnar hjalp-popover | Visar split och autospar-info | `details.tips-fab` | Ingen API-koppling. |
-| Bemanningskalkyl | Fyller rader/tid/mal | Raknar behov, timmar och diff klient-side | `calcMetrics` | Decimaler normaliseras enligt svensk input. |
+| Bemanningskalkyl | Fyller rader/tid/mal | Raknar behov, timmar och diff klient-side for valt omradesfokus; `∞` visar alla paneler | `calcMetrics` | Decimaler normaliseras enligt svensk input. |
 
 ## Kopiera dag-modal
 
@@ -61,6 +62,8 @@ Falt:
 - Om en person har fast veckomall visas standardaktivitet aven utan explicit cell.
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
+- Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
+- Nar en period finns i cache kontrollerar klienten `/api/schedule/revision` tyst i bakgrunden. Aktiv vy kontrollerar ungefär var 10:e sekund, idle-vy ungefär var 30:e sekund, och dold browserflik pausar. Vid ny revision hamtas all-data och bara andrade synliga timmar patchas om anvandaren inte haller pa i just den cellen.
 - `fill-from-left` finns som API (`POST /api/schedule/fill-from-left`) men har ingen synlig knapp i nuvarande `index.html`/`schedule.js`.
 
 ## Felsokningssvar for framtida chat
@@ -81,4 +84,3 @@ Falt:
 - `../app/backend/routers/schedule.py`
 - `../app/backend/routers/bulk.py`
 - `../app/backend/schedule_locks.py`
-

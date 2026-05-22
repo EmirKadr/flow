@@ -3,8 +3,13 @@ import io
 import pytest
 from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from app.backend.routers.users import build_user_import_template_excel, parse_user_import_excel
+from app.backend.database import Base
+from app.backend.models import Area, User
+from app.backend.routers.users import build_user_import_template_excel, import_user_rows, parse_user_import_excel
+from app.backend.schemas import UserImportRowInput, UserImportRowsRequest
 
 
 def workbook_bytes(rows):
@@ -21,7 +26,8 @@ def test_build_user_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_user_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet["A1"].value, sheet["B1"].value, sheet["C1"].value, sheet["D1"].value] == [
+    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+        "verksamhet (frivillig)",
         "anv\u00e4ndarnamn (obligatorisk)",
         "namn (frivillig)",
         "roller (obligatorisk)",
@@ -91,3 +97,49 @@ def test_parse_user_import_excel_requires_expected_headers():
         parse_user_import_excel(workbook_bytes([["username", "name"], ["anna", "Anna"]]))
 
     assert exc.value.status_code == 400
+
+
+@pytest.fixture()
+def user_db():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+
+
+def test_import_user_rows_creates_from_direct_table(user_db):
+    admin = User(username="admin", role="admin", roles=["admin"], is_active=True)
+    area = Area(code="GG", name="Granngården", sort_order=1)
+    user_db.add_all([admin, area])
+    user_db.flush()
+
+    result = import_user_rows(
+        UserImportRowsRequest(
+            rows=[
+                UserImportRowInput(
+                    username="mira",
+                    display_name="Mira Multi",
+                    roles="admin, arbetsledare",
+                    area="GG",
+                ),
+                UserImportRowInput(username="mira", display_name="Dubblett", roles="visning"),
+            ]
+        ),
+        db=user_db,
+        admin=admin,
+    )
+
+    assert result.created == 1
+    assert result.skipped == 1
+    assert result.errors[0].row == 2
+    assert result.errors[0].error == "Dubblett i tabellen"
+    imported = user_db.query(User).filter(User.username == "mira").one()
+    assert imported.display_name == "Mira Multi"
+    assert imported.roles == ["admin", "leader"]
+    assert imported.area_id == area.id
+    assert imported.must_change_password is True
