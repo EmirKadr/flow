@@ -191,12 +191,18 @@ function detailSummary(entry) {
   }
   if (entry.entity_type === "allocation_flow") {
     const parts = [];
+    if (snapshot.business_code) parts.push(`Verksamhet: ${snapshot.business_code}`);
+    if (snapshot.area_focus) parts.push(`Toggle: ${snapshot.area_focus}`);
     if (snapshot.stage) parts.push(`Steg: ${snapshot.stage}`);
     if (snapshot.file_keys?.length) parts.push(`${snapshot.file_keys.length} filslotar`);
     if (snapshot.param_keys?.length) parts.push(`${snapshot.param_keys.length} parametrar`);
     if (snapshot.table_count != null) parts.push(`${snapshot.table_count} tabeller`);
     if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_code) parts.push(`Felkod: ${snapshot.error_code}`);
     if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    if (snapshot.message) parts.push(String(snapshot.message));
+    if (snapshot.technical_message) parts.push(`Tekniskt: ${snapshot.technical_message}`);
+    if (snapshot.filter_log?.length) parts.push(snapshot.filter_log.join(" | "));
     return parts.join(" | ") || "Lagerverktyg";
   }
   return summarizeChanges(entry.old_value, entry.new_value);

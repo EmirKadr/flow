@@ -43,6 +43,7 @@ HEADER_ALIASES = {
     "name": "name",
     "person": "name",
     "personnamn": "name",
+    "noman": "noman",
     "hemomrade": "home_area",
     "omrade": "home_area",
     "area": "home_area",
@@ -65,6 +66,7 @@ class ImportPersonRow:
     row_number: int
     business: str | None
     name: str
+    noman: str | None
     home_area: str | None
     home_activity: str | None
     sort_order: int | None
@@ -75,6 +77,7 @@ def _person_snapshot(person: Person) -> dict:
         "id": person.id,
         "business_id": person.business_id,
         "name": person.name,
+        "noman": person.noman,
         "home_area_id": person.home_area_id,
         "home_activity_id": person.home_activity_id,
         "competencies": person.competencies,
@@ -141,7 +144,7 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
     for row_number, raw_values in raw_rows:
         values = {
             field: _cell_text(raw_values.get(field))
-            for field in ("business", "name", "home_area", "home_activity", "sort_order")
+            for field in ("business", "name", "noman", "home_area", "home_activity", "sort_order")
         }
         if not any(values.values()):
             continue
@@ -154,6 +157,11 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
             errors.append(PersonImportError(row=row_number, name=name, error="Namn får vara max 120 tecken"))
             continue
 
+        noman = values.get("noman", "").strip()
+        if len(noman) > 120:
+            errors.append(PersonImportError(row=row_number, name=name, error="NoMan får vara max 120 tecken"))
+            continue
+
         sort_order, sort_error = _parse_sort_order(values.get("sort_order", ""), row_number=row_number, name=name)
         if sort_error is not None:
             errors.append(sort_error)
@@ -164,6 +172,7 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
                 row_number=row_number,
                 business=values.get("business") or None,
                 name=name,
+                noman=noman or None,
                 home_area=values.get("home_area") or None,
                 home_activity=values.get("home_activity") or None,
                 sort_order=sort_order,
@@ -177,12 +186,13 @@ def build_person_import_template_excel() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Personer"
-    sheet.append(["verksamhet (frivillig)", "namn (obligatorisk)", "hemområde (frivillig)", "huvudaktivitet (frivillig)", "sortering (frivillig)"])
+    sheet.append(["verksamhet (frivillig)", "namn (obligatorisk)", "NoMan (frivillig)", "hemområde (frivillig)", "huvudaktivitet (frivillig)", "sortering (frivillig)"])
     sheet.column_dimensions["A"].width = 22
     sheet.column_dimensions["B"].width = 28
-    sheet.column_dimensions["C"].width = 24
-    sheet.column_dimensions["D"].width = 28
-    sheet.column_dimensions["E"].width = 14
+    sheet.column_dimensions["C"].width = 20
+    sheet.column_dimensions["D"].width = 24
+    sheet.column_dimensions["E"].width = 28
+    sheet.column_dimensions["F"].width = 14
     sheet.freeze_panes = "A2"
 
     stream = io.BytesIO()
@@ -354,6 +364,7 @@ def _import_person_rows(
 
         person = Person(
             name=row.name,
+            noman=row.noman,
             business_id=business_id,
             home_area_id=home_area_id,
             home_activity_id=home_activity_id,

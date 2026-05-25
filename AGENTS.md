@@ -110,6 +110,27 @@ Vid varje andring som paverkar produktbeteende ska agenten:
 - uppdatera tester och dokumentation nar det ar relevant
 - tydligt saga till om full paritet inte hanns med eller om nagot blockerar den
 
+## Loggregel for agenter
+
+Anvandaren ska kunna se vad som lyckades, vad som misslyckades och vad systemet
+gjorde i bakgrunden utan att oppna utvecklarverktyg. Varje ny eller andrad
+anvandarhandling ska darfor ha synlig loggning nar det ar relevant:
+
+- lyckade muteringar, importer, exporter, bakgrundsladdningar och Bearbeta-floden
+  ska ge toast eller dokument-/sidebarlogg
+- fel, delvisa fel, blockerade floden och bakgrundsfel ska ge warn/error-logg med
+  begriplig anvandartext
+- nya API-mutationer och nedladdningar ska helst ga via `app/frontend/js/api.js`
+  sa de far standardloggning; egna `fetch`-wrappers ska uttryckligen logga
+  success/failure
+- loggar far inte innehalla losenord, cookies, API-nycklar, privata URL:er,
+  request bodies eller privata rad-/kunddata
+
+Backend-audit och frontendens dokumentlogg ar olika saker. Audit ar sparad
+historik for felsokning och uppfoljning. Dokumentloggen ar anvandarnara feedback
+i aktuell browser/session. Nar ett flode paverkar anvandaren ska bada anvandas
+om bada perspektiven ar relevanta.
+
 ## Testregel for agenter
 
 Varje gang en agent bygger nytt, andrar befintligt beteende eller lagger till ett

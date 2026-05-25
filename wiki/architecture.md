@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-25
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -41,7 +41,7 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 ## Klientlagring
 
 - `localStorage`: tema, sidebar-collapse, sidebar-layout-cache, role-view-access-cache.
-- `sessionStorage`: vald datumkontext, sidebar-user-cache, upload notice.
+- `sessionStorage`: vald datumkontext, sidebar-user-cache, upload notice, dokumentlogg och kortlivad GET-/vycache for snabb navigation.
 - IndexedDB `flow-allokering-files`: lokala filer for lagerverktyg.
 - IndexedDB `flow-productivity-files`: lokala produktivitetsloggar.
 

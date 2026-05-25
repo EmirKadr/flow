@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [historik, audit, ui]
 ---
 
@@ -29,8 +29,10 @@ Kort svar: Historik har tre lagen: anvandarhistorik, analys och felkoder. Den ar
 - `Felkoder`: statkort for felkoder, topplistor for felkod, vy/API och felatgard samt senaste felhandelser.
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, serverhanterade produktivitetsfiler och korda lagerverktygsfloden.
-- Misslyckade filuppladdningar som hinner na backend loggas som `productivity_file/upload_failed`, `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp och eventuell HTTP-status.
-- API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.
+- Misslyckade filuppladdningar som hinner na backend loggas som `productivity_file/upload_failed`, `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
+- Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
+- API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Det galler aven Bearbetas egna fetch-wrapper. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.
+- Dokument-loggen i sidebaren ar separat fran auditloggen och fylls klient-side av toastar, API-success/failure, bakgrundsvarningar och `window.flowLog`: success, info, warn och error. Den sparas i `sessionStorage`, foljer med vid sidbyte i samma browserflik och kan rensas av anvandaren; historiska/auditbara handelser finns i Historik.
 - Auditpayloadar ska vara felsokningsbara men inte innehalla losenord, API-detaljer, sessionscookies eller privata filnamn.
 
 ## Tekniskt flode
@@ -39,7 +41,8 @@ Kort svar: Historik har tre lagen: anvandarhistorik, analys och felkoder. Den ar
 - `GET /api/audit/summary` summerar auditlogg for analyslagen.
 - `GET /api/audit/errors` filtrerar auditlogg till felhandelser: `client_error` samt actions som innehaller `failed`, `error` eller `exception`.
 - `POST /api/audit/client-error` tar emot klientrapporter fran `api.js`. Endpointen kraver inloggad anvandare men inte Super User, sa vanliga anvandares fel kan felsokas i efterhand.
-- Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar.
+- Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget och exponerar `window.reportApiError` for sidmoduler med egna wrappers. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar.
+- Samma `api.js` skriver anvandarnara dokumentlogg for mutationer, nedladdningar och markerade GET-floden. Sidmoduler som anvander egna wrappers, till exempel Bearbeta, ska logga success/failure sjalva eller anropa `window.flowLog`.
 
 ## Felsokningssvar for framtida chat
 

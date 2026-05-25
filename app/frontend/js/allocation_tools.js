@@ -4,6 +4,9 @@ const ALLOCATION_DB_VERSION = 1;
 const ALLOCATION_STORE = "files";
 const ALLOCATION_WORK_STATE_VERSION = 1;
 const ALLOCATION_WORK_STATE_PREFIX = "flow-allocation-work-state-v1:";
+const ALLOCATION_FILE_METADATA_CACHE_KEY = "flow-allocation-file-metadata-v1";
+const ALLOCATION_BOOT_CACHE_KEY = "flow-allocation-boot-cache-v1";
+const ALLOCATION_BOOT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus";
 const ALLOCATION_PROCESS_AREA_OPTIONS = [
@@ -207,6 +210,7 @@ const allocationState = {
 };
 
 let allocationPopoverDismissBound = false;
+let allocationUploadsPreloadPromise = null;
 
 function allocationEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -252,6 +256,88 @@ function allocationCoreFile(key) {
 function allocationDisplayFile(key) {
   const logicalKey = allocationLogicalKey(key);
   return allocationState.files[logicalKey] || allocationCoreFile(logicalKey);
+}
+
+function allocationFileMetadata(entry) {
+  if (!entry?.key) return null;
+  return {
+    key: entry.key,
+    name: entry.name || entry.key,
+    size: Number(entry.size || entry.blob?.size || 0),
+    type: entry.type || entry.blob?.type || "",
+    lastModified: Number(entry.lastModified || Date.now()),
+  };
+}
+
+function readCachedAllocationFileMetadata() {
+  try {
+    const raw = localStorage.getItem(ALLOCATION_FILE_METADATA_CACHE_KEY);
+    if (!raw) return {};
+    const payload = JSON.parse(raw);
+    if (!payload || payload.version !== 1 || !Array.isArray(payload.files)) return {};
+    return Object.fromEntries(payload.files.map((entry) => [
+      entry.key,
+      { ...entry, metadataOnly: true },
+    ]).filter(([key]) => key));
+  } catch (_error) {
+    return {};
+  }
+}
+
+function cacheAllocationFileMetadata(files = allocationState.files) {
+  try {
+    const metadata = Object.values(files || {})
+      .map(allocationFileMetadata)
+      .filter(Boolean)
+      .sort((a, b) => String(a.key).localeCompare(String(b.key)));
+    localStorage.setItem(ALLOCATION_FILE_METADATA_CACHE_KEY, JSON.stringify({
+      version: 1,
+      at: Date.now(),
+      files: metadata,
+    }));
+  } catch (_error) {}
+}
+
+function readAllocationBootCache() {
+  try {
+    const raw = localStorage.getItem(ALLOCATION_BOOT_CACHE_KEY);
+    if (!raw) return null;
+    const payload = JSON.parse(raw);
+    if (!payload || payload.version !== 1) return null;
+    if (Date.now() - Number(payload.at || 0) > ALLOCATION_BOOT_CACHE_MAX_AGE_MS) return null;
+    return payload;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function cacheAllocationBootData() {
+  try {
+    localStorage.setItem(ALLOCATION_BOOT_CACHE_KEY, JSON.stringify({
+      version: 1,
+      at: Date.now(),
+      flows: allocationState.flows || [],
+      coredata: allocationState.coredata || {},
+      processMatrix: allocationState.processMatrix || null,
+    }));
+  } catch (_error) {}
+}
+
+function restoreAllocationBootData() {
+  const boot = readAllocationBootCache();
+  if (!boot) return false;
+  if (Array.isArray(boot.flows)) {
+    allocationState.flows = boot.flows;
+    allocationState.visibleFlows = allocationState.flows.filter((flow) => !ALLOCATION_HIDDEN_FLOW_IDS.has(flow.id));
+  }
+  if (boot.coredata && typeof boot.coredata === "object") allocationState.coredata = boot.coredata;
+  if (boot.processMatrix && typeof boot.processMatrix === "object") {
+    allocationState.processMatrix = normalizeAllocationProcessMatrix(boot.processMatrix);
+  }
+  if (allocationState.page === "uploads") {
+    allocationState.files = readCachedAllocationFileMetadata();
+  }
+  return Boolean(allocationState.visibleFlows.length);
 }
 
 function allocationRequiredSessionId(flow) {
@@ -477,6 +563,7 @@ async function loadStoredAllocationFiles() {
         };
       }
       db.close();
+      cacheAllocationFileMetadata(files);
       resolve(files);
     };
     request.onerror = () => {
@@ -497,12 +584,14 @@ async function saveAllocationFile(key, file) {
   };
   await allocationStore("readwrite", (store) => store.put(entry));
   allocationState.files[key] = entry;
+  cacheAllocationFileMetadata();
   if (key === "buffer") triggerAllocationObservationsUpdate(entry);
 }
 
 async function deleteAllocationFile(key) {
   await allocationStore("readwrite", (store) => store.delete(key));
   delete allocationState.files[key];
+  cacheAllocationFileMetadata();
   const productivityKey = ALLOCATION_PRODUCTIVITY_KEYS[key];
   if (productivityKey && window.productivityUploads?.deleteFile) {
     await window.productivityUploads.deleteFile(productivityKey);
@@ -540,13 +629,55 @@ function allocationCoreDataItems() {
 }
 
 async function allocationJson(path, options = {}) {
-  const response = await fetch(path, { credentials: "include", ...options });
+  const method = String(options.method || "GET").toUpperCase();
+  if (method === "GET" && window.api?.get) {
+    return await window.api.get(path, options);
+  }
+  let response;
+  try {
+    response = await fetch(path, { credentials: "include", ...options });
+  } catch (error) {
+    window.reportApiError?.(path, {
+      method,
+      status: 0,
+      error_code: "network_error",
+      message: error?.message || "Kunde inte ansluta till servern.",
+    });
+    if (method !== "GET" && !String(path).includes("/detect")) {
+      window.flowLog?.error(`Bearbeta-anrop misslyckades: ${error?.message || "nätverksfel"}`, "Fel");
+    }
+    throw error;
+  }
   const ct = response.headers.get("content-type") || "";
   const body = ct.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
     let message = body?.detail || body?.message || body?.error || `HTTP ${response.status}`;
     if (typeof message === "object") message = message.message || JSON.stringify(message);
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.body = body;
+    window.reportApiError?.(path, {
+      method,
+      status: response.status,
+      body,
+      message,
+    });
+    if (method !== "GET" && !String(path).includes("/detect")) {
+      window.flowLog?.error(`Bearbeta-anrop misslyckades: ${message}`, "Fel");
+    }
+    throw error;
+  }
+  if (method !== "GET") window.api?.clearGetCache?.();
+  if (method !== "GET" && !String(path).includes("/detect")) {
+    const label = String(path).includes("/flow/")
+      ? `Bearbeta körd: ${decodeURIComponent(String(path).split("/flow/")[1] || "flöde")}`
+      : String(path).includes("/open-excel")
+        ? "Excel öppnad"
+        : String(path).includes("/process-matrix")
+          ? "Bearbeta-matris sparad"
+          : "Bearbeta-anrop klart";
+    const rows = Array.isArray(body?.tables) ? ` (${body.tables.length} tabeller)` : "";
+    window.flowLog?.success(`${label}${rows}`, "Klart");
   }
   return body;
 }
@@ -558,6 +689,7 @@ async function allocationPostForm(path, formData) {
 async function loadAllocationCoreDataStatus() {
   try {
     allocationState.coredata = await allocationJson("/api/coredata/files");
+    cacheAllocationBootData();
   } catch (error) {
     console.warn("Kunde inte lÃ¤sa kÃ¤rnfiler.", error);
     allocationState.coredata = {};
@@ -568,6 +700,7 @@ async function loadAllocationFlows() {
   const data = await allocationJson(`${ALLOCATION_API}/flows`);
   allocationState.flows = data.flows || [];
   allocationState.visibleFlows = allocationState.flows.filter((flow) => !ALLOCATION_HIDDEN_FLOW_IDS.has(flow.id));
+  cacheAllocationBootData();
 }
 
 async function loadAllocationProcessMatrix() {
@@ -575,6 +708,7 @@ async function loadAllocationProcessMatrix() {
   try {
     const data = await allocationJson(`${ALLOCATION_API}/process-matrix`);
     allocationState.processMatrix = normalizeAllocationProcessMatrix(data);
+    cacheAllocationBootData();
   } catch (error) {
     console.warn("Kunde inte lasa Bearbeta-matris.", error);
     allocationState.processMatrix = allocationProcessFallbackMatrix();
@@ -730,6 +864,7 @@ async function routeAllocationFiles(files, slots, options = {}) {
         try {
           const result = await uploadAllocationCoreDataFile(file);
           if (result.status) allocationState.coredata = result.status;
+          cacheAllocationBootData();
           coredataSaved.push(file.name || "kÃ¤rnfil");
         } catch (error) {
           showToast(error.message || "Kunde inte uppdatera kÃ¤rnfil.", "error", 7000);
@@ -1723,21 +1858,57 @@ async function initAllocationPage() {
   allocationState.user = await initPage(allocationPageActiveName(allocationState.page), pageOptions);
   if (!allocationState.user) return;
   ensureFlowPopoverDismiss();
-  root.innerHTML = `<div class="section-title">${allocationEscape(allocationPrimaryTitle(allocationState.page))}</div><section class="allocation-panel"><p>Laddar...</p></section>`;
+  const restoredFromCache = restoreAllocationBootData();
+  if (restoredFromCache) renderAllocationPage();
+  else root.innerHTML = `<div class="section-title">${allocationEscape(allocationPrimaryTitle(allocationState.page))}</div><section class="allocation-panel"><p>Laddar...</p></section>`;
   try {
-    allocationState.files = await loadStoredAllocationFiles();
-    await loadAllocationFlows();
-    await loadAllocationProcessMatrix();
-    await loadAllocationCoreDataStatus();
-    if (allocationState.page === "uploads" && window.productivityUploads?.syncAllocationUploads) {
-      try {
-        await window.productivityUploads.syncAllocationUploads();
-        allocationState.files = await loadStoredAllocationFiles();
-      } catch (error) {
-        console.warn("Kunde inte synka produktivitetsfiler till Uppladdningar.", error);
+    const storedFilesPromise = loadStoredAllocationFiles();
+    let workStateRestored = false;
+    const restoreWorkStateOnce = () => {
+      if (workStateRestored) return;
+      restoreAllocationWorkState();
+      workStateRestored = true;
+    };
+
+    if (allocationState.page === "uploads") {
+      const cachedMetadata = Object.keys(allocationState.files || {}).length
+        ? allocationState.files
+        : readCachedAllocationFileMetadata();
+      if (!restoredFromCache && Object.keys(cachedMetadata).length) {
+        allocationState.files = cachedMetadata;
       }
+      await Promise.all([
+        loadAllocationFlows(),
+        loadAllocationProcessMatrix(),
+        loadAllocationCoreDataStatus(),
+      ]);
+      if (!restoredFromCache && Object.keys(allocationState.files || {}).length) {
+        restoreWorkStateOnce();
+        renderAllocationPage();
+      }
+      allocationState.files = await storedFilesPromise;
+    } else {
+      const [storedFiles] = await Promise.all([
+        storedFilesPromise,
+        loadAllocationFlows(),
+        loadAllocationProcessMatrix(),
+        loadAllocationCoreDataStatus(),
+      ]);
+      allocationState.files = storedFiles;
     }
-    restoreAllocationWorkState();
+    if (allocationState.page === "uploads" && window.productivityUploads?.syncAllocationUploads) {
+      void (async () => {
+        try {
+          await window.productivityUploads.syncAllocationUploads();
+          allocationState.files = await loadStoredAllocationFiles();
+          cacheAllocationFileMetadata();
+          renderAllocationPage();
+        } catch (error) {
+          console.warn("Kunde inte synka produktivitetsfiler till Uppladdningar.", error);
+        }
+      })();
+    }
+    restoreWorkStateOnce();
     renderAllocationPage();
   } catch (error) {
     renderAllocationUnavailable(error.message);
@@ -1748,6 +1919,7 @@ window.addEventListener("flow:uploadsCleared", async () => {
   const root = document.getElementById("allocationRoot");
   if (!root || !allocationState.user) return;
   allocationState.files = await loadStoredAllocationFiles();
+  cacheAllocationFileMetadata();
   await loadAllocationCoreDataStatus();
   allocationState.status = "Vanliga filval rensade. Kärnfiler ligger kvar.";
   allocationState.autoStatus = "";
@@ -1759,9 +1931,23 @@ window.addEventListener("flow:allocationFilesChanged", async () => {
   const root = document.getElementById("allocationRoot");
   if (!root || !allocationState.user) return;
   allocationState.files = await loadStoredAllocationFiles();
+  cacheAllocationFileMetadata();
   renderAllocationPage();
 });
 
 window.addEventListener("flow:areaFocusChanged", handleAllocationAreaFocusChanged);
+
+window.preloadAllocationUploadsData = function preloadAllocationUploadsData() {
+  if (allocationUploadsPreloadPromise) return allocationUploadsPreloadPromise;
+  allocationUploadsPreloadPromise = Promise.allSettled([
+    loadStoredAllocationFiles(),
+    loadAllocationFlows(),
+    loadAllocationCoreDataStatus(),
+  ]).finally(() => {
+    cacheAllocationBootData();
+    allocationUploadsPreloadPromise = null;
+  });
+  return allocationUploadsPreloadPromise;
+};
 
 document.addEventListener("DOMContentLoaded", initAllocationPage);

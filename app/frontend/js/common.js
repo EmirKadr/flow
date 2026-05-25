@@ -5,6 +5,8 @@ const SIDEBAR_USER_CACHE_KEY = "flow-sidebar-user";
 const SIDEBAR_LAYOUT_CACHE_KEY = "flow-sidebar-layout";
 const ROLE_VIEW_ACCESS_CACHE_KEY = "flow-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "flow-allocation-upload-notice";
+const APP_LOG_STORAGE_KEY = "flow-app-log-v1";
+const APP_LOG_MAX_ENTRIES = 200;
 const ALLOCATION_CORE_UPLOAD_KEYS = [
   "article_max",
   "custom",
@@ -27,6 +29,7 @@ const UPLOAD_FILE_STORES = [
 const SHARED_ALLOCATION_API = "/api/allokering";
 const SHARED_ALLOCATION_DB_NAME = "flow-allokering-files";
 const SHARED_ALLOCATION_STORE = "files";
+let sharedAllocationMetadataGeneration = 0;
 const SHARED_ALLOCATION_FILE_TYPE_KEYS = {
   orders: ["orders"],
   buffer: ["buffer"],
@@ -76,7 +79,7 @@ const AREA_FOCUS_FALLBACK_NAMES = {
   EH: "E-Handel",
 };
 let dynamicAreaFocusOptions = null;
-const appLogEntries = [];
+const appLogEntries = readStoredAppLogEntries();
 
 const THEME_ICONS = {
   light: `
@@ -559,12 +562,22 @@ function queueToast(message, kind = "info", durationMs = 4000) {
   sessionStorage.setItem("queued-toast", JSON.stringify({ message, kind, durationMs }));
 }
 
-function showToast(message, kind = "info", durationMs = 4000) {
+function toastLogTitle(kind) {
+  if (kind === "success") return "Klart";
+  if (kind === "error") return "Fel";
+  if (kind === "warn") return "Varning";
+  return "Info";
+}
+
+function showToast(message, kind = "info", durationMs = 4000, options = {}) {
   const el = document.createElement("div");
   el.className = "toast" + (kind ? " " + kind : "");
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), durationMs);
+  if (options.log !== false) {
+    appendAppLog(message, kind || "info", options.logTitle || toastLogTitle(kind));
+  }
 }
 
 function flushQueuedToast() {
@@ -721,18 +734,88 @@ function renderAppLogEntries() {
   `).join("");
 }
 
+function normalizeAppLogKind(kind) {
+  const value = String(kind || "info").trim().toLowerCase();
+  return ["info", "success", "warn", "error"].includes(value) ? value : "info";
+}
+
+function storedAppLogEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const message = String(entry.message || "").replace(/\s+/g, " ").trim();
+  if (!message) return null;
+  return {
+    time: String(entry.time || new Date().toLocaleString("sv-SE")),
+    kind: normalizeAppLogKind(entry.kind),
+    title: String(entry.title || "System").slice(0, 80),
+    message: message.slice(0, 600),
+  };
+}
+
+function readStoredAppLogEntries() {
+  try {
+    const raw = sessionStorage.getItem(APP_LOG_STORAGE_KEY);
+    if (!raw) return [];
+    const payload = JSON.parse(raw);
+    const rows = Array.isArray(payload?.entries) ? payload.entries : Array.isArray(payload) ? payload : [];
+    return rows.map(storedAppLogEntry).filter(Boolean).slice(0, APP_LOG_MAX_ENTRIES);
+  } catch (_error) {
+    return [];
+  }
+}
+
+function persistAppLogEntries() {
+  try {
+    sessionStorage.setItem(APP_LOG_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      entries: appLogEntries.slice(0, APP_LOG_MAX_ENTRIES),
+    }));
+  } catch (_error) {}
+}
+
 function appendAppLog(message, kind = "info", title = "System") {
-  const entry = {
+  const entry = storedAppLogEntry({
     time: new Date().toLocaleString("sv-SE"),
     kind,
     title,
-    message: String(message || ""),
-  };
+    message,
+  });
+  if (!entry) return;
   appLogEntries.unshift(entry);
-  if (appLogEntries.length > 100) appLogEntries.length = 100;
+  if (appLogEntries.length > APP_LOG_MAX_ENTRIES) appLogEntries.length = APP_LOG_MAX_ENTRIES;
+  persistAppLogEntries();
   renderAppLogEntries();
   console.info(`[${title}] ${entry.message}`);
 }
+
+function clearAppLog() {
+  appLogEntries.length = 0;
+  persistAppLogEntries();
+  renderAppLogEntries();
+}
+
+const CLIENT_RUNTIME_LOGGED_MESSAGES = new Set();
+
+function logClientRuntimeIssue(message, title = "Klientfel") {
+  const text = String(message || "Oväntat klientfel.").replace(/\s+/g, " ").trim();
+  if (!text) return;
+  const key = `${title}:${text}`.slice(0, 300);
+  if (CLIENT_RUNTIME_LOGGED_MESSAGES.has(key)) return;
+  CLIENT_RUNTIME_LOGGED_MESSAGES.add(key);
+  if (CLIENT_RUNTIME_LOGGED_MESSAGES.size > 50) {
+    CLIENT_RUNTIME_LOGGED_MESSAGES.clear();
+    CLIENT_RUNTIME_LOGGED_MESSAGES.add(key);
+  }
+  appendAppLog(text, "error", title);
+}
+
+window.addEventListener("error", (event) => {
+  logClientRuntimeIssue(event.message || event.error?.message, "Klientfel");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  logClientRuntimeIssue(reason?.message || reason, "Klientfel");
+});
 
 function userRoles(user) {
   const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role];
@@ -1127,6 +1210,11 @@ function ensureLogSidebar(app) {
       <p class="log-sidebar-empty">Ingen logg att visa ännu.</p>
     </div>
   `;
+  panel.querySelector("#log-sidebar-close")?.insertAdjacentHTML(
+    "beforebegin",
+    '<button type="button" class="log-sidebar-clear" id="log-sidebar-clear">Rensa</button>',
+  );
+  panel.querySelector("#log-sidebar-clear").addEventListener("click", clearAppLog);
   panel.querySelector("#log-sidebar-close").addEventListener("click", () => setLogSidebarOpen(false));
   renderAppLogEntries();
 }
@@ -1744,6 +1832,39 @@ function sharedAllocationDb() {
   });
 }
 
+async function warmSharedAllocationMetadataCache() {
+  const metadataGeneration = sharedAllocationMetadataGeneration;
+  const database = await sharedAllocationDb();
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(SHARED_ALLOCATION_STORE, "readonly");
+    const request = tx.objectStore(SHARED_ALLOCATION_STORE).getAll();
+    request.onsuccess = () => {
+      const files = (request.result || []).map((item) => ({
+        key: item.key,
+        name: item.name || item.key,
+        size: Number(item.size || item.blob?.size || 0),
+        type: item.type || item.blob?.type || "",
+        lastModified: Number(item.lastModified || Date.now()),
+      })).filter((item) => item.key);
+      if (metadataGeneration === sharedAllocationMetadataGeneration) {
+        try {
+          localStorage.setItem("flow-allocation-file-metadata-v1", JSON.stringify({
+            version: 1,
+            at: Date.now(),
+            files,
+          }));
+        } catch (_error) {}
+      }
+      database.close();
+      resolve(files);
+    };
+    request.onerror = () => {
+      database.close();
+      reject(request.error);
+    };
+  });
+}
+
 async function storeSharedAllocationFile(key, file) {
   const database = await sharedAllocationDb();
   return new Promise((resolve, reject) => {
@@ -1823,6 +1944,7 @@ function sharedAllocationKeysForType(fileType) {
 
 async function saveSharedAllocationFiles(files) {
   const incoming = Array.from(files || []);
+  if (incoming.length) sharedAllocationMetadataGeneration += 1;
   const saved = [];
   const recognized = [];
   const unknown = [];
@@ -1843,6 +1965,7 @@ async function saveSharedAllocationFiles(files) {
     saved.push(file.name || keys[0]);
   }
   if (mappings) {
+    void warmSharedAllocationMetadataCache();
     window.dispatchEvent(new CustomEvent("flow:allocationFilesChanged", {
       detail: { saved: saved.length, mappings },
     }));
@@ -1851,6 +1974,7 @@ async function saveSharedAllocationFiles(files) {
 }
 
 async function clearAllUploadedFiles({ confirmUser = true } = {}) {
+  sharedAllocationMetadataGeneration += 1;
   if (confirmUser && !confirm("Rensa alla vanliga filval i Uppladdningar? Kärnfiler ligger kvar.")) return false;
   const results = await Promise.all(
     UPLOAD_FILE_STORES.map((item) => clearUploadIndexedDbStore(
@@ -1861,6 +1985,7 @@ async function clearAllUploadedFiles({ confirmUser = true } = {}) {
   );
   const deleted = results.reduce((sum, item) => sum + (Number(item?.deleted) || 0), 0);
   const kept = results.reduce((sum, item) => sum + (Number(item?.kept) || 0), 0);
+  try { localStorage.removeItem("flow-allocation-file-metadata-v1"); } catch (_error) {}
   clearAllocationUploadNotice();
   window.dispatchEvent(new CustomEvent("flow:uploadsCleared", {
     detail: { deleted, keptProtected: kept },
@@ -2355,6 +2480,171 @@ async function maybeShowDemoTourPrompt(user, activePage) {
   await _showDemoTourPrompt(user, activePage);
 }
 
+const BACKGROUND_PREFETCH_TTL_MS = 60 * 1000;
+const BACKGROUND_PREFETCH_DELAY_MS = 250;
+const backgroundPrefetchState = {
+  queue: [],
+  seen: new Set(),
+  running: false,
+  waiters: [],
+};
+
+function currentIsoWeekParts(date = new Date()) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+  return { year: target.getUTCFullYear(), week, weekday: day };
+}
+
+function enqueueBackgroundPrefetch(path, ttlMs = BACKGROUND_PREFETCH_TTL_MS) {
+  if (!path || !window.api?.prefetchGet) return;
+  const key = String(path);
+  if (backgroundPrefetchState.seen.has(key)) return;
+  backgroundPrefetchState.seen.add(key);
+  backgroundPrefetchState.queue.push({ path: key, ttlMs });
+}
+
+function enqueueBackgroundWork(key, run) {
+  if (!key || typeof run !== "function") return;
+  const normalizedKey = String(key);
+  if (backgroundPrefetchState.seen.has(normalizedKey)) return;
+  backgroundPrefetchState.seen.add(normalizedKey);
+  backgroundPrefetchState.queue.push({ key: normalizedKey, run });
+}
+
+function backgroundPrefetchStatus() {
+  return {
+    queue: backgroundPrefetchState.queue.length,
+    running: backgroundPrefetchState.running,
+    seen: backgroundPrefetchState.seen.size,
+  };
+}
+
+function resolveBackgroundPrefetchWaiters() {
+  if (backgroundPrefetchState.running || backgroundPrefetchState.queue.length) return;
+  const waiters = backgroundPrefetchState.waiters.splice(0);
+  waiters.forEach((resolve) => resolve(backgroundPrefetchStatus()));
+}
+
+function waitForBackgroundPrefetchIdle(timeoutMs = 12000) {
+  if (!backgroundPrefetchState.running && !backgroundPrefetchState.queue.length) {
+    return Promise.resolve(backgroundPrefetchStatus());
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const index = backgroundPrefetchState.waiters.indexOf(done);
+      if (index >= 0) backgroundPrefetchState.waiters.splice(index, 1);
+      resolve(backgroundPrefetchStatus());
+    }, Math.max(500, Number(timeoutMs) || 12000));
+    const done = (status) => {
+      clearTimeout(timer);
+      resolve(status);
+    };
+    backgroundPrefetchState.waiters.push(done);
+  });
+}
+
+function scheduleNextBackgroundPrefetch() {
+  if (backgroundPrefetchState.running || !backgroundPrefetchState.queue.length) return;
+  backgroundPrefetchState.running = true;
+  const run = async () => {
+    const item = backgroundPrefetchState.queue.shift();
+    if (item) {
+      try {
+        if (typeof item.run === "function") await item.run();
+        else await window.api.prefetchGet(item.path, { cacheTtlMs: item.ttlMs });
+      } catch (error) {
+        appendAppLog(
+          `Bakgrundsladdning misslyckades: ${item.path || item.key || "okänt underlag"}${error?.message ? ` (${error.message})` : ""}`,
+          "warn",
+          "Bakgrund",
+        );
+      }
+    }
+    backgroundPrefetchState.running = false;
+    if (backgroundPrefetchState.queue.length) {
+      setTimeout(scheduleNextBackgroundPrefetch, BACKGROUND_PREFETCH_DELAY_MS);
+    } else {
+      resolveBackgroundPrefetchWaiters();
+    }
+  };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(run, { timeout: 2000 });
+  } else {
+    setTimeout(run, BACKGROUND_PREFETCH_DELAY_MS);
+  }
+}
+
+function enqueueVisiblePagePrefetches(user, activePage) {
+  if (!user || !window.api?.prefetchGet) return;
+  const { year, week, weekday } = currentIsoWeekParts();
+  const areaId = areaFocusAreaId();
+  const areaQuery = areaId != null ? `&area_id=${areaId}` : "";
+
+  enqueueBackgroundPrefetch("/api/settings/sidebar", 5 * 60 * 1000);
+  enqueueBackgroundPrefetch("/api/settings/role-access", 5 * 60 * 1000);
+
+  if (canViewPage(user, "schedule")) {
+    enqueueBackgroundPrefetch("/api/areas");
+    enqueueBackgroundPrefetch("/api/activities");
+    enqueueBackgroundPrefetch("/api/activities?include_inactive=true");
+    enqueueBackgroundPrefetch(`/api/schedule?year=${year}&week=${week}&weekday=${weekday}${areaQuery}`, 25 * 1000);
+    enqueueBackgroundPrefetch(`/api/schedule/summary?year=${year}&week=${week}&weekday=${weekday}${areaQuery}`, 25 * 1000);
+  }
+  if (canViewPage(user, "overview")) {
+    enqueueBackgroundPrefetch("/api/areas");
+    enqueueBackgroundPrefetch("/api/activities");
+    enqueueBackgroundPrefetch("/api/activities?include_inactive=true");
+    enqueueBackgroundPrefetch(`/api/overview?year=${year}&week=${week}${areaQuery}`, 25 * 1000);
+  }
+  if (canViewPage(user, "productivity")) {
+    enqueueBackgroundPrefetch("/api/areas");
+    enqueueBackgroundPrefetch("/api/productivity/files", 20 * 1000);
+    enqueueBackgroundPrefetch("/api/productivity/targets", 60 * 1000);
+  }
+  if (canViewPage(user, "allocationUploads") || canViewPage(user, "allocationProcess") || canViewPage(user, "allocationSplit")) {
+    enqueueBackgroundPrefetch("/api/allokering/flows", 60 * 1000);
+    enqueueBackgroundPrefetch("/api/coredata/files", 20 * 1000);
+    enqueueBackgroundWork("allocation-upload-metadata", warmSharedAllocationMetadataCache);
+  }
+  if (canViewPage(user, "allocationProcessMatrix")) {
+    enqueueBackgroundPrefetch("/api/allokering/process-matrix", 30 * 1000);
+  }
+  if (canViewPage(user, "persons")) {
+    enqueueBackgroundPrefetch(`/api/persons${areaId != null ? `?area_id=${areaId}` : ""}`, 30 * 1000);
+    enqueueBackgroundPrefetch("/api/areas");
+    enqueueBackgroundPrefetch("/api/activities");
+    enqueueBackgroundPrefetch("/api/activities?include_inactive=true");
+  }
+  if (canViewPage(user, "activities")) {
+    enqueueBackgroundPrefetch("/api/activities", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/areas");
+  }
+  if (canViewPage(user, "analytics")) {
+    enqueueBackgroundPrefetch("/api/users", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/persons?include_inactive=true", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/activities?include_inactive=true", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/areas?include_inactive=true", 30 * 1000);
+  }
+  if (canViewPage(user, "users")) {
+    enqueueBackgroundPrefetch("/api/users", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/settings", 60 * 1000);
+    enqueueBackgroundPrefetch("/api/areas", 30 * 1000);
+  }
+  if (user?.is_super_user || canViewPage(user, "businesses")) {
+    enqueueBackgroundPrefetch("/api/businesses", 60 * 1000);
+    enqueueBackgroundPrefetch("/api/businesses?include_inactive=true", 60 * 1000);
+    enqueueBackgroundPrefetch("/api/areas?include_inactive=true", 60 * 1000);
+  }
+
+  if (activePage === "allocationUploads" && window.preloadAllocationUploadsData) {
+    window.preloadAllocationUploadsData();
+  }
+  scheduleNextBackgroundPrefetch();
+}
+
 async function initPage(activePage, options = {}) {
   const cachedUser = readCachedSidebarUser();
   if (cachedUserCanRenderPage(cachedUser, activePage, options)) {
@@ -2408,8 +2698,11 @@ async function initPage(activePage, options = {}) {
   }
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
+  const openedPage = sidebarPageDefinitions(user, activePage).find((page) => page.id === activePage)?.label || activePage || "Okänd vy";
+  appendAppLog(`Öppnade vy: ${openedPage}`, "info", "Vy");
   void refreshRoleViewAccess(user, activePage);
   void refreshSidebarLayout(user, activePage);
+  void enqueueVisiblePagePrefetches(user, activePage);
   if (activePage === "allocationUploads") clearAllocationUploadNotice();
   flushQueuedToast();
   if (user.is_demo) {
@@ -2694,9 +2987,22 @@ window.setupSyncedHorizontalScroll = setupSyncedHorizontalScroll;
 window.setupImportHelpButton = setupImportHelpButton;
 window.openBulkImportGrid = openBulkImportGrid;
 window.appendAppLog = appendAppLog;
+window.clearAppLog = clearAppLog;
+window.flowLog = {
+  append: appendAppLog,
+  info: (message, title = "Info") => appendAppLog(message, "info", title),
+  success: (message, title = "Klart") => appendAppLog(message, "success", title),
+  warn: (message, title = "Varning") => appendAppLog(message, "warn", title),
+  error: (message, title = "Fel") => appendAppLog(message, "error", title),
+  clear: clearAppLog,
+};
 window.clearAllUploadedFiles = clearAllUploadedFiles;
 window.sharedAllocationUploads = {
   saveFiles: saveSharedAllocationFiles,
+};
+window.flowBackgroundPrefetch = {
+  status: backgroundPrefetchStatus,
+  waitForIdle: waitForBackgroundPrefetchIdle,
 };
 window.allocationUploadActivity = {
   start: startAllocationUploadActivity,

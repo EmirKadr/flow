@@ -84,6 +84,7 @@ class Person(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    noman: Mapped[str | None] = mapped_column(String(120))
     home_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     home_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     competencies: Mapped[list] = mapped_column(JsonField, nullable=False, default=list)

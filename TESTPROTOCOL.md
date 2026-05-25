@@ -22,6 +22,7 @@ python -m pytest
 Get-ChildItem -Path app\frontend\js -Filter *.js | ForEach-Object { node --check $_.FullName }
 python -m tools.flow_cli routes --format table
 python desktop\main.py --smoke-test
+python -m tools.performance_benchmark --runs 1
 ```
 
 Samma skydd finns i GitHub Actions pa varje push och pull request via
@@ -90,8 +91,9 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/tools/test_desktop_app_probe_runtime.py` | Desktop-proben kan starta lokal server/proxy och skriva runtime-artifacts. | `tools/desktop_app_probe.py` eller desktop-proxytest. |
 | `tests/tools/test_legacy_activity_browser.py` | Browserkontrakt for legacy-aktivitetssidor och vybehorighetsmodalens text. | Legacy aktivitetssidor, aktivitets-UI eller rollaccessmodal. |
 | `tests/tools/test_persons_view.py` | Personvyns frontendkontrakt: delete-knapp, Ctrl+Z och ingen aktiv/inaktiv-toggle. | `personer.html` eller `persons.js`. |
+| `tests/tools/test_performance_benchmark.py` | Kontrakt for prestandaverktyget som mater kall/varm sidvaxling, bakgrundsladdning, toggle, import, drag och copy. | Bakgrundscache, UX-hastighet, navigation, importfloden eller interaktionsprestanda. |
 | `tests/tools/test_release_check.py` | Release-zippen innehaller nodvandiga filer och frontend. | `tools/release_check.py`, packaging eller release-artefakter. |
-| `tests/tools/test_sidebar_user_browser.py` | Sidebarens footer visar namn, roll och logout i ratt ordning i browser. | Sidebar footer, anvandarvisning eller logoutknapp. |
+| `tests/tools/test_sidebar_user_browser.py` | Sidebarens footer visar namn/roll/logout och dokumentloggen sparas over sidbyte i browser. | Sidebar footer, anvandarvisning, logoutknapp eller anvandarsynlig loggning. |
 | `tests/tools/test_visual_tools.py` | Kontrakt for visual smoke, interaktiv E2E, desktop probes, frontend assets, global UI-wiring och kritiska vyer. | Sidebar/global frontend, visuella verktyg, assets, imports, allokerings-UI eller testprotokoll. |
 
 Om en ny testfil laggs till ska den in i tabellen ovan. Om en testfil byter
@@ -313,6 +315,37 @@ python -m tools.interactive_e2e --base-url http://127.0.0.1:8000 --output artifa
 
 Nar verktyget faller ska agenten oppna screenshoten narmast felet och lasa
 `report.json` for att se sista lyckade steg.
+
+## Prestanda- och UX-benchmark
+
+Verktyg:
+
+```powershell
+python -m tools.performance_benchmark
+```
+
+Det skapar en temporar databas, startar lokal server, kor Playwright i flera
+repetitioner och skriver `artifacts/performance/<timestamp>/report.json`.
+Rapporten innehaller ra tider och median/avg/min/max/p95 for:
+
+- kall sidvaxling efter login
+- varm sidvaxling efter bakgrunds-prefetch och session-cache
+- tiden for bakgrundsladdningen att bli idle
+- omradestoggle
+- schema select, drag-fill och copy/paste
+- Dela-run och kopiera resultatkolumn
+- Excel-import for anvandare, aktiviteter och personer
+- Uppladdningar med seedad IndexedDB/metadata-cache
+
+Anvand den vid andringar som paverkar laddning, cache, navigation, import,
+drag/copy eller Bearbeta/Dela. For snabb lokal grind:
+
+```powershell
+python -m tools.performance_benchmark --runs 1 --output artifacts\performance\quick
+```
+
+For fore/efter-jamforelse, spara rapporten fore andringen och kor samma kommando
+efter andringen. Jamfor `summary.measurements` i de tva `report.json`-filerna.
 
 ## Visuella Windows-skalbilder
 

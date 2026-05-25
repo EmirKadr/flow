@@ -33,9 +33,10 @@ def test_build_person_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_person_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 7)] == [
         "verksamhet (frivillig)",
         "namn (obligatorisk)",
+        "NoMan (frivillig)",
         "hemomr\u00e5de (frivillig)",
         "huvudaktivitet (frivillig)",
         "sortering (frivillig)",
@@ -64,14 +65,15 @@ def test_parse_person_import_excel_accepts_optional_fields():
     rows, errors = parse_person_import_excel(
         workbook_bytes(
             [
-                ["namn (obligatorisk)", "hemomr\u00e5de (frivillig)", "huvudst\u00e4lle (frivillig)", "sortering (frivillig)"],
-                ["Bo Berg", "GG", "GG VM", 12],
+                ["namn (obligatorisk)", "NoMan (frivillig)", "hemomr\u00e5de (frivillig)", "huvudst\u00e4lle (frivillig)", "sortering (frivillig)"],
+                ["Bo Berg", "BOB01", "GG", "GG VM", 12],
             ]
         )
     )
 
     assert errors == []
     assert len(rows) == 1
+    assert rows[0].noman == "BOB01"
     assert rows[0].home_area == "GG"
     assert rows[0].home_activity == "GG VM"
     assert rows[0].sort_order == 12
@@ -145,7 +147,7 @@ def test_import_person_rows_creates_from_direct_table(person_db):
     result = import_person_rows(
         PersonImportRowsRequest(
             rows=[
-                PersonImportRowInput(name="Mira Multi", home_area="GG", home_activity="GG Plock", sort_order="7"),
+                PersonImportRowInput(name="Mira Multi", noman="MIR01", home_area="GG", home_activity="GG Plock", sort_order="7"),
                 PersonImportRowInput(name="Mira Multi", home_area="GG"),
             ]
         ),
@@ -160,7 +162,21 @@ def test_import_person_rows_creates_from_direct_table(person_db):
     person = person_db.query(Person).filter(Person.name == "Mira Multi").one()
     assert person.home_area_id == area.id
     assert person.home_activity_id == activity.id
+    assert person.noman == "MIR01"
     assert person.sort_order == 7
+
+
+def test_create_and_update_person_persists_optional_noman(person_db):
+    admin = User(username="admin", role="admin", roles=["admin"], is_active=True)
+    person_db.add(admin)
+    person_db.flush()
+
+    person = create_person(PersonCreate(name="NoMan Person", noman="NMP01"), db=person_db, user=admin)
+    assert person.noman == "NMP01"
+
+    updated = update_person(person.id, PersonUpdate(noman=None), db=person_db, user=admin)
+
+    assert updated.noman is None
 
 
 def test_create_person_rejects_inactive_duplicate_name(person_db):

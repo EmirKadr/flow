@@ -45,7 +45,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 
 ## Register och settings
 
-- `GET/POST/PUT/DELETE /api/persons...`, `POST /api/persons/import-rows`, `PUT /api/persons/sort-order` - personregister, Excelimport, direktimport fran tabellrader och begransad sortering fran planeringsvyerna.
+- `GET/POST/PUT/DELETE /api/persons...`, `POST /api/persons/import-rows`, `PUT /api/persons/sort-order` - personregister med frivilligt `NoMan`-falt, Excelimport, direktimport fran tabellrader och begransad sortering fran planeringsvyerna.
 - `GET/PUT /api/persons/{id}/schedule` - veckomall.
 - `GET/POST/PUT/DELETE /api/activities...`, `POST /api/activities/import-rows` - aktivitetsregister, Excelimport och direktimport fran tabellrader.
 - `GET/POST/PUT/DELETE /api/areas...` - omraden. Delete tar bort tomma omraden men inaktiverar omradet om personer, aktiviteter eller anvandare redan pekar pa det.
@@ -62,7 +62,7 @@ eller skapa/importera med explicit verksamhet.
 ## Historik, produktivitet och lager
 
 - `GET /api/audit`, `GET /api/audit/summary`, `GET /api/audit/errors` - historik, analytics och felkodsdashboard.
-- `POST /api/audit/client-error` - tyst klientrapportering av API-fel som anvandaren traffar; sparar sanerad path/status/felkod utan request body eller queryvarden.
+- `POST /api/audit/client-error` - tyst klientrapportering av API-fel som anvandaren traffar, inklusive sidmoduler med egen fetch-wrapper via `window.reportApiError`; sparar sanerad path/status/felkod utan request body eller queryvarden.
 - `GET /api/productivity/files`, `GET /api/productivity/targets`, `GET /api/productivity` - produktivitet, kraver `productivity=view`.
 - `POST /api/productivity/files`, `POST /api/productivity/files/raw`, `DELETE /api/productivity/files/{file_type}` - serverhanterade produktivitetsfiler, kraver `productivity=edit`.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler for lagerverktygen.

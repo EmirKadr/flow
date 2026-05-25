@@ -580,6 +580,11 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   margin: 0;
   font-size: 17px;
 }
+.log-sidebar-clear {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .log-sidebar-close {
   width: 34px;
   height: 34px;
@@ -1695,8 +1700,8 @@ table.data td:last-child > button {
 table.data td:last-child > button:first-child { margin-left: 0; }
 
 /* Personer-tabellen: smalare sortering så åtgärdskolumnen får mer plats */
-table#persons-table th:nth-child(4),
-table#persons-table td:nth-child(4) {
+table#persons-table th:nth-child(5),
+table#persons-table td:nth-child(5) {
   width: 90px;
 }
 

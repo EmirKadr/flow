@@ -52,6 +52,20 @@ def test_persons_view_has_no_active_inactive_modes():
     assert ".person-status-tabs" not in styles
 
 
+def test_persons_view_exposes_optional_noman_field():
+    frontend = ROOT / "app" / "frontend"
+    persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
+    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+
+    assert '<th data-sort="noman">NoMan' in persons_html
+    assert 'data-filter="noman"' in persons_html
+    assert 'const filters = { name: "", noman: "", home_area: "", home_activity: "", sort_order: "" }' in persons_js
+    assert 'case "noman": return (p.noman || "").toLowerCase();' in persons_js
+    assert 'editText(tdNoman, p, "noman", p.noman || "", "NoMan")' in persons_js
+    assert '{ key: "noman", label: "NoMan", required: false }' in persons_js
+    assert 'noman: document.getElementById("m-noman").value.trim() || null' in persons_js
+
+
 def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
     persons_js = (ROOT / "app" / "frontend" / "js" / "persons.js").read_text(encoding="utf-8")
 

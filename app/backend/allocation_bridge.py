@@ -4,6 +4,7 @@ import csv
 import hashlib
 import importlib
 import json
+import logging
 import math
 import os
 import re
@@ -21,6 +22,9 @@ from fastapi import HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
+
+
+logger = logging.getLogger(__name__)
 
 
 class AllocationBridgeUnavailable(RuntimeError):
@@ -909,6 +913,16 @@ async def form_to_flow_payload(form, *, cache_scope: str | None = None) -> tuple
     return files, params, temp_paths
 
 
+def _friendly_flow_error_message(exc: Exception) -> str:
+    raw = str(exc).strip()
+    if raw == "No objects to concatenate":
+        return (
+            "Flödet fick inga rader att sammanställa. Kontrollera att rätt filer är inlagda "
+            "och att vald toggle/filter inte filtrerar bort allt."
+        )
+    return raw or "Flödet kunde inte köras."
+
+
 def run_flow_handler(
     flow_id: str,
     files: dict,
@@ -932,9 +946,19 @@ def run_flow_handler(
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Allocation flow failed flow_id=%s", flow_id)
+        message = _friendly_flow_error_message(exc)
+        raw_message = str(exc).strip()
+        detail = {
+            "message": message,
+            "error_code": "allocation_flow_failed",
+            "error_type": type(exc).__name__,
+        }
+        if raw_message and raw_message != message:
+            detail["technical_message"] = raw_message
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail={"message": str(exc), "trace": traceback.format_exc()},
+            detail=detail,
         ) from exc
 
     tables = result.get("tables", [])

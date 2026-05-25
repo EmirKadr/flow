@@ -153,6 +153,41 @@ def test_allocation_flow_audit_payload_omits_file_and_param_values():
     assert "A\\nB" not in text
 
 
+def test_allocation_flow_failed_payload_includes_error_context_without_values():
+    payload = allocation._flow_audit_payload(
+        "forecast",
+        files={"orders": "C:/hemlig/kundorder.xlsx"},
+        params={"secret_value": "A\nB\nC"},
+        area_focus="MG",
+        business_code="R3",
+        filter_log=["orders: 10 -> 0 rader (Bolag, Kundnr)."],
+        path="/api/allokering/flow/forecast",
+        error_type="ValueError",
+        error_code="allocation_flow_failed",
+        status_code=400,
+        message="Flödet fick inga rader att sammanställa.",
+        technical_message="No objects to concatenate",
+    )
+
+    assert payload == {
+        "flow_id": "forecast",
+        "file_keys": ["orders"],
+        "param_keys": ["secret_value"],
+        "area_focus": "MG",
+        "business_code": "R3",
+        "filter_log": ["orders: 10 -> 0 rader (Bolag, Kundnr)."],
+        "path": "/api/allokering/flow/forecast",
+        "error_type": "ValueError",
+        "error_code": "allocation_flow_failed",
+        "status_code": 400,
+        "message": "Flödet fick inga rader att sammanställa.",
+        "technical_message": "No objects to concatenate",
+    }
+    text = json.dumps(payload, ensure_ascii=False)
+    assert "kundorder.xlsx" not in text
+    assert "A\\nB" not in text
+
+
 def test_allocation_upload_failure_payload_omits_file_and_param_values():
     payload = allocation._upload_failure_payload(
         flow_id="allocate",
@@ -190,6 +225,7 @@ def test_allocation_endpoint_logs_failed_upload_parse():
         "stage": "parse_upload",
         "error_type": "OSError",
         "flow_id": "split-values",
+        "message": "multipart failed",
     }
 
 

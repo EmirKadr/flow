@@ -39,6 +39,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE areas ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if person_columns and "business_id" not in person_columns:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
+        if person_columns and "noman" not in person_columns:
+            connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN noman VARCHAR(120)")
         if activity_columns and "business_id" not in activity_columns:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if audit_columns and "business_id" not in audit_columns:

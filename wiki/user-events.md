@@ -18,7 +18,9 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Saknar vybehorighet | Toast "Sidan kraver behorighet" och redirect | Rollen har inte `view` pa vyn | Be admin/Super User andra Vybehorigheter. Vanlig anvandare kan normalt inte gora det sjalv. |
 | Saknar redigeringsbehorighet | Knapp dold/disabled eller toast | Rollen har bara `view` | Be om `edit` for vyn eller anvand laslage. |
 | Server kan inte nas | "Kunde inte ansluta till servern..." | Backend nere, fel adress eller appen oppnad som fil | Oppna ratt URL/starta lokal server/kontrollera natverk. |
-| API-fel loggas | Ingen extra UI-storning | Frontend far 4xx/5xx eller natverksfel fran API | Felet rapporteras tyst som `client_error` nar anvandaren ar inloggad, sa Super User kan felsoka i Historik > Felkoder. |
+| API-fel loggas | Ingen extra UI-storning | Frontend far 4xx/5xx eller natverksfel fran API | Felet rapporteras tyst som `client_error` nar anvandaren ar inloggad, sa Super User kan felsoka i Historik > Felkoder. Galler aven Bearbeta. |
+| Dokument-logg fylls | Dokument-ikonen visar success/info/varning/fel och kan rensas | `showToast`, API-wrappern och globala `flowLog` skriver till en sessionlagrad loggpanel | Oppna dokument-ikonen for snabb felsokning; loggen foljer med vid sidbyte i samma browserflik. Anvand Historik for sparad audit. |
+| Bakgrundsladdning misslyckas | Warn-rad i dokumentloggen | En forvarmning/cachehamtning kunde inte hamtas utan att stoppa vyn | Fortsatt jobba; om samma varning upprepas, ladda om eller kontrollera backend/natverk. |
 | Tema andras | Ikon/vy byter ljust/morkt | Tema sparas lokalt | Inget fel; per enhet/browser. |
 | Sidebar kollapsas | Bara ikoner syns | Anvandaren klickade hamburgare | Klicka hamburgare igen. |
 | Omradesfokus andras | Berorda vyer filtreras till valt omrade eller alla | MG/GG/AS/EH/Alla toggle | Vaxla fokus nere i sidebar. Bemanning och Oversikt anvander bakgrundscache for snabb vaxling nar perioden redan ar hamtad. `∞` visar alla synliga omraden. |
@@ -105,6 +107,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Fil kunde inte sorteras | "Kunde inte sortera: filnamn" | Detektion missade filtyp | Anvand `Valj` pa ratt slot eller kontrollera rubriker. |
 | Flode disabled | Knapp ar gra | Kravda filer/falt saknas eller flode kor | Klicka `i` for krav och lagg in saknade filer. |
 | Okant flode | "Okant flode: ..." | Frontend/backend-katalog ur synk | Ladda om, kontrollera deploy/version. |
+| Forecast utan rader | "Flodet fick inga rader att sammanstalla..." | Forecast/underlaget gav inga rader efter inlagda filer och vald GG/MG/annan toggle/filter | Kontrollera att ratt orderdetalj och coredata finns och att vald toggle inte filtrerar bort allt. Historik > Felkoder visar tekniskt meddelande, t.ex. `No objects to concatenate`. |
 | Resultatet hittades inte | "Resultatet hittades inte (kor flodet igen)" | Resultatsession saknas/stadad | Kor flodet igen. |
 | Saknar Excel-skrivare | "Saknar Excel-skrivare..." | Servermiljo saknar openpyxl/xlsxwriter | Anvand CSV eller installera beroende. |
 | Excel oppnas | "Excel oppnas" | `/open-excel` skapade filen och skickade oppningskommando till OS | Vanta pa Excel eller kontrollera aktivitetsfaltet. |

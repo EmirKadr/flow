@@ -125,6 +125,7 @@ class PersonOut(BaseModel):
     id: int
     business_id: int | None = None
     name: str
+    noman: str | None = None
     home_area_id: int | None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -137,6 +138,7 @@ class PersonOut(BaseModel):
 class PersonCreate(BaseModel):
     business_id: int | None = None
     name: str
+    noman: str | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -149,6 +151,7 @@ class PersonCreate(BaseModel):
 class PersonUpdate(BaseModel):
     business_id: int | None = None
     name: str | None = None
+    noman: str | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] | None = None
@@ -173,6 +176,7 @@ class PersonImportResult(BaseModel):
 class PersonImportRowInput(BaseModel):
     business: str | int | float | None = None
     name: str | int | float | None = None
+    noman: str | int | float | None = None
     home_area: str | int | float | None = None
     home_activity: str | int | float | None = None
     sort_order: str | int | float | None = None

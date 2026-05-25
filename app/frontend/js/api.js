@@ -37,6 +37,104 @@ function errorMessageFromBody(body, status) {
 }
 
 const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";
+const API_PREFETCH_DEFAULT_TTL_MS = 45 * 1000;
+const API_GET_CACHE_STORAGE_PREFIX = "flow-api-get-cache-v1:";
+const apiGetCache = new Map();
+const apiGetInFlight = new Map();
+let apiGetCacheGeneration = 0;
+
+function cloneApiCacheValue(value) {
+  if (value == null) return value;
+  if (typeof structuredClone === "function") {
+    try { return structuredClone(value); } catch (_error) {}
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
+
+function apiCacheKey(path) {
+  return String(path || "");
+}
+
+function apiStorageCacheKey(path) {
+  return `${API_GET_CACHE_STORAGE_PREFIX}${apiCacheKey(path)}`;
+}
+
+function readApiGetPersistentCache(path) {
+  try {
+    const storageKey = apiStorageCacheKey(path);
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || Number(entry.expiresAt || 0) <= Date.now()) {
+      sessionStorage.removeItem(storageKey);
+      return null;
+    }
+    apiGetCache.set(apiCacheKey(path), {
+      body: cloneApiCacheValue(entry.body),
+      expiresAt: Number(entry.expiresAt),
+    });
+    return cloneApiCacheValue(entry.body);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readApiGetCache(path) {
+  const entry = apiGetCache.get(apiCacheKey(path));
+  if (!entry || entry.expiresAt <= Date.now()) {
+    apiGetCache.delete(apiCacheKey(path));
+    return readApiGetPersistentCache(path);
+  }
+  return cloneApiCacheValue(entry.body);
+}
+
+function writeApiGetCache(path, body, ttlMs = API_PREFETCH_DEFAULT_TTL_MS) {
+  const ttl = Math.max(0, Number(ttlMs) || 0);
+  if (!ttl) return;
+  apiGetCache.set(apiCacheKey(path), {
+    body: cloneApiCacheValue(body),
+    expiresAt: Date.now() + ttl,
+  });
+  try {
+    sessionStorage.setItem(apiStorageCacheKey(path), JSON.stringify({
+      body: cloneApiCacheValue(body),
+      expiresAt: Date.now() + ttl,
+    }));
+  } catch (_error) {}
+}
+
+function clearApiGetPersistentCache(predicate = null) {
+  try {
+    const keys = [];
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const storageKey = sessionStorage.key(index);
+      if (!storageKey?.startsWith(API_GET_CACHE_STORAGE_PREFIX)) continue;
+      const cacheKey = storageKey.slice(API_GET_CACHE_STORAGE_PREFIX.length);
+      if (typeof predicate !== "function" || predicate(cacheKey)) keys.push(storageKey);
+    }
+    for (const key of keys) sessionStorage.removeItem(key);
+  } catch (_error) {}
+}
+
+function clearApiGetCache(predicate = null) {
+  apiGetCacheGeneration += 1;
+  clearApiGetPersistentCache(predicate);
+  if (typeof predicate !== "function") {
+    apiGetCache.clear();
+    apiGetInFlight.clear();
+    return;
+  }
+  for (const key of [...apiGetCache.keys()]) {
+    if (predicate(key)) apiGetCache.delete(key);
+  }
+  for (const key of [...apiGetInFlight.keys()]) {
+    if (predicate(key)) apiGetInFlight.delete(key);
+  }
+}
 
 function truncateErrorText(value, maxLength = 500) {
   if (value == null) return null;
@@ -110,62 +208,215 @@ function reportApiError(path, details = {}) {
   }).catch(() => {});
 }
 
+function apiLogTarget() {
+  return window.flowLog?.append || window.appendAppLog || null;
+}
+
+function apiUserLog(message, kind = "info", title = "System") {
+  const target = apiLogTarget();
+  if (typeof target === "function") {
+    target(message, kind, title);
+  }
+}
+
+function apiFlowName(path) {
+  const match = pathWithoutQuery(path).match(/^\/api\/allokering\/flow\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]).replace(/[-_]/g, " ") : "";
+}
+
+function apiActionLabel(path, method = "GET") {
+  const safePath = pathWithoutQuery(path);
+  const verb = String(method || "GET").toUpperCase();
+  const flowName = apiFlowName(safePath);
+  if (safePath === CLIENT_ERROR_REPORT_PATH) return "";
+  if (safePath === "/api/auth/logout") return "Utloggning";
+  if (safePath.startsWith("/api/assistant/chat")) return "Apphjälp";
+  if (safePath.startsWith("/api/assistant/clear")) return "Apphjälpsdialog";
+  if (safePath.startsWith("/api/query-data/plan")) return "Hämta data: plan";
+  if (safePath.startsWith("/api/query-data/run")) return "Hämta data: körning";
+  if (safePath.startsWith("/api/query-data/export/")) return "Hämta data: Excel";
+  if (safePath.startsWith("/api/allokering/flow/")) return `Bearbeta: ${flowName || "flöde"}`;
+  if (safePath.startsWith("/api/allokering/download/")) return "Bearbeta: CSV";
+  if (safePath.startsWith("/api/allokering/open-excel/")) return "Bearbeta: Excel";
+  if (safePath.startsWith("/api/coredata/files")) return "Kärnfil";
+  if (safePath.startsWith("/api/productivity/files")) return "Produktivitetsfil";
+  if (safePath.startsWith("/api/productivity/report")) return "Produktivitet";
+  if (safePath.startsWith("/api/schedule/cells")) return "Bemanning: flera celler";
+  if (safePath.startsWith("/api/schedule/cell")) return "Bemanning: cell";
+  if (safePath.startsWith("/api/schedule/copy")) return "Bemanning: kopiera dag";
+  if (safePath.startsWith("/api/schedule/clear")) return "Bemanning: rensa dag";
+  if (safePath.startsWith("/api/schedule/hours/restore")) return "Bemanning: ångra/gör om";
+  if (safePath.startsWith("/api/overview/days")) return "Översikt: flera dagar";
+  if (safePath.startsWith("/api/overview/day")) return "Översikt: dag";
+  if (safePath.startsWith("/api/persons/import-template")) return "Personimportmall";
+  if (safePath.startsWith("/api/persons/import")) return "Personimport";
+  if (safePath.startsWith("/api/persons/sort-order")) return "Personsortering";
+  if (/^\/api\/persons\/\d+\/schedule$/.test(safePath)) return "Personschema";
+  if (safePath.startsWith("/api/persons")) return verb === "DELETE" ? "Person borttagen" : verb === "POST" ? "Person skapad" : "Person uppdaterad";
+  if (safePath.startsWith("/api/users/import-template")) return "Användarimportmall";
+  if (safePath.startsWith("/api/users/import")) return "Användarimport";
+  if (safePath.startsWith("/api/users")) return verb === "DELETE" ? "Användare borttagen" : verb === "POST" ? "Användare skapad" : "Användare uppdaterad";
+  if (safePath.startsWith("/api/activities/import-template")) return "Aktivitetsimportmall";
+  if (safePath.startsWith("/api/activities/import")) return "Aktivitetsimport";
+  if (safePath.startsWith("/api/activities")) return verb === "DELETE" ? "Aktivitet borttagen" : verb === "POST" ? "Aktivitet skapad" : "Aktivitet uppdaterad";
+  if (safePath.startsWith("/api/businesses")) return verb === "POST" ? "Verksamhet skapad" : "Verksamhet uppdaterad";
+  if (safePath.startsWith("/api/areas")) return verb === "DELETE" ? "Område borttaget" : verb === "POST" ? "Område skapat" : "Område uppdaterat";
+  if (safePath.startsWith("/api/settings/sidebar")) return "Menyinställning";
+  if (safePath.startsWith("/api/settings/role-access")) return "Vybehörighet";
+  if (safePath.startsWith("/api/settings")) return "Inställning";
+  return `${verb} ${safePath}`;
+}
+
+function apiResultSummary(body) {
+  if (!body || typeof body !== "object") return "";
+  const parts = [];
+  const labels = {
+    created: "skapade",
+    updated: "uppdaterade",
+    deleted: "borttagna",
+    cleared: "rensade",
+    copied: "kopierade",
+    written: "skrivna",
+    skipped: "hoppade",
+  };
+  for (const key of Object.keys(labels)) {
+    if (body[key] != null) parts.push(`${labels[key]}: ${body[key]}`);
+  }
+  if (Array.isArray(body.saved)) parts.push(`sparade: ${body.saved.length}`);
+  if (Array.isArray(body.unknown) && body.unknown.length) parts.push(`okända: ${body.unknown.length}`);
+  if (body.status?.files && typeof body.status.files === "object") {
+    const uploaded = Object.values(body.status.files).filter((entry) => entry?.uploaded).length;
+    parts.push(`filer: ${uploaded}`);
+  }
+  if (body.summary && typeof body.summary === "object") {
+    const summaryParts = Object.entries(body.summary).slice(0, 3).map(([key, value]) => `${key}: ${value}`);
+    parts.push(...summaryParts);
+  }
+  if (!parts.length && Array.isArray(body.tables)) parts.push(`tabeller: ${body.tables.length}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
+}
+
+function shouldLogApiUserEvent(path, method, options = {}) {
+  if (options.logUserEvent === false) return false;
+  const safePath = pathWithoutQuery(path);
+  if (safePath === CLIENT_ERROR_REPORT_PATH) return false;
+  if (safePath === "/api/auth/me") return false;
+  if (String(method || "GET").toUpperCase() === "GET") return Boolean(options.logGetUserEvent);
+  return true;
+}
+
+function logApiSuccess(path, method, body, options = {}) {
+  if (!shouldLogApiUserEvent(path, method, options) || options.logSuccess === false) return;
+  const label = options.logLabel || apiActionLabel(path, method);
+  if (!label) return;
+  apiUserLog(`${label} klar${apiResultSummary(body)}`, "success", "Klart");
+}
+
+function logApiFailure(path, method, error, options = {}) {
+  if (!shouldLogApiUserEvent(path, method, options) || options.logFailure === false) return;
+  const label = options.logLabel || apiActionLabel(path, method);
+  if (!label) return;
+  apiUserLog(`${label} misslyckades${error?.message ? `: ${error.message}` : ""}`, "error", "Fel");
+}
+
 async function request(path, options = {}) {
-  const { headers = {}, ...rest } = options;
+  const {
+    headers = {},
+    cacheTtlMs = 0,
+    skipCache = false,
+    logLabel = "",
+    logUserEvent = undefined,
+    logGetUserEvent = false,
+    logSuccess = true,
+    logFailure = true,
+    ...rest
+  } = options;
+  const logOptions = { logLabel, logUserEvent, logGetUserEvent, logSuccess, logFailure };
   const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
   const requestHeaders = isFormData ? headers : { "Content-Type": "application/json", ...headers };
   const method = String(rest.method || "GET").toUpperCase();
-
-  let resp;
-  try {
-    resp = await fetch(path, {
-      credentials: "include",
-      headers: requestHeaders,
-      ...rest,
-    });
-  } catch (error) {
-    const err = connectionError(path, error);
-    reportApiError(path, {
-      method,
-      status: 0,
-      error_code: "network_error",
-      message: err.message,
-    });
-    throw err;
+  const useGetCache = method === "GET" && !skipCache;
+  const requestCacheGeneration = apiGetCacheGeneration;
+  if (useGetCache) {
+    const cached = readApiGetCache(path);
+    if (cached !== null) return cached;
+    const inFlight = apiGetInFlight.get(apiCacheKey(path));
+    if (inFlight) return cloneApiCacheValue(await inFlight);
   }
 
-  if (resp.status === 204) return null;
-
-  const ct = resp.headers.get("content-type") || "";
-  const body = ct.includes("application/json") ? await resp.json() : await resp.text();
-
-  if (resp.status === 401 && !isAuthPath(path)) {
-    if (!window.location.pathname.endsWith("/login.html")) {
-      window.location.href = "/login.html";
+  const run = async () => {
+    let resp;
+    try {
+      resp = await fetch(path, {
+        credentials: "include",
+        headers: requestHeaders,
+        ...rest,
+      });
+    } catch (error) {
+      const err = connectionError(path, error);
+      reportApiError(path, {
+        method,
+        status: 0,
+        error_code: "network_error",
+        message: err.message,
+      });
+      logApiFailure(path, method, err, logOptions);
+      throw err;
     }
-    throw new Error("Unauthorized");
-  }
 
-  if (resp.status === 403 && body?.detail === "password_setup_required" && !isAuthPath(path)) {
-    if (!window.location.pathname.endsWith("/set-password.html")) {
-      window.location.href = "/set-password.html";
+    if (resp.status === 204) {
+      logApiSuccess(path, method, null, logOptions);
+      return null;
     }
-    throw new Error("password_setup_required");
-  }
 
-  if (!resp.ok) {
-    const err = new Error(errorMessageFromBody(body, resp.status));
-    err.status = resp.status;
-    err.body = body;
-    reportApiError(path, {
-      method,
-      status: resp.status,
-      body,
-      message: err.message,
-    });
-    throw err;
-  }
-  return body;
+    const ct = resp.headers.get("content-type") || "";
+    const body = ct.includes("application/json") ? await resp.json() : await resp.text();
+
+    if (resp.status === 401 && !isAuthPath(path)) {
+      if (!window.location.pathname.endsWith("/login.html")) {
+        window.location.href = "/login.html";
+      }
+      throw new Error("Unauthorized");
+    }
+
+    if (resp.status === 403 && body?.detail === "password_setup_required" && !isAuthPath(path)) {
+      if (!window.location.pathname.endsWith("/set-password.html")) {
+        window.location.href = "/set-password.html";
+      }
+      throw new Error("password_setup_required");
+    }
+
+    if (!resp.ok) {
+      const err = new Error(errorMessageFromBody(body, resp.status));
+      err.status = resp.status;
+      err.body = body;
+      reportApiError(path, {
+        method,
+        status: resp.status,
+        body,
+        message: err.message,
+      });
+      logApiFailure(path, method, err, logOptions);
+      throw err;
+    }
+    if (useGetCache && cacheTtlMs && requestCacheGeneration === apiGetCacheGeneration) {
+      writeApiGetCache(path, body, cacheTtlMs);
+    }
+    logApiSuccess(path, method, body, logOptions);
+    return body;
+  };
+
+  if (!useGetCache) return run();
+  const promise = run().finally(() => apiGetInFlight.delete(apiCacheKey(path)));
+  apiGetInFlight.set(apiCacheKey(path), promise);
+  return cloneApiCacheValue(await promise);
+}
+
+async function prefetchGet(path, options = {}) {
+  const cacheTtlMs = Number(options.cacheTtlMs || options.ttlMs || API_PREFETCH_DEFAULT_TTL_MS);
+  const cached = readApiGetCache(path);
+  if (cached !== null) return cached;
+  return request(path, { ...options, method: "GET", cacheTtlMs });
 }
 
 function filenameFromContentDisposition(value) {
@@ -189,6 +440,7 @@ async function download(path, fallbackFilename = "download") {
       error_code: "network_error",
       message: err.message,
     });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
   }
 
@@ -211,6 +463,7 @@ async function download(path, fallbackFilename = "download") {
       body,
       message: err.message,
     });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
   }
 
@@ -227,26 +480,30 @@ async function download(path, fallbackFilename = "download") {
     URL.revokeObjectURL(objectUrl);
     link.remove();
   }, 1000);
+  apiUserLog(`Nedladdning klar: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
   return { filename };
 }
 
 const api = {
   get: (path, options = {}) => request(path, options),
   post: (path, data, options = {}) =>
-    request(path, { ...options, method: "POST", body: JSON.stringify(data) }),
+    request(path, { ...options, method: "POST", body: JSON.stringify(data) }).finally(() => clearApiGetCache()),
   postForm: (path, formData, options = {}) =>
-    request(path, { ...options, method: "POST", body: formData }),
+    request(path, { ...options, method: "POST", body: formData }).finally(() => clearApiGetCache()),
   postFile: (path, file, options = {}) => {
     const headers = {
       "Content-Type": file?.type || "application/octet-stream",
       ...(options.headers || {}),
     };
-    return request(path, { ...options, method: "POST", headers, body: file });
+    return request(path, { ...options, method: "POST", headers, body: file }).finally(() => clearApiGetCache());
   },
   put: (path, data, options = {}) =>
-    request(path, { ...options, method: "PUT", body: JSON.stringify(data) }),
-  del: (path, options = {}) => request(path, { ...options, method: "DELETE" }),
+    request(path, { ...options, method: "PUT", body: JSON.stringify(data) }).finally(() => clearApiGetCache()),
+  del: (path, options = {}) => request(path, { ...options, method: "DELETE" }).finally(() => clearApiGetCache()),
+  prefetchGet,
+  clearGetCache: clearApiGetCache,
   download,
 };
 
 window.api = api;
+window.reportApiError = reportApiError;

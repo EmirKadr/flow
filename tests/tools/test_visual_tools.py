@@ -63,6 +63,8 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     html = (ROOT / "app" / "frontend" / "historik.html").read_text(encoding="utf-8")
     analytics = (ROOT / "app" / "frontend" / "js" / "analytics.js").read_text(encoding="utf-8")
     api = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
 
     assert 'data-history-mode="history"' in html
     assert 'data-history-mode="analysis"' in html
@@ -72,6 +74,15 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderErrorDashboard" in analytics
     assert 'const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";' in api
     assert "function reportApiError" in api
+    assert "window.reportApiError = reportApiError;" in api
+    assert "logApiSuccess" in api
+    assert "logApiFailure" in api
+    assert "apiResultSummary" in api
+    assert "window.reportApiError?.(path" in allocation
+    assert "appendAppLog(message" in common
+    assert "APP_LOG_STORAGE_KEY" in common
+    assert "window.flowLog" in common
+    assert "clearAppLog" in common
     assert "pathWithoutQuery(path)" in api
 
 
@@ -204,6 +215,7 @@ def test_testprotocol_documents_agent_test_tools():
         "python desktop\\main.py --smoke-test",
         "python -m tools.visual_smoke",
         "python -m tools.interactive_e2e",
+        "python -m tools.performance_benchmark",
         "python -m tools.desktop_shell_screens",
         "python -m tools.desktop_app_probe",
         "python -m tools.release_check",
@@ -381,6 +393,7 @@ def test_local_bootstrap_upgrades_existing_persons_table(tmp_path):
         ).fetchone()[0]
 
     assert "has_fixed_schedule" in columns
+    assert "noman" in columns
     assert fixed_schedule == 1
 
 
@@ -797,6 +810,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "/api/persons/import-rows" in persons_js
     assert "openBulkPersonsModal" in persons_js
     assert re.search(r'key:\s*"name",\s*label:\s*"Namn",\s*required:\s*true', persons_js)
+    assert re.search(r'key:\s*"noman",\s*label:\s*"NoMan",\s*required:\s*false', persons_js)
     assert re.search(r'key:\s*"home_area",\s*label:\s*"[^"]+",\s*required:\s*false', persons_js)
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
     assert 'api.download("/api/persons/import-template", "personer-importmall.xlsx")' in persons_js

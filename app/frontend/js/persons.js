@@ -8,7 +8,7 @@ let persons = [];
 let currentUser = null;
 let sortKey = "sort_order";
 let sortAsc = true;
-const filters = { name: "", home_area: "", home_activity: "", sort_order: "" };
+const filters = { name: "", noman: "", home_area: "", home_activity: "", sort_order: "" };
 const personUndoStack = [];
 const PERSON_UNDO_LIMIT = 50;
 let personUndoBusy = false;
@@ -90,6 +90,7 @@ function escapeHtml(s) {
 function passesFilter(p) {
   const match = (val, q) => !q || String(val ?? "").toLowerCase().includes(q.toLowerCase());
   if (!match(p.name, filters.name)) return false;
+  if (!match(p.noman, filters.noman)) return false;
   if (!match(areaName(p.home_area_id), filters.home_area)) return false;
   if (!match(activityLabel(p.home_activity_id), filters.home_activity)) return false;
   if (!match(p.sort_order, filters.sort_order)) return false;
@@ -99,6 +100,7 @@ function passesFilter(p) {
 function sortKeyValue(p) {
   switch (sortKey) {
     case "name": return (p.name || "").toLowerCase();
+    case "noman": return (p.noman || "").toLowerCase();
     case "home_area": return areaName(p.home_area_id).toLowerCase();
     case "home_activity": return activityLabel(p.home_activity_id).toLowerCase();
     case "sort_order": return p.sort_order;
@@ -121,6 +123,7 @@ function snapshotPerson(person) {
   return {
     id: person.id,
     name: person.name,
+    noman: person.noman ?? null,
     home_area_id: person.home_area_id ?? null,
     home_activity_id: person.home_activity_id ?? null,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -133,6 +136,7 @@ function snapshotPerson(person) {
 function personPayloadFromSnapshot(person) {
   return {
     name: person.name,
+    noman: person.noman ?? null,
     home_area_id: person.home_area_id,
     home_activity_id: person.home_activity_id,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -177,7 +181,7 @@ function installPersonUndoShortcut() {
   });
 }
 
-function editText(td, person, field, currentValue) {
+function editText(td, person, field, currentValue, label = field) {
   if (td.querySelector("input,select")) return;
   td.classList.add("editing");
   const input = document.createElement("input");
@@ -197,9 +201,10 @@ function editText(td, person, field, currentValue) {
     if (commit && newValue !== (currentValue || "")) {
       try {
         const before = snapshotPerson(person);
-        await savePersonField(person.id, { [field]: newValue });
-        pushPersonUndo("namn", before);
-        person[field] = newValue;
+        const value = field === "noman" && !newValue ? null : newValue;
+        await savePersonField(person.id, { [field]: value });
+        pushPersonUndo(label, before);
+        person[field] = value;
       } catch (e) {}
     }
     await loadPersons();
@@ -304,8 +309,15 @@ function renderRows() {
     const tdName = document.createElement("td");
     if (canEditPersons) tdName.className = "editable";
     tdName.textContent = p.name;
-    if (canEditPersons) tdName.addEventListener("click", () => editText(tdName, p, "name", p.name));
+    if (canEditPersons) tdName.addEventListener("click", () => editText(tdName, p, "name", p.name, "namn"));
     tr.appendChild(tdName);
+
+    // NoMan
+    const tdNoman = document.createElement("td");
+    if (canEditPersons) tdNoman.className = "editable";
+    tdNoman.textContent = p.noman || "";
+    if (canEditPersons) tdNoman.addEventListener("click", () => editText(tdNoman, p, "noman", p.noman || "", "NoMan"));
+    tr.appendChild(tdNoman);
 
     // Hemområde
     const tdArea = document.createElement("td");
@@ -467,6 +479,7 @@ function openBulkPersonsModal() {
     columns: [
       ...businessColumn,
       { key: "name", label: "Namn", required: true },
+      { key: "noman", label: "NoMan", required: false },
       { key: "home_area", label: "Hemområde", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
       { key: "home_activity", label: "Huvudaktivitet", required: false, type: "select", options: activitiesActive.map((activity) => ({ value: activity.label, label: activity.label })) },
       { key: "sort_order", label: "Sortering", required: false, type: "number" },
@@ -528,6 +541,8 @@ function openModal(person) {
       ${businessOptions(selectedBusinessId, isEdit)}
       <label>Namn</label>
       <input id="m-name" value="${escapeHtml(person?.name || "")}" />
+      <label>NoMan</label>
+      <input id="m-noman" value="${escapeHtml(person?.noman || "")}" />
       <label>Hemområde</label>
       <select id="m-area">
         <option value="">(inget)</option>
@@ -551,6 +566,7 @@ function openModal(person) {
   document.getElementById("m-save").addEventListener("click", async () => {
     const payload = {
       name: document.getElementById("m-name").value.trim(),
+      noman: document.getElementById("m-noman").value.trim() || null,
       home_area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       home_activity_id: document.getElementById("m-activity").value ? Number(document.getElementById("m-activity").value) : null,
       sort_order: Number(document.getElementById("m-sort").value) || 0,

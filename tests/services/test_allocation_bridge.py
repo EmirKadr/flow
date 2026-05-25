@@ -683,6 +683,28 @@ def test_run_flow_handler_stores_artifacts(monkeypatch):
     assert session["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S1"
 
 
+def test_run_flow_handler_returns_friendly_error_without_trace(monkeypatch):
+    def handler(_files, _params):
+        raise ValueError("No objects to concatenate")
+
+    monkeypatch.setattr(
+        bridge,
+        "_native_flows",
+        lambda: SimpleNamespace(FLOW_BY_ID={"forecast": {"handler": handler}}),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        bridge.run_flow_handler("forecast", {}, {})
+
+    detail = exc_info.value.detail
+    assert exc_info.value.status_code == 400
+    assert detail["error_code"] == "allocation_flow_failed"
+    assert detail["error_type"] == "ValueError"
+    assert "inga rader" in detail["message"]
+    assert detail["technical_message"] == "No objects to concatenate"
+    assert "trace" not in detail
+
+
 def test_ytgenerering_attaches_forecast_dataframe_fast_path():
     pd = pytest.importorskip("pandas")
     user = business_user(1, 10)

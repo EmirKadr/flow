@@ -7,6 +7,14 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-25] feature | NoMan pa personer
+
+Personregistret har fatt ett frivilligt `NoMan`-falt for WMS-anvandarnamn per person. Faltet syns och kan filtreras/sorteras i Personer, kan redigeras inline, finns i Ny person, direktimport och Excelmallen, och sparas via `/api/persons`; det anvands inte i planering eller forecast annu.
+
+## [2026-05-25] fix | Toastar och Bearbeta-fel syns i loggar
+
+Dokument-loggen i sidebaren fylls nu av alla toastar, inklusive lyckade, varningar och fel, och ovantade klientfel hamnar dar direkt. Bearbetas egna API-wrapper rapporterar nu fel till samma `client_error`-audit som resten av appen, och `allocation_flow/flow_failed` sparar statuskod, felkod, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och filterradantal utan filnamn eller inskickade parametervarden. Forecast-felet `No objects to concatenate` visas som att flodet fick noll rader att sammanstalla efter filer/filter.
+
 ## [2026-05-25] change | Super User och demo kan personsortera alla synliga personer
 
 Personsorteringen i Bemanning/Oversikt behaller kravet `personSortOrder=edit`, men Super User och demo ar inte langre lasta till eget anvandaromrade. De kan dra och spara sortering for alla synliga aktiva personer; vanliga admin/bemanningsansvariga ar fortsatt begransade till eget hemomrade.
@@ -32,6 +40,10 @@ Sidebaren ar nu en fast vansterpanel i webb och desktop-frontend. Huvudytan rese
 Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, cachar fardigfiltrerade lagerplatser per `location`-filversion, filtrerar lagerplatser pa `Typ=U`, UTL1-UTL652, minst 6 tecken och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Ny `location`-uppladdning raderar den gamla verksamhetsfilen, rensar location-cachen och forvarmer den nya ytlistan direkt. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
 
 Allokering anvander nu samma filversionsprincip for snabb upprepad korning: hela outputpaketet med allokerade rader, near-miss, refill och pallplatser cachas per orders-/buffert-/saldo-/item-version. Omradesfiltren for GG/MG sparar ocksa filtrerade kopior per originalfilversion och regel, sa samma resultat ateranvands utan att berakningsresultatet andras.
+
+Synliga vyer for aktuell anvandare forvarms nu gradvis i frontenden via en idle-ko och en kort GET-cache som sparas i sessionen, sa uppvarmningen finns kvar efter sidbyte i samma flik. Uppladdningar har dessutom en separat metadata-cache for IndexedDB-filerna, sa vyn kan visa filrutor direkt och hamta stora blobbar/coredata i bakgrunden. POST/PUT/DELETE rensar GET-cachen, och sena bakgrundssvar ignoreras efter en sadan andring, sa ny uppladdad/raderad data tvingar ny hamtning.
+
+`tools.performance_benchmark` mater nu kall/varm sidvaxling, bakgrunds-prefetch, Uppladdningar, omradestoggle, schema select/drag/copy, Dela-korningar och Excel-importer. Rapporten sparas som JSON under `artifacts/performance/` for fore/efter-jamforelse nar cache eller UX-hastighet andras.
 
 ## [2026-05-25] feature | Demo-läge med per-session SQLite-sandbox
 
@@ -287,3 +299,7 @@ Direktimporttabellerna for Personer, Aktiviteter och Anvandare visar nu `Obligat
 ## [2026-05-25] fix | Rensa alla bevarar karnfiler
 
 `Rensa alla` i Uppladdningar tar nu bara bort vanliga lokala filval. Skyddade karnposter som `artikel_max.csv`, coredata-nycklar och KPI-mal bevaras i IndexedDB/serverstatus, och anvandartexten sager att karnfiler ligger kvar.
+
+## [2026-05-25] polish | Synlig dokumentlogg for fler floden
+
+Dokumentloggen i sidebaren sparas nu i browsersessionen, foljer med mellan vyer och kan rensas. `api.js` loggar anvandarnara success/failure for mutationer och nedladdningar, bakgrundsladdning varnar vid misslyckad forvarmning och Bearbeta-floden med egen fetch-wrapper skriver tydligare lyckat-/felstatus. Agents/wiki/testprotokoll har uppdaterats sa nya funktioner maste ta med synlig loggning, audit och teststod.

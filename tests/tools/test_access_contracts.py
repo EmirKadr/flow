@@ -159,3 +159,24 @@ def test_activities_route_contract_is_canonical_with_legacy_redirect_page():
     assert 'url=/aktiviteter.html' in legacy_html
     assert "window.location.replace" in legacy_html
     assert "/aktiviteter.html?legacy=stallen" in legacy_html
+
+
+def test_frontend_prefetch_cache_is_available_for_visible_pages_and_uploads():
+    api_js = read_frontend("js/api.js")
+    common = read_frontend("js/common.js")
+    allocation = read_frontend("js/allocation_tools.js")
+
+    assert "prefetchGet" in api_js
+    assert "clearGetCache" in api_js
+    assert "sessionStorage" in api_js
+    assert "flow-api-get-cache-v1" in api_js
+    assert "enqueueVisiblePagePrefetches" in common
+    assert "scheduleNextBackgroundPrefetch" in common
+    assert "waitForBackgroundPrefetchIdle" in common
+    assert "window.flowBackgroundPrefetch" in common
+    assert "warmSharedAllocationMetadataCache" in common
+    assert "/api/allokering/flows" in common
+    assert "/api/coredata/files" in common
+    assert "flow-allocation-file-metadata-v1" in allocation
+    assert "restoreAllocationBootData" in allocation
+    assert "Promise.all([" in allocation

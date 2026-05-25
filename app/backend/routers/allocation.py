@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
@@ -40,6 +42,8 @@ BUSINESS_COREDATA_FLOW_DEFAULTS = {
 }
 PROCESS_MATRIX_HIDDEN_FLOW_IDS = {"observations-update", "observations-sync", "update-check", "split-values"}
 logger = logging.getLogger(__name__)
+ALLOCATION_FLOW_ERROR_CODE = "allocation_flow_failed"
+ALLOCATION_FLOW_PATH_PREFIX = "/api/allokering/flow"
 
 
 class AllocationProcessMatrixUpdate(BaseModel):
@@ -69,7 +73,14 @@ def _flow_audit_payload(
     *,
     result: dict | None = None,
     error_type: str | None = None,
+    error_code: str | None = None,
+    status_code: int | None = None,
+    message: str | None = None,
+    technical_message: str | None = None,
     area_focus: str | None = None,
+    business_code: str | None = None,
+    filter_log: list[str] | None = None,
+    path: str | None = None,
 ) -> dict:
     payload = {
         "flow_id": flow_id,
@@ -78,11 +89,25 @@ def _flow_audit_payload(
     }
     if area_focus:
         payload["area_focus"] = area_focus
+    if business_code:
+        payload["business_code"] = business_code
+    if filter_log:
+        payload["filter_log"] = [_clean_audit_text(line, max_length=220) for line in filter_log[:8]]
+    if path:
+        payload["path"] = path
     if result is not None:
         payload["table_count"] = len(result.get("tables") or [])
         payload["has_session"] = bool(result.get("session_id"))
     if error_type:
         payload["error_type"] = error_type
+    if error_code:
+        payload["error_code"] = error_code
+    if status_code is not None:
+        payload["status_code"] = status_code
+    if message:
+        payload["message"] = _clean_audit_text(message)
+    if technical_message and technical_message != message:
+        payload["technical_message"] = _clean_audit_text(technical_message)
     return payload
 
 
@@ -92,6 +117,7 @@ def _upload_failure_payload(
     stage: str,
     error_type: str,
     status_code: int | None = None,
+    message: str | None = None,
 ) -> dict:
     payload = {
         "stage": stage,
@@ -101,7 +127,59 @@ def _upload_failure_payload(
         payload["flow_id"] = flow_id
     if status_code is not None:
         payload["status_code"] = status_code
+    if message:
+        payload["message"] = _clean_audit_text(message)
     return payload
+
+
+def _clean_audit_text(value: Any, *, max_length: int = 500) -> str | None:
+    if value is None:
+        return None
+    text = str(value).replace("\r", " ").replace("\n", " ").strip()
+    if not text:
+        return None
+    text = re.sub(r"[A-Za-z]:\\[^\s]+", "[path]", text)
+    text = re.sub(r"/(?:[^/\s]+/){2,}[^\s]+", "[path]", text)
+    return text[: max_length - 3] + "..." if len(text) > max_length else text
+
+
+def _detail_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _clean_audit_text(value)
+    if isinstance(value, dict):
+        for key in ("message", "detail", "error"):
+            cleaned = _clean_audit_text(value.get(key))
+            if cleaned:
+                return cleaned
+        return None
+    return _clean_audit_text(value)
+
+
+def _exception_audit_fields(exc: Exception) -> dict[str, Any]:
+    status_code = getattr(exc, "status_code", None)
+    detail = getattr(exc, "detail", None)
+    error_type = type(exc).__name__
+    error_code = None
+    message = _clean_audit_text(str(exc))
+    technical_message = None
+
+    if isinstance(detail, dict):
+        error_type = _clean_audit_text(detail.get("error_type"), max_length=120) or error_type
+        error_code = _clean_audit_text(detail.get("error_code") or detail.get("code"), max_length=120)
+        message = _detail_text(detail) or message
+        technical_message = _clean_audit_text(detail.get("technical_message"))
+    elif detail is not None:
+        message = _detail_text(detail) or message
+
+    return {
+        "error_type": error_type,
+        "error_code": error_code or (ALLOCATION_FLOW_ERROR_CODE if status_code else None),
+        "status_code": status_code,
+        "message": message,
+        "technical_message": technical_message,
+    }
 
 
 def _audit_allocation_event(
@@ -377,6 +455,7 @@ async def detect(
                 stage="save_upload",
                 error_type=type(exc).__name__,
                 status_code=getattr(exc, "status_code", None),
+                message=str(exc),
             ),
         )
         raise
@@ -387,7 +466,7 @@ async def detect(
             db,
             user,
             action="detect_failed",
-            payload=_upload_failure_payload(stage="detect", error_type=type(exc).__name__),
+            payload=_upload_failure_payload(stage="detect", error_type=type(exc).__name__, message=str(exc)),
         )
         file_type = None
     finally:
@@ -419,6 +498,7 @@ async def update_observations(
                 stage="save_upload",
                 error_type=type(exc).__name__,
                 status_code=getattr(exc, "status_code", None),
+                message=str(exc),
             ),
         )
         raise
@@ -441,6 +521,7 @@ async def update_observations(
                 stage="process_upload",
                 error_type=type(exc).__name__,
                 status_code=getattr(exc, "status_code", None),
+                message=str(exc),
             ),
         )
         raise
@@ -501,9 +582,13 @@ async def run_flow(
                 stage="parse_upload",
                 error_type=type(exc).__name__,
                 status_code=getattr(exc, "status_code", None),
+                message=str(exc),
             ),
         )
         raise
+    business_code = None
+    area_filter_log: list[str] = []
+    flow_path = f"{ALLOCATION_FLOW_PATH_PREFIX}/{flow_id}"
     try:
         process_matrix = _stored_process_matrix(db)
         if area_focus and not bridge.process_flow_visible(flow_id, area_focus, process_matrix):
@@ -535,15 +620,37 @@ async def run_flow(
             db,
             user,
             action="flow_run",
-            payload=_flow_audit_payload(flow_id, files, params, result=result, area_focus=area_focus),
+            payload=_flow_audit_payload(
+                flow_id,
+                files,
+                params,
+                result=result,
+                area_focus=area_focus,
+                business_code=business_code,
+                filter_log=area_filter_log,
+            ),
         )
         return result
     except Exception as exc:
+        error_fields = _exception_audit_fields(exc)
         _audit_allocation_event(
             db,
             user,
             action="flow_failed",
-            payload=_flow_audit_payload(flow_id, files, params, error_type=type(exc).__name__, area_focus=area_focus),
+            payload=_flow_audit_payload(
+                flow_id,
+                files,
+                params,
+                error_type=error_fields["error_type"],
+                error_code=error_fields["error_code"],
+                status_code=error_fields["status_code"],
+                message=error_fields["message"],
+                technical_message=error_fields["technical_message"],
+                area_focus=area_focus,
+                business_code=business_code,
+                filter_log=area_filter_log,
+                path=flow_path,
+            ),
         )
         raise
     finally:
