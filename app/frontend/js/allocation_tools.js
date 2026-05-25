@@ -1749,7 +1749,7 @@ window.addEventListener("flow:uploadsCleared", async () => {
   if (!root || !allocationState.user) return;
   allocationState.files = await loadStoredAllocationFiles();
   await loadAllocationCoreDataStatus();
-  allocationState.status = "Alla filval rensade.";
+  allocationState.status = "Vanliga filval rensade. Kärnfiler ligger kvar.";
   allocationState.autoStatus = "";
   allocationState.lastBufferSignature = "";
   renderAllocationPage();

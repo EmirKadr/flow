@@ -105,6 +105,70 @@ def seed_allocation_file_pool(page) -> None:
     )
 
 
+def seed_upload_store(page, db_name: str, entries: list[dict]) -> None:
+    page.evaluate(
+        """async ({ dbName, entries }) => {
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open(dbName, 1);
+            request.onupgradeneeded = () => {
+              const db = request.result;
+              if (!db.objectStoreNames.contains("files")) {
+                db.createObjectStore("files", { keyPath: "key" });
+              }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction("files", "readwrite");
+            const store = tx.objectStore("files");
+            for (const entry of entries) {
+              const blob = new Blob([entry.content || "x"], { type: entry.type || "text/csv" });
+              store.put({
+                key: entry.key,
+                name: entry.name || `${entry.key}.csv`,
+                size: blob.size,
+                type: blob.type,
+                lastModified: entry.lastModified || 1,
+                blob,
+              });
+            }
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          db.close();
+        }""",
+        {"dbName": db_name, "entries": entries},
+    )
+
+
+def upload_store_keys(page, db_name: str) -> list[str]:
+    return page.evaluate(
+        """async (dbName) => {
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open(dbName, 1);
+            request.onupgradeneeded = () => {
+              const db = request.result;
+              if (!db.objectStoreNames.contains("files")) {
+                db.createObjectStore("files", { keyPath: "key" });
+              }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const keys = await new Promise((resolve, reject) => {
+            const tx = db.transaction("files", "readonly");
+            const request = tx.objectStore("files").getAllKeys();
+            request.onsuccess = () => resolve(request.result.map(String).sort());
+            request.onerror = () => reject(request.error);
+          });
+          db.close();
+          return keys;
+        }""",
+        db_name,
+    )
+
+
 def mock_forecast_coredata(page) -> None:
     uploaded = {
         key: {
@@ -131,6 +195,39 @@ def mock_forecast_coredata(page) -> None:
             body=json.dumps({"files": uploaded}, ensure_ascii=False),
         ),
     )
+
+
+def test_clear_all_uploads_keeps_core_file_entries(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        login_admin(page, local_allocation_server)
+        seed_upload_store(
+            page,
+            "flow-allokering-files",
+            [
+                {"key": "orders", "name": "orders.csv"},
+                {"key": "buffer", "name": "buffer.csv"},
+                {"key": "max_csv", "name": "artikel_max.csv"},
+                {"key": "item_option", "name": "item_option.csv"},
+            ],
+        )
+        seed_upload_store(
+            page,
+            "flow-productivity-files",
+            [
+                {"key": "pick", "name": "v_ask_pick_log_full.csv"},
+                {"key": "kpi", "name": "v_ask_kpi_target.csv"},
+            ],
+        )
+
+        assert page.evaluate("window.clearAllUploadedFiles({ confirmUser: false })") is True
+
+        assert upload_store_keys(page, "flow-allokering-files") == ["item_option", "max_csv"]
+        assert upload_store_keys(page, "flow-productivity-files") == ["kpi"]
+        expect(page.locator(".toast.success").last).to_contain_text("Kärnfiler ligger kvar")
+    finally:
+        context.close()
 
 
 def test_split_values_result_headers_copy_whole_columns(local_allocation_server, chromium_browser):

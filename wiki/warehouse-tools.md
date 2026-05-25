@@ -25,7 +25,7 @@ Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar fo
 | Drag-drop | Drar filer till panel/slot/flode | Samma som Välj filer, med fallback till slot | `routeAllocationFiles` | Om flera filer okanda visas toast "Kunde inte sortera". |
 | Välj per slot | Valjer fil for en specifik slot | Forsoker detektera men fallbackar till sloten | `fallbackSlotKey` | Bra nar automatisk identifiering missar. |
 | X per slot | Rensar slot | Tar bort lokal IndexedDB-post | `deleteAllocationFile` | Karnfil som `artikel_max.csv` kan visas utan att vara uppladdad. |
-| Rensa alla | Rensar alla lokala uppladdningar | Rensar både allokerings- och produktivitetsstores | `clearAllUploadedFiles` | Bekraftelse visas om anropas via gemensam funktion. |
+| Rensa alla | Rensar vanliga lokala filval | Tar bort icke-karnfiler ur allokerings- och produktivitetsstores men bevarar karnfiler som `artikel_max.csv`, coredata och KPI-mal | `clearAllUploadedFiles` | Bekraftelse sager att karnfiler ligger kvar. |
 | Uppladdningsbadge | Visar antal nya filer | Lagrar notice i sessionStorage | `allocationUploadActivity` | Badge rensas nar Uppladdningar oppnas. |
 
 ## Karnfiler i coredata
@@ -37,6 +37,8 @@ Allokering anvander verksamhetens `item_option`-karnfil nar anvandaren inte ladd
 Forecast anvander verksamhetens karnfiler `custom`, `item`, `item_alias`, `dimension`, `pallet_type` och `item_option` som standard. Ytgenerering anvander verksamhetens `location` som lagerplatsunderlag. Anvandaren kan fortfarande ladda upp egna lokala filer for en korning nar flodet har en motsvarande filslot, men karnfilen ligger kvar som verksamhetens fallback.
 
 Nar en slot redan har en verksamhetens karnfil, till exempel `item_option` eller `artikel_max.csv`, visas den i Karnfiler i stallet for att dubbelvisas i Filer. Om anvandaren laddar upp en lokal override i sessionen visas sloten i Filer igen.
+
+`Rensa alla` i Uppladdningar tar bara bort vanliga lokala filval. Permanenta karnfiler och skyddade karnliknande poster ligger kvar, sa anvandaren kan rensa order-/buffert-/loggfiler utan att tappa verksamhetens standardunderlag.
 
 ## Bearbeta-floden
 

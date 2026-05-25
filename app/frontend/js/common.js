@@ -5,9 +5,24 @@ const SIDEBAR_USER_CACHE_KEY = "flow-sidebar-user";
 const SIDEBAR_LAYOUT_CACHE_KEY = "flow-sidebar-layout";
 const ROLE_VIEW_ACCESS_CACHE_KEY = "flow-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "flow-allocation-upload-notice";
+const ALLOCATION_CORE_UPLOAD_KEYS = [
+  "article_max",
+  "custom",
+  "dimension",
+  "item",
+  "item_alias",
+  "item_attribute",
+  "item_option",
+  "kpi",
+  "kpi_target_rule",
+  "location",
+  "location_cost",
+  "max_csv",
+  "pallet_type",
+];
 const UPLOAD_FILE_STORES = [
-  { dbName: "flow-allokering-files", storeName: "files" },
-  { dbName: "flow-productivity-files", storeName: "files" },
+  { dbName: "flow-allokering-files", storeName: "files", protectedKeys: ALLOCATION_CORE_UPLOAD_KEYS },
+  { dbName: "flow-productivity-files", storeName: "files", protectedKeys: ["kpi"] },
 ];
 const SHARED_ALLOCATION_API = "/api/allokering";
 const SHARED_ALLOCATION_DB_NAME = "flow-allokering-files";
@@ -1665,8 +1680,9 @@ function clearAllocationUploadNotice() {
   updateAllocationUploadIndicator();
 }
 
-function clearUploadIndexedDbStore(dbName, storeName) {
+function clearUploadIndexedDbStore(dbName, storeName, { protectedKeys = [] } = {}) {
   return new Promise((resolve, reject) => {
+    const protectedKeySet = new Set((protectedKeys || []).map((key) => String(key)));
     const request = indexedDB.open(dbName, 1);
     request.onupgradeneeded = () => {
       const database = request.result;
@@ -1676,14 +1692,34 @@ function clearUploadIndexedDbStore(dbName, storeName) {
       const database = request.result;
       if (!database.objectStoreNames.contains(storeName)) {
         database.close();
-        resolve();
+        resolve({ deleted: 0, kept: 0 });
         return;
       }
+      let deleted = 0;
+      let kept = 0;
       const tx = database.transaction(storeName, "readwrite");
-      tx.objectStore(storeName).clear();
+      const store = tx.objectStore(storeName);
+      const cursorRequest = store.openCursor();
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+        const key = String(cursor.key ?? cursor.value?.key ?? "");
+        if (protectedKeySet.has(key)) {
+          kept += 1;
+          cursor.continue();
+          return;
+        }
+        cursor.delete();
+        deleted += 1;
+        cursor.continue();
+      };
+      cursorRequest.onerror = () => {
+        database.close();
+        reject(cursorRequest.error);
+      };
       tx.oncomplete = () => {
         database.close();
-        resolve();
+        resolve({ deleted, kept });
       };
       tx.onerror = () => {
         database.close();
@@ -1815,11 +1851,27 @@ async function saveSharedAllocationFiles(files) {
 }
 
 async function clearAllUploadedFiles({ confirmUser = true } = {}) {
-  if (confirmUser && !confirm("Rensa alla valda filer i Uppladdningar?")) return false;
-  await Promise.all(UPLOAD_FILE_STORES.map((item) => clearUploadIndexedDbStore(item.dbName, item.storeName)));
+  if (confirmUser && !confirm("Rensa alla vanliga filval i Uppladdningar? Kärnfiler ligger kvar.")) return false;
+  const results = await Promise.all(
+    UPLOAD_FILE_STORES.map((item) => clearUploadIndexedDbStore(
+      item.dbName,
+      item.storeName,
+      { protectedKeys: item.protectedKeys || [] },
+    )),
+  );
+  const deleted = results.reduce((sum, item) => sum + (Number(item?.deleted) || 0), 0);
+  const kept = results.reduce((sum, item) => sum + (Number(item?.kept) || 0), 0);
   clearAllocationUploadNotice();
-  window.dispatchEvent(new CustomEvent("flow:uploadsCleared"));
-  showToast("Filvalen är rensade.", "success", 2500);
+  window.dispatchEvent(new CustomEvent("flow:uploadsCleared", {
+    detail: { deleted, keptProtected: kept },
+  }));
+  showToast(
+    deleted
+      ? "Vanliga filval är rensade. Kärnfiler ligger kvar."
+      : "Inga vanliga filval att rensa. Kärnfiler ligger kvar.",
+    "success",
+    3000,
+  );
   return true;
 }
 

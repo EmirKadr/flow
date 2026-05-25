@@ -988,11 +988,16 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
 
     assert "DATABASE_ICON" in common
     assert "ALLOCATION_UPLOAD_NOTICE_KEY" in common
+    assert "ALLOCATION_CORE_UPLOAD_KEYS" in common
     assert "SHARED_ALLOCATION_FILE_TYPE_KEYS" in common
     assert "SHARED_ALLOCATION_SLOT_MIRRORS" in common
     assert "productivity_pallet" in common
     assert "saveSharedAllocationFiles" in common
     assert "storeSharedAllocationFile" in common
+    assert "protectedKeys" in common
+    assert "store.openCursor()" in common
+    assert "cursor.delete()" in common
+    assert "Kärnfiler ligger kvar" in common
     assert 'new CustomEvent("flow:allocationFilesChanged"' in common
     assert "window.sharedAllocationUploads" in common
     assert "addAllocationUploadNotice(count)" in common

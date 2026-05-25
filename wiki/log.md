@@ -283,3 +283,7 @@ Bearbeta skickar nu aktuell omradestoggle till `/api/allokering/flow/*`. Backend
 ## [2026-05-25] polish | Markerar krav i Flera nya-dialoger
 
 Direktimporttabellerna for Personer, Aktiviteter och Anvandare visar nu `Obligatoriskt` eller `Frivilligt` i varje kolumnrubrik. Den gemensamma bulkimportkomponenten markerar omarkta kolumner som frivilliga som fallback, sa framtida `Flera nya ...`-dialoger inte blir utan faltstatus.
+
+## [2026-05-25] fix | Rensa alla bevarar karnfiler
+
+`Rensa alla` i Uppladdningar tar nu bara bort vanliga lokala filval. Skyddade karnposter som `artikel_max.csv`, coredata-nycklar och KPI-mal bevaras i IndexedDB/serverstatus, och anvandartexten sager att karnfiler ligger kvar.
