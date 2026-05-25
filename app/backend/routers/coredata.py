@@ -19,6 +19,7 @@ from ..coredata_service import (
     CoreDataError,
     build_coredata_status,
     classify_coredata_file,
+    find_coredata_file,
     save_coredata_file,
 )
 from ..deps import get_db, require_allocation_tools_user, require_view_access
@@ -123,6 +124,22 @@ def _save_article_max_file(*, source_path: Path, filename: str | None, business_
         prefix="artikel_max",
         path=final_path,
     )
+
+
+def _warm_coredata_caches(file_type: str, business_code: str) -> None:
+    if file_type != "location":
+        return
+    try:
+        _engine_module, flows_module = bridge.require_available()
+        clear_cache = getattr(flows_module, "clear_prepared_location_cache", None)
+        if callable(clear_cache):
+            clear_cache()
+        location_path = find_coredata_file("location", business_code=business_code)
+        warm_cache = getattr(flows_module, "warm_prepared_locations", None)
+        if callable(warm_cache):
+            warm_cache(location_path)
+    except Exception:
+        logger.warning("Could not warm location coredata cache.", exc_info=True)
 
 
 async def _save_raw_upload_temp(request: Request, filename: str | None) -> Path:
@@ -248,6 +265,7 @@ async def upload_coredata_file_raw(
         )
         raise
 
+    _warm_coredata_caches(file_type, business_code)
     _audit_coredata_file(db, user, action="upload", business_code=business_code, file_type=file_type)
     return {
         "saved": [saved],

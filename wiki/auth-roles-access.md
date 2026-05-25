@@ -44,7 +44,7 @@ Utöver rollerna finns det fasta `demo`-kontot (username = `demo`, admin-roll mo
 
 ## Vyatkomst
 
-`common.js` och backendens `require_view_access` anvander samma koncept: varje roll kan ha `none`, `view` eller `edit` per vy. Vybehorigheter ar globala for rollen och galler over verksamheter. Super user kan fa extra vyer beroende pa installning och serverregler.
+`common.js` och backendens `require_view_access` anvander samma koncept: varje roll kan ha `none`, `view` eller `edit` per vy. Vybehorigheter ar globala for rollen och galler over verksamheter. Super User visas i matrisen som last `edit` och har alltid full atkomst via serverregeln. Det fasta demo-kontot far dessutom den virtuella rollen `demo`, sa Demo-kolumnen i matrisen kan ge extra vyatkomst for presentationslaget.
 
 Viktigt for support/chat: att "kontrollera Vybehorigheter" ar inte en atgard en vanlig anvandare kan gora sjalv. Knappen `Vybehorigheter` finns pa Anvandare-sidan och kraver atkomst till skyddade admin/installningsvyer. Svara darfor: "Be en admin eller Super User kontrollera Vybehorigheter", inte "ga till Vybehorigheter" om anvandaren sjalv saknar den atkomsten.
 

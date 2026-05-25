@@ -531,6 +531,25 @@ def test_ytgenerering_flow_consumes_forecast_dataframe_fast_path(monkeypatch, tm
     assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL100", "UTL101"]
 
 
+def test_prepared_location_cache_uses_current_file_version(tmp_path):
+    flows.clear_prepared_location_cache()
+    flows._read_cached.cache_clear()
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL100\tU\t1\n", encoding="utf-8")
+
+    first = flows._read_prepared_locations(location_path)
+
+    location_path.write_text(
+        "Lagerplats\tTyp\tMax pall\nUTL100\tU\t2\nUTL101\tU\t3\n",
+        encoding="utf-8",
+    )
+    second = flows._read_prepared_locations(location_path)
+
+    assert list(first["Lagerplats"]) == ["UTL100"]
+    assert list(second["Lagerplats"]) == ["UTL100", "UTL101"]
+    assert list(second["Max pall"]) == [2, 3]
+
+
 @pytest.mark.filterwarnings(
     "ignore:Workbook contains no default style, apply openpyxl's default:UserWarning:openpyxl.styles.stylesheet"
 )

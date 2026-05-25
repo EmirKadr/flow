@@ -8,6 +8,7 @@ tags: [oversikt, ui, knappar]
 # Oversikt
 
 Kort svar: Oversikt visar Bemanning pa dag-niva i vecka eller manad. En cell representerar en persons dag och skriver/tommer hela dagen enligt personens veckomall.
+Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser veckobytet direkt aven i manadsvy.
 
 ## Knappar och kontroller
 

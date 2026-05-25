@@ -7,13 +7,25 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-25] change | Veckonummer i Oversikt
+
+Oversiktens daghuvuden visar nu datum pa forsta raden och `Vecka XX` pa en mindre rad under. Det galler bade veckovy och manadsvy, sa man ser veckonummer per dagkolumn.
+
+## [2026-05-25] change | Ny anvandare valjer en roll
+
+Skapa-flodet for Anvandare valjer nu exakt en roll: `Ny anvandare` visar ett roll-dropdown och `Flera nya anvandare` visar en `Roll`-kolumn som dropdown. Befintliga anvandare kan fortsatt ha flera roller via redigera-modalen och backend/import kan fortsatt lagra `roles` som lista.
+
+## [2026-05-25] change | Super User och Demo syns i Vybehorigheter
+
+Vybehorigheter-modalens rollmatris visar nu `Super User` som en last `Redigera`-kolumn och `Demo` som en egen sparbar kolumn. Backend accepterar demo-rollens vyatkomst och raknar in den for det fasta `demo`-kontot, medan Super User fortsatt alltid far full atkomst via serverregeln.
+
 ## [2026-05-25] fix | Sidebar ar fast vid skroll
 
 Sidebaren ar nu en fast vansterpanel i webb och desktop-frontend. Huvudytan reserverar sidebar-kolumnen separat, demo-bannern ger fast offset, och bara menylistan inuti sidebaren skrollar nar det finns fler menyval an vad som ryms.
 
 ## [2026-05-25] feature | Forecast och Ytgenerering i Bearbeta
 
-Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, filtrerar lagerplatser pa `Typ=U`, UTL1-UTL652, minst 6 tecken och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
+Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, cachar fardigfiltrerade lagerplatser per `location`-filversion, filtrerar lagerplatser pa `Typ=U`, UTL1-UTL652, minst 6 tecken och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Ny `location`-uppladdning raderar den gamla verksamhetsfilen, rensar location-cachen och forvarmer den nya ytlistan direkt. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
 
 ## [2026-05-25] feature | Demo-läge med per-session SQLite-sandbox
 

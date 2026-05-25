@@ -781,6 +781,19 @@ function styleCell(td, cell) {
 
 
 // ---- VECKO-VY ----
+function renderOverviewDayHeader(th, dayLabel, week) {
+  th.replaceChildren();
+  const dateLabel = document.createElement("span");
+  dateLabel.className = "overview-day-date";
+  dateLabel.textContent = dayLabel;
+
+  const weekLabel = document.createElement("span");
+  weekLabel.className = "overview-week-label";
+  weekLabel.textContent = `Vecka ${week}`;
+
+  th.append(dateLabel, weekLabel);
+}
+
 function buildWeekHeader() {
   const header = document.getElementById("headerRow");
   while (header.children.length > 1) header.removeChild(header.lastChild);
@@ -790,7 +803,7 @@ function buildWeekHeader() {
     const d = new Date(monday);
     d.setUTCDate(monday.getUTCDate() + i);
     const th = document.createElement("th");
-    th.textContent = `${DAY_SHORT[i + 1]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+    renderOverviewDayHeader(th, `${DAY_SHORT[i + 1]} ${d.getUTCDate()}/${d.getUTCMonth() + 1}`, state.week);
     const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
     if (ymd === today) th.classList.add("today-col");
     header.appendChild(th);
@@ -845,7 +858,7 @@ function buildMonthHeader() {
   state.days.forEach((d) => {
     const date = new Date(d.date);
     const th = document.createElement("th");
-    th.textContent = `${DAY_SHORT[d.weekday]} ${date.getUTCDate()}/${date.getUTCMonth() + 1}`;
+    renderOverviewDayHeader(th, `${DAY_SHORT[d.weekday]} ${date.getUTCDate()}/${date.getUTCMonth() + 1}`, d.week);
     if (d.weekday >= 6) th.style.opacity = "0.7";
     if (d.date === today) th.classList.add("today-col");
     header.appendChild(th);

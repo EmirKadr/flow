@@ -24,11 +24,11 @@ from ..settings_service import (
     set_lock_foreign_schedule_cells,
     set_sidebar_layout,
 )
-from ..user_access import BASE_ROLES, ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, normalize_role_view_id
+from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, normalize_role_view_id
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-ROLE_VIEW_ACCESS_ROLES = BASE_ROLES
+ROLE_VIEW_ACCESS_ROLES = ROLE_VIEW_ROLES
 ROLE_VIEW_ACCESS_VIEWS = ROLE_VIEW_IDS
 ROLE_VIEW_ACCESS_LEVELS = set(ROLE_ACCESS_LEVEL_RANK)
 

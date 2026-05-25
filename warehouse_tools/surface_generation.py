@@ -82,6 +82,16 @@ def prepare_locations(locations: pd.DataFrame) -> pd.DataFrame:
     return prepared
 
 
+def _locations_are_prepared(locations: pd.DataFrame) -> bool:
+    return {
+        "Lagerplats",
+        "Typ",
+        "Max pall",
+        "_location_number",
+        "_location_suffix",
+    }.issubset(set(locations.columns))
+
+
 def prepare_forecast(forecast: pd.DataFrame) -> pd.DataFrame:
     shipment_col = _find_col(forecast, ("Sändningsnr", "Sandningsnr", "Grupp", "Shipment"))
     carrier_col = _find_col(forecast, ("Transportör", "Transportor", "Carrier"), required=False)
@@ -116,7 +126,7 @@ def prepare_forecast(forecast: pd.DataFrame) -> pd.DataFrame:
 
 def generate_surface_plan(forecast: pd.DataFrame, locations: pd.DataFrame) -> SurfaceGenerationResult:
     shipments = prepare_forecast(forecast)
-    surfaces = prepare_locations(locations)
+    surfaces = locations if _locations_are_prepared(locations) else prepare_locations(locations)
     if surfaces.empty:
         raise ValueError("Lagerplatser saknar giltiga ytor: Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.")
 

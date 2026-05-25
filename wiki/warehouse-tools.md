@@ -30,7 +30,7 @@ Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar fo
 
 ## Karnfiler i coredata
 
-Uppladdningar visar en separat lista for permanenta karnfiler. `artikel_max.csv` visas ihop med coredata-filerna och uppdaterar samma verksamhetsfil som Ordersaldo, LYX och Pafyllnadsprio anvander. Coredata-prefixen `custom`, `dimension`, `item`, `item_alias`, `item_attribute`, `item_option`, `kpi_target_rule`, `location`, `location_cost` och `pallet_type` sparas server-side under `data/coredata/<verksamhetskod>/`. Om en anvandare laddar upp en ny fil med samma prefix for sin verksamhet tas den gamla filen med samma prefix bort och den nya blir sanningen. Andra verksamheters filer rors inte.
+Uppladdningar visar en separat lista for permanenta karnfiler. `artikel_max.csv` visas ihop med coredata-filerna och uppdaterar samma verksamhetsfil som Ordersaldo, LYX och Pafyllnadsprio anvander. Coredata-prefixen `custom`, `dimension`, `item`, `item_alias`, `item_attribute`, `item_option`, `kpi_target_rule`, `location`, `location_cost` och `pallet_type` sparas server-side under `data/coredata/<verksamhetskod>/`. Om en anvandare laddar upp en ny fil med samma prefix for sin verksamhet tas den gamla filen med samma prefix bort och den nya blir sanningen for alla anvandare i verksamheten. Andra verksamheters filer rors inte.
 
 Allokering anvander verksamhetens `item_option`-karnfil nar anvandaren inte laddat upp en egen Item option-fil. En uppladdad lokal fil i sloten vinner for den korningen, men den permanenta karnfilen ligger kvar som verksamhetens fallback.
 
@@ -68,7 +68,7 @@ Reglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix`
 | Forecast | Detalj Kundorder, Orderoversikt, Buffertpallar och karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` | Forecast per `Sandningsnr`, Excel/CSV-tabell och sessiondata for Ytgenerering |
 | Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser, UTL1-UTL652, minst 6 tecken och `Max pall > 0` |
 
-Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil.
+Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion. Nar en ny `location`-karnfil laddas upp rensas den gamla location-cachen och den nya ytlistan forvarms direkt, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
 
 Ytgenerering sorterar transportorer efter total pallplatsbehov och placerar deras sandningar i sammanhallna block. En lagerplats delas aldrig mellan flera sandningar; en sandning kan daremot spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har.
 
@@ -143,6 +143,7 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 | "Varfor oppnas inte Excel?" | Funktionen kraver lokal desktop/OS-stod och servern maste ha kvar resultat-sessionen. Om servern startade om med `--reload`, kor flodet igen. Om Windows/Excel inte kan oppna filen automatiskt visas feltoast; testa Ladda ner CSV. |
 | "Vad betyder karnfil?" | En karnfil ar permanent serverdata for anvandarens verksamhet. `artikel_max.csv` och coredata-filer som `item_option` kan anvandas aven om anvandaren inte laddat upp en lokal fil i sessionen. |
 | "Vad hander om jag laddar upp ny item_option?" | Den gamla `item_option`-filen for din verksamhet tas bort och den nya blir sanningen. R3, Stigamo och framtida verksamheter paverkar inte varandra. |
+| "Vad hander om jag laddar upp nya lagerplatser/location?" | Den gamla `location`-filen for verksamheten tas bort, location-cachen rensas och den nya fardigfiltrerade ytlistan byggs direkt for Ytgenerering. |
 
 ## Kallor
 

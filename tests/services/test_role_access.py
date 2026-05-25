@@ -149,3 +149,14 @@ def test_role_view_access_uses_strongest_role_when_user_has_multiple_roles():
 
     assert role_view_access_level(user, access, "persons") == "edit"
     assert can_access_view(user, access, "persons", "edit")
+
+
+def test_demo_user_gets_demo_role_access_in_addition_to_admin_role():
+    user = User(id=2, username="demo", role="admin", roles=["admin"], is_active=True)
+    access = {
+        "admin": {"productivity": "none"},
+        "demo": {"productivity": "view"},
+    }
+
+    assert role_view_access_level(user, access, "productivity") == "view"
+    assert can_access_view(user, access, "productivity", "view")

@@ -251,6 +251,38 @@ def test_process_area_filter_filters_mg_excluded_customers(tmp_path):
     assert filtered["order_num"].tolist() == ["O3"]
 
 
+def test_process_area_filter_reuses_cached_filtered_file(tmp_path, monkeypatch):
+    pd = pytest.importorskip("pandas")
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
+    source = tmp_path / "orders.csv"
+    source.write_text(
+        "Bolag\tKund\tArtikel\n"
+        "GG\t6005\tA1\n"
+        "GG\t1234\tA2\n",
+        encoding="utf-8",
+    )
+
+    first_files, first_temp_paths, first_log = bridge.apply_process_area_filters({"orders": source}, "GG")
+    second_files, second_temp_paths, second_log = bridge.apply_process_area_filters({"orders": source}, "GG")
+
+    assert first_files["orders"] == second_files["orders"]
+    assert first_temp_paths == []
+    assert second_temp_paths == []
+    assert first_log == second_log
+    filtered = pd.read_csv(second_files["orders"], dtype=str, sep="\t")
+    assert filtered["Artikel"].tolist() == ["A2"]
+
+    source.write_text(
+        "Bolag\tKund\tArtikel\n"
+        "GG\t6005\tA1\n"
+        "GG\t1234\tA3\n",
+        encoding="utf-8",
+    )
+    third_files, _third_temp_paths, _third_log = bridge.apply_process_area_filters({"orders": source}, "GG")
+
+    assert third_files["orders"] != first_files["orders"]
+
+
 def test_process_area_filter_other_toggles_see_everything(tmp_path):
     source = tmp_path / "orders.csv"
     source.write_text("Bolag\tKund\tArtikel\nGG\t6005\tA1\n", encoding="utf-8")

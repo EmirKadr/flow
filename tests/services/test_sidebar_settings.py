@@ -137,6 +137,8 @@ def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
             "viewer": {"schedule": "view", "users": "edit", "ghost": "edit"},
             "leader": {"overview": "edit", "stallen": "delete", "personImport": "edit", "activityImport": "view"},
             "admin": {"roleAccess": "edit", "sidebarLayout": "edit", "appSettings": "edit"},
+            "demo": {"users": "view", "businesses": "none"},
+            "super_user": {"users": "none"},
             "unknown": {"schedule": "edit"},
         })
 
@@ -146,6 +148,7 @@ def test_role_view_access_router_cleans_unknown_roles_views_and_levels():
             "viewer": {"schedule": "view", "users": "edit"},
             "leader": {"overview": "edit", "personImport": "edit", "activityImport": "view"},
             "admin": {"roleAccess": "edit", "sidebarLayout": "edit", "appSettings": "edit"},
+            "demo": {"users": "view", "businesses": "none"},
         }
         entry = session.query(AuditLog).filter_by(entity_type="app_setting", action="update_role_access").one()
         assert entry.user_id == admin.id

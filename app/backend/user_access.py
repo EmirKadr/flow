@@ -7,6 +7,7 @@ from .schemas import UserAdminOut, UserOut
 
 SUPER_USER_ROLE = "super_user"
 LEGACY_SUPER_USER_ROLE = "super" + "_admin"
+DEMO_ROLE = "demo"
 VIEWER_ROLE = "viewer"
 STAFFING_MANAGER_ROLE = "staffing_manager"
 WAREHOUSE_CLERK_ROLE = "warehouse_clerk"
@@ -17,6 +18,7 @@ PERSON_SORT_ORDER_ROLES = {STAFFING_MANAGER_ROLE, "admin"}
 ALLOCATION_TOOL_ROLES = {WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
 PLANNING_VIEW_ROLES = {VIEWER_ROLE, *EDITOR_ROLES}
 BASE_ROLES = {"admin", "leader", STAFFING_MANAGER_ROLE, VIEWER_ROLE, WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
+ROLE_VIEW_ROLES = {*BASE_ROLES, DEMO_ROLE}
 ASSIGNABLE_ROLES = {*BASE_ROLES, SUPER_USER_ROLE}
 ROLE_ACCESS_LEVEL_RANK = {"none": 0, "view": 1, "edit": 2}
 ROLE_VIEW_ID_ALIASES = {
@@ -77,6 +79,19 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "appSettings": "edit",
         "allocationProcessMatrix": "edit",
     },
+    DEMO_ROLE: {
+        "schedule": "edit",
+        "overview": "edit",
+        "persons": "edit",
+        "personSortOrder": "edit",
+        "personImport": "edit",
+        "activities": "edit",
+        "activityImport": "edit",
+        "areas": "edit",
+        "users": "edit",
+        "appSettings": "edit",
+        "allocationProcessMatrix": "edit",
+    },
     WAREHOUSE_CLERK_ROLE: {
         "allocationUploads": "edit",
         "allocationSplit": "edit",
@@ -122,7 +137,7 @@ def normalize_user_roles(roles: list[str] | None, fallback_role: str = "leader")
 
 
 def role_view_default_access() -> dict[str, dict[str, str]]:
-    return {role: dict(ROLE_VIEW_DEFAULT_ACCESS.get(role, {})) for role in BASE_ROLES}
+    return {role: dict(ROLE_VIEW_DEFAULT_ACCESS.get(role, {})) for role in ROLE_VIEW_ROLES}
 
 
 def normalize_role_view_id(view_id: str | None) -> str:
@@ -148,7 +163,7 @@ def normalize_role_view_access(access: dict | None) -> dict[str, dict[str, str]]
     incoming = access if isinstance(access, dict) else {}
     for role, views in incoming.items():
         role_key = str(role or "").strip()
-        if role_key not in BASE_ROLES or not isinstance(views, dict):
+        if role_key not in ROLE_VIEW_ROLES or not isinstance(views, dict):
             continue
         role_views = normalized.setdefault(role_key, {})
         for view_id, level in views.items():
@@ -198,7 +213,10 @@ def role_view_access_level(user: User, access: dict | None, view_id: str) -> str
     view_key = normalize_role_view_id(view_id)
     normalized = normalize_role_view_access(access)
     best = "none"
-    for role in user_roles(user):
+    roles = user_roles(user)
+    if is_demo_user(user) and DEMO_ROLE not in roles:
+        roles = [*roles, DEMO_ROLE]
+    for role in roles:
         level = normalized.get(role, {}).get(view_key, "none")
         if ROLE_ACCESS_LEVEL_RANK.get(level, 0) > ROLE_ACCESS_LEVEL_RANK.get(best, 0):
             best = level

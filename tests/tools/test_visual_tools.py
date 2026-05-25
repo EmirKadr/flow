@@ -422,6 +422,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "new Set(ROLE_VIEW_IDS)" in common
     assert "roleViewAccessLevel" in common
     assert "refreshRoleViewAccess" in common
+    assert '{ value: "super_user", label: "Super User", lockedLevel: "edit" }' in common
+    assert '{ value: "demo", label: "Demo" }' in common
     assert 'api.get("/api/settings/role-access")' in common
     assert 'api.put("/api/settings/role-access"' in users
     assert "readCachedSidebarUser" in common
@@ -687,6 +689,9 @@ def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     assert "OVERVIEW_REVALIDATE_ACTIVE_MS = 10000" in overview
     assert "OVERVIEW_REVALIDATE_IDLE_MS = 30000" in overview
     assert "patchOverviewFromAllData" in overview
+    assert "function renderOverviewDayHeader" in overview
+    assert 'weekLabel.textContent = `Vecka ${week}`' in overview
+    assert "overview-week-label" in styles
     assert "Number(person.home_area_id) === selectedAreaId" in schedule
     assert "Number(person.home_area_id) === selectedAreaId" in overview
 
@@ -803,7 +808,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "/api/users/import-rows" in users_js
     assert "openBulkUsersModal" in users_js
     assert re.search(r'key:\s*"username",\s*label:\s*"[^"]+",\s*required:\s*true', users_js)
-    assert re.search(r'key:\s*"roles",\s*label:\s*"Roller",\s*required:\s*true', users_js)
+    assert re.search(r'key:\s*"role",\s*label:\s*"Roll",\s*required:\s*true,\s*type:\s*"select"', users_js)
     assert re.search(r'key:\s*"display_name",\s*label:\s*"Visningsnamn",\s*required:\s*false', users_js)
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
     assert 'api.download("/api/users/import-template", "anvandare-importmall.xlsx")' in users_js
@@ -812,6 +817,8 @@ def test_import_views_have_templates_and_help_buttons():
     assert "ROLE_ACCESS_LEVEL_OPTIONS" in users_js
     assert "ROLE_ACCESS_LEVEL_ORDER" in users_js
     assert "roleAccessToggle" in users_js
+    assert 'role.lockedLevel || ""' in users_js
+    assert "if (button.disabled) return;" in users_js
     assert "nextRoleAccessLevel" in users_js
     assert "select[data-role][data-view]" not in users_js
 
@@ -834,6 +841,18 @@ def test_import_views_have_templates_and_help_buttons():
     assert "Inaktivera" not in activities_js
     assert "Ta bort" in activities_js
     assert 'setupImportHelpButton("activity-import-help", "Importera aktiviteter")' in activities_js
+
+
+def test_new_user_creation_uses_single_role_select_but_edit_keeps_multiple_roles():
+    users = (ROOT / "app" / "frontend" / "js" / "users.js").read_text(encoding="utf-8")
+
+    assert "function roleFieldHtml" in users
+    assert '<label>Roll</label>' in users
+    assert 'id="m-role"' in users
+    assert "roleSelect.value ? [roleSelect.value] : []" in users
+    assert 'showToast(isEdit ? "Välj minst en roll" : "Välj en roll", "error")' in users
+    assert '<label>Roller</label>' in users
+    assert 'type="checkbox" name="m-role"' in users
 
 
 def test_modal_enter_key_uses_primary_dialog_action():

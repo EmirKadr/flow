@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.backend.coredata_service import (
     build_coredata_status,
@@ -144,3 +145,33 @@ def test_coredata_router_saves_article_max_to_business_path(monkeypatch, tmp_pat
     assert saved["name"] == "artikel_max.csv"
     assert target.read_text(encoding="utf-8").endswith("NEW,3\n")
     assert not old_variant.exists()
+
+
+def test_coredata_router_warms_location_cache_after_upload(monkeypatch, tmp_path):
+    location_path = tmp_path / "coredata" / "stigamo" / "location-20260525.csv"
+    write(location_path, "Lagerplats\tTyp\tMax pall\nUTL100\tU\t1\n")
+    calls = []
+
+    flows_module = SimpleNamespace(
+        clear_prepared_location_cache=lambda: calls.append(("clear", None)),
+        warm_prepared_locations=lambda path: calls.append(("warm", Path(path))),
+    )
+    monkeypatch.setattr(coredata_router.bridge, "require_available", lambda: (object(), flows_module))
+    monkeypatch.setattr(
+        coredata_router,
+        "find_coredata_file",
+        lambda file_type, business_code=None: location_path,
+    )
+
+    coredata_router._warm_coredata_caches("location", "STIGAMO")
+
+    assert calls == [("clear", None), ("warm", location_path)]
+
+
+def test_coredata_router_only_warms_location_cache(monkeypatch):
+    calls = []
+    monkeypatch.setattr(coredata_router.bridge, "require_available", lambda: calls.append("load"))
+
+    coredata_router._warm_coredata_caches("item", "STIGAMO")
+
+    assert calls == []

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import importlib
+import json
 import math
 import os
 import re
@@ -471,15 +472,78 @@ def _read_process_filter_table(path: Path):
     return df
 
 
-def _write_process_filter_table(df, *, source_key: str, area_focus: str) -> Path:
-    target = tempfile.NamedTemporaryFile(
+def _process_filter_cache_paths(path: Path, *, source_key: str, area_focus: str, rule: dict) -> tuple[Path, Path]:
+    stat = path.stat()
+    payload = {
+        "path": str(path.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "source_key": source_key,
+        "area_focus": area_focus,
+        "company": str(rule.get("company") or "").upper(),
+        "exclude_customers": sorted(str(value).upper() for value in (rule.get("exclude_customers") or set())),
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    cache_dir = _active_upload_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"filter_{digest}.csv", cache_dir / f"filter_{digest}.json"
+
+
+def _read_process_filter_cache_meta(path: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        stat = payload.get("stat")
+        if isinstance(stat, dict):
+            return stat
+    except Exception:
+        return None
+    return None
+
+
+def _write_process_filter_cache_meta(path: Path, stat: dict) -> None:
+    tmp = tempfile.NamedTemporaryFile(
         delete=False,
-        prefix=f"flow_{area_focus.lower()}_{_safe_upload_stem(source_key)}_",
-        suffix=".csv",
+        dir=path.parent,
+        prefix="pending_filter_meta_",
+        suffix=".json",
+        mode="w",
+        encoding="utf-8",
     )
-    path = Path(target.name)
-    target.close()
-    df.to_csv(path, index=False, encoding="utf-8-sig", sep="\t")
+    try:
+        json.dump({"stat": stat}, tmp, ensure_ascii=False, sort_keys=True)
+        tmp.close()
+        Path(tmp.name).replace(path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+
+
+def _write_process_filter_table(
+    df,
+    *,
+    source_key: str,
+    area_focus: str,
+    target_path: Path | None = None,
+) -> Path:
+    if target_path is None:
+        target = tempfile.NamedTemporaryFile(
+            delete=False,
+            prefix=f"flow_{area_focus.lower()}_{_safe_upload_stem(source_key)}_",
+            suffix=".csv",
+        )
+        path = Path(target.name)
+        target.close()
+    else:
+        path = target_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile(delete=False, dir=path.parent, prefix="pending_filter_", suffix=".csv")
+    try:
+        tmp.close()
+        df.to_csv(tmp.name, index=False, encoding="utf-8-sig", sep="\t")
+        Path(tmp.name).replace(path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -525,19 +589,31 @@ def apply_process_area_filters(
     filtered_files = dict(files)
     temp_paths: list[Path] = []
     stats: list[dict] = []
+    _cleanup_upload_cache()
 
     for key, raw_path in files.items():
         path = Path(raw_path)
         try:
+            cache_path, meta_path = _process_filter_cache_paths(path, source_key=key, area_focus=code, rule=rule)
+            cached_stat = _read_process_filter_cache_meta(meta_path) if cache_path.is_file() else None
+            if cached_stat is not None:
+                filtered_files[key] = cache_path
+                stats.append({"key": key, **cached_stat})
+                continue
             df = _read_process_filter_table(path)
             filtered_df, stat = _apply_process_area_rule_to_table(df, rule)
         except Exception:
             continue
         if filtered_df is None or stat is None:
             continue
-        filtered_path = _write_process_filter_table(filtered_df, source_key=key, area_focus=code)
+        filtered_path = _write_process_filter_table(
+            filtered_df,
+            source_key=key,
+            area_focus=code,
+            target_path=cache_path,
+        )
+        _write_process_filter_cache_meta(meta_path, stat)
         filtered_files[key] = filtered_path
-        temp_paths.append(filtered_path)
         stats.append({"key": key, **stat})
 
     if not stats:

@@ -15,8 +15,8 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `âˆ
 
 | Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- |
-| Ny anvandare | Oppnar modal | Skapar konto | `POST /api/users` | Anvandarnamn och minst en roll kravs. |
-| Flera nya anvandare | Oppnar tabellmodal | Skapar flera konton direkt i appen med samma falt som importmallen | `POST /api/users/import-rows` | Dubbletter, okanda roller och okanda omraden visas i resultatmodal. |
+| Ny anvandare | Oppnar modal | Skapar konto med en roll | `POST /api/users` | Anvandarnamn och en roll kravs. |
+| Flera nya anvandare | Oppnar tabellmodal | Skapar flera konton direkt i appen med en roll per rad | `POST /api/users/import-rows` | Dubbletter, okanda roller och okanda omraden visas i resultatmodal. |
 | Ladda ner importmall | Hamter Excelmall | Laddar ner mall | `GET /api/users/import-template` | KrÃ¤ver `userImport` edit/super user enligt backend. |
 | Importera Excel | Oppnar filval | Importerar anvandare | `POST /api/users/import` | Importerade utan losenord far `must_change_password=true`. |
 | Vybehorigheter | Oppnar rollmatris | Sparar global vyatkomst for roller | `GET/PUT /api/settings/role-access` | Fel matris kan dolja vyer for rollen i alla verksamheter. |
@@ -34,7 +34,8 @@ Falt:
 
 - Anvandarnamn.
 - Visningsnamn.
-- Roller som checkboxar.
+- Roll som ett val nar kontot skapas.
+- Roller som checkboxar nar ett befintligt konto redigeras.
 - Omrade.
 - Verksamhet visas bara for Super User nar den inte kan harledas.
 - Losenord.
@@ -42,7 +43,7 @@ Falt:
 Validering:
 
 - Anvandarnamn kravs.
-- Minst en roll kravs.
+- En roll kravs vid skapande. Vid redigering kravs minst en roll.
 - Losenord, om ifyllt, maste vara minst 8 tecken.
 - Super-user-rollandring skyddas av backendregler.
 - Vanliga admins kan bara skapa/andra anvandare i sin egen verksamhet. Super User maste valja verksamhet eller ett omrade som harleder verksamheten.
@@ -59,7 +60,7 @@ Det fasta `demo`-kontot (se [demo-laget](demo-mode.md)) visas med en `DEMO`-pill
 
 ## Vybehorigheter-modal
 
-Rollmatrisen visar vyer som rader och roller som kolumner. Matrisen ar global, sa samma roll far samma vyatkomst i Stigamo och R3. Varje knapp cyklar:
+Rollmatrisen visar vyer som rader och roller som kolumner. Matrisen ar global, sa samma roll far samma vyatkomst i Stigamo och R3. Super User-kolumnen visas som last `Redigera` eftersom rollen alltid har full atkomst. Demo-kolumnen styr extra vyatkomst for det fasta `demo`-kontot, som fortfarande ar skyddat som admin-konto. Varje vanlig knapp cyklar:
 
 `Ingen` -> `Visa` -> `Redigera` -> `Ingen`
 
@@ -73,9 +74,9 @@ Knappar:
 
 ## Importregler
 
-- Direktimporten `Flera nya anvandare` har samma falt som Excelmallen: anvandarnamn, visningsnamn, roller, omrade och vid behov verksamhet.
+- Direktimporten `Flera nya anvandare` har falten anvandarnamn, visningsnamn, roll, omrade och vid behov verksamhet. Roll ar ett dropdown-val och bara en roll kan valjas per ny anvandare.
 - Varje kolumn i direkttabellen visar om faltet ar `Obligatoriskt` eller `Frivilligt` i rubriken.
-- Rollfaltet accepterar samma svenska rollnamn som Excelimporten. Flera roller kan separeras med komma.
+- Excelimporten accepterar fortfarande samma svenska rollnamn och kan lasa flera roller separerade med komma.
 - Importerade anvandare skapas aktiva utan losenord och far `must_change_password=true`.
 - Dubbletter i fil, i direkttabellen eller mot befintliga anvandare stoppas och visas i resultatmodalen. Anvandarnamn ar globalt unika aven over verksamheter.
 

@@ -81,6 +81,37 @@ function editableRoleOptions() {
   return currentUser?.is_super_user ? USER_ROLE_OPTIONS : ROLE_OPTIONS;
 }
 
+function roleSelectOptionsHtml(options, selectedValue = "") {
+  return [
+    '<option value="">Välj roll</option>',
+    ...options.map((option) => (
+      `<option value="${escapeHtml(option.value)}" ${option.value === selectedValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`
+    )),
+  ].join("");
+}
+
+function roleFieldHtml({ isEdit, isDemoTarget, selectedRoles, roleOptions }) {
+  if (!isEdit) {
+    return `
+      <label>Roll</label>
+      <select id="m-role">
+        ${roleSelectOptionsHtml(roleOptions)}
+      </select>
+    `;
+  }
+  return `
+      <label>Roller</label>
+      <div class="role-checks" id="m-roles">
+        ${roleOptions.map((option) => `
+          <label class="role-check">
+            <input type="checkbox" name="m-role" value="${option.value}" ${selectedRoles.includes(option.value) ? "checked" : ""} ${isDemoTarget ? "disabled" : ""} />
+            <span>${escapeHtml(option.label)}</span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+}
+
 function areaName(areaId) {
   if (areaId == null) return "-";
   const area = areas.find((item) => Number(item.id) === Number(areaId));
@@ -204,11 +235,13 @@ function applyRoleAccessToggleState(button, value) {
   button.title = `Klicka för att byta från ${option.label}`;
 }
 
-function roleAccessToggle(role, viewId) {
-  const value = roleViewAccess?.[role]?.[viewId] || "none";
+function roleAccessToggle(role, viewId, lockedLevel = "") {
+  const value = lockedLevel || roleViewAccess?.[role]?.[viewId] || "none";
   const option = roleAccessLevelOption(value);
+  const disabled = lockedLevel ? " disabled aria-disabled=\"true\"" : "";
+  const title = lockedLevel ? "Super User har alltid full åtkomst" : `Klicka för att byta från ${option.label}`;
   return `
-    <button type="button" class="role-access-toggle is-${escapeHtml(option.value)}" data-role="${escapeHtml(role)}" data-view="${escapeHtml(viewId)}" data-level="${escapeHtml(option.value)}" aria-label="Behörighet: ${escapeHtml(option.label)}" title="Klicka för att byta från ${escapeHtml(option.label)}">${escapeHtml(option.label)}</button>
+    <button type="button" class="role-access-toggle is-${escapeHtml(option.value)}" data-role="${escapeHtml(role)}" data-view="${escapeHtml(viewId)}" data-level="${escapeHtml(option.value)}" aria-label="Behörighet: ${escapeHtml(option.label)}" title="${escapeHtml(title)}"${disabled}>${escapeHtml(option.label)}</button>
   `;
 }
 
@@ -235,7 +268,7 @@ function renderRoleAccessTable(container) {
           ${VIEW_ACCESS_OPTIONS.map((view) => `
             <tr>
               <th>${escapeHtml(view.label)}</th>
-              ${roles.map((role) => `<td>${roleAccessToggle(role.value, view.id)}</td>`).join("")}
+              ${roles.map((role) => `<td>${roleAccessToggle(role.value, view.id, role.lockedLevel || "")}</td>`).join("")}
             </tr>
           `).join("")}
         </tbody>
@@ -258,7 +291,7 @@ async function openRoleAccessModal() {
   backdrop.innerHTML = `
     <div class="modal wide role-access-modal">
       <h2>Vybehörigheter</h2>
-      <p class="note">Super User har alltid full åtkomst. Övriga roller kan få ingen åtkomst, bara visa eller redigera per vy.</p>
+      <p class="note">Super User visas som låst Redigera eftersom rollen alltid har full åtkomst. Demo styr demo-kontots extra vybehörighet. Övriga roller kan få ingen åtkomst, bara visa eller redigera per vy.</p>
       <div id="role-access-table"></div>
       <div class="actions">
         <button type="button" id="role-access-defaults">Standard</button>
@@ -281,6 +314,7 @@ async function openRoleAccessModal() {
     saveButton.disabled = true;
     const next = roleViewDefaultAccess();
     tableHost.querySelectorAll(".role-access-toggle[data-role][data-view]").forEach((button) => {
+      if (button.disabled) return;
       next[button.dataset.role][button.dataset.view] = button.dataset.level || "none";
     });
     try {
@@ -362,15 +396,7 @@ function openModal(user) {
       <label>Visningsnamn</label>
       <input id="m-display-name" value="${escapeHtml(user?.display_name || "")}" />
       ${businessOptions(selectedBusinessId)}
-      <label>Roller</label>
-      <div class="role-checks" id="m-roles">
-        ${roleOptions.map((option) => `
-          <label class="role-check">
-            <input type="checkbox" name="m-role" value="${option.value}" ${selectedRoles.includes(option.value) ? "checked" : ""} ${isDemoTarget ? "disabled" : ""} />
-            <span>${escapeHtml(option.label)}</span>
-          </label>
-        `).join("")}
-      </div>
+      ${roleFieldHtml({ isEdit, isDemoTarget, selectedRoles, roleOptions })}
       <label>Område</label>
       <select id="m-area">
         <option value="">Ingen förinställning</option>
@@ -389,10 +415,13 @@ function openModal(user) {
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
     const password = document.getElementById("m-password").value;
+    const roleSelect = document.getElementById("m-role");
     const checkedRoles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => input.value);
-    const roles = (!currentUser?.is_super_user && isEdit && selectedRoles.includes("super_user") && !checkedRoles.includes("super_user"))
-      ? [...checkedRoles, "super_user"]
-      : checkedRoles;
+    const roles = roleSelect
+      ? (roleSelect.value ? [roleSelect.value] : [])
+      : ((!currentUser?.is_super_user && selectedRoles.includes("super_user") && !checkedRoles.includes("super_user"))
+        ? [...checkedRoles, "super_user"]
+        : checkedRoles);
     const payload = {
       username: document.getElementById("m-username").value.trim(),
       display_name: document.getElementById("m-display-name").value.trim() || null,
@@ -409,7 +438,7 @@ function openModal(user) {
       return;
     }
     if (roles.length === 0) {
-      showToast("Välj minst en roll", "error");
+      showToast(isEdit ? "Välj minst en roll" : "Välj en roll", "error");
       return;
     }
     if (password && password.length < 8) {
@@ -522,7 +551,7 @@ async function openBulkUsersModal() {
       ...businessColumn,
       { key: "username", label: "Användarnamn", required: true },
       { key: "display_name", label: "Visningsnamn", required: false },
-      { key: "roles", label: "Roller", required: true },
+      { key: "role", label: "Roll", required: true, type: "select", options: ROLE_OPTIONS },
       { key: "area", label: "Område", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
     ],
     onSubmit: async (rows) => {

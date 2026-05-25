@@ -7,6 +7,7 @@ from app.backend.user_access import (
     ROLE_VIEW_DEFAULT_ACCESS,
     ROLE_VIEW_ID_ALIASES,
     ROLE_VIEW_IDS,
+    ROLE_VIEW_ROLES,
 )
 from tools.terminology_contracts import forbidden_terms_in_text, role_access_required_terms
 
@@ -117,7 +118,7 @@ def test_role_default_access_matches_between_frontend_and_backend():
     frontend_access = extract_js_nested_access_object(common, "ROLE_VIEW_DEFAULT_ACCESS")
 
     assert frontend_access == ROLE_VIEW_DEFAULT_ACCESS
-    assert set(frontend_access) <= BASE_ROLES
+    assert set(frontend_access) <= ROLE_VIEW_ROLES
     for role_access in frontend_access.values():
         assert set(role_access) <= ROLE_VIEW_IDS
         assert set(role_access.values()) <= set(ROLE_ACCESS_LEVEL_RANK)
@@ -130,16 +131,16 @@ def test_productivity_page_uses_view_access_not_super_user_gate():
     assert 'initPage("productivity", { requireSuperUser: true })' not in productivity
 
 
-def test_role_lists_match_backend_roles_and_keep_super_user_separate():
+def test_role_lists_match_backend_roles_and_show_virtual_access_roles():
     common = read_frontend("js/common.js")
     users = read_frontend("js/users.js")
 
     common_roles = extract_values_from_object_array(common, "ROLE_VIEW_ROLES")
     users_roles = extract_values_from_object_array(users, "ROLE_OPTIONS")
 
-    assert common_roles == users_roles
-    assert set(common_roles) == BASE_ROLES
-    assert "super_user" not in common_roles
+    assert set(users_roles) == BASE_ROLES
+    assert set(common_roles) == ROLE_VIEW_ROLES | {"super_user"}
+    assert common_roles[:2] == ["super_user", "demo"]
     assert 'const SUPER_USER_ROLE_OPTION = { value: "super_user"' in users
 
 

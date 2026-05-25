@@ -26,7 +26,7 @@ from typing import Callable, Optional
 import pandas as pd
 
 from .engine import engine as E
-from .surface_generation import generate_surface_plan
+from .surface_generation import generate_surface_plan, prepare_locations
 
 NEAR_MISS_COLUMNS = [
     "Artikel", "OrderID", "OrderRad", "PallID", "Kallplats", "Mottagen",
@@ -47,6 +47,7 @@ ORDERSALDO_HELPALL_COLUMN = "Antal på Helpall"
 
 
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
+FileVersion = tuple[str, int, int]
 
 
 @lru_cache(maxsize=32)
@@ -58,6 +59,105 @@ def _read(path: Path) -> pd.DataFrame:
     source = Path(path).resolve()
     stat = source.stat()
     return _read_cached(str(source), stat.st_size, stat.st_mtime_ns).copy(deep=True)
+
+
+def _file_version(path: Path | str) -> FileVersion:
+    source = Path(path).resolve()
+    stat = source.stat()
+    return str(source), stat.st_size, stat.st_mtime_ns
+
+
+def _optional_file_version(files: dict, key: str) -> FileVersion | None:
+    if key not in files:
+        return None
+    return _file_version(files[key])
+
+
+@lru_cache(maxsize=32)
+def _prepared_locations_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
+    return prepare_locations(_read(Path(path)))
+
+
+def _read_prepared_locations(path: Path) -> pd.DataFrame:
+    source = Path(path).resolve()
+    stat = source.stat()
+    return _prepared_locations_cached(str(source), stat.st_size, stat.st_mtime_ns)
+
+
+def clear_prepared_location_cache() -> None:
+    _prepared_locations_cached.cache_clear()
+
+
+def warm_prepared_locations(path: str | Path) -> None:
+    _read_prepared_locations(Path(path))
+
+
+@lru_cache(maxsize=32)
+def _normalized_saldo_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
+    return E.normalize_saldo(_read(Path(path)))
+
+
+def _read_normalized_saldo(version: FileVersion | None) -> pd.DataFrame | None:
+    if version is None:
+        return None
+    return _normalized_saldo_cached(*version).copy(deep=True)
+
+
+@lru_cache(maxsize=32)
+def _normalized_items_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
+    return E.normalize_items(_read(Path(path)))
+
+
+def _read_normalized_items(version: FileVersion | None) -> pd.DataFrame | None:
+    if version is None:
+        return None
+    return _normalized_items_cached(*version).copy(deep=True)
+
+
+@lru_cache(maxsize=32)
+def _normalized_not_putaway_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
+    return E.normalize_not_putaway(_read(Path(path)))
+
+
+def _read_normalized_not_putaway(version: FileVersion | None) -> pd.DataFrame | None:
+    if version is None:
+        return None
+    return _normalized_not_putaway_cached(*version).copy(deep=True)
+
+
+@lru_cache(maxsize=16)
+def _allocation_outputs_cached(
+    orders_version: FileVersion,
+    buffer_version: FileVersion,
+    saldo_version: FileVersion | None,
+    item_version: FileVersion | None,
+    not_putaway_version: FileVersion | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
+    orders_raw = _read(Path(orders_version[0]))
+    buffer_raw = _read(Path(buffer_version[0]))
+    saldo_norm = _read_normalized_saldo(saldo_version)
+    item_norm = _read_normalized_items(item_version)
+    not_putaway_norm = _read_normalized_not_putaway(not_putaway_version)
+
+    log: list[str] = []
+    result_df, near_miss_df = E.allocate(orders_raw, buffer_raw, log=log.append)
+    result_df = E.App._reclassify_skrymmande(result_df, saldo_norm)
+    result_df = E._merge_item_flags(result_df, item_norm)
+    if near_miss_df.empty and len(near_miss_df.columns) == 0:
+        near_miss_df = pd.DataFrame(columns=NEAR_MISS_COLUMNS)
+
+    refill_hp_df, refill_autostore_df = E.calculate_refill(
+        result_df, buffer_raw, saldo_df=saldo_norm, not_putaway_df=not_putaway_norm,
+    )
+    pallet_spaces_df = E.compute_pallet_spaces(result_df)
+    return result_df, near_miss_df, refill_hp_df, refill_autostore_df, pallet_spaces_df, tuple(log)
+
+
+def clear_allocation_cache() -> None:
+    _allocation_outputs_cached.cache_clear()
+    _normalized_saldo_cached.cache_clear()
+    _normalized_items_cached.cache_clear()
+    _normalized_not_putaway_cached.cache_clear()
 
 
 def _temp(suffix: str) -> Path:
@@ -131,25 +231,26 @@ def add_ordersaldo_helpall_count(shortage_df: pd.DataFrame, max_df: pd.DataFrame
 # --- Floden ------------------------------------------------------------------
 
 def flow_allocate(files: dict, params: dict) -> dict:
-    orders_raw = _read(files["orders"])
-    buffer_raw = _read(files["buffer"])
-    saldo_norm = E.normalize_saldo(_read(files["saldo"])) if "saldo" in files else None
-    item_norm = E.normalize_items(_read(files["items"])) if "items" in files else None
-    not_putaway_norm = (
-        E.normalize_not_putaway(_read(files["not_putaway"])) if "not_putaway" in files else None
+    (
+        result_df,
+        near_miss_df,
+        refill_hp_df,
+        refill_autostore_df,
+        pallet_spaces_df,
+        log_lines,
+    ) = _allocation_outputs_cached(
+        _file_version(files["orders"]),
+        _file_version(files["buffer"]),
+        _optional_file_version(files, "saldo"),
+        _optional_file_version(files, "items"),
+        _optional_file_version(files, "not_putaway"),
     )
-
-    log: list[str] = []
-    result_df, near_miss_df = E.allocate(orders_raw, buffer_raw, log=log.append)
-    result_df = E.App._reclassify_skrymmande(result_df, saldo_norm)
-    result_df = E._merge_item_flags(result_df, item_norm)
-    if near_miss_df.empty and len(near_miss_df.columns) == 0:
-        near_miss_df = pd.DataFrame(columns=NEAR_MISS_COLUMNS)
-
-    refill_hp_df, refill_autostore_df = E.calculate_refill(
-        result_df, buffer_raw, saldo_df=saldo_norm, not_putaway_df=not_putaway_norm,
-    )
-    pallet_spaces_df = E.compute_pallet_spaces(result_df)
+    result_df = result_df.copy(deep=True)
+    near_miss_df = near_miss_df.copy(deep=True)
+    refill_hp_df = refill_hp_df.copy(deep=True)
+    refill_autostore_df = refill_autostore_df.copy(deep=True)
+    pallet_spaces_df = pallet_spaces_df.copy(deep=True)
+    log = list(log_lines)
 
     return {
         "summary": {
@@ -517,7 +618,7 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         rows = payload.get("rows") or []
         columns = payload.get("columns") or None
         forecast_df = pd.DataFrame(rows, columns=columns)
-    locations_df = _read(Path(files["location"]))
+    locations_df = _read_prepared_locations(Path(files["location"]))
     result = generate_surface_plan(forecast_df, locations_df)
 
     tables = [
