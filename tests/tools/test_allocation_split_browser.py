@@ -94,7 +94,42 @@ def seed_allocation_file_pool(page) -> None:
                 "lastModified": 2,
                 "content": "Artikel\tAntal\nA-1\t1\n",
             },
+            {
+                "key": "overview",
+                "name": "v_ask_order_overview-test.csv",
+                "type": "text/csv",
+                "lastModified": 3,
+                "content": "Ordernr\tSändningsnr\nO-1\tS-1\n",
+            },
         ],
+    )
+
+
+def mock_forecast_coredata(page) -> None:
+    uploaded = {
+        key: {
+            "uploaded": True,
+            "name": f"{key}-test.csv",
+            "prefix": key,
+            "path": f"coredata/{key}-test.csv",
+        }
+        for key in (
+            "custom",
+            "item",
+            "item_alias",
+            "dimension",
+            "pallet_type",
+            "item_option",
+            "location",
+        )
+    }
+    page.route(
+        "**/api/coredata/files",
+        lambda route: route.fulfill(
+            status=200,
+            headers={"content-type": "application/json"},
+            body=json.dumps({"files": uploaded}, ensure_ascii=False),
+        ),
     )
 
 
@@ -217,5 +252,97 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Allokering")
         expect(page.locator(".allocation-result")).to_contain_text("O-1")
         expect(page.locator("#allocationRoot")).to_contain_text("Klart: Allokering")
+    finally:
+        context.close()
+
+
+def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    captured = {}
+    try:
+        login_admin(page, local_allocation_server)
+        seed_allocation_file_pool(page)
+        mock_forecast_coredata(page)
+
+        page.route(
+            "**/api/allokering/flow/forecast",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(
+                    {
+                        "flow_id": "forecast",
+                        "session_id": "forecast-session-1",
+                        "summary": {"Sändningar": 1, "Predikterade pallplatser": 2.5},
+                        "tables": [
+                            {
+                                "key": "forecast",
+                                "label": "Forecast",
+                                "table": {
+                                    "columns": ["Sändningsnr", "Transportör", "Predikterade pallplatser"],
+                                    "rows": [["S-1", "Akeri A", "2.5"]],
+                                    "row_count": 1,
+                                    "truncated": False,
+                                },
+                            }
+                        ],
+                        "log": [],
+                        "artifact_keys": ["forecast_json"],
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+
+        def handle_ytgenerering(route):
+            post_data = route.request.post_data or ""
+            captured["post_data"] = post_data
+            route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(
+                    {
+                        "flow_id": "ytgenerering",
+                        "session_id": "ytgenerering-session-1",
+                        "summary": {"Sändningar": 1, "Använda lagerplatser": 1},
+                        "tables": [
+                            {
+                                "key": "ytgenerering",
+                                "label": "Ytgenerering",
+                                "table": {
+                                    "columns": ["Sändningsnr", "Transportör", "Lagerplats"],
+                                    "rows": [["S-1", "Akeri A", "UTL100"]],
+                                    "row_count": 1,
+                                    "truncated": False,
+                                },
+                            }
+                        ],
+                        "log": [],
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+        page.route("**/api/allokering/flow/ytgenerering", handle_ytgenerering)
+
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
+        forecast_button = page.locator('button[data-run-flow="forecast"]')
+        ytgenerering_button = page.locator('button[data-run-flow="ytgenerering"]')
+        expect(forecast_button).to_be_enabled(timeout=15000)
+        expect(ytgenerering_button).to_be_disabled()
+
+        forecast_button.click()
+        page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
+        expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Forecast")
+        expect(page.locator(".allocation-result")).to_contain_text("S-1")
+        expect(ytgenerering_button).to_be_enabled(timeout=15000)
+
+        ytgenerering_button.click()
+        page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
+        expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Ytgenerering")
+        expect(page.locator(".allocation-result")).to_contain_text("UTL100")
+        assert "forecast-session-1" in captured["post_data"]
+        assert 'name="forecast_session_id"' in captured["post_data"]
     finally:
         context.close()

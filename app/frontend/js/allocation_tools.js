@@ -137,6 +137,14 @@ const ALLOCATION_COREDATA_UPLOAD_SPECS = [
 const ALLOCATION_COREDATA_SLOT_TYPES = {
   max_csv: "article_max",
   items: "item_option",
+  custom: "custom",
+  dimension: "dimension",
+  item: "item",
+  item_alias: "item_alias",
+  item_option: "item_option",
+  location: "location",
+  location_cost: "location_cost",
+  pallet_type: "pallet_type",
 };
 const ALLOCATION_COREDATA_DISPLAY_ORDER = [
   "article_max",
@@ -194,6 +202,8 @@ const allocationState = {
   autoStatus: "",
   result: null,
   lastBufferSignature: "",
+  lastForecastSessionId: "",
+  lastForecastLabel: "",
 };
 
 let allocationPopoverDismissBound = false;
@@ -217,7 +227,8 @@ function allocationSlotLabel(key) {
 }
 
 function allocationCoreDataFile(key) {
-  const fileType = ALLOCATION_COREDATA_SLOT_TYPES[allocationLogicalKey(key)];
+  const logicalKey = allocationLogicalKey(key);
+  const fileType = ALLOCATION_COREDATA_SLOT_TYPES[logicalKey] || logicalKey;
   const entry = fileType ? allocationState.coredata?.files?.[fileType] : null;
   if (!entry?.uploaded) return null;
   return {
@@ -241,6 +252,13 @@ function allocationCoreFile(key) {
 function allocationDisplayFile(key) {
   const logicalKey = allocationLogicalKey(key);
   return allocationState.files[logicalKey] || allocationCoreFile(logicalKey);
+}
+
+function allocationRequiredSessionId(flow) {
+  const required = flow?.requiresSessionFlow;
+  if (!required) return "";
+  if (required.flowId === "forecast") return allocationState.lastForecastSessionId || "";
+  return "";
 }
 
 function allocationPrimaryTitle(page) {
@@ -374,6 +392,8 @@ function persistAllocationWorkState(overrides = {}) {
     values: serializableAllocationValues(allocationState.values),
     status: allocationState.busyId ? "" : String(allocationState.status || ""),
     result: allocationState.busyId ? null : allocationState.result,
+    lastForecastSessionId: allocationState.lastForecastSessionId || "",
+    lastForecastLabel: allocationState.lastForecastLabel || "",
     ...overrides,
   };
   try {
@@ -402,6 +422,8 @@ function restoreAllocationWorkState() {
     }
     allocationState.status = typeof snapshot.status === "string" ? snapshot.status : "";
     allocationState.result = snapshot.result && typeof snapshot.result === "object" ? snapshot.result : null;
+    allocationState.lastForecastSessionId = typeof snapshot.lastForecastSessionId === "string" ? snapshot.lastForecastSessionId : "";
+    allocationState.lastForecastLabel = typeof snapshot.lastForecastLabel === "string" ? snapshot.lastForecastLabel : "";
   } catch (error) {
     try { sessionStorage.removeItem(key); } catch (e) {}
   }
@@ -992,16 +1014,29 @@ function slotsForFlow(flow) {
 }
 
 function missingForFlow(flow) {
-  return (flow?.inputs || []).filter((input) => {
+  const missing = (flow?.inputs || []).filter((input) => {
     if (!input.required) return false;
-    if (input.type === "file") return !allocationState.files[allocationFileInputKey(input)];
+    if (input.type === "file") return !allocationDisplayFile(allocationFileInputKey(input));
     return !allocationState.values[input.key];
   });
+  for (const input of flow?.coredata || []) {
+    if (input.required && !allocationCoreDataFile(input.key)) missing.push({ ...input, type: "coredata" });
+  }
+  if (flow?.requiresSessionFlow && !allocationRequiredSessionId(flow)) {
+    missing.push({
+      key: "__session",
+      type: "session",
+      label: `${flow.requiresSessionFlow.label || "Körning"} körd`,
+    });
+  }
+  return missing;
 }
 
 function renderFlowFileList(flow) {
   const fileInputs = (flow?.inputs || []).filter((input) => input.type === "file");
-  if (!fileInputs.length) return "";
+  const coreInputs = flow?.coredata || [];
+  const sessionRequirement = flow?.requiresSessionFlow;
+  if (!fileInputs.length && !coreInputs.length && !sessionRequirement) return "";
   return `
     <div class="allocation-flow-files">
       ${fileInputs.map((input) => {
@@ -1019,6 +1054,28 @@ function renderFlowFileList(flow) {
           </div>
         `;
       }).join("")}
+      ${coreInputs.map((input) => {
+        const entry = allocationCoreDataFile(input.key);
+        const label = input.label || ALLOCATION_COREDATA_LABELS[input.key] || input.key;
+        const cls = entry ? "ok" : input.required ? "missing" : "optional";
+        const prefix = entry ? "✓" : input.required ? "✗" : "○";
+        return `
+          <div class="allocation-flow-file ${entry ? "filled" : ""}">
+            <span class="allocation-file-tag ${cls}">${prefix} ${allocationEscape(label)} (kärnfil)</span>
+            <span>${entry ? allocationEscape(entry.name) : "Saknas"}</span>
+          </div>
+        `;
+      }).join("")}
+      ${sessionRequirement ? (() => {
+        const sessionId = allocationRequiredSessionId(flow);
+        const label = sessionRequirement.label || "Körning";
+        return `
+          <div class="allocation-flow-file ${sessionId ? "filled" : ""}">
+            <span class="allocation-file-tag ${sessionId ? "ok" : "missing"}">${sessionId ? "✓" : "✗"} ${allocationEscape(label)} körd</span>
+            <span>${sessionId ? allocationEscape(allocationState.lastForecastLabel || label) : `Kör ${allocationEscape(label)} först`}</span>
+          </div>
+        `;
+      })() : ""}
     </div>
   `;
 }
@@ -1073,6 +1130,9 @@ async function runAllocationFlow(flow) {
   if (allocationState.page === "process") {
     appendAllocationAreaFocus(fd);
   }
+  if (flow.requiresSessionFlow?.flowId === "forecast") {
+    fd.append("forecast_session_id", allocationState.lastForecastSessionId || "");
+  }
   for (const input of flow.inputs || []) {
     if (input.type === "file") {
       const entry = allocationState.files[allocationFileInputKey(input)];
@@ -1086,6 +1146,10 @@ async function runAllocationFlow(flow) {
   try {
     const data = await allocationPostForm(`${ALLOCATION_API}/flow/${encodeURIComponent(flow.id)}`, fd);
     allocationState.result = { label: flow.label, data };
+    if ((data.flow_id || flow.id) === "forecast" && data.session_id) {
+      allocationState.lastForecastSessionId = data.session_id;
+      allocationState.lastForecastLabel = `${flow.label} ${new Date().toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}`;
+    }
     allocationState.status = `Klart: ${flow.label}`;
     await copyOrdersaldoCompleteOrders(data);
   } catch (error) {

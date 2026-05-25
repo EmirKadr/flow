@@ -217,7 +217,7 @@ def test_process_area_filter_filters_gg_company_and_customer(tmp_path):
 
     files, temp_paths, log = bridge.apply_process_area_filters({"orders": source}, "GG")
     try:
-        filtered = pd.read_csv(files["orders"], dtype=str)
+        filtered = pd.read_csv(files["orders"], dtype=str, sep="\t")
     finally:
         for path in temp_paths:
             path.unlink(missing_ok=True)
@@ -243,7 +243,7 @@ def test_process_area_filter_filters_mg_excluded_customers(tmp_path):
 
     files, temp_paths, _log = bridge.apply_process_area_filters({"overview": source}, "MG")
     try:
-        filtered = pd.read_csv(files["overview"], dtype=str)
+        filtered = pd.read_csv(files["overview"], dtype=str, sep="\t")
     finally:
         for path in temp_paths:
             path.unlink(missing_ok=True)
@@ -304,7 +304,7 @@ def test_process_matrix_override_controls_filter_and_visibility(tmp_path):
 
     files, temp_paths, log = bridge.apply_process_area_filters({"orders": source}, "AS", matrix)
     try:
-        filtered = pd.read_csv(files["orders"], dtype=str)
+        filtered = pd.read_csv(files["orders"], dtype=str, sep="\t")
     finally:
         for path in temp_paths:
             path.unlink(missing_ok=True)
@@ -528,7 +528,7 @@ def test_allocation_run_flow_filters_uploaded_files_from_area_focus(monkeypatch,
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
         captured["params"] = dict(params)
-        captured["rows"] = pd.read_csv(files["orders"], dtype=str)["Artikel"].tolist()
+        captured["rows"] = pd.read_csv(files["orders"], dtype=str, sep="\t")["Artikel"].tolist()
         return {"flow_id": flow_id, "tables": [], "summary": {}, "log": ["handler log"]}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
@@ -573,7 +573,7 @@ def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
-        captured["rows"] = pd.read_csv(files["orders"], dtype=str)["Artikel"].tolist()
+        captured["rows"] = pd.read_csv(files["orders"], dtype=str, sep="\t")["Artikel"].tolist()
         return {"flow_id": flow_id, "tables": [], "summary": {}, "log": []}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
@@ -624,6 +624,90 @@ def test_run_flow_handler_passes_business_default_article_max(monkeypatch, tmp_p
     assert result["flow_id"] == "ordersaldo"
     assert captured["files"] == {}
     assert captured["params"] == {bridge.DEFAULT_MAX_CSV_PARAM: str(max_path)}
+
+
+def test_run_flow_handler_stores_artifacts(monkeypatch):
+    pd = pytest.importorskip("pandas")
+
+    def handler(files, params):
+        table = pd.DataFrame([{"Sändningsnr": "S1", "Predikterade pallplatser": 1.5}])
+        return {
+            "summary": {"Sändningar": 1},
+            "tables": [("forecast", "Forecast", table)],
+            "artifacts": {"forecast_json": {"rows": table.to_dict("records")}},
+            "log": [],
+        }
+
+    monkeypatch.setattr(
+        bridge,
+        "_native_flows",
+        lambda: SimpleNamespace(FLOW_BY_ID={"forecast": {"handler": handler}}),
+    )
+
+    result = bridge.run_flow_handler("forecast", {}, {})
+    session = bridge.SESSIONS[result["session_id"]]
+
+    assert result["artifact_keys"] == ["forecast_json"]
+    assert session["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S1"
+
+
+def test_ytgenerering_attaches_forecast_dataframe_fast_path():
+    pd = pytest.importorskip("pandas")
+    user = business_user(1, 10)
+    table = pd.DataFrame([{"Sändningsnr": "S1"}])
+    bridge.SESSIONS["forecast-session"] = {
+        "flow_id": "forecast",
+        "tables": {"forecast": table},
+        "artifacts": {"forecast_json": {"rows": [{"Sändningsnr": "S1"}]}},
+        "owner": allocation_router._session_owner_payload(user),
+    }
+    params = {"forecast_session_id": "forecast-session"}
+
+    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+
+    assert params["__forecast_df"] is table
+    assert "__forecast_json" not in params
+
+
+def test_ytgenerering_falls_back_to_forecast_json_artifact():
+    user = business_user(1, 10)
+    bridge.SESSIONS["forecast-session"] = {
+        "flow_id": "forecast",
+        "artifacts": {"forecast_json": {"rows": [{"Sändningsnr": "S1"}]}},
+        "owner": allocation_router._session_owner_payload(user),
+    }
+    params = {"forecast_session_id": "forecast-session"}
+
+    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+
+    assert '"S1"' in params["__forecast_json"]
+
+
+def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeypatch, tmp_path):
+    captured = []
+
+    def fake_find_coredata_file(file_type, **kwargs):
+        captured.append((file_type, kwargs["business_code"]))
+        path = tmp_path / f"{file_type}.csv"
+        path.write_text("x\n", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+
+    forecast_defaults = allocation_router._business_coredata_default_files("forecast", {}, "R3")
+    ytgenerering_defaults = allocation_router._business_coredata_default_files("ytgenerering", {}, "R3")
+
+    assert set(forecast_defaults) == {
+        "custom",
+        "item",
+        "item_alias",
+        "dimension",
+        "pallet_type",
+        "item_option",
+    }
+    assert set(ytgenerering_defaults) == {"location"}
+    assert ("location", "R3") in captured
+    assert all(business_code == "R3" for _file_type, business_code in captured)
 
 
 def test_update_observations_writes_to_user_business_paths(monkeypatch, tmp_path):
@@ -809,7 +893,7 @@ def test_allocation_catalog_loads_without_pandas_when_started_from_app_root():
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().split() == ["13", "10"]
+    assert result.stdout.strip().split() == ["15", "10"]
 
 
 def test_native_detector_recognizes_wms_csv_without_pandas(tmp_path):

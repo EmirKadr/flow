@@ -7,6 +7,14 @@ project_root = Path(SPECPATH)
 app_icon = project_root / "desktop" / "assets" / "flow_icon.ico"
 frontend_dir = project_root / "app" / "frontend"
 warehouse_vendor_dir = project_root / "warehouse_tools" / "vendor"
+forecast_training = project_root / "warehouse_tools" / "mg_forecast" / "training.parquet"
+
+# Träningscachen är lokal utvecklardata och inte committad. Inkludera den
+# bara i bygget om den finns på disk, annars hoppas den över utan att
+# spec:en kraschar.
+_optional_datas = []
+if forecast_training.exists():
+    _optional_datas.append((str(forecast_training), "warehouse_tools/mg_forecast"))
 
 a = Analysis(
     ["desktop/main.py"],
@@ -16,11 +24,17 @@ a = Analysis(
         (str(app_icon), "desktop/assets"),
         (str(frontend_dir), "app/frontend"),
         (str(warehouse_vendor_dir), "warehouse_tools/vendor"),
+        *_optional_datas,
     ],
     hiddenimports=[
         "PyQt6.QtWebEngineCore",
         "PyQt6.QtWebEngineWidgets",
         "PyQt6.QtPrintSupport",
+        "lightgbm",
+        "numpy",
+        "pyarrow",
+        "pyarrow.parquet",
+        "xgboost",
     ],
     hookspath=[],
     hooksconfig={},

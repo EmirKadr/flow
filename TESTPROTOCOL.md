@@ -81,7 +81,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_warehouse_tools_local_data.py` | Lagerverktygens lokala fixture-data, flodesregister och regressionsresultat. | `warehouse_tools`, allocate/refill/pallet-space eller lagerfixtures. |
 | `tests/tools/test_access_contracts.py` | Backend/frontend-kontrakt for vy-ID:n, rollistor, default access och legacy-alias. | Vybehorigheter, sidebar pages, roller eller legacy view mapping. |
 | `tests/tools/test_activity_terminology.py` | Terminologikontrakt sa gamla aktivitetsord inte smyger in. | UI-text, docs eller migration fran gammal terminologi. |
-| `tests/tools/test_allocation_split_browser.py` | Playwright-test for Dela-resultattabell och kolumnkopiering. | `dela.html`, split values, tabellrendering eller clipboard for lagerverktyg. |
+| `tests/tools/test_allocation_split_browser.py` | Playwright-test for Dela-resultattabell, Bearbeta-knappar, sessionberoenden och kolumnkopiering. | `dela.html`, `bearbeta.html`, split values, Forecast/Ytgenerering, tabellrendering eller clipboard for lagerverktyg. |
 | `tests/tools/test_compare_warehouse_results.py` | CSV/XLSX-jamforelse for Flow mot Allokera, inklusive exportnormalisering. | `tools/compare_warehouse_results.py`, parityjamforelser eller lagerexportformat. |
 | `tests/tools/test_api_route_contracts.py` | Frontendens hardkodade API-anrop finns i FastAPI med ratt metod. | Nya/andrade API-anrop i JS eller backend-rutter. |
 | `tests/tools/test_flow_cli.py` | CLI-routekatalog, API_ROUTES-dokumentation, generiska API-call och DB-lookup. | `tools/flow_cli.py`, API-rutter, CLI-adapter eller API-dokumentation. |
@@ -144,6 +144,15 @@ python -m pytest tests\tools\test_warehouse_cli.py tests\tools\test_compare_ware
 
 Testet kontrollerar publikt flodesregister, datapool, summaries, tabellnycklar,
 radantal och representativa cellvarden for de deterministiska flodena.
+
+Nar ett nytt Bearbeta-flode laggs till ska teststodet normalt omfatta:
+
+- `tests/services/test_warehouse_tools_local_data.py` for flodesregister, handler,
+  dataformat och domanregler.
+- `tests/services/test_allocation_bridge.py` for API/session/coredata-kontrakt.
+- `tests/tools/test_visual_tools.py` for statiska frontend-/katalogkontrakt.
+- `tests/tools/test_allocation_split_browser.py` nar knappar, readiness,
+  sessionberoenden eller synligt resultat i Bearbeta andras.
 
 For manuell parity mot gamla Allokera-CLI:t finns tre terminalspår:
 

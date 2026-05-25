@@ -479,7 +479,7 @@ def _write_process_filter_table(df, *, source_key: str, area_focus: str) -> Path
     )
     path = Path(target.name)
     target.close()
-    df.to_csv(path, index=False, encoding="utf-8-sig")
+    df.to_csv(path, index=False, encoding="utf-8-sig", sep="\t")
     return path
 
 
@@ -862,11 +862,13 @@ def run_flow_handler(
         ) from exc
 
     tables = result.get("tables", [])
+    artifacts = result.get("artifacts", {}) or {}
     session_id = uuid.uuid4().hex
     SESSIONS[session_id] = {
         "flow_id": flow_id,
         "tables": {key: df for key, _label, df in tables},
         "labels": {key: label for key, label, _df in tables},
+        "artifacts": artifacts,
     }
     return {
         "flow_id": flow_id,
@@ -879,6 +881,7 @@ def run_flow_handler(
         ],
         "text": result.get("text"),
         "log": result.get("log", []),
+        "artifact_keys": sorted(artifacts),
     }
 
 

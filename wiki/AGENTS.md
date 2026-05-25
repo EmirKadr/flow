@@ -33,6 +33,17 @@ Uppdatera wikin nar du:
 - lagger till nya felmeddelanden, toastar eller konfliktfall
 - upptacker att dokumentationen ar fel eller for vag
 
+Nar du lagger till eller andrar ett Bearbeta-flode ska du ocksa uppdatera
+`warehouse-tools.md`, `testing-release.md` och `log.md`. Dokumentera vilka
+lokala filer, karnfiler, sessioner/artifacts och knappar som kravs, samt hur en
+anvandare ser att flodet ar redo eller blockerat.
+
+For Bearbeta-floden med beroenden mellan knappar, till exempel Forecast som
+maste koras fore Ytgenerering, ska wikin beskriva bade anvandarflodet och
+sessionkontraktet. Testerna ska tacka minst ett backend-/kontraktstest och ett
+anvandarnara test som verifierar knappens enabled/disabled-lage eller inskickad
+session-parameter.
+
 Varje uppdatering ska ocksa laggas append-only i `log.md` med formatet:
 
 `## [YYYY-MM-DD] typ | kort titel`
@@ -61,4 +72,3 @@ Wikin ska vara skriven sa att en senare chattfunktion kan svara anvandare pa fra
 - Varfor skiljer webben och Windows-appen sig?
 
 Skriv darfor alltid beteende i anvandartermer forst och teknisk detalj efterat.
-

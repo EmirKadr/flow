@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -27,6 +28,15 @@ SELF_SERVICE_FLOW_IDS = {"split-values"}
 BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
 BUSINESS_COREDATA_FLOW_DEFAULTS = {
     "allocate": {"items": "item_option"},
+    "forecast": {
+        "custom": "custom",
+        "item": "item",
+        "item_alias": "item_alias",
+        "dimension": "dimension",
+        "pallet_type": "pallet_type",
+        "item_option": "item_option",
+    },
+    "ytgenerering": {"location": "location"},
 }
 PROCESS_MATRIX_HIDDEN_FLOW_IDS = {"observations-update", "observations-sync", "update-check", "split-values"}
 logger = logging.getLogger(__name__)
@@ -64,7 +74,7 @@ def _flow_audit_payload(
     payload = {
         "flow_id": flow_id,
         "file_keys": sorted(str(key) for key in (files or {}).keys()),
-        "param_keys": sorted(str(key) for key in (params or {}).keys()),
+        "param_keys": sorted(str(key) for key in (params or {}).keys() if not str(key).startswith("__")),
     }
     if area_focus:
         payload["area_focus"] = area_focus
@@ -253,6 +263,26 @@ def _assert_session_allowed(session_id: str, user: User) -> None:
     if owner_business_id is None or owner_business_id == getattr(user, "business_id", None):
         return
     raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
+
+
+def _attach_required_session_artifacts(flow_id: str, params: dict, user: User) -> None:
+    if flow_id != "ytgenerering":
+        return
+    forecast_session_id = str(params.get("forecast_session_id") or "").strip()
+    if not forecast_session_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Kör Forecast först.")
+    _assert_session_allowed(forecast_session_id, user)
+    session = bridge.SESSIONS.get(forecast_session_id)
+    if session is None or session.get("flow_id") != "forecast":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Forecast-sessionen hittades inte.")
+    forecast_df = (session.get("tables") or {}).get("forecast")
+    if forecast_df is not None:
+        params["__forecast_df"] = forecast_df
+        return
+    artifact = (session.get("artifacts") or {}).get("forecast_json")
+    if not artifact:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Forecast-resultatet saknar data för Ytgenerering.")
+    params["__forecast_json"] = json.dumps(artifact, ensure_ascii=False)
 
 
 @router.get("/health")
@@ -478,6 +508,7 @@ async def run_flow(
         process_matrix = _stored_process_matrix(db)
         if area_focus and not bridge.process_flow_visible(flow_id, area_focus, process_matrix):
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Funktionen ar inte tillganglig for vald toggle")
+        _attach_required_session_artifacts(flow_id, params, user)
         default_max_csv_path = None
         business_code = _allocation_business_code(db, user, area_focus=area_focus)
         coredata_files = _business_coredata_default_files(flow_id, files, business_code)

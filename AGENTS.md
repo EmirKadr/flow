@@ -129,6 +129,13 @@ Tester ska tankas fran tva perspektiv:
   behorigheter, API-svar eller andra interna antaganden som gor felet latt att
   hitta tidigt
 
+For nya Bearbeta-/lagerfloden ska agenten normalt lagga teststod i flera lager:
+handler-/domantest for `warehouse_tools`, API-/session-/coredata-test for
+allokeringsbryggan och ett anvandarnara frontendtest nar knappar, readiness eller
+flodesberoenden andras. Om ett flode bygger pa ett tidigare resultat, till
+exempel en session-artifact, ska testet verifiera bade att artifacten sparas och
+att nasta knapp skickar ratt session-id.
+
 Nar en andring byter namn, begrepp, menyval, roll, vy eller annat sprak i
 produkten ska agenten inte skriva ett engangstest for bara den texten. Lagg eller
 uppdatera i stallet ett ateranvandbart kontrakt, till exempel i

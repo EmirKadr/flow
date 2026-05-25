@@ -37,6 +37,8 @@ python -m tools.desktop_app_probe
 | flow/Oversikt | Interaktiv E2E for celler, drag, undo/redo och roller |
 | Sidebar/roller | Rolltester + visual smoke for flera roller |
 | Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots |
+| Nytt Bearbeta-flode | Register-/handler-test i `tests/services/test_warehouse_tools_local_data.py`, API/sessiontest i `tests/services/test_allocation_bridge.py`, statiskt UI-kontrakt i `tests/tools/test_visual_tools.py` och Playwright-test i `tests/tools/test_allocation_split_browser.py` om knappar eller readiness andras |
+| Bearbeta-flode med sessionberoende | Testa att forsta flodet sparar artifact/session, att nasta flode kraver den, och att frontend skickar session-id:t vidare |
 | Desktop-app | `desktop\main.py --smoke-test`, desktop probe/shell screens |
 | Dokumentation/wiki | Kontrollera att nya wiki-lankar finns och att `index.md`/`log.md` ar uppdaterade |
 
@@ -59,4 +61,3 @@ For release: folj `TESTPROTOCOL.md` och `RELEASE.md`. Kort version:
 - `../RELEASE.md`
 - `../tools/visual_smoke.py`
 - `../tools/interactive_e2e.py`
-

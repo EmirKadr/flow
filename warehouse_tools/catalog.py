@@ -23,6 +23,36 @@ CATALOG_FLOWS: list[dict] = [
         ],
     },
     {
+        "id": "forecast",
+        "label": "Forecast",
+        "category": "Forecast & yta",
+        "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
+        "inputs": [
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
+            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+        ],
+        "coredata": [
+            {"key": "custom", "label": "custom", "required": True},
+            {"key": "item", "label": "item", "required": True},
+            {"key": "item_alias", "label": "item_alias", "required": True},
+            {"key": "dimension", "label": "dimension", "required": True},
+            {"key": "pallet_type", "label": "pallet_type", "required": True},
+            {"key": "item_option", "label": "item_option", "required": True},
+        ],
+    },
+    {
+        "id": "ytgenerering",
+        "label": "Ytgenerering",
+        "category": "Forecast & yta",
+        "description": "Placera forecastens sändningar på lagerplatser utifrån Max pall och transportör.",
+        "inputs": [],
+        "coredata": [
+            {"key": "location", "label": "Lagerplatser", "required": True},
+        ],
+        "requiresSessionFlow": {"flowId": "forecast", "label": "Forecast"},
+    },
+    {
         "id": "ordersaldo",
         "label": "Ordersaldo",
         "category": "Order & saldo",

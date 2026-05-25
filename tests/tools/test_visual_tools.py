@@ -479,6 +479,14 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".upload-context-menu" in styles
     assert ".sidebar.collapsed .sidebar-edit" in styles
     assert ".app.sidebar-initializing" in styles
+    assert "--sidebar-top:" in styles
+    assert re.search(
+        r"\.sidebar\s*\{[^}]*position:\s*fixed;[^}]*top:\s*var\(--sidebar-top\);[^}]*width:\s*var\(--sidebar-w\);",
+        styles,
+        re.S,
+    )
+    assert re.search(r"\.app > main\s*\{[^}]*grid-column:\s*2;", styles, re.S)
+    assert "body.demo-mode .sidebar" in styles
     assert "postFile" in api_js
     assert "/api/productivity/files/raw" in productivity_uploads
     assert "productivityLocalFiles" in productivity
@@ -870,7 +878,7 @@ def test_sidebar_pages_reserve_layout_before_auth_finishes():
     assert "localStorage.setItem(SIDEBAR_USER_CACHE_KEY" in common
     assert "sessionStorage.getItem(SIDEBAR_USER_CACHE_KEY) || localStorage.getItem(SIDEBAR_USER_CACHE_KEY)" in common
     assert "body.with-sidebar:not(.sidebar-hydrated)" in styles
-    assert "grid-template-columns: var(--sidebar-w) 1fr" in styles
+    assert "grid-template-columns: var(--sidebar-w) minmax(0, 1fr)" in styles
 
 
 def test_allocation_pages_are_wired_to_shared_tool_shell():
@@ -945,6 +953,14 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "v_ask_correct_log" not in allocation
     assert "ALLOCATION_CORE_FILES" in allocation
     assert "allocationCoreFile" in allocation
+    assert "lastForecastSessionId" in allocation
+    assert "allocationRequiredSessionId" in allocation
+    assert 'fd.append("forecast_session_id"' in allocation
+    assert '"id": "forecast"' in catalog
+    assert '"id": "ytgenerering"' in catalog
+    assert '"requiresSessionFlow": {"flowId": "forecast"' in catalog
+    assert "flow_forecast" in flows
+    assert "flow_ytgenerering" in flows
     assert "Kärnfil" in allocation
     assert '" (kärnfil)"' in allocation
     assert "artikel_max.csv (kärnfil)" in catalog

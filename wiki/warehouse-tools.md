@@ -34,6 +34,8 @@ Uppladdningar visar en separat lista for permanenta karnfiler. `artikel_max.csv`
 
 Allokering anvander verksamhetens `item_option`-karnfil nar anvandaren inte laddat upp en egen Item option-fil. En uppladdad lokal fil i sloten vinner for den korningen, men den permanenta karnfilen ligger kvar som verksamhetens fallback.
 
+Forecast anvander verksamhetens karnfiler `custom`, `item`, `item_alias`, `dimension`, `pallet_type` och `item_option` som standard. Ytgenerering anvander verksamhetens `location` som lagerplatsunderlag. Anvandaren kan fortfarande ladda upp egna lokala filer for en korning nar flodet har en motsvarande filslot, men karnfilen ligger kvar som verksamhetens fallback.
+
 Nar en slot redan har en verksamhetens karnfil, till exempel `item_option` eller `artikel_max.csv`, visas den i Karnfiler i stallet for att dubbelvisas i Filer. Om anvandaren laddar upp en lokal override i sessionen visas sloten i Filer igen.
 
 ## Bearbeta-floden
@@ -63,6 +65,12 @@ Reglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix`
 | Dispatchkontroll | Orderoversikt, Dispatchpallar; valfritt Detalj Kundorder | Dispatchavvikelser |
 | Vecka 27-kontroll | Detalj Kundorder | Avvikelser/text |
 | Prognosrapport | Prognos eller kampanj, samt Saldo; valfritt Buffert | Prognos vs Autoplock |
+| Forecast | Detalj Kundorder, Orderoversikt, Buffertpallar och karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` | Forecast per `Sandningsnr`, Excel/CSV-tabell och sessiondata for Ytgenerering |
+| Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser, UTL1-UTL652, minst 6 tecken och `Max pall > 0` |
+
+Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil.
+
+Ytgenerering sorterar transportorer efter total pallplatsbehov och placerar deras sandningar i sammanhallna block. En lagerplats delas aldrig mellan flera sandningar; en sandning kan daremot spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har.
 
 Dolda/tekniska floden finns for observations-update, observations-sync och update-check. Observations kan aven triggas automatiskt nar ny buffertfil laggs in. Observations och den framraknade karnfilen `artikel_max.csv` ar verksamhetsseparerade: Stigamo anvander legacy-filerna i `lowfreqdata/buffertpall/`, medan R3 anvander egna filer under `lowfreqdata/buffertpall/r3/`. En R3-uppladdning ska darfor inte andra Stigamos observations- eller artikel_max-underlag, och tvartom.
 
@@ -146,6 +154,8 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 - `../warehouse_tools/catalog.py`
 - `../warehouse_tools/cli.py`
 - `../warehouse_tools/flows.py`
+- `../warehouse_tools/surface_generation.py`
+- `../warehouse_tools/mg_forecast/forecast.py`
 - `../warehouse_tools/vendor/allokering12.1.py`
 - `../tools/flow_cli.py`
 - `../tools/compare_warehouse_results.py`

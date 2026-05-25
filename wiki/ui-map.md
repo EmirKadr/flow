@@ -1,13 +1,15 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
 # UI-karta och alla kontroller
 
 Kort svar: de flesta sidor delar sidebar, omradesfokus, tema, logg och auth-guard fran `common.js`. Varje funktionssida har egna kontroller som ar dokumenterade mer detaljerat pa respektive sida.
+
+Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall skrollas. Om det finns manga menyval skrollar bara menylistan inne i sidebaren; footer med omradesfokus, hjalp/logg/tema och utloggning ligger kvar.
 
 ## Gemensamma kontroller pa skyddade sidor
 

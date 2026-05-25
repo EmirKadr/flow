@@ -7,6 +7,14 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-25] fix | Sidebar ar fast vid skroll
+
+Sidebaren ar nu en fast vansterpanel i webb och desktop-frontend. Huvudytan reserverar sidebar-kolumnen separat, demo-bannern ger fast offset, och bara menylistan inuti sidebaren skrollar nar det finns fler menyval an vad som ryms.
+
+## [2026-05-25] feature | Forecast och Ytgenerering i Bearbeta
+
+Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, filtrerar lagerplatser pa `Typ=U`, UTL1-UTL652, minst 6 tecken och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
+
 ## [2026-05-25] feature | Demo-läge med per-session SQLite-sandbox
 
 flow har fått ett fast `demo`-konto för säljpresentationer. Vid inloggning snapshottas live-databasen till en privat SQLite-fil i temp-mappen och en privat datakatalog skapas. Alla skrivningar routas dit via `get_db()` (engine-byte) och `demo_data_root_var` (filsystem). Vid utloggning raderas SQLite-filen och datakatalogen så nästa demo startar rent. Frontend visar gul/röd `DEMO`-banner och en valbar guidad rundtur genom alla synliga vyer (state via `sessionStorage`). Demo-användaren är låst i Användare-vyn — kan inte tas bort, döpas om eller fråntas admin-rollen, men lösenord/visningsnamn/område kan rotateras. Se [demo-laget](demo-mode.md).

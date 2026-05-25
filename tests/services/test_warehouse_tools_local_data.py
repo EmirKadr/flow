@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from warehouse_tools import flows
+from warehouse_tools.surface_generation import generate_surface_plan
 
 
 pd = pytest.importorskip("pandas")
@@ -14,6 +16,8 @@ WAREHOUSE_TESTDATA = ROOT / "testdata" / "warehouse_tools"
 
 REGISTRY_FLOW_IDS = (
     "allocate",
+    "forecast",
+    "ytgenerering",
     "ordersaldo",
     "lyx",
     "pafyllnadsprio",
@@ -28,7 +32,11 @@ REGISTRY_FLOW_IDS = (
     "update-check",
 )
 
-LOCAL_DATA_FLOW_IDS = tuple(flow_id for flow_id in REGISTRY_FLOW_IDS if flow_id not in {"observations-sync", "update-check"})
+LOCAL_DATA_FLOW_IDS = tuple(
+    flow_id
+    for flow_id in REGISTRY_FLOW_IDS
+    if flow_id not in {"forecast", "ytgenerering", "observations-sync", "update-check"}
+)
 
 EXPECTED_SUMMARIES = {
     "allocate": {
@@ -332,8 +340,195 @@ def test_warehouse_registry_is_loaded_from_flow_package():
     public_registry = flows.public_registry()
     assert [flow["id"] for flow in public_registry] == list(REGISTRY_FLOW_IDS)
     assert all("handler" not in flow for flow in public_registry)
+    forecast = next(flow for flow in public_registry if flow["id"] == "forecast")
+    assert {entry["key"] for entry in forecast["coredata"]} == {
+        "custom",
+        "item",
+        "item_alias",
+        "dimension",
+        "pallet_type",
+        "item_option",
+    }
+    ytgenerering = next(flow for flow in public_registry if flow["id"] == "ytgenerering")
+    assert ytgenerering["requiresSessionFlow"]["flowId"] == "forecast"
+    assert ytgenerering["coredata"] == [{"key": "location", "label": "Lagerplatser", "required": True}]
     ordersaldo = next(flow for flow in public_registry if flow["id"] == "ordersaldo")
     assert any(input_def["key"] == "max_csv" for input_def in ordersaldo["inputs"])
+
+
+def test_ytgenerering_filters_locations_and_groups_transporters():
+    forecast = pd.DataFrame(
+        [
+            {"Sändningsnr": "S1", "Transportör": "Akeri A", "Predikterade pallplatser": 2.5},
+            {"Sändningsnr": "S2", "Transportör": "Akeri A", "Predikterade pallplatser": 1.0},
+            {"Sändningsnr": "S3", "Transportör": "Akeri B", "Predikterade pallplatser": 2.0},
+        ]
+    )
+    locations = pd.DataFrame(
+        [
+            {"Lagerplats": "UTL1", "Typ": "U", "Max pall": 10},
+            {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL101", "Typ": "U", "Max pall": 2},
+            {"Lagerplats": "UTL102", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL103", "Typ": "U", "Max pall": 2},
+            {"Lagerplats": "UTL104", "Typ": "H", "Max pall": 2},
+            {"Lagerplats": "UTL105", "Typ": "U", "Max pall": 0},
+        ]
+    )
+
+    result = generate_surface_plan(forecast, locations)
+
+    assert result.summary["ej_placerade_pallplatser"] == 0
+    assert list(result.assignments["Lagerplats"]) == ["UTL100", "UTL101", "UTL102", "UTL103"]
+    assert list(result.assignments["Transportör"]) == ["Akeri A", "Akeri A", "Akeri A", "Akeri B"]
+    assert result.assignments["Lagerplats"].is_unique
+    assert list(result.assignments["Placerade pallplatser"]) == [1.0, 1.5, 1.0, 2.0]
+
+
+def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
+    from warehouse_tools.mg_forecast import forecast as mg_forecast
+
+    required = {
+        key: tmp_path / f"{key}.csv"
+        for key in (
+            "orders",
+            "overview",
+            "buffer",
+            "custom",
+            "item",
+            "item_alias",
+            "dimension",
+            "pallet_type",
+            "item_option",
+        )
+    }
+    for path in required.values():
+        path.write_text("x\n", encoding="utf-8")
+
+    captured = {}
+
+    def fake_stage_support_files(file_map, staging_root):
+        captured["file_map"] = dict(file_map)
+        return Path(staging_root) / "Fore"
+
+    def fake_run_forecast(orders_path, *, data_fore):
+        captured["orders_path"] = orders_path
+        captured["data_fore"] = data_fore
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "Sändningsnr": "S-1",
+                        "Transportör": "Akeri A",
+                        "Predikterade pallplatser": 2.5,
+                    }
+                ]
+            ),
+            {
+                "antal_grupper": 1,
+                "summa_pallplatser": 2.5,
+                "medel_pallplatser": 2.5,
+                "max_pallplatser": 2.5,
+            },
+        )
+
+    monkeypatch.setattr(mg_forecast, "stage_support_files", fake_stage_support_files)
+    monkeypatch.setattr(mg_forecast, "run_forecast", fake_run_forecast)
+
+    result = flows.FLOW_BY_ID["forecast"]["handler"](required, {})
+
+    assert result["summary"] == {
+        "Sändningar": 1,
+        "Predikterade pallplatser": 2.5,
+        "Medel pallplatser": 2.5,
+        "Max pallplatser": 2.5,
+    }
+    assert result["tables"][0][0:2] == ("forecast", "Forecast")
+    assert result["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S-1"
+    assert captured["file_map"]["buffert"] == required["buffer"]
+    assert captured["orders_path"] == required["orders"]
+
+
+def test_forecast_stage_support_files_uses_canonical_names(tmp_path):
+    from warehouse_tools.mg_forecast import forecast as mg_forecast
+
+    file_map = {}
+    for file_type in mg_forecast.SUPPORT_FILE_TYPES:
+        source = tmp_path / f"flow_mg_{file_type}_temp.csv"
+        source.write_text("x\n", encoding="utf-8")
+        file_map[file_type] = source
+
+    fore_dir = mg_forecast.stage_support_files(file_map, tmp_path / "stage")
+
+    assert (fore_dir / "v_ask_order_overview-flow.csv").is_file()
+    assert (fore_dir / "v_ask_article_buffertpallet-flow.csv").is_file()
+    assert (fore_dir / "custom-flow.csv").is_file()
+    assert (fore_dir / "item-flow.csv").is_file()
+    assert (fore_dir / "item_alias-flow.csv").is_file()
+    assert (fore_dir / "dimension-flow.csv").is_file()
+    assert (fore_dir / "pallet_type-flow.csv").is_file()
+    assert (fore_dir / "item_option-flow.csv").is_file()
+
+
+def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypatch, tmp_path):
+    forecast_payload = {
+        "columns": ["Sändningsnr", "Transportör", "Predikterade pallplatser"],
+        "rows": [
+            {"Sändningsnr": "S-1", "Transportör": "Akeri A", "Predikterade pallplatser": 1.5},
+        ],
+    }
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1},
+                {"Lagerplats": "UTL101", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_json": json.dumps(forecast_payload, ensure_ascii=False)},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert result["summary"]["Sändningar"] == 1
+    assert result["summary"]["Ej placerade pallplatser"] == 0
+    assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL100", "UTL101"]
+    assert list(tables["ytgenerering"]["Placerade pallplatser"]) == [1.0, 0.5]
+
+
+def test_ytgenerering_flow_consumes_forecast_dataframe_fast_path(monkeypatch, tmp_path):
+    forecast_df = pd.DataFrame(
+        [
+            {"Sändningsnr": "S-1", "Transportör": "Akeri A", "Predikterade pallplatser": 1.5},
+        ]
+    )
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1},
+                {"Lagerplats": "UTL101", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_df": forecast_df},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert result["summary"]["Ej placerade pallplatser"] == 0
+    assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL100", "UTL101"]
 
 
 @pytest.mark.filterwarnings(
@@ -395,6 +590,7 @@ def test_source_has_no_technical_dependency_on_old_allocation_project():
         "EmirKadr/" + "allokering",
         "ALLOKERING" + "_ROOT",
         str(Path("C:/Users/emikad/OneDrive - Dole Nordic AB/Skrivbordet/projects") / "allokering"),
+        "Mestergruppen " + "Prelimin" + "\u00e4r" + "bokning",
     ]
     scanned_suffixes = {
         ".bat",

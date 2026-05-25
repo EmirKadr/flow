@@ -11,6 +11,10 @@ data/v_ask_pick_log_full*.csv
 data/v_ask_trans_log*.csv
 data/v_ask_palletloading_log*.csv
 
+# Lokal MG forecast-cache och rå träningsdata (innehåller kunddata)
+warehouse_tools/mg_forecast/training.parquet
+warehouse_tools/mg_forecast/data/
+
 # Python
 __pycache__/
 *.py[cod]

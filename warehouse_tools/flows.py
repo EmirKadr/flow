@@ -16,6 +16,7 @@ All domänlogik kommer från motorn - inga beräkningar dupliceras här.
 """
 from __future__ import annotations
 
+import json
 import tempfile
 import uuid
 from functools import lru_cache
@@ -25,6 +26,7 @@ from typing import Callable, Optional
 import pandas as pd
 
 from .engine import engine as E
+from .surface_generation import generate_surface_plan
 
 NEAR_MISS_COLUMNS = [
     "Artikel", "OrderID", "OrderRad", "PallID", "Kallplats", "Mottagen",
@@ -420,6 +422,127 @@ def flow_update_check(files: dict, params: dict) -> dict:
     }
 
 
+FORECAST_FILE_LABELS = {
+    "orders": "v_ask_customer_order_details_all",
+    "overview": "v_ask_order_overview",
+    "buffer": "v_ask_article_buffertpallet",
+    "custom": "custom",
+    "item": "item",
+    "item_alias": "item_alias",
+    "dimension": "dimension",
+    "pallet_type": "pallet_type",
+    "item_option": "item_option",
+}
+
+
+def _require_files(files: dict, required: list[str]) -> None:
+    missing = [FORECAST_FILE_LABELS.get(key, key) for key in required if key not in files]
+    if missing:
+        raise ValueError("Saknar filer: " + ", ".join(missing))
+
+
+def flow_forecast(files: dict, params: dict) -> dict:
+    required = [
+        "orders",
+        "overview",
+        "buffer",
+        "custom",
+        "item",
+        "item_alias",
+        "dimension",
+        "pallet_type",
+        "item_option",
+    ]
+    _require_files(files, required)
+
+    from .mg_forecast import forecast as mg_forecast
+
+    file_map = {
+        "orders": Path(files["orders"]),
+        "overview": Path(files["overview"]),
+        "buffert": Path(files["buffer"]),
+        "custom": Path(files["custom"]),
+        "item": Path(files["item"]),
+        "item_alias": Path(files["item_alias"]),
+        "dimension": Path(files["dimension"]),
+        "pallet_type": Path(files["pallet_type"]),
+        "item_option": Path(files["item_option"]),
+    }
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="flow_forecast_") as tmp:
+            fore_dir = mg_forecast.stage_support_files(file_map, tmp)
+            forecast_df, raw_summary = mg_forecast.run_forecast(file_map["orders"], data_fore=fore_dir)
+    except ImportError as exc:
+        raise RuntimeError(
+            "Forecast kräver ML-beroenden. Kör installation från app/requirements.txt och prova igen."
+        ) from exc
+
+    summary = {
+        "Sändningar": int(raw_summary.get("antal_grupper", len(forecast_df))),
+        "Predikterade pallplatser": raw_summary.get("summa_pallplatser", 0),
+        "Medel pallplatser": raw_summary.get("medel_pallplatser", 0),
+        "Max pallplatser": raw_summary.get("max_pallplatser", 0),
+    }
+    artifact = {
+        "columns": list(forecast_df.columns),
+        "rows": forecast_df.to_dict("records"),
+        "summary": summary,
+    }
+    return {
+        "summary": summary,
+        "tables": [("forecast", "Forecast", forecast_df)],
+        "artifacts": {"forecast_json": artifact},
+        "log": [
+            "Forecast körd fristående i Flow.",
+            "Forecast sparad som session-artifact för Ytgenerering.",
+        ],
+    }
+
+
+def flow_ytgenerering(files: dict, params: dict) -> dict:
+    if "location" not in files:
+        raise ValueError("Saknar kärnfilen location/lagerplatser.")
+
+    forecast_df = params.get("__forecast_df")
+    if forecast_df is not None and not isinstance(forecast_df, pd.DataFrame):
+        forecast_df = pd.DataFrame(forecast_df)
+
+    raw_forecast = params.get("__forecast_json")
+    if forecast_df is None and not raw_forecast:
+        raise ValueError("Kör Forecast först, så Ytgenerering kan använda forecastens resultat.")
+
+    if forecast_df is None:
+        payload = json.loads(raw_forecast)
+        rows = payload.get("rows") or []
+        columns = payload.get("columns") or None
+        forecast_df = pd.DataFrame(rows, columns=columns)
+    locations_df = _read(Path(files["location"]))
+    result = generate_surface_plan(forecast_df, locations_df)
+
+    tables = [
+        ("ytgenerering", "Ytgenerering", result.assignments),
+        ("transportorer", "Transportörer", result.carrier_overview),
+    ]
+    if not result.unplaced.empty:
+        tables.append(("ej_placerade", "Ej placerade", result.unplaced))
+
+    summary = {
+        "Sändningar": result.summary["antal_sändningar"],
+        "Använda lagerplatser": result.summary["använda_lagerplatser"],
+        "Placerade pallplatser": result.summary["placerade_pallplatser"],
+        "Ej placerade pallplatser": result.summary["ej_placerade_pallplatser"],
+    }
+    return {
+        "summary": summary,
+        "tables": tables,
+        "log": [
+            "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
+            "Sändningar placerade carrier-vis så transportörer hålls ihop.",
+        ],
+    }
+
+
 # --- Registry ----------------------------------------------------------------
 # Varje post: id, label, category, description, inputs[], handler.
 # input.type: file | text | number | textarea
@@ -437,6 +560,34 @@ FLOWS: list[dict] = [
             {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
             {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
         ],
+    },
+    {
+        "id": "forecast", "label": "Forecast", "category": "Forecast & yta",
+        "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
+        "handler": flow_forecast,
+        "inputs": [
+            {"key": "orders", "label": "Detalj Kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
+            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+        ],
+        "coredata": [
+            {"key": "custom", "label": "custom", "required": True},
+            {"key": "item", "label": "item", "required": True},
+            {"key": "item_alias", "label": "item_alias", "required": True},
+            {"key": "dimension", "label": "dimension", "required": True},
+            {"key": "pallet_type", "label": "pallet_type", "required": True},
+            {"key": "item_option", "label": "item_option", "required": True},
+        ],
+    },
+    {
+        "id": "ytgenerering", "label": "Ytgenerering", "category": "Forecast & yta",
+        "description": "Placera forecastens sändningar på lagerplatser utifrån Max pall och transportör.",
+        "handler": flow_ytgenerering,
+        "inputs": [],
+        "coredata": [
+            {"key": "location", "label": "Lagerplatser", "required": True},
+        ],
+        "requiresSessionFlow": {"flowId": "forecast", "label": "Forecast"},
     },
     {
         "id": "ordersaldo", "label": "Ordersaldo", "category": "Order & saldo",
