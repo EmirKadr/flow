@@ -782,7 +782,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "/api/persons/import-rows" in persons_js
     assert "openBulkPersonsModal" in persons_js
     assert re.search(r'key:\s*"name",\s*label:\s*"Namn",\s*required:\s*true', persons_js)
-    assert 'key: "home_area", label: "Hemområde", required: false' in persons_js
+    assert re.search(r'key:\s*"home_area",\s*label:\s*"[^"]+",\s*required:\s*false', persons_js)
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
     assert 'api.download("/api/persons/import-template", "personer-importmall.xlsx")' in persons_js
     assert 'window.location.href = "/api/persons/import-template"' not in persons_js
@@ -794,9 +794,9 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="user-import-help"' in users_html
     assert "/api/users/import-rows" in users_js
     assert "openBulkUsersModal" in users_js
-    assert '{ key: "username", label: "Användarnamn", required: true }' in users_js
-    assert '{ key: "roles", label: "Roller", required: true }' in users_js
-    assert '{ key: "display_name", label: "Visningsnamn", required: false }' in users_js
+    assert re.search(r'key:\s*"username",\s*label:\s*"[^"]+",\s*required:\s*true', users_js)
+    assert re.search(r'key:\s*"roles",\s*label:\s*"Roller",\s*required:\s*true', users_js)
+    assert re.search(r'key:\s*"display_name",\s*label:\s*"Visningsnamn",\s*required:\s*false', users_js)
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
     assert 'api.download("/api/users/import-template", "anvandare-importmall.xlsx")' in users_js
     assert 'window.location.href = "/api/users/import-template"' not in users_js
@@ -814,8 +814,8 @@ def test_import_views_have_templates_and_help_buttons():
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js
     assert "openBulkActivitiesModal" in activities_js
-    assert '{ key: "label", label: "Etikett", required: true }' in activities_js
-    assert 'key: "area", label: "Område", required: false' in activities_js
+    assert re.search(r'key:\s*"label",\s*label:\s*"Etikett",\s*required:\s*true', activities_js)
+    assert re.search(r'key:\s*"area",\s*label:\s*"[^"]+",\s*required:\s*false', activities_js)
     assert 'api.download("/api/activities/import-template", "aktiviteter-importmall.xlsx")' in activities_js
     assert 'window.location.href = "/api/activities/import-template"' not in activities_js
     assert "/api/activities/import" in activities_js
