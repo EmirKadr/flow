@@ -2131,6 +2131,18 @@ table.overview th {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+table.overview th .overview-day-date,
+table.overview th .overview-week-label {
+  display: block;
+  line-height: 1.15;
+}
+table.overview th .overview-week-label {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-soft);
+  text-transform: none;
+  letter-spacing: 0;
+}
 table.overview th.name, table.overview td.name {
   width: 190px;
   min-width: 190px;
@@ -3851,4 +3863,23 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
   font-weight: 800;
   letter-spacing: 0.06em;
   vertical-align: 1px;
+}
+
+.demo-tour-highlight {
+  position: relative;
+  z-index: 96;
+  border-radius: 12px;
+  outline: 3px solid #dc2626;
+  outline-offset: 3px;
+  animation: demo-tour-highlight-pulse 1.4s ease-in-out infinite;
+}
+@keyframes demo-tour-highlight-pulse {
+  0%, 100% {
+    outline-color: #dc2626;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55);
+  }
+  50% {
+    outline-color: #ef4444;
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+  }
 }

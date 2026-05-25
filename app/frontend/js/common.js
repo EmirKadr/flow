@@ -167,6 +167,8 @@ const ROLE_VIEW_IDS = [
 ];
 
 const ROLE_VIEW_ROLES = [
+  { value: "super_user", label: "Super User", lockedLevel: "edit" },
+  { value: "demo", label: "Demo" },
   { value: "leader", label: "Arbetsledare" },
   { value: "staffing_manager", label: "Bemanningsansvarig" },
   { value: "admin", label: "Administratör" },
@@ -195,6 +197,19 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     activityImport: "edit",
   },
   admin: {
+    schedule: "edit",
+    overview: "edit",
+    persons: "edit",
+    personSortOrder: "edit",
+    personImport: "edit",
+    activities: "edit",
+    activityImport: "edit",
+    areas: "edit",
+    users: "edit",
+    appSettings: "edit",
+    allocationProcessMatrix: "edit",
+  },
+  demo: {
     schedule: "edit",
     overview: "edit",
     persons: "edit",
@@ -711,6 +726,7 @@ function userRoles(user) {
 
 function roleDisplayName(role) {
   if (role === "super_user") return "Super User";
+  if (role === "demo") return "Demo";
   return ROLE_VIEW_ROLES.find((option) => option.value === role)?.label || role;
 }
 
@@ -723,7 +739,9 @@ function sidebarRoleLabel(user) {
 function roleViewDefaultAccess() {
   return Object.fromEntries(ROLE_VIEW_ROLES.map((role) => [
     role.value,
-    { ...(ROLE_VIEW_DEFAULT_ACCESS[role.value] || {}) },
+    role.lockedLevel
+      ? Object.fromEntries(ROLE_VIEW_IDS.map((viewId) => [viewId, role.lockedLevel]))
+      : { ...(ROLE_VIEW_DEFAULT_ACCESS[role.value] || {}) },
   ]));
 }
 
@@ -741,6 +759,7 @@ function normalizeRoleViewAccess(access = {}) {
 
   for (const [role, roleAccess] of Object.entries(incoming)) {
     if (!roles.has(role) || !roleAccess || typeof roleAccess !== "object") continue;
+    if (ROLE_VIEW_ROLES.find((option) => option.value === role)?.lockedLevel) continue;
     normalized[role] = { ...(defaults[role] || {}) };
     for (const [viewId, level] of Object.entries(roleAccess)) {
       const normalizedViewId = normalizeViewId(viewId);
@@ -779,7 +798,9 @@ function roleViewAccessLevel(user, viewId) {
   const access = roleViewAccessForRender();
   const normalizedViewId = normalizeViewId(viewId);
   let best = "none";
-  for (const role of userRoles(user)) {
+  const roles = userRoles(user);
+  if (user?.is_demo && !roles.includes("demo")) roles.push("demo");
+  for (const role of roles) {
     const level = access[role]?.[normalizedViewId] || "none";
     if ((ROLE_VIEW_LEVEL_RANK[level] || 0) > (ROLE_VIEW_LEVEL_RANK[best] || 0)) best = level;
   }
@@ -2077,7 +2098,7 @@ const DEMO_TOUR_DESCRIPTIONS = {
   users:
     "Användarvyn är där admin skapar konton, sätter roller och vybehörigheter.<br><br>"
     + "<strong>Ny användare</strong> öppnar modal för konto + roll + område.<br>"
-    + "<strong>Flera nya användare</strong> för bulk-skapande.<br>"
+    + "<strong>Flera nya användare</strong> för bulk-skapande med en roll per rad.<br>"
     + "<strong>Vybehörigheter</strong>-knappen öppnar rollmatrisen där du sätter per roll vilka vyer som är Ingen/Visa/Redigera.<br>"
     + "<strong>Redigera</strong> ändrar enskilt konto. <strong>Ta bort</strong> raderar det.<br>"
     + "Checkboxen <strong>Lås bemanningsceller</strong> styr om arbetsledare kan ändra varandras celler.",
@@ -2103,7 +2124,7 @@ function ensureDemoBanner() {
 }
 
 function _demoTourSteps(user, activePage) {
-  return sidebarPageDefinitions(user, activePage)
+  const pageSteps = sidebarPageDefinitions(user, activePage)
     .filter((page) => page.visible)
     .map((page) => ({
       view_id: page.id,
@@ -2111,6 +2132,41 @@ function _demoTourSteps(user, activePage) {
       href: page.href,
       body: DEMO_TOUR_DESCRIPTIONS[page.id] || "Använd vyn fritt — alla ändringar sparas bara i demo-sandlådan.",
     }));
+  const utilityStep = {
+    view_id: "__utility",
+    label: "Verktygsraden längst ner i sidebaren",
+    href: null,
+    highlights: [
+      "area-focus-toggle",
+      "assistant-toggle",
+      "allocation-upload-link",
+      "log-toggle",
+      "theme-toggle",
+    ],
+    body:
+      "Längst ner i sidebaren finns en rad små verktygsknappar — jag ringar in dem nu så du ser var.<br><br>"
+      + "<strong>MG / GG / ∞ (områdesfokus)</strong> — visar och byter vilket lagerområde du tittar på. Klicka för att cykla mellan dina områden eller välj <strong>∞</strong> för att se alla. Filtrerar Bemanning, Översikt, Personer m.fl.<br><br>"
+      + "<strong>Pratbubblan (apphjälp)</strong> — öppnar inbyggd LLM-chatt som kan svara på frågor om appen, knappar och flöden. Bra om du undrar var en funktion finns.<br><br>"
+      + "<strong>Databas-ikonen (uppladdningar)</strong> — snabb genväg till uppladdningssidan. <em>Högerklick</em> öppnar en meny med olika uppladdningsalternativ.<br><br>"
+      + "<strong>Dokument-ikonen (LOG)</strong> — öppnar en logg-panel som visar vad som hänt i appen under sessionen (toasts, fel m.m.). Bra felsökningsverktyg.<br><br>"
+      + "<strong>Sol/måne-ikonen</strong> — växlar mellan ljust och mörkt tema. Inställningen sparas per webbläsare.",
+  };
+  return [...pageSteps, utilityStep];
+}
+
+function _clearDemoTourHighlights() {
+  document.querySelectorAll(".demo-tour-highlight").forEach((el) => {
+    el.classList.remove("demo-tour-highlight");
+  });
+}
+
+function _applyDemoTourHighlights(ids) {
+  _clearDemoTourHighlights();
+  if (!Array.isArray(ids) || ids.length === 0) return;
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("demo-tour-highlight");
+  });
 }
 
 function _readDemoTourState() {
@@ -2143,7 +2199,11 @@ function _renderDemoTourCard(state) {
   const existing = document.getElementById("demo-tour-card");
   if (existing) existing.remove();
   const step = state.steps[state.currentIndex];
-  if (!step) return;
+  if (!step) {
+    _clearDemoTourHighlights();
+    return;
+  }
+  _applyDemoTourHighlights(step.highlights);
   const card = document.createElement("div");
   card.id = "demo-tour-card";
   card.className = "demo-tour-card";
@@ -2161,12 +2221,14 @@ function _renderDemoTourCard(state) {
   document.body.appendChild(card);
   card.querySelector(".demo-tour-skip").addEventListener("click", () => {
     _writeDemoTourState(null);
+    _clearDemoTourHighlights();
     card.remove();
   });
   card.querySelector(".demo-tour-next").addEventListener("click", () => {
     const next = state.currentIndex + 1;
     if (next >= state.steps.length) {
       _writeDemoTourState(null);
+      _clearDemoTourHighlights();
       card.remove();
       showToast("Rundtur klar. Utforska gärna vyerna fritt.", "success", 4000);
       return;
@@ -2174,6 +2236,7 @@ function _renderDemoTourCard(state) {
     const nextStep = state.steps[next];
     _writeDemoTourState({ steps: state.steps, currentIndex: next });
     card.remove();
+    _clearDemoTourHighlights();
     if (nextStep.href && window.location.pathname !== nextStep.href) {
       window.location.href = nextStep.href;
     } else {
