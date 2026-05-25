@@ -63,7 +63,7 @@ Svar ska formateras for en smal chattpanel: korta stycken, korta punktlistor, fe
 
 Wikin ar hard grans for normalfragor: om wikin inte sager att en funktion, knapp, vy eller export finns ska chatten svara nej/inte dokumenterat och inte foresla troliga API-vagar, Swagger eller generiska exportknappar. Om anvandaren invander, till exempel "jo det finns visst" eller "kolla hela repot", lagger backend till en begransad textsokning i repo:t som extra kontext sa chatten kan ge ett tydligare ja/nej.
 
-Behorighetsrad ska skrivas fran vanlig anvandares perspektiv. Om losningen kraver `Anvandare`, `Vybehorigheter`, rollandring, admin eller Super User ska chatten inte saga att anvandaren sjalv ska ga dit. Skriv i stallet: "Be en admin eller Super User kontrollera ..." och forklara vad admin ska kontrollera. Exempel: om Bearbeta saknas ska chatten saga att Bearbeta ar en egen sidebar-vy och att admin/Super User behover kontrollera `allocationProcess` eller Super User-roll.
+Behorighetsrad ska skrivas fran vanlig anvandares perspektiv. Om losningen kraver `Anvandare`, `Vybehorigheter`, rollandring, admin eller Super User ska chatten inte saga att anvandaren sjalv ska ga dit. Skriv i stallet: "Be en admin eller Super User kontrollera ..." och forklara vad admin ska kontrollera. Exempel: om Bearbeta saknas ska chatten saga att Bearbeta ar en egen sidebar-vy och att admin/Super User behover kontrollera att rollen har `allocationProcess=edit`.
 
 Kunskapen kommer fran `wiki/*.md`. Backend laser alltid basdokument:
 

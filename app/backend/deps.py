@@ -69,15 +69,28 @@ def require_super_user(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def require_allocation_tools_user(user: User = Depends(get_current_user)) -> User:
-    if not can_use_allocation_tools(user):
+def _role_access_for_user(db: Session | object, user: User) -> dict | None:
+    try:
+        return get_role_view_access(db, business_id=user.business_id)  # type: ignore[arg-type]
+    except Exception:
+        return None
+
+
+def require_allocation_tools_user(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if not can_use_allocation_tools(user, _role_access_for_user(db, user)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Lagerkontorist eller Artikelplacerare required")
     return user
 
 
-def require_allocation_process_user(user: User = Depends(get_current_user)) -> User:
-    if not can_use_allocation_process(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver Super User")
+def require_allocation_process_user(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if not can_use_allocation_process(user, _role_access_for_user(db, user)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver behörighet")
     return user
 
 

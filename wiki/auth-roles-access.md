@@ -73,7 +73,7 @@ Om anvandaren bara har `view`:
 - Importknapp ar dold: importvyn saknar edit-atkomst.
 - Historik/Produktivitet nekas: kraver super user/vyatkomst.
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
-- Bearbeta saknas eller nekas: `allocationProcess` saknas i vyatkomst eller anvandaren ar inte Super User. Lagerroller har som standard Uppladdningar och Dela, men inte Bearbeta.
+- Bearbeta saknas eller nekas: rollen saknar `allocationProcess=edit` i vyatkomst. Lagerroller har som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
 
 ## Kallor
 

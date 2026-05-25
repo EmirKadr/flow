@@ -30,7 +30,7 @@ Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar fo
 
 ## Bearbeta-floden
 
-Bearbeta ar en egen sidebar-vy (`bearbeta.html`). Den ska inte beskrivas som en flik inne i Dela. Om anvandaren inte ser Bearbeta i menyn beror det normalt pa att rollen saknar `allocationProcess` i vyatkomst eller att anvandaren inte ar Super User. Vanliga lagerroller ser som standard Uppladdningar och Dela.
+Bearbeta ar en egen sidebar-vy (`bearbeta.html`). Den ska inte beskrivas som en flik inne i Dela. Om anvandaren inte ser Bearbeta i menyn, eller ser vyn men inte kan kora floden, beror det normalt pa att rollen saknar `allocationProcess=edit` i vyatkomst. Vanliga lagerroller ser som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
 
 Att andra `allocationProcess` eller `Vybehorigheter` kraver admin-/Super User-atkomst till Anvandare/installningar. En vanlig anvandare ska kontakta admin eller Super User, inte sjalv ga till Vybehorigheter.
 
@@ -111,7 +111,7 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 | --- | --- |
 | "Varfor ar flodesknappen gra?" | Kravda filer eller textfalt saknas, eller ett annat flode kor. Klicka `i` for att se krav. |
 | "Varfor hamnar filen i fel ruta?" | Automatisk detektion bygger pa filnamn/header. Anvand Välj pa exakt slot for att styra. |
-| "Varfor ser jag inte Bearbeta i menyn?" | Rollen saknar normalt `allocationProcess` eller Super User. Be admin/Super User kontrollera roll och Vybehorigheter. |
+| "Varfor ser jag inte Bearbeta i menyn?" | Rollen saknar normalt `allocationProcess=edit`. Be admin/Super User kontrollera Vybehorigheter. |
 | "Varfor oppnas inte Excel?" | Funktionen kraver lokal desktop/OS-stod och servern maste ha kvar resultat-sessionen. Om servern startade om med `--reload`, kor flodet igen. Om Windows/Excel inte kan oppna filen automatiskt visas feltoast; testa Ladda ner CSV. |
 | "Vad betyder artikel_max karnfil?" | `artikel_max.csv` kan finnas som intern karnfil aven om anvandaren inte laddat upp den. |
 

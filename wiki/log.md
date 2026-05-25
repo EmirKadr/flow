@@ -7,6 +7,10 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-25] fix | Bearbeta följer vybehörigheter
+
+Bearbeta använder nu samma `allocationProcess=edit`-behörighet i backend som i menyn. Det gör att exempelvis Lagerkontorist kan se och köra Bearbeta när rollen satts till Redigera i Vybehörigheter. Utan edit-behörighet visas fortsatt bara självserviceflöden som Dela.
+
 ## [2026-05-25] change | Anvandare ar alltid aktiva
 
 Anvandare-sidan har inte langre aktiv/inaktiv-lage, aktiv-kolumn eller "Visa inaktiva". Alla konton halls aktiva av backend och gamla inaktiva rader backfylls via migration/bootstrap. Konton som inte ska finnas kvar tas bort via `DELETE /api/users/{user_id}`; backend skyddar eget konto och sista admin samt nollar gamla anvandarreferenser innan hard delete.

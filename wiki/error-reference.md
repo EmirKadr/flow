@@ -53,7 +53,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | 403 | "Super User required" | Endpoint kraver super user | Ge super-user-roll/vyatkomst. |
 | 403 | "Sidan kraver ..." | Rollens vyatkomst racker inte | Be admin/Super User andra Vybehorigheter; vanlig anvandare kan normalt inte gora det sjalv. |
 | 403 | "Visningsrollen kan inte andra bemanningen" | Viewer forsoker spara | Anvand edit-roll. |
-| 403 | "Bearbeta kraver Super User" | Lagerprocessflode utan processbehorighet | Be Super User kora Bearbeta eller anvand sjalvserviceflodet Dela om det racker. |
+| 403 | "Bearbeta kraver behorighet" | Lagerprocessflode utan `allocationProcess=edit` | Be admin/Super User kontrollera Vybehorigheter eller anvand Dela om det racker. |
 
 ## Bemanning och schema
 
@@ -143,7 +143,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | Status | Text | Orsak | Atgard |
 | --- | --- | --- | --- |
 | 400 | `message` fran flode | Flodet saknar input eller data ar fel | Las texten och kontrollera kravda filer/falt. |
-| 403 | "Bearbeta kraver Super User" | Roll saknar processatkomst | Anvand Super User eller Dela. |
+| 403 | "Bearbeta kraver behorighet" | Roll saknar processatkomst | Ge rollen `allocationProcess=edit` eller anvand Dela. |
 | 404 | "Okant flode: ..." | Flode saknas i backend | Ladda om, kontrollera version. |
 | 404 | "Resultatet hittades inte..." | Resultatsession saknas | Kor flodet igen. |
 | 404 | "Kolumnen hittades inte." | Tabellen saknar begard kolumn | Ladda om/kor om flode. |

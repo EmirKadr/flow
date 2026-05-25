@@ -2049,7 +2049,7 @@ async function initPage(activePage, options = {}) {
     return null;
   }
   if (options.requireAllocationProcess && !canViewPage(user, activePage)) {
-    queueToast("Bearbeta kräver Super User-behörighet", "error");
+    queueToast("Bearbeta kräver behörighet", "error");
     window.location.href = options.denyRedirect || "/dela.html";
     return null;
   }

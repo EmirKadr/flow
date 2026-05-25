@@ -8,7 +8,7 @@ from app.backend.deps import (
     require_planning_viewer,
 )
 from app.backend.models import User
-from app.backend.user_access import can_access_view, is_super_user, role_view_access_level
+from app.backend.user_access import can_access_view, can_use_allocation_process, is_super_user, role_view_access_level
 
 
 def make_user(role: str, roles: list[str] | None = None) -> User:
@@ -102,6 +102,14 @@ def test_role_view_access_can_grant_and_revoke_feature_permissions():
     assert can_access_view(leader, {"leader": {"roleAccess": "edit"}}, "roleAccess", "edit")
     assert not can_access_view(viewer, {}, "personImport", "edit")
     assert role_view_access_level(viewer, {"viewer": {"users": "view"}}, "users") == "view"
+
+
+def test_role_view_access_can_grant_bearbeta_to_lagerkontorist():
+    user = make_user("warehouse_clerk", roles=["warehouse_clerk"])
+
+    assert not can_use_allocation_process(user, {})
+    assert can_use_allocation_process(user, {"warehouse_clerk": {"allocationProcess": "edit"}})
+    assert not can_use_allocation_process(user, {"warehouse_clerk": {"allocationProcess": "view"}})
 
 
 def test_role_view_access_levels_match_view_and_edit_contract():

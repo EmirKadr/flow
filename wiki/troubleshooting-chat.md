@@ -31,7 +31,7 @@ Kort svar: nar en anvandare fragar "varfor funkar inte X?" ska chatten oversatta
 | Undo/redo fungerar inte | Tom stack eller fel dag | Undo/redo ar lokal och knuten till dagen/perioden dar andringen gjordes. |
 | Produktivitet visar inte rapport | Saknade lokala loggar eller KPI-mal | Lagg in Plocklogg, Translogg, Palllastningslogg och KPI-mal. |
 | Lagerflode ar disabled | Kravda filer/falt saknas | Klicka `i` pa flodet eller se filtaggar med kryss. |
-| Bearbeta saknas | Rollen saknar `allocationProcess` eller Super User | Bearbeta ar egen vy. Be admin/Super User kontrollera roll och Vybehorigheter. Vanlig lagerroll ser oftast Dela men inte Bearbeta. |
+| Bearbeta saknas eller stoppar | Rollen saknar `allocationProcess=edit` | Bearbeta ar egen vy. Be admin/Super User kontrollera Vybehorigheter. Vanlig lagerroll ser oftast Dela men inte Bearbeta. |
 | Fil hamnar inte i ratt slot | Filnamn/header matchar inte detektion | Anvand Välj pa specifik slot eller kontrollera filens rubriker. |
 | Anvandare maste skapa losenord | Kontot saknar password_hash/must_change_password | Ga via `set-password.html`; losenord minst 8 tecken. |
 | Kan inte ta bort admin | Sista admin i verksamheten skyddas | Skapa eller ge adminroll till en annan anvandare forst. |

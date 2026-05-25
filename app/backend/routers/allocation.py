@@ -10,6 +10,7 @@ from .. import allocation_bridge as bridge
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, user_business_id
 from ..deps import get_db, require_allocation_tools_user
 from ..models import Business, User
+from ..settings_service import get_role_view_access
 from ..user_access import can_use_allocation_process
 
 
@@ -24,13 +25,20 @@ BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
 logger = logging.getLogger(__name__)
 
 
-def _flow_allowed_for_user(flow_id: str, user: User) -> bool:
-    return can_use_allocation_process(user) or flow_id in SELF_SERVICE_FLOW_IDS
+def _role_access_for_user(db: Session | object, user: User) -> dict | None:
+    try:
+        return get_role_view_access(db, business_id=getattr(user, "business_id", None))  # type: ignore[arg-type]
+    except Exception:
+        return None
 
 
-def _assert_flow_allowed(flow_id: str, user: User) -> None:
-    if not _flow_allowed_for_user(flow_id, user):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver Super User")
+def _flow_allowed_for_user(flow_id: str, user: User, access: dict | None = None) -> bool:
+    return can_use_allocation_process(user, access) or flow_id in SELF_SERVICE_FLOW_IDS
+
+
+def _assert_flow_allowed(flow_id: str, user: User, access: dict | None = None) -> None:
+    if not _flow_allowed_for_user(flow_id, user, access):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Bearbeta kräver behörighet")
 
 
 def _flow_audit_payload(
@@ -147,16 +155,22 @@ def health(_user: User = Depends(require_allocation_tools_user)) -> dict:
 
 
 @router.get("/flows")
-def list_flows(user: User = Depends(require_allocation_tools_user)) -> dict:
+def list_flows(
+    user: User = Depends(require_allocation_tools_user),
+    db: Session = Depends(get_db),
+) -> dict:
     flows = bridge.public_registry()
-    if not can_use_allocation_process(user):
+    if not can_use_allocation_process(user, _role_access_for_user(db, user)):
         flows = [flow for flow in flows if flow.get("id") in SELF_SERVICE_FLOW_IDS]
     return {"flows": flows}
 
 
 @router.get("/pool")
-def list_pool(user: User = Depends(require_allocation_tools_user)) -> dict:
-    if not can_use_allocation_process(user):
+def list_pool(
+    user: User = Depends(require_allocation_tools_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not can_use_allocation_process(user, _role_access_for_user(db, user)):
         return {"pool": []}
     return {"pool": bridge.public_pool()}
 
@@ -202,7 +216,7 @@ async def update_observations(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _assert_flow_allowed("observations-update", user)
+    _assert_flow_allowed("observations-update", user, _role_access_for_user(db, user))
     engine_module, _flows_module = bridge.require_available()
     business_code = _allocation_business_code(db, user)
     data_paths = bridge.business_allocation_data_paths(business_code)
@@ -283,7 +297,7 @@ async def run_flow(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    _assert_flow_allowed(flow_id, user)
+    _assert_flow_allowed(flow_id, user, _role_access_for_user(db, user))
     try:
         form = await request.form()
         files, params, temp_paths = await bridge.form_to_flow_payload(form, cache_scope=_upload_cache_scope(user))

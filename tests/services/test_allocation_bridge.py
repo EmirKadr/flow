@@ -751,6 +751,33 @@ def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flo
         assert allocation_router.list_pool(user=user) == {"pool": []}
 
 
+def test_allocation_router_honors_bearbeta_view_access_for_lagerkontorist(monkeypatch):
+    monkeypatch.setattr(
+        bridge,
+        "public_registry",
+        lambda: [
+            {"id": "allocate", "label": "Allokering"},
+            {"id": "split-values", "label": "Dela varden"},
+        ],
+    )
+    monkeypatch.setattr(bridge, "public_pool", lambda: [{"key": "orders", "label": "Bestallningslinjer"}])
+    monkeypatch.setattr(
+        allocation_router,
+        "get_role_view_access",
+        lambda _db, business_id=None: {"warehouse_clerk": {"allocationProcess": "edit"}},
+    )
+
+    user = route_user("warehouse_clerk")
+
+    assert allocation_router.list_flows(user=user, db=object()) == {
+        "flows": [
+            {"id": "allocate", "label": "Allokering"},
+            {"id": "split-values", "label": "Dela varden"},
+        ]
+    }
+    assert allocation_router.list_pool(user=user, db=object()) == {"pool": [{"key": "orders", "label": "Bestallningslinjer"}]}
+
+
 def test_allocation_health_reports_unavailable_without_crashing(monkeypatch):
     def fail():
         raise RuntimeError("saknas")

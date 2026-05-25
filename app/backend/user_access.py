@@ -201,12 +201,15 @@ def can_access_view(user: User, access: dict | None, view_id: str, min_level: st
     return actual >= wanted
 
 
-def can_use_allocation_tools(user: User) -> bool:
-    return bool(set(user_roles(user)) & ALLOCATION_TOOL_ROLES) or is_super_user(user)
+def can_use_allocation_tools(user: User, access: dict | None = None) -> bool:
+    return any(
+        can_access_view(user, access, view_id)
+        for view_id in ("allocationUploads", "allocationSplit", "allocationProcess")
+    )
 
 
-def can_use_allocation_process(user: User) -> bool:
-    return is_super_user(user)
+def can_use_allocation_process(user: User, access: dict | None = None) -> bool:
+    return can_access_view(user, access, "allocationProcess", "edit")
 
 
 def user_out(user: User) -> UserOut:

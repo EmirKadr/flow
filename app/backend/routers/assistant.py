@@ -216,9 +216,9 @@ Regler:
   inte kan göra det själv. Formulera som "Be en admin/Super User kontrollera..."
   i stället för att instruera användaren att själv gå dit.
 - Bearbeta är en egen sidebar-vy (`bearbeta.html`) och inte samma sak som Dela.
-  Om Bearbeta saknas krävs normalt Super User eller vyåtkomst till
-  `allocationProcess`; lagerroller har som standard Uppladdningar och Dela men
-  inte Bearbeta.
+  Om Bearbeta saknas eller inte går att köra behöver rollen normalt
+  `allocationProcess=edit`; lagerroller har som standard Uppladdningar och Dela
+  men inte Bearbeta.
 - Om du behöver mer information: be om exakt vy, knapp, feltext/toast och om det
   gäller webb eller Windows-appen.
 - Namn på knappar, vyer och feltexter ska matcha appen när de finns i kontexten.
