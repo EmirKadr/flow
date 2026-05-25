@@ -50,6 +50,8 @@ merge_item_flags = engine._merge_item_flags
 open_df_in_excel = engine._open_df_in_excel
 build_observations_update_result = engine.build_observations_update_result
 fetch_observations_from_github = engine.fetch_observations_from_github
+business_observations_path = engine.business_observations_path
+business_artikel_max_path = engine.business_artikel_max_path
 
 APP_VERSION = engine.APP_VERSION
 APP_TITLE = engine.APP_TITLE
@@ -58,4 +60,3 @@ APP_TITLE = engine.APP_TITLE
 def detect_file_type(path: str):
     """Reuse the legacy file detector without instantiating the GUI."""
     return engine.App._detect_file_type(None, path)
-

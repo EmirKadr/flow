@@ -118,6 +118,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("users.import_rows", "POST", "/api/users/import-rows", "Importera användarrader"),
     ApiRoute("users.create", "POST", "/api/users", "Skapa användare"),
     ApiRoute("users.update", "PUT", "/api/users/{user_id}", "Uppdatera användare"),
+    ApiRoute("users.delete", "DELETE", "/api/users/{user_id}", "Ta bort användare"),
     ApiRoute("productivity.files", "GET", "/api/productivity/files", "Produktivitetsfilstatus"),
     ApiRoute("productivity.targets", "GET", "/api/productivity/targets", "Hämta KPI-mål"),
     ApiRoute("productivity.upload", "POST", "/api/productivity/files", "Ladda upp produktivitetsfil(er)"),

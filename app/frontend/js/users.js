@@ -136,8 +136,7 @@ function formatDate(value) {
 }
 
 async function loadUsers() {
-  const includeInactive = document.getElementById("show-inactive").checked;
-  users = await api.get(`/api/users?include_inactive=${includeInactive}`);
+  users = await api.get("/api/users");
   renderUsers();
 }
 
@@ -311,13 +310,12 @@ function renderUsers() {
       <td>${escapeHtml(user.display_name || "-")}</td>
       <td>${escapeHtml(roleLabel(user))}</td>
       <td>${escapeHtml(areaName(user.area_id))}</td>
-      <td>${user.is_active ? "Ja" : "Nej"}</td>
       <td>${escapeHtml(passwordStatus(user))}</td>
       <td>${escapeHtml(formatDate(user.created_at))}</td>
       <td>
         ${canEditUsers ? `
         <button data-edit="${user.id}">Redigera</button>
-        ${user.is_active ? `<button data-toggle="${user.id}" class="danger">Inaktivera</button>` : `<button data-toggle="${user.id}">Aktivera</button>`}
+        ${user.id === currentUser.id ? "" : `<button data-delete="${user.id}" class="danger">Ta bort</button>`}
         ` : ""}
       </td>`;
     tbody.appendChild(tr);
@@ -327,15 +325,13 @@ function renderUsers() {
   tbody.querySelectorAll("button[data-edit]").forEach((button) =>
     button.addEventListener("click", () => openModal(users.find((user) => user.id === Number(button.dataset.edit))))
   );
-  tbody.querySelectorAll("button[data-toggle]").forEach((button) =>
+  tbody.querySelectorAll("button[data-delete]").forEach((button) =>
     button.addEventListener("click", async () => {
-      const user = users.find((item) => item.id === Number(button.dataset.toggle));
+      const user = users.find((item) => item.id === Number(button.dataset.delete));
       if (!user) return;
-      const nextActive = !user.is_active;
-      const confirmText = nextActive ? "Aktivera användaren?" : "Inaktivera användaren?";
-      if (!confirm(confirmText)) return;
+      if (!confirm("Ta bort användaren permanent?")) return;
       try {
-        await api.put(`/api/users/${user.id}`, { is_active: nextActive });
+        await api.del(`/api/users/${user.id}`);
         await loadUsers();
       } catch (error) {
         showToast(error.message, "error");
@@ -377,7 +373,6 @@ function openModal(user) {
       <label>${isEdit ? "Nytt lösenord" : "Lösenord"}</label>
       <input id="m-password" type="password" autocomplete="new-password" />
       <p class="note">${isEdit ? "Lämna lösenord tomt om det inte ska ändras." : "Lämna tomt om användaren ska skapa sitt lösenord vid första inloggningen. Annars minst 8 tecken."}</p>
-      <label class="modal-checkbox"><input id="m-active" type="checkbox" ${user?.is_active !== false ? "checked" : ""} /> Aktiv</label>
       <div class="actions">
         <button id="m-cancel">Avbryt</button>
         <button class="primary" id="m-save">Spara</button>
@@ -398,7 +393,6 @@ function openModal(user) {
       role: primaryRoleFromRoles(roles),
       roles,
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
-      is_active: document.getElementById("m-active").checked,
     };
     if (currentUser?.is_super_user) {
       payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
@@ -584,6 +578,5 @@ function setupImportControls() {
   await loadBusinesses();
   await loadUsers();
   if (canEditPage(currentUser, "users")) newUserButton.addEventListener("click", () => openModal(null));
-  document.getElementById("show-inactive").addEventListener("change", loadUsers);
   window.addEventListener("flow:areaFocusChanged", renderUsers);
 })();

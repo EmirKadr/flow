@@ -1,7 +1,7 @@
 ---
 title: Verksamheter och isolering
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [verksamheter, behorighet, isolering, super-user]
 ---
 
@@ -47,6 +47,8 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 - `app_settings` är per verksamhet. Sidebar, vybehörigheter och cell-lås kan därför skilja mellan Stigamo och R3.
 - Publika `/api/public/*` tar `business` och defaultar till `STIGAMO`; de får inte summera globalt utan verksamhet.
 - Webben och Windows-appen använder samma frontend via `app/`, så desktop-paritet kontrolleras med `tools.visual_smoke --via-desktop-proxy`.
+
+- Lagerverktygens buffertpall-observations och framraknade `artikel_max.csv` ar verksamhetsseparerade. Stigamo anvander legacy-filerna i `warehouse_tools/vendor/lowfreqdata/buffertpall/`; R3 anvander egna filer under `warehouse_tools/vendor/lowfreqdata/buffertpall/r3/`. Ordersaldo, LYX och Pafyllnadsprio anvander verksamhetens karnfil nar anvandaren inte laddar upp en egen `artikel_max.csv`.
 
 ## Testkontrakt
 

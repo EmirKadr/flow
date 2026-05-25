@@ -4,6 +4,7 @@ referens/
 testdata/
 private-data/
 data/external_data_catalog.local*.json
+data/coredata/
 
 # Uppladdade produktivitetsloggar
 data/v_ask_pick_log_full*.csv

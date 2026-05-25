@@ -121,7 +121,7 @@ def test_interactive_e2e_covers_mutating_workflows():
         "edit_user",
         "import_user",
         "toggle_user_setting",
-        "toggle_user_active",
+        "delete_user",
         "create_activity",
         "edit_activity",
         "delete_activity",
@@ -219,18 +219,22 @@ def test_allocation_observations_github_sync_is_wired():
 
     assert "data/community-observations" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/observations_*.csv.gz" in workflow
+    assert "warehouse_tools/vendor/lowfreqdata/buffertpall/*/observations_*.csv.gz" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/" in workflow
     assert "artikel_max.csv" in workflow
     assert "np.percentile(group['antal'], [25, 75])" in workflow
     assert "Nya pallid från sessionsfiler" in workflow
     assert "Ändrade maxvärden" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
-    assert "fetch_observations_from_github()" in main
+    assert "fetch_observations_from_github(business_code=business_code)" in main
+    assert "R3_BUSINESS_CODE" in main
     assert "sync_allocation_observations_on_startup" in main
     assert '"OBSERVATIONS_GITHUB_TOKEN"' in engine
     assert '"FLOW_GITHUB_TOKEN"' in engine
     assert "github_sent_rows" in engine
     assert "article_max_changed_rows" in engine
+    assert "business_observations_path" in engine
+    assert "business_artikel_max_path" in engine
 
 
 def test_app_migration_plan_documents_high_risk_workflows():
@@ -872,6 +876,10 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "github_sent_rows" in allocation
     assert "article_max_changed_rows" in allocation
     assert "allocationState.files = await loadStoredAllocationFiles()" in allocation
+    assert "ALLOCATION_WORK_STATE_PREFIX" in allocation
+    assert "persistAllocationWorkState" in allocation
+    assert "restoreAllocationWorkState()" in allocation
+    assert "sessionStorage.setItem(key" in allocation
     assert 'id="allocation-clear-all-files"' in allocation
     assert "Rensa alla" in allocation
     assert "window.clearAllUploadedFiles" in allocation

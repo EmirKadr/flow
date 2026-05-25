@@ -58,6 +58,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("UPDATE persons SET is_active = 1 WHERE is_active IS NOT 1")
         if activity_columns and "is_active" in activity_columns:
             connection.exec_driver_sql("UPDATE activities SET is_active = 1 WHERE is_active IS NOT 1")
+        if user_columns and "is_active" in user_columns:
+            connection.exec_driver_sql("UPDATE users SET is_active = 1 WHERE is_active IS NOT 1")
 
 
 def _table_sql(connection, table_name: str) -> str:

@@ -44,6 +44,9 @@ ALLOCATE_DISPLAY_SUMMARY_TYPES = [
 ORDERSALDO_HELPALL_COLUMN = "Antal på Helpall"
 
 
+DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
+
+
 @lru_cache(maxsize=32)
 def _read_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
     return E._read_cli_table(path)
@@ -58,6 +61,14 @@ def _read(path: Path) -> pd.DataFrame:
 def _temp(suffix: str) -> Path:
     """En unik temporär sökväg som ännu inte finns (motorn skapar filen)."""
     return Path(tempfile.gettempdir()) / f"allok_{uuid.uuid4().hex}{suffix}"
+
+
+def _max_csv_path(files: dict, params: dict) -> Path:
+    if "max_csv" in files:
+        return Path(files["max_csv"])
+    if params.get(DEFAULT_MAX_CSV_PARAM):
+        return Path(params[DEFAULT_MAX_CSV_PARAM])
+    return E._resolve_max_csv_path(None)
 
 
 def build_allocate_display_summary(
@@ -167,7 +178,7 @@ def flow_ordersaldo(files: dict, params: dict) -> dict:
     )
     log: list[str] = []
     try:
-        max_path = files["max_csv"] if "max_csv" in files else E._resolve_max_csv_path(None)
+        max_path = _max_csv_path(files, params)
         shortage_df = add_ordersaldo_helpall_count(shortage_df, _read(Path(max_path)))
     except Exception as exc:  # noqa: BLE001
         shortage_df = add_ordersaldo_helpall_count(shortage_df, None)
@@ -187,7 +198,7 @@ def flow_ordersaldo(files: dict, params: dict) -> dict:
 
 def flow_lyx(files: dict, params: dict) -> dict:
     saldo_df = _read(files["saldo"])
-    max_path = files["max_csv"] if "max_csv" in files else E._resolve_max_csv_path(None)
+    max_path = _max_csv_path(files, params)
     max_df = _read(Path(max_path))
     articles, filtered_rows = E.compute_lyx_articles(saldo_df, max_df)
     return {
@@ -204,7 +215,7 @@ def flow_pafyllnadsprio(files: dict, params: dict) -> dict:
     _, shortage_df = E.compute_ordersaldo_data(
         orders_df, utbest_map=utbest_map, column_names=column_names,
     )
-    max_path = files["max_csv"] if "max_csv" in files else E._resolve_max_csv_path(None)
+    max_path = _max_csv_path(files, params)
     max_df = _read(Path(max_path))
 
     log: list[str] = []

@@ -34,7 +34,7 @@ Kort svar: nar en anvandare fragar "varfor funkar inte X?" ska chatten oversatta
 | Bearbeta saknas | Rollen saknar `allocationProcess` eller Super User | Bearbeta ar egen vy. Be admin/Super User kontrollera roll och Vybehorigheter. Vanlig lagerroll ser oftast Dela men inte Bearbeta. |
 | Fil hamnar inte i ratt slot | Filnamn/header matchar inte detektion | Anvand Välj pa specifik slot eller kontrollera filens rubriker. |
 | Anvandare maste skapa losenord | Kontot saknar password_hash/must_change_password | Ga via `set-password.html`; losenord minst 8 tecken. |
-| Kan inte inaktivera admin | Sista aktiva admin skyddas | Skapa/aktivera annan admin forst. |
+| Kan inte ta bort admin | Sista admin i verksamheten skyddas | Skapa eller ge adminroll till en annan anvandare forst. |
 | Apphjalpen svarar inte | MiniMax-nyckel saknas, timeout, 10-fragorskvot eller session saknas | Las feltexten i chattpanelen. Vid kvot: `Rensa dialog`. Vid `MINIMAX_API_KEY`: admin konfigurerar servern. |
 | Apphjalpen minns gamla fragor | Dialogen skickas med for foljdfragor och sparas i sessionen | Klicka `Rensa dialog` om sammanhanget ska starta om. |
 | Enter sparar inte en dialog | Fokus ligger pa knapp/checkbox/flerradigt textfalt, eller primarknappen ar disabled | Klicka primarknappen eller flytta fokus till ett vanligt falt. Enter i vanliga modalfalt ska klicka `Spara`/`Skapa`/`Stang`. |

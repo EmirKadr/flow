@@ -197,6 +197,146 @@ def test_allocation_run_flow_stores_session_owner(monkeypatch):
     assert bridge.SESSIONS["sid"]["owner"] == {"user_id": 7, "business_id": 20}
 
 
+def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+    captured = {}
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="R3")
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {"orders": tmp_path / "orders.csv"}, {}, []
+
+    def fake_business_paths(business_code):
+        captured["business_code"] = business_code
+        return {
+            "observations_path": str(tmp_path / "r3" / "observations.csv.gz"),
+            "article_max_path": str(tmp_path / "r3" / "artikel_max.csv"),
+        }
+
+    def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
+        captured["flow_id"] = flow_id
+        captured["files"] = dict(files)
+        captured["default_max_csv_path"] = default_max_csv_path
+        return {"flow_id": flow_id, "tables": [], "summary": {}}
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    result = asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
+
+    assert result["flow_id"] == "ordersaldo"
+    assert captured["business_code"] == "R3"
+    assert captured["default_max_csv_path"] == str(tmp_path / "r3" / "artikel_max.csv")
+    assert captured["files"] == {"orders": tmp_path / "orders.csv"}
+
+
+def test_run_flow_handler_passes_business_default_article_max(monkeypatch, tmp_path):
+    captured = {}
+    max_path = tmp_path / "artikel_max.csv"
+    max_path.write_text("artikelnummer,max,pallid\nA1,12,P1\n", encoding="utf-8")
+
+    def handler(files, params):
+        captured["files"] = dict(files)
+        captured["params"] = dict(params)
+        return {"summary": {}, "tables": [], "log": []}
+
+    monkeypatch.setattr(
+        bridge,
+        "_native_flows",
+        lambda: SimpleNamespace(FLOW_BY_ID={"ordersaldo": {"handler": handler}}),
+    )
+
+    result = bridge.run_flow_handler(
+        "ordersaldo",
+        {},
+        {},
+        default_max_csv_path=max_path,
+    )
+
+    assert result["flow_id"] == "ordersaldo"
+    assert captured["files"] == {}
+    assert captured["params"] == {bridge.DEFAULT_MAX_CSV_PARAM: str(max_path)}
+
+
+def test_update_observations_writes_to_user_business_paths(monkeypatch, tmp_path):
+    upload_path = tmp_path / "buffer.csv"
+    upload_path.write_text("Artikel,Pallid,Antal,Status\nA1,P1,10,30\n", encoding="utf-8")
+    captured = {}
+    user = business_user(8, 30)
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="R3")
+
+    async def fake_save_upload(_file):
+        return upload_path
+
+    def fake_business_paths(business_code):
+        captured["path_business_code"] = business_code
+        return {
+            "observations_path": str(tmp_path / "r3" / "observations.csv.gz"),
+            "article_max_path": str(tmp_path / "r3" / "artikel_max.csv"),
+        }
+
+    def fake_build(buffer_df, **kwargs):
+        captured["buffer_df"] = buffer_df
+        captured["build_kwargs"] = kwargs
+        return SimpleNamespace(
+            new_row_count=1,
+            github_sent_rows=1,
+            article_max_rows=1,
+            article_max_changed_rows=1,
+            article_max_increased_rows=1,
+            article_max_decreased_rows=0,
+            article_max_new_rows=1,
+            article_max_removed_rows=0,
+            article_max_changed_examples=[],
+            pushed_to_github=True,
+            observations_path=kwargs["observations_path"],
+            article_max_path=kwargs["artikel_max_out"],
+        )
+
+    engine = SimpleNamespace(
+        read_table=lambda path: {"path": path},
+        build_observations_update_result=fake_build,
+    )
+
+    fake_available(monkeypatch, engine_module=engine)
+    monkeypatch.setattr(bridge, "save_upload", fake_save_upload)
+    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    response = asyncio.run(
+        allocation_router.update_observations(
+            file=upload_file("buffer.csv", b""),
+            user=user,
+            db=FakeDb(),
+        )
+    )
+
+    assert response["business_code"] == "R3"
+    assert response["observations_path"] == str(tmp_path / "r3" / "observations.csv.gz")
+    assert response["article_max_path"] == str(tmp_path / "r3" / "artikel_max.csv")
+    assert captured["path_business_code"] == "R3"
+    assert captured["buffer_df"] == {"path": str(upload_path)}
+    assert captured["build_kwargs"] == {
+        "observations_path": str(tmp_path / "r3" / "observations.csv.gz"),
+        "artikel_max_out": str(tmp_path / "r3" / "artikel_max.csv"),
+        "push_to_github": True,
+        "business_code": "R3",
+    }
+    assert not upload_path.exists()
+
+
 def test_allocation_bridge_uses_vendored_warehouse_tools_by_default():
     assert bridge.warehouse_tools_dir() == ROOT / "warehouse_tools"
     assert (bridge.warehouse_tools_dir() / "vendor" / "allokering12.1.py").is_file()
@@ -333,8 +473,9 @@ def test_observations_update_reports_github_sent_rows_and_max_changes(tmp_path, 
 
     sent = {}
 
-    def fake_push(rows):
+    def fake_push(rows, business_code=None):
         sent["count"] = len(rows)
+        sent["business_code"] = business_code
         return True
 
     monkeypatch.setitem(
@@ -357,6 +498,7 @@ def test_observations_update_reports_github_sent_rows_and_max_changes(tmp_path, 
     assert result.new_row_count == 2
     assert result.github_sent_rows == 2
     assert sent["count"] == 2
+    assert sent["business_code"] is None
     assert result.pushed_to_github is True
     assert result.article_max_rows == 2
     assert result.article_max_changed_rows == 1
@@ -366,6 +508,29 @@ def test_observations_update_reports_github_sent_rows_and_max_changes(tmp_path, 
     assert result.article_max_changed_examples[0]["artikelnummer"] == "A1"
     assert result.article_max_changed_examples[0]["before_max"] == "10"
     assert result.article_max_changed_examples[0]["after_max"] == "12"
+
+
+def test_observations_paths_are_separate_per_business(tmp_path, monkeypatch):
+    pd = pytest.importorskip("pandas")
+    engine, _flows = bridge.require_available()
+    legacy_engine = engine.engine
+    monkeypatch.setattr(legacy_engine, "_bufferpall_runtime_dir", lambda: tmp_path)
+
+    stigamo_observations = legacy_engine.business_observations_path("STIGAMO")
+    stigamo_max = legacy_engine.business_artikel_max_path("STIGAMO")
+    r3_observations = legacy_engine.business_observations_path("R3")
+    r3_max = legacy_engine.business_artikel_max_path("R3")
+
+    assert stigamo_observations == tmp_path / "observations.csv.gz"
+    assert stigamo_max == tmp_path / "artikel_max.csv"
+    assert r3_observations == tmp_path / "r3" / "observations.csv.gz"
+    assert r3_max == tmp_path / "r3" / "artikel_max.csv"
+    assert list(pd.read_csv(r3_observations, compression="gzip").columns) == [
+        "artikelnummer",
+        "pallid",
+        "antal",
+    ]
+    assert r3_max.read_text(encoding="utf-8-sig").startswith("artikelnummer,max,pallid")
 
 
 def test_allocation_bridge_imports_without_tkinter_on_headless_server():

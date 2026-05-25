@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import allocation_bridge
+from .business_scope import DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE
 from .config import settings
 from .routers import (
     activities,
@@ -65,7 +66,8 @@ def legacy_activities_page_redirect() -> RedirectResponse:
 def _sync_allocation_observations_background() -> None:
     try:
         engine_module, _flows_module = allocation_bridge.require_available()
-        engine_module.fetch_observations_from_github()
+        for business_code in (DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE):
+            engine_module.fetch_observations_from_github(business_code=business_code)
     except Exception:
         return
 

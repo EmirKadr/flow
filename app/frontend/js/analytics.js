@@ -355,7 +355,7 @@ function fillUserFilter() {
 
 async function loadLookups() {
   const [usersResp, personsResp, activitiesResp, areasResp] = await Promise.all([
-    api.get("/api/users?include_inactive=true"),
+    api.get("/api/users"),
     api.get("/api/persons?include_inactive=true"),
     api.get("/api/activities?include_inactive=true"),
     api.get("/api/areas?include_inactive=true"),

@@ -15,7 +15,7 @@ Kort svar: Historik har tre lagen: anvandarhistorik, analys och felkoder. Den ar
 | --- | --- | --- | --- | --- |
 | Vy-toggle | Valjer `Anvandarhistorik`, `Analys` eller `Felkoder` | Visar ratt panel utan sidbyte | `history-mode-btn`, `setHistoryMode` | Alla filter ovanfor galler for alla tre lagen. |
 | Period | Valjer 24h, 7d, 30d, all | Raknar `start_at` for query | `periodStartIso`, `/api/audit*` | "All historik" kan bli tung om mycket data finns. |
-| Anvandare | Filtrerar pa user | Skickar user-filter | `userFilter` | Listan laddas fran `/api/users?include_inactive=true`. |
+| Anvandare | Filtrerar pa user | Skickar user-filter | `userFilter` | Listan laddas fran `/api/users`; anvandare som finns kvar ar alltid aktiva. |
 | Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `app_setting`, `productivity_file`, `allocation_flow`. |
 | Atgard | Skriver action | Skickar action-filter | `actionFilter` | Exempel: `update`, `clear`, `drag_fill`. |
 | Objekt-id | Skriver id | Skickar `entity_id` | `entityIdFilter` | Maste vara numeriskt. |

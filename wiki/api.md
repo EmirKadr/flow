@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [api, backend]
 ---
 
@@ -48,7 +48,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET/PUT /api/persons/{id}/schedule` - veckomall.
 - `GET/POST/PUT/DELETE /api/activities...`, `POST /api/activities/import-rows` - aktivitetsregister, Excelimport och direktimport fran tabellrader.
 - `GET/POST/PUT/DELETE /api/areas...` - omraden. Delete tar bort tomma omraden men inaktiverar omradet om personer, aktiviteter eller anvandare redan pekar pa det.
-- `GET/POST/PUT /api/users...`, `POST /api/users/import-rows` - anvandare, Excelimport och direktimport fran tabellrader.
+- `GET/POST/PUT/DELETE /api/users...`, `POST /api/users/import-rows` - anvandare, Excelimport, direktimport fran tabellrader och permanent borttagning.
 - `GET/POST/PUT /api/businesses...` - Super User-vy for verksamheter.
 - `GET/PUT /api/settings` - appsettings per verksamhet.
 - `GET/PUT /api/settings/sidebar` - sidebar per verksamhet.

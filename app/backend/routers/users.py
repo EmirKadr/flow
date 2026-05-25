@@ -23,7 +23,7 @@ from ..business_scope import (
     visible_business_id,
 )
 from ..deps import get_db, require_view_access
-from ..models import Area, User
+from ..models import AppSetting, Area, AuditLog, PersonScheduleTemplate, ScheduleCell, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserImportRowsRequest, UserUpdate
 from ..security import hash_password
 from ..user_access import SUPER_USER_ROLE, can_admin, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
@@ -416,8 +416,7 @@ def list_users(
     admin: User = Depends(require_view_access("users", "view")),
 ) -> list[UserAdminOut]:
     query = filter_query_for_business(db.query(User), User, db, admin, business_id)
-    if not include_inactive:
-        query = query.filter(User.is_active.is_(True))
+    _ = include_inactive
     users = query.order_by(User.username.asc()).all()
     users.sort(key=lambda user: (0 if can_admin(user) else 1, user.username.lower()))
     return [user_admin_out(user) for user in users]
@@ -485,7 +484,7 @@ def create_user(
         roles=roles,
         business_id=business_id,
         area_id=payload.area_id,
-        is_active=payload.is_active,
+        is_active=True,
         must_change_password=payload.password is None,
     )
     db.add(user)
@@ -540,8 +539,12 @@ def update_user(
     else:
         new_roles = current_roles
     _guard_super_user_role_change(current_roles=current_roles, new_roles=new_roles, admin=admin)
-    new_is_active = payload.is_active if payload.is_active is not None else user.is_active
-    removes_admin_access = can_admin(user) and (not can_admin(User(role=primary_role(new_roles), roles=new_roles)) or not new_is_active)
+    if payload.is_active is False:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Användare är alltid aktiva. Ta bort användaren i stället.",
+        )
+    removes_admin_access = can_admin(user) and not can_admin(User(role=primary_role(new_roles), roles=new_roles))
     if removes_admin_access and _active_admin_count(db, business_id=user.business_id, exclude_user_id=user.id) == 0:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -550,6 +553,7 @@ def update_user(
 
     before = _user_snapshot(user)
     updates = payload.model_dump(exclude_unset=True, exclude={"password", "role", "roles"})
+    updates.pop("is_active", None)
     if "business_id" in updates:
         updates["business_id"] = target_business_id
         if "area_id" not in updates and user.area_id is not None:
@@ -558,6 +562,7 @@ def update_user(
                 updates["area_id"] = None
     for key, value in updates.items():
         setattr(user, key, value)
+    user.is_active = True
     if payload.roles is not None or payload.role is not None:
         user.roles = new_roles
         user.role = primary_role(new_roles)
@@ -579,3 +584,49 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user_admin_out(user)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_view_access("users", "edit")),
+) -> None:
+    user = scoped_get(db, User, user_id, admin, detail="Användare hittades inte")
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Du kan inte ta bort ditt eget konto")
+    if can_admin(user) and _active_admin_count(db, business_id=user.business_id, exclude_user_id=user.id) == 0:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Det måste finnas minst en administratör kvar",
+        )
+
+    before = _user_snapshot(user)
+    db.query(ScheduleCell).filter(ScheduleCell.updated_by == user_id).update(
+        {ScheduleCell.updated_by: None},
+        synchronize_session=False,
+    )
+    db.query(PersonScheduleTemplate).filter(PersonScheduleTemplate.updated_by == user_id).update(
+        {PersonScheduleTemplate.updated_by: None},
+        synchronize_session=False,
+    )
+    db.query(AppSetting).filter(AppSetting.updated_by == user_id).update(
+        {AppSetting.updated_by: None},
+        synchronize_session=False,
+    )
+    db.query(AuditLog).filter(AuditLog.user_id == user_id).update(
+        {AuditLog.user_id: None},
+        synchronize_session=False,
+    )
+    audit.log(
+        db,
+        entity_type="user",
+        entity_id=user.id,
+        action="delete",
+        old_value=before,
+        new_value=None,
+        user_id=admin.id,
+        business_id=user.business_id,
+    )
+    db.delete(user)
+    db.commit()

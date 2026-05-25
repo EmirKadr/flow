@@ -1,11 +1,27 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-05-25] change | Anvandare ar alltid aktiva
+
+Anvandare-sidan har inte langre aktiv/inaktiv-lage, aktiv-kolumn eller "Visa inaktiva". Alla konton halls aktiva av backend och gamla inaktiva rader backfylls via migration/bootstrap. Konton som inte ska finnas kvar tas bort via `DELETE /api/users/{user_id}`; backend skyddar eget konto och sista admin samt nollar gamla anvandarreferenser innan hard delete.
+
+## [2026-05-25] change | Verksamhetsseparerar observations
+
+Lagerverktygens buffertpall-observations och `artikel_max.csv` ar nu separata per verksamhet. Stigamo behaller legacy-filerna medan R3 skriver och laser under `warehouse_tools/vendor/lowfreqdata/buffertpall/r3/`; Ordersaldo, LYX och Pafyllnadsprio anvander verksamhetens karnfil nar egen fil inte laddas upp.
+
+## [2026-05-25] fix | Bevarar lagerverktygens arbetslage vid vybyte
+
+Bearbeta och Dela sparar nu faltvarden, status och senaste resultatpreview per inloggad anvandare i aktuell browser-/desktop-session. Nar anvandaren byter till en annan vy och gar tillbaka finns Allokering, Dela varden och andra lagerfloden kvar visuellt; serverns temporara `session_id` kravs fortfarande for Excel/CSV/kolumnhamtning.
+
+## [2026-05-25] change | Allokering ignorerar orderstatus over 33
+
+Lagerverktygets Allokering filtrerar nu bort orderrader med status over 33 innan pallmatchning, i bade Flow och den vendrade Allokera-motorn. Buffertstatusreglerna ar oforandrade: 29/30/32 for allokering och 29/30 for refill.
 
 ## [2026-05-22] feature | Felkodsdashboard i Historik
 

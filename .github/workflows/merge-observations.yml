@@ -6,6 +6,7 @@ on:
       - data/community-observations
     paths:
       - 'warehouse_tools/vendor/lowfreqdata/buffertpall/observations_*.csv.gz'
+      - 'warehouse_tools/vendor/lowfreqdata/buffertpall/*/observations_*.csv.gz'
   workflow_dispatch:
 
 permissions:
@@ -43,7 +44,8 @@ jobs:
           import numpy as np
           import pandas as pd
 
-          data_dir = Path('warehouse_tools/vendor/lowfreqdata/buffertpall')
+          root_data_dir = Path('warehouse_tools/vendor/lowfreqdata/buffertpall')
+          data_dir = root_data_dir
           observations_path = data_dir / 'observations.csv.gz'
           artikel_max_path = data_dir / 'artikel_max.csv'
           cols = ['artikelnummer', 'pallid', 'antal']
@@ -235,6 +237,65 @@ jobs:
           for filename in user_files:
               os.remove(filename)
               print(f'Removed {filename}')
+
+          for business_dir in sorted(path for path in root_data_dir.iterdir() if path.is_dir()):
+              business_label = business_dir.name.upper()
+              observations_path = business_dir / 'observations.csv.gz'
+              artikel_max_path = business_dir / 'artikel_max.csv'
+              existing_observations = read_observations(observations_path)
+              existing_ids = set(existing_observations['pallid'].astype(str))
+              article_max_before = read_artikel_max(artikel_max_path)
+              frames = [existing_observations]
+              user_frames = []
+
+              user_files = sorted(glob.glob(str(business_dir / 'observations_*.csv.gz')))
+              for filename in user_files:
+                  try:
+                      df = pd.read_csv(filename, compression='gzip', dtype=str)
+                      if all(col in df.columns for col in cols):
+                          session_rows = df[cols]
+                          frames.append(session_rows)
+                          user_frames.append(session_rows)
+                      else:
+                          print(f'[{business_label}] Skipping {filename}: missing expected columns')
+                  except Exception as exc:
+                      print(f'[{business_label}] Skipping {filename}: {exc}')
+
+              user_rows = pd.concat(user_frames, ignore_index=True) if user_frames else pd.DataFrame(columns=cols)
+              new_user_rows = user_rows[~user_rows['pallid'].astype(str).isin(existing_ids)].drop_duplicates(subset='pallid')
+              merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
+              before = len(merged)
+              merged = merged.drop_duplicates(subset='pallid', keep='first')
+              after = len(merged)
+              merged.to_csv(observations_path, index=False, compression='gzip')
+              article_count = rebuild_artikel_max(merged, artikel_max_path)
+              article_max_after = read_artikel_max(artikel_max_path)
+              max_changes = artikel_max_summary(article_max_before, article_max_after)
+
+              print(f'[{business_label}] Merged {len(user_files)} user files. Rows: {before} -> {after}. Artikel-max rows: {article_count}.')
+              print(f'[{business_label}] Nya pallid fran sessionsfiler: {len(new_user_rows)}.')
+              print(
+                  f'[{business_label}] Artikel-max andrade maxvarden: '
+                  f"{max_changes['changed_rows']} "
+                  f"(upp: {max_changes['increased_rows']}, ned: {max_changes['decreased_rows']}, "
+                  f"nya artiklar: {max_changes['new_article_rows']}, borttagna artiklar: {max_changes['removed_article_rows']})."
+              )
+
+              summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+              if summary_path:
+                  with open(summary_path, 'a', encoding='utf-8') as fh:
+                      fh.write(f'\n## Observations merge {business_label}\n\n')
+                      fh.write(f"- Sessionsfiler: {len(user_files)}\n")
+                      fh.write(f"- Nya pallid fran sessionsfiler: {len(new_user_rows)}\n")
+                      fh.write(f"- Observationer efter merge: {after}\n")
+                      fh.write(f"- Artikel-max-rader: {article_count}\n")
+                      fh.write(f"- Andrade maxvarden: {max_changes['changed_rows']}\n")
+                      fh.write(f"- Max upp/ned: {max_changes['increased_rows']} / {max_changes['decreased_rows']}\n")
+                      fh.write(f"- Nya artiklar i artikel_max: {max_changes['new_article_rows']}\n")
+
+              for filename in user_files:
+                  os.remove(filename)
+                  print(f'[{business_label}] Removed {filename}')
           PY
 
       - name: Commit merged data

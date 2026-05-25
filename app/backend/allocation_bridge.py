@@ -43,6 +43,7 @@ SESSIONS: dict[str, dict] = {}
 UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
 UPLOAD_CACHE_TTL_SECONDS = 6 * 60 * 60
 UPLOAD_CACHE_MAX_FILES = 64
+DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
 
 
 def _default_warehouse_tools_dir() -> Path:
@@ -152,6 +153,14 @@ def require_available() -> tuple[ModuleType, ModuleType]:
         return _load_modules()
     except AllocationBridgeUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=unavailable_detail()) from exc
+
+
+def business_allocation_data_paths(business_code: str | None) -> dict[str, str]:
+    engine_module, _flows_module = require_available()
+    return {
+        "observations_path": str(engine_module.business_observations_path(business_code)),
+        "article_max_path": str(engine_module.business_artikel_max_path(business_code)),
+    }
 
 
 def _cell(value: object) -> str:
@@ -432,7 +441,13 @@ async def form_to_flow_payload(form, *, cache_scope: str | None = None) -> tuple
     return files, params, temp_paths
 
 
-def run_flow_handler(flow_id: str, files: dict, params: dict) -> dict:
+def run_flow_handler(
+    flow_id: str,
+    files: dict,
+    params: dict,
+    *,
+    default_max_csv_path: str | Path | None = None,
+) -> dict:
     flow = _native_flows().FLOW_BY_ID.get(flow_id)
     if flow is None:
         if flow_id not in _catalog().FLOW_BY_ID:
@@ -441,8 +456,11 @@ def run_flow_handler(flow_id: str, files: dict, params: dict) -> dict:
         flow = flows_module.FLOW_BY_ID.get(flow_id)
     if flow is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Okänt flöde: {flow_id}")
+    handler_params = dict(params or {})
+    if default_max_csv_path and "max_csv" not in files:
+        handler_params[DEFAULT_MAX_CSV_PARAM] = str(default_max_csv_path)
     try:
-        result = flow["handler"](files, params)
+        result = flow["handler"](files, handler_params)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

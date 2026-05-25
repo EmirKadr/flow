@@ -91,9 +91,9 @@ Tips: om en aktivitet inte dyker upp dar anvandaren forvantar sig, kontrollera o
 5. Anvand `Vybehorigheter` for att styra vilka roller som far se/redigera olika vyer.
 6. For flera nya konton: klicka `Flera nya anvandare` och fyll anvandarnamn, visningsnamn, roller och omrade direkt i tabellen, eller anvand importmall.
 7. Anvand checkboxen `Las bemanningsceller som andra anvandare har fyllt i` for att hindra arbetsledare fran att skriva over varandras celler.
-8. `Visa inaktiva` visar anvandare som annars ar dolda.
+8. `Ta bort` tar bort anvandare som inte ska finnas kvar.
 
-Sista aktiva administratören kan inte inaktiveras eller nedgraderas.
+Sista administratören i en verksamhet kan inte tas bort eller nedgraderas.
 
 ## Historik
 

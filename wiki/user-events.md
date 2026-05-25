@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandelser
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [anvandare, handelser, toast, state, chat]
 ---
 
@@ -30,7 +30,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 
 | Handelse | Text | Betydelse | Atgard |
 | --- | --- | --- | --- |
-| Fel login | "Felaktigt anvandarnamn eller losenord" | Namn finns inte, anvandare inaktiv eller losenord fel | Kontrollera konto/aktiv-status/losenord. |
+| Fel login | "Felaktigt anvandarnamn eller losenord" | Namn finns inte, kontot ar borttaget eller losenord fel | Kontrollera konto/losenord. |
 | Forsta login med ifyllt losenord | "Lamna losenordet tomt vid forsta inloggningen" | Kontot har inget losenord an | Logga in med tomt losenord och skapa nytt. |
 | For kort nytt losenord | "Losenord maste vara minst 8 tecken" | Klientvalidering | Ange minst 8 tecken. |
 | Losenord matchar inte | "Losenorden matchar inte" | Bekraftelse skiljer sig | Skriv samma losenord i bada falt. |
@@ -74,8 +74,8 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Import hoppade rader | "X importerades. Y rad(er) hoppades over." | Delvis import med radfel | Oppna resultatmodal och korrigera. |
 | Direktimport utan rader | "Fyll minst en rad." | Anvandaren klickade skapa i direkttabellen utan ifyllda rader | Fyll minst en rad eller avbryt. |
 | Import tom | "Importen inneholl inga..." | Filen eller direkttabellen hade inga giltiga rader | Kontrollera rubrikrad/innehall eller fyll direkttabellen. |
-| Ta bort confirm | "Ta bort ... permanent?" | UI-confirm fore soft delete | Trots texten inaktiveras objektet i backend. |
-| Sista admin stoppas | "Det maste finnas minst en aktiv administrator kvar" | Skyddsregel | Skapa/aktivera annan admin forst. |
+| Ta bort confirm | "Ta bort ... permanent?" | UI-confirm fore borttagning | Personer, aktiviteter och anvandare tas bort; omraden kan inaktiveras om de har kopplad data. |
+| Sista admin stoppas | "Det maste finnas minst en administrator kvar" | Skyddsregel | Skapa eller ge adminroll till en annan anvandare forst. |
 
 ## Produktivitet
 

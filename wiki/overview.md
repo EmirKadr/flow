@@ -15,7 +15,7 @@ Kort svar: flow ersatter en Excel-bemanningsfil med en gemensam webbapp och Wind
 - Oversikt: vecka/manad per person dar hela dagar kan bemannas enligt personens veckomall.
 - Personer: register med hemomrade, huvudaktivitet, sortering och veckomall.
 - Aktiviteter: register over bemanningsaktiviteter, farger, omraden, kategori och summeringsaktivitet.
-- Anvandare: roller, omrade, aktiv/inaktiv, forsta losenord, vybehorigheter och settings.
+- Anvandare: roller, omrade, forsta losenord, vybehorigheter, settings och borttagning.
 - Historik: auditlogg, enkel analytics och felkodsdashboard over anvandartraffade API-fel.
 - Hamta data: promptstyrd extern data-export via MiniMax-planering, backendvalidering och Excel-export.
 - Produktivitet: lokal analys av stora WMS-loggar mot centrala KPI-mal.
@@ -27,7 +27,7 @@ Kort svar: flow ersatter en Excel-bemanningsfil med en gemensam webbapp och Wind
 - Databasen ar den centrala sanningen for anvandare, roller, schema, personer, aktiviteter, historik, settings och KPI-mal.
 - Stora produktivitetsloggar ar lokala i klienten for att undvika tunga serveruppladdningar.
 - Schemaceller har versioner for att upptacka samtidiga andringar.
-- Soft delete anvands for personer, aktiviteter och anvandare: de inaktiveras, inte tas fysiskt bort.
+- Personer, aktiviteter och anvandare tas bort via delete-floden; anvandare som finns kvar ar alltid aktiva.
 
 ## Mental modell for agenten
 

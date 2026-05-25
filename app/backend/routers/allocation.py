@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from .. import allocation_bridge as bridge
+from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, user_business_id
 from ..deps import get_db, require_allocation_tools_user
-from ..models import User
+from ..models import Business, User
 from ..user_access import can_use_allocation_process
 
 
@@ -19,6 +20,7 @@ router = APIRouter(
 )
 
 SELF_SERVICE_FLOW_IDS = {"split-values"}
+BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
 logger = logging.getLogger(__name__)
 
 
@@ -102,6 +104,12 @@ def _upload_cache_scope(user: User) -> str:
     if user_id is not None:
         return f"user:{user_id}"
     return f"business:{getattr(user, 'business_id', None)}"
+
+
+def _allocation_business_code(db: Session, user: User) -> str:
+    business_id = user_business_id(db, user)
+    business = db.get(Business, business_id) if business_id is not None else None
+    return normalize_business_code(getattr(business, "code", None)) or DEFAULT_BUSINESS_CODE
 
 
 def _assert_session_allowed(session_id: str, user: User) -> None:
@@ -196,6 +204,8 @@ async def update_observations(
 ) -> dict:
     _assert_flow_allowed("observations-update", user)
     engine_module, _flows_module = bridge.require_available()
+    business_code = _allocation_business_code(db, user)
+    data_paths = bridge.business_allocation_data_paths(business_code)
     try:
         path = await bridge.save_upload(file)
     except Exception as exc:
@@ -213,7 +223,13 @@ async def update_observations(
         raise
     try:
         buffer_df = engine_module.read_table(str(path))
-        result = engine_module.build_observations_update_result(buffer_df, push_to_github=True)
+        result = engine_module.build_observations_update_result(
+            buffer_df,
+            observations_path=data_paths["observations_path"],
+            artikel_max_out=data_paths["article_max_path"],
+            push_to_github=True,
+            business_code=business_code,
+        )
     except Exception as exc:
         _audit_allocation_event(
             db,
@@ -235,6 +251,7 @@ async def update_observations(
         action="observations_update",
         payload={
             "flow_id": "observations-update",
+            "business_code": business_code,
             "new_rows": int(result.new_row_count),
             "github_sent_rows": int(result.github_sent_rows),
             "article_max_rows": int(result.article_max_rows),
@@ -253,6 +270,7 @@ async def update_observations(
         "article_max_removed_rows": int(result.article_max_removed_rows),
         "article_max_changed_examples": list(result.article_max_changed_examples),
         "pushed_to_github": bool(result.pushed_to_github),
+        "business_code": business_code,
         "observations_path": result.observations_path,
         "article_max_path": result.article_max_path,
     }
@@ -283,7 +301,14 @@ async def run_flow(
         )
         raise
     try:
-        result = bridge.run_flow_handler(flow_id, files, params)
+        default_max_csv_path = None
+        if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
+            business_code = _allocation_business_code(db, user)
+            default_max_csv_path = bridge.business_allocation_data_paths(business_code)["article_max_path"]
+        if default_max_csv_path is not None:
+            result = bridge.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max_csv_path)
+        else:
+            result = bridge.run_flow_handler(flow_id, files, params)
         session_id = result.get("session_id")
         if session_id in bridge.SESSIONS:
             bridge.SESSIONS[session_id]["owner"] = _session_owner_payload(user)

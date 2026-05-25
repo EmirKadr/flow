@@ -2,6 +2,8 @@ const ALLOCATION_API = "/api/allokering";
 const ALLOCATION_DB_NAME = "flow-allokering-files";
 const ALLOCATION_DB_VERSION = 1;
 const ALLOCATION_STORE = "files";
+const ALLOCATION_WORK_STATE_VERSION = 1;
+const ALLOCATION_WORK_STATE_PREFIX = "flow-allocation-work-state-v1:";
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_KEY_OVERRIDES = { details: "orders", wms_buffert: "buffer" };
 const ALLOCATION_FILE_WORDS = {
@@ -134,6 +136,63 @@ function allocationPageActiveName(page) {
   if (page === "process") return "allocationProcess";
   if (page === "split") return "allocationSplit";
   return "allocationUploads";
+}
+
+function allocationWorkStateKey(page = allocationState.page) {
+  if (page !== "process" && page !== "split") return "";
+  const userKey = allocationState.user?.id ?? allocationState.user?.username ?? "current";
+  return `${ALLOCATION_WORK_STATE_PREFIX}${String(userKey)}:${page}`;
+}
+
+function serializableAllocationValues(values) {
+  const result = {};
+  for (const [key, value] of Object.entries(values || {})) {
+    if (value == null) continue;
+    result[key] = String(value);
+  }
+  return result;
+}
+
+function persistAllocationWorkState(overrides = {}) {
+  const key = allocationWorkStateKey();
+  if (!key) return;
+  const snapshot = {
+    version: ALLOCATION_WORK_STATE_VERSION,
+    page: allocationState.page,
+    values: serializableAllocationValues(allocationState.values),
+    status: allocationState.busyId ? "" : String(allocationState.status || ""),
+    result: allocationState.busyId ? null : allocationState.result,
+    ...overrides,
+  };
+  try {
+    sessionStorage.setItem(key, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn("Kunde inte spara lagerverktygets arbetslage.", error);
+  }
+}
+
+function restoreAllocationWorkState() {
+  const key = allocationWorkStateKey();
+  if (!key) return;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return;
+    const snapshot = JSON.parse(raw);
+    if (
+      !snapshot
+      || snapshot.version !== ALLOCATION_WORK_STATE_VERSION
+      || snapshot.page !== allocationState.page
+    ) {
+      return;
+    }
+    if (snapshot.values && typeof snapshot.values === "object" && !Array.isArray(snapshot.values)) {
+      allocationState.values = serializableAllocationValues(snapshot.values);
+    }
+    allocationState.status = typeof snapshot.status === "string" ? snapshot.status : "";
+    allocationState.result = snapshot.result && typeof snapshot.result === "object" ? snapshot.result : null;
+  } catch (error) {
+    try { sessionStorage.removeItem(key); } catch (e) {}
+  }
 }
 
 function allocationDb() {
@@ -411,6 +470,7 @@ async function routeAllocationFiles(files, slots, options = {}) {
   else if (uploadedNames.size > 1) allocationState.status = `${uploadedNames.size} filer inlagda.`;
   else allocationState.status = "";
   if (visibleUnknown.length) showToast(`Kunde inte sortera: ${visibleUnknown.join(", ")}`, "warn");
+  persistAllocationWorkState();
   renderAllocationPage();
 }
 
@@ -666,6 +726,7 @@ function bindFlowFields(root) {
   root.querySelectorAll("[data-flow-field]").forEach((input) => {
     input.addEventListener("input", () => {
       allocationState.values[input.dataset.flowField] = input.value;
+      persistAllocationWorkState();
       refreshAllocationRunButtons(root);
     });
   });
@@ -687,6 +748,7 @@ async function runAllocationFlow(flow) {
   allocationState.busyId = flow.id;
   allocationState.status = flow.id === "split-values" ? "Delar värden..." : `Kör ${flow.label}...`;
   allocationState.result = null;
+  persistAllocationWorkState({ status: "", result: null });
   renderAllocationPage();
   const fd = new FormData();
   for (const input of flow.inputs || []) {
@@ -709,6 +771,7 @@ async function runAllocationFlow(flow) {
     allocationState.status = "";
   } finally {
     allocationState.busyId = "";
+    persistAllocationWorkState();
     renderAllocationPage();
   }
 }
@@ -1084,6 +1147,7 @@ async function initAllocationPage() {
         console.warn("Kunde inte synka produktivitetsfiler till Uppladdningar.", error);
       }
     }
+    restoreAllocationWorkState();
     renderAllocationPage();
   } catch (error) {
     renderAllocationUnavailable(error.message);

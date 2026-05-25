@@ -1,13 +1,13 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
 # Lagerverktyg
 
-Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar for gemensamma lokala filer, Bearbeta for floden och Dela for listdelning. Filer sparas lokalt i IndexedDB och skickas till API nar ett flode kors. Backend ateranvander samma uppladdade fil via innehallshash och cachar inlasta tabeller i processen for snabbare upprepade Bearbeta-korning.
+Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar for gemensamma lokala filer, Bearbeta for floden och Dela for listdelning. Filer sparas lokalt i IndexedDB och skickas till API nar ett flode kors. Bearbeta och Dela behaller faltvarden, status och senaste resultat i aktuell browser-/desktop-session nar anvandaren byter vy och kommer tillbaka. Backend ateranvander samma uppladdade fil via innehallshash och cachar inlasta tabeller i processen for snabbare upprepade Bearbeta-korning.
 
 ## Vyer
 
@@ -37,16 +37,18 @@ Att andra `allocationProcess` eller `Vybehorigheter` kraver admin-/Super User-at
 | Flode | Kraver | Resultat |
 | --- | --- | --- |
 | Allokering | Detalj Kundorder, Buffertpallar; valfritt Saldo, Item option, Ej inlagrade | Allokerade pallar, near-miss, refill, pallplatser |
-| Ordersaldo | Detalj Kundorder; valfritt Saldo, `artikel_max.csv` | Kompletta ordrar kopieras automatiskt och underskott visas med Antal pa Helpall |
-| LYX-artiklar | Saldofil; valfritt `artikel_max.csv` | Lista LYX-artiklar |
-| Pafyllnadsprio | Detalj Kundorder; valfritt Saldo, Orderoversikt, `artikel_max.csv` | Pafyllnadsprio, ev. lastningsfonster |
+| Ordersaldo | Detalj Kundorder; valfritt Saldo, verksamhetens `artikel_max.csv` | Kompletta ordrar kopieras automatiskt och underskott visas med Antal pa Helpall |
+| LYX-artiklar | Saldofil; valfritt verksamhetens `artikel_max.csv` | Lista LYX-artiklar |
+| Pafyllnadsprio | Detalj Kundorder; valfritt Saldo, Orderoversikt, verksamhetens `artikel_max.csv` | Pafyllnadsprio, ev. lastningsfonster |
 | HIB-koppling | Detalj Kundorder, Orderoversikt | Andringar och missade avgangar |
 | Orderoversiktkontroll | Orderoversikt; valfritt Detalj Kundorder | Sändnings-/HIB-kontroller |
 | Dispatchkontroll | Orderoversikt, Dispatchpallar; valfritt Detalj Kundorder | Dispatchavvikelser |
 | Vecka 27-kontroll | Detalj Kundorder | Avvikelser/text |
 | Prognosrapport | Prognos eller kampanj, samt Saldo; valfritt Buffert | Prognos vs Autoplock |
 
-Dolda/tekniska floden finns for observations-update, observations-sync och update-check. Observations kan aven triggas automatiskt nar ny buffertfil laggs in.
+Dolda/tekniska floden finns for observations-update, observations-sync och update-check. Observations kan aven triggas automatiskt nar ny buffertfil laggs in. Observations och den framraknade karnfilen `artikel_max.csv` ar verksamhetsseparerade: Stigamo anvander legacy-filerna i `lowfreqdata/buffertpall/`, medan R3 anvander egna filer under `lowfreqdata/buffertpall/r3/`. En R3-uppladdning ska darfor inte andra Stigamos observations- eller artikel_max-underlag, och tvartom.
+
+Allokering anvander bara orderrader med status 33 eller lagre. Orderrader med status over 33 ignoreras innan pallar matchas. Buffertpallar filtreras separat till status 29, 30 och 32 for allokering, och refill anvander status 29 och 30.
 
 ## Dela
 
@@ -65,6 +67,8 @@ Bearbeta-uppladdningar sparas content-addressed i serverns temporara cachekatalo
 
 Bearbeta-resultat lagras som temporara serversessioner. Sessionen binds till anvandaren som korde flodet, sa `Oppna i Excel`, `Ladda ner CSV` och kolumnkopiering inte kan hamta en annan anvandares resultat aven om ett session-id skulle delas.
 
+Bearbeta och Dela sparar samtidigt arbetslaget klient-side i `sessionStorage` per inloggad anvandare och vy. Det gor att Dela-listan, antal per kolumn, Bearbetas senaste status och den senaste resultatpreviewn finns kvar nar anvandaren gar till en annan vy och sedan tillbaka i samma session. Fulla Excel-/CSV- och kolumnhamtningar anvander fortfarande serverns temporara `session_id`; om servern har startats om kan previewn synas men export/kolumnkopiering krava ny korning.
+
 ## Resultatkontroller
 
 | Kontroll | Vad hander |
@@ -80,7 +84,7 @@ For Allokering visas huvudtabellen `Allokerade pallar` som en vanlig resultattab
 
 Pallplatser foljer Allokeras berakning: zon `R` raknas som `autostore`, zon `F` raknas separat som `HIB` med 20 rader per toppall, och `Topp Pallar`, `Totalt Pallar` och `Pallplatser` inkluderar HIB-delen.
 
-For Ordersaldo kopieras listan `Kompletta ordrar` till urklipp direkt nar flodet ar klart. Tabellen `Underskott` far kolumnen `Antal pa Helpall` fran `artikel_max.csv`; om anvandaren inte laddar upp en egen fil anvands karnfilen.
+For Ordersaldo kopieras listan `Kompletta ordrar` till urklipp direkt nar flodet ar klart. Tabellen `Underskott` far kolumnen `Antal pa Helpall` fran `artikel_max.csv`; om anvandaren inte laddar upp en egen fil anvands karnfilen for anvandarens verksamhet.
 
 ## CLI och paritytester
 
@@ -119,6 +123,7 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 - `../warehouse_tools/catalog.py`
 - `../warehouse_tools/cli.py`
 - `../warehouse_tools/flows.py`
+- `../warehouse_tools/vendor/allokering12.1.py`
 - `../tools/flow_cli.py`
 - `../tools/compare_warehouse_results.py`
 - `../../ALLOKERING_FILKUNSKAP.md`

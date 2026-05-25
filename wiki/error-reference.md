@@ -44,10 +44,10 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 
 | Status | Detail/text | Orsak | Atgard |
 | --- | --- | --- | --- |
-| 401 | "Felaktigt anvandarnamn eller losenord" | Fel login eller inaktivt konto | Kontrollera username, losenord och aktiv-status. |
+| 401 | "Felaktigt anvandarnamn eller losenord" | Fel login eller borttaget konto | Kontrollera username/losenord eller skapa kontot igen. |
 | 401 | "Lamna losenordet tomt vid forsta inloggningen" | Konto saknar losenord men anvandaren skrev ett | Logga in med tomt losenord och skapa nytt. |
 | 401 | "Not authenticated" | Ingen session | Logga in. |
-| 401 | "User inactive" | Konto inaktiverat | Admin aktiverar kontot. |
+| 401 | "User inactive" | Gammal datarad har inaktivt konto | Lokal bootstrap/migration ska gora konton aktiva; kontrollera databasversion. |
 | 403 | "password_setup_required" | Konto maste skapa losenord | Ga till `set-password.html`. |
 | 403 | "Admin required" | Endpoint kraver admin | Ge roll eller lat admin gora atgarden. |
 | 403 | "Super User required" | Endpoint kraver super user | Ge super-user-roll/vyatkomst. |

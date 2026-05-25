@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import Area, AuditLog, User
+from app.backend.database import Base
+from app.backend.models import AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, ScheduleCell, User
 from app.backend.routers import auth as auth_router
 from app.backend.routers import users as users_router
 from app.backend.schemas import LoginRequest, PasswordSetRequest, UserCreate, UserUpdate
@@ -15,18 +16,14 @@ from app.backend.security import verify_password
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Area.__table__.create(engine)
-    User.__table__.create(engine)
-    AuditLog.__table__.create(engine)
+    Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = SessionLocal()
     try:
         yield session
     finally:
         session.close()
-        AuditLog.__table__.drop(engine)
-        User.__table__.drop(engine)
-        Area.__table__.drop(engine)
+        Base.metadata.drop_all(engine)
         engine.dispose()
 
 
@@ -69,6 +66,20 @@ def test_create_user_with_password_hashes_password(monkeypatch, db_session, admi
     assert saved.password_hash is not None
     assert verify_password("hemligt123", saved.password_hash) is True
     assert saved.must_change_password is False
+
+
+def test_create_user_always_saves_active_user(monkeypatch, db_session, admin_user):
+    monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
+
+    result = users_router.create_user(
+        UserCreate(username="always-active", role="leader", is_active=False),
+        db_session,
+        admin_user,
+    )
+
+    saved = db_session.query(User).filter_by(username="always-active").one()
+    assert result.is_active is True
+    assert saved.is_active is True
 
 
 def test_create_viewer_user(monkeypatch, db_session, admin_user):
@@ -222,6 +233,104 @@ def test_update_user_can_change_multiple_roles(monkeypatch, db_session, admin_us
     assert result.roles == ["viewer", "leader"]
     assert saved.role == "leader"
     assert saved.roles == ["viewer", "leader"]
+
+
+def test_update_user_rejects_inactivation(monkeypatch, db_session, admin_user):
+    monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
+    user = User(username="sara", role="leader", roles=["leader"], is_active=True)
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    with pytest.raises(HTTPException) as exc_info:
+        users_router.update_user(
+            user.id,
+            UserUpdate(is_active=False),
+            db_session,
+            admin_user,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "Ta bort användaren" in exc_info.value.detail
+    assert db_session.get(User, user.id).is_active is True
+
+
+def test_update_user_reactivates_legacy_inactive_user(monkeypatch, db_session, admin_user):
+    monkeypatch.setattr(users_router.audit, "log", lambda *args, **kwargs: None)
+    user = User(username="legacy", display_name="Legacy", role="leader", roles=["leader"], is_active=False)
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    result = users_router.update_user(
+        user.id,
+        UserUpdate(display_name="Legacy Aktiv"),
+        db_session,
+        admin_user,
+    )
+
+    saved = db_session.get(User, user.id)
+    assert result.is_active is True
+    assert saved.is_active is True
+    assert saved.display_name == "Legacy Aktiv"
+
+
+def test_delete_user_removes_account_and_clears_user_references(db_session):
+    business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    db_session.add(business)
+    db_session.flush()
+    admin = User(username="admin-delete", role="admin", roles=["admin"], business_id=business.id, is_active=True)
+    target = User(username="old-user", role="leader", roles=["leader"], business_id=business.id, is_active=True)
+    person = Person(business_id=business.id, name="Planerbar", competencies=[], sort_order=1)
+    db_session.add_all([admin, target, person])
+    db_session.flush()
+    cell = ScheduleCell(
+        id=1,
+        year=2026,
+        week=21,
+        weekday=1,
+        hour=7,
+        minute_start=0,
+        minute_end=60,
+        person_id=person.id,
+        updated_by=target.id,
+    )
+    template = PersonScheduleTemplate(person_id=person.id, weekday=1, updated_by=target.id)
+    setting = AppSetting(business_id=business.id, key="lock_foreign_schedule_cells", value="true", updated_by=target.id)
+    old_audit = AuditLog(
+        business_id=business.id,
+        entity_type="person",
+        entity_id=person.id,
+        action="update",
+        user_id=target.id,
+    )
+    db_session.add_all([cell, template, setting, old_audit])
+    db_session.commit()
+
+    users_router.delete_user(target.id, db_session, admin)
+
+    assert db_session.get(User, target.id) is None
+    assert db_session.get(ScheduleCell, cell.id).updated_by is None
+    assert db_session.get(PersonScheduleTemplate, template.id).updated_by is None
+    assert db_session.query(AppSetting).filter_by(business_id=business.id, key=setting.key).one().updated_by is None
+    assert db_session.get(AuditLog, old_audit.id).user_id is None
+    delete_entry = db_session.query(AuditLog).filter_by(entity_type="user", entity_id=target.id, action="delete").one()
+    assert delete_entry.user_id == admin.id
+    assert delete_entry.old_value["username"] == "old-user"
+    assert delete_entry.new_value is None
+
+
+def test_delete_user_rejects_self_delete(db_session):
+    admin = User(username="admin-self", role="admin", roles=["admin"], is_active=True)
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+
+    with pytest.raises(HTTPException) as exc_info:
+        users_router.delete_user(admin.id, db_session, admin)
+
+    assert exc_info.value.status_code == 409
+    assert db_session.get(User, admin.id) is not None
 
 
 def test_only_super_user_can_add_or_remove_super_user_role(monkeypatch, db_session, admin_user, super_user):

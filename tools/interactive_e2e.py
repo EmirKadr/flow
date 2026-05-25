@@ -34,7 +34,7 @@ WEB_WORKFLOW_STEPS = (
     "edit_user",
     "import_user",
     "toggle_user_setting",
-    "toggle_user_active",
+    "delete_user",
     "create_activity",
     "edit_activity",
     "delete_activity",
@@ -177,7 +177,7 @@ class InteractiveRun:
         self.edit_user()
         self.import_user()
         self.toggle_user_setting()
-        self.toggle_user_active()
+        self.delete_user()
         self.create_activity()
         self.edit_activity()
         self.delete_activity()
@@ -284,18 +284,19 @@ class InteractiveRun:
         self.page.wait_for_timeout(500)
         self.record("toggle_user_setting", screenshot=self.screenshot("06-user-setting-toggled"))
 
-    def toggle_user_active(self) -> None:
-        row = self.page.locator("#users-body tr", has_text=self.agent_user)
-        row.locator("button[data-toggle]").click()
-        self.page.wait_for_timeout(700)
-        show_inactive = self.page.locator("#show-inactive")
-        if not show_inactive.is_checked():
-            show_inactive.check()
-        self.wait_for_text(self.agent_user)
-        row = self.page.locator("#users-body tr", has_text=self.agent_user)
-        row.locator("button[data-toggle]").click()
-        self.page.wait_for_timeout(700)
-        self.record("toggle_user_active", screenshot=self.screenshot("07-user-active-toggled"))
+    def delete_user(self) -> None:
+        self.goto("/anvandare.html", "#users-body")
+        row = self.page.locator("#users-body tr", has_text=self.agent_user_imported)
+        with self.page.expect_response(
+            lambda response: "/api/users/" in response.url and response.request.method == "DELETE",
+            timeout=15000,
+        ) as response_info:
+            row.locator("button[data-delete]").click()
+        response = response_info.value
+        if not response.ok:
+            raise RuntimeError(f"DELETE user failed with {response.status}: {response.text()}")
+        row.wait_for(state="detached", timeout=15000)
+        self.record("delete_user", screenshot=self.screenshot("07-user-deleted"))
 
     def create_activity(self) -> None:
         self.goto("/aktiviteter.html", "#acts-body")

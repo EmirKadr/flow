@@ -133,6 +133,7 @@ verksamheter.
 | `users.import_rows` | `POST` | `/api/users/import-rows` | Importera användarrader |
 | `users.create` | `POST` | `/api/users` | Skapa användare |
 | `users.update` | `PUT` | `/api/users/{user_id}` | Uppdatera användare |
+| `users.delete` | `DELETE` | `/api/users/{user_id}` | Ta bort användare |
 | `productivity.files` | `GET` | `/api/productivity/files` | Produktivitetsfilstatus |
 | `productivity.targets` | `GET` | `/api/productivity/targets` | Hämta KPI-mål |
 | `productivity.upload` | `POST` | `/api/productivity/files` | Ladda upp produktivitetsfil(er) |

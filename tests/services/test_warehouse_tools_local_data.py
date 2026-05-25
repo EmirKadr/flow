@@ -32,11 +32,11 @@ LOCAL_DATA_FLOW_IDS = tuple(flow_id for flow_id in REGISTRY_FLOW_IDS if flow_id 
 
 EXPECTED_SUMMARIES = {
     "allocate": {
-        "Resultatrader": 20129,
-        "Near-miss": 18,
-        "Refill Huvudplock": 529,
-        "Refill AutoStore": 121,
-        "Pallplatser": 220,
+        "Resultatrader": 12062,
+        "Near-miss": 12,
+        "Refill Huvudplock": 298,
+        "Refill AutoStore": 7,
+        "Pallplatser": 144,
     },
     "dispatch-check": {"Avvikelser": 0},
     "hib-koppling": {"Ändringar": 49, "Missade avgångar": 1},
@@ -52,11 +52,11 @@ EXPECTED_SUMMARIES = {
 
 EXPECTED_TABLE_ROWS = {
     "allocate": {
-        "result": 20129,
-        "near_miss": 18,
-        "refill_hp": 529,
-        "refill_autostore": 121,
-        "pallet_spaces": 220,
+        "result": 12062,
+        "near_miss": 12,
+        "refill_hp": 298,
+        "refill_autostore": 7,
+        "pallet_spaces": 144,
     },
     "dispatch-check": {"diff": 0},
     "hib-koppling": {"changes": 49, "missed": 1},
@@ -73,10 +73,10 @@ EXPECTED_TABLE_ROWS = {
 EXPECTED_FIRST_VALUES = {
     "allocate": {
         "result": (0, "33"),
-        "near_miss": (0, "1166795"),
-        "refill_hp": (0, "1251405"),
-        "refill_autostore": (0, "2000515"),
-        "pallet_spaces": (0, "110"),
+        "near_miss": (0, "2000051"),
+        "refill_hp": (0, "1267353"),
+        "refill_autostore": (0, "1179324"),
+        "pallet_spaces": (0, "133343"),
     },
     "hib-koppling": {"changes": (0, "PR100500372"), "missed": (0, "324042")},
     "lyx": {"articles": (0, "10010")},
@@ -186,6 +186,29 @@ def test_allocate_display_summary_formats_fixed_labels_in_order():
     }
 
 
+def test_allocate_flow_ignores_order_rows_above_status_33(tmp_path):
+    orders_path = tmp_path / "orders_status.csv"
+    buffer_path = tmp_path / "buffer_status.csv"
+    pd.DataFrame([
+        {"Artikel": "A33", "Antal": 1, "Ordernr": "O33", "Radnr": "1", "Status": 33, "Zon": "A"},
+        {"Artikel": "A34", "Antal": 1, "Ordernr": "O34", "Radnr": "1", "Status": 34, "Zon": "A"},
+        {"Artikel": "A40", "Antal": 1, "Ordernr": "O40", "Radnr": "1", "Status": 40, "Zon": "A"},
+    ]).to_csv(orders_path, index=False, encoding="utf-8-sig")
+    pd.DataFrame([
+        {"Artikel": "A33", "Antal": 1, "Lagerplats": "H33", "Datum/Tid": "2024-01-01 10:00", "PallID": "P33", "Status": 29},
+        {"Artikel": "A34", "Antal": 1, "Lagerplats": "H34", "Datum/Tid": "2024-01-01 10:00", "PallID": "P34", "Status": 29},
+        {"Artikel": "A40", "Antal": 1, "Lagerplats": "H40", "Datum/Tid": "2024-01-01 10:00", "PallID": "P40", "Status": 29},
+    ]).to_csv(buffer_path, index=False, encoding="utf-8-sig")
+
+    result = flows.FLOW_BY_ID["allocate"]["handler"]({"orders": orders_path, "buffer": buffer_path}, {})
+    tables = {key: table for key, _label, table in result["tables"]}
+
+    assert result["summary"]["Resultatrader"] == 1
+    assert tables["result"]["Ordernr"].tolist() == ["O33"]
+    assert tables["result"]["Artikel"].tolist() == ["A33"]
+    assert any("Status > 33" in line for line in result["log"])
+
+
 def test_read_cache_reuses_same_file_without_shared_dataframe_mutation(tmp_path, monkeypatch):
     source = tmp_path / "orders.csv"
     source.write_text("Artikel;Antal\nA1;2\n", encoding="utf-8")
@@ -224,14 +247,14 @@ def test_allocate_display_summary_matches_current_local_fixture_data():
     result = flows.FLOW_BY_ID["allocate"]["handler"](files, {})
 
     assert result["display_summary"] == {
-        "Helpall": "403 pallar",
-        "Autostore": "7734 rader",
-        "Huvudplock": "5122 rader",
-        "Skrymmande": "1559 rader",
-        "E-Handel": "184 rader",
-        "HIB": "266 rader",
-        "Refill Autostore": "124 rader",
-        "Refill Huvudplock": "401 rader",
+        "Helpall": "401 pallar",
+        "Autostore": "4844 rader",
+        "Huvudplock": "5025 rader",
+        "Skrymmande": "1382 rader",
+        "E-Handel": "165 rader",
+        "HIB": "245 rader",
+        "Refill Autostore": "7 rader",
+        "Refill Huvudplock": "298 rader",
     }
 
 

@@ -331,6 +331,7 @@ LOWFREQDATA_DIR = "lowfreqdata"
 BUFFERPALL_DIR = "buffertpall"
 ITEM_OPTION_DIR = "item-option"
 BUFFERPALL_PATH_PARTS = (LOWFREQDATA_DIR, BUFFERPALL_DIR)
+DEFAULT_OBSERVATIONS_BUSINESS_CODE = "STIGAMO"
 
 
 def _bufferpall_resource_path(*parts: str) -> Path:
@@ -345,11 +346,35 @@ def _bufferpall_source_dir() -> Path:
     return Path(__file__).resolve().parent.joinpath(*BUFFERPALL_PATH_PARTS)
 
 
-def _seed_bufferpall_runtime_file(filename: str) -> Path:
-    runtime_path = _bufferpall_runtime_dir() / filename
+def _normalise_observations_business_code(business_code: Optional[str] = None) -> str:
+    value = str(business_code or DEFAULT_OBSERVATIONS_BUSINESS_CODE).strip().upper()
+    return value or DEFAULT_OBSERVATIONS_BUSINESS_CODE
+
+
+def _business_path_segment(business_code: Optional[str] = None) -> str:
+    code = _normalise_observations_business_code(business_code)
+    if code == DEFAULT_OBSERVATIONS_BUSINESS_CODE:
+        return ""
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", code).strip("._-").lower()
+    return safe or "business"
+
+
+def _business_bufferpall_runtime_dir(business_code: Optional[str] = None) -> Path:
+    segment = _business_path_segment(business_code)
+    root = _bufferpall_runtime_dir()
+    return root / segment if segment else root
+
+
+def _business_bufferpall_resource_path(business_code: Optional[str], filename: str) -> Path:
+    segment = _business_path_segment(business_code)
+    return _bufferpall_resource_path(segment, filename) if segment else _bufferpall_resource_path(filename)
+
+
+def _seed_bufferpall_runtime_file(filename: str, business_code: Optional[str] = None) -> Path:
+    runtime_path = _business_bufferpall_runtime_dir(business_code) / filename
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
 
-    resource_path = _bufferpall_resource_path(filename)
+    resource_path = _business_bufferpall_resource_path(business_code, filename)
     if not runtime_path.exists() and resource_path.exists() and resource_path.resolve() != runtime_path.resolve():
         shutil.copy2(resource_path, runtime_path)
     return runtime_path
@@ -464,6 +489,7 @@ INVALID_LOC_EXACT: set[str] = {"TRANSIT", "TRANSIT_ERROR", "MISSING", "UT2"}
 
 ALLOC_BUFFER_STATUSES: set[int] = {29, 30, 32}
 REFILL_BUFFER_STATUSES: set[int] = {29, 30}
+ORDER_MAX_ALLOCATABLE_STATUS = 33
 
 # Vecka 27 - tak/hus -> tillåtna matchande gräsklippare (per order krävs minst lika många gräsklippare som tak)
 VECKA27_ROOF_TO_MOWERS: dict[str, frozenset[str]] = {
@@ -1709,6 +1735,43 @@ def _artikel_max_path() -> Path:
     return _seed_bufferpall_runtime_file("artikel_max.csv")
 
 
+def _ensure_empty_observations(path: Path) -> Path:
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(columns=OBSERVATIONS_COLS).to_csv(
+            path, index=False, compression="gzip"
+        )
+    return path
+
+
+def _ensure_empty_artikel_max(path: Path) -> Path:
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(columns=["artikelnummer", "max", "pallid"]).to_csv(
+            path, index=False, encoding="utf-8-sig"
+        )
+    return path
+
+
+def business_observations_path(business_code: Optional[str] = None) -> Path:
+    path = _seed_bufferpall_runtime_file(OBSERVATIONS_FILENAME, business_code)
+    if _business_path_segment(business_code):
+        return _ensure_empty_observations(path)
+    return path
+
+
+def business_artikel_max_path(business_code: Optional[str] = None) -> Path:
+    path = _seed_bufferpall_runtime_file("artikel_max.csv", business_code)
+    if _business_path_segment(business_code):
+        return _ensure_empty_artikel_max(path)
+    return path
+
+
+def _github_business_dir(business_code: Optional[str] = None) -> str:
+    segment = _business_path_segment(business_code)
+    return f"{GITHUB_OBS_DIR}/{segment}" if segment else GITHUB_OBS_DIR
+
+
 def _read_observations(path: Path) -> pd.DataFrame:
     if path.exists() and path.stat().st_size > 0:
         df = pd.read_csv(path, dtype=str)
@@ -1933,7 +1996,7 @@ def _github_request(url: str, method: str = "GET", token: Optional[str] = None,
         return e.code, body
 
 
-def push_new_observations_to_github(nya: pd.DataFrame) -> bool:
+def push_new_observations_to_github(nya: pd.DataFrame, business_code: Optional[str] = None) -> bool:
     """Pusha nya observationer till GitHub som en sessions-CSV. Tyst no-op om token saknas."""
     if nya is None or nya.empty:
         return False
@@ -1952,10 +2015,12 @@ def push_new_observations_to_github(nya: pd.DataFrame) -> bool:
 
     user = re.sub(r"[^A-Za-z0-9_-]", "_", os.environ.get("USERNAME") or "user")
     ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-    remote_name = f"{GITHUB_OBS_DIR}/observations_{user}_{ts}.csv.gz"
+    remote_dir = _github_business_dir(business_code)
+    remote_name = f"{remote_dir}/observations_{user}_{ts}.csv.gz"
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{urllib.parse.quote(remote_name)}"
+    business = _normalise_observations_business_code(business_code)
     payload = {
-        "message": f"User observations {user} {ts}",
+        "message": f"User observations {business} {user} {ts}",
         "content": base64.b64encode(gz_bytes).decode("ascii"),
         "branch": GITHUB_OBS_BRANCH,
     }
@@ -1968,6 +2033,7 @@ def fetch_observations_from_github(
     artikel_max_path: Optional[Path] = None,
     remote_file: Optional[str] = None,
     push_orphaned: bool = True,
+    business_code: Optional[str] = None,
 ) -> Tuple[int, int]:
     """Tvavags-sync med GitHub master:
     1. Hamta nya rader fran master och merga in i lokal observations.csv.gz
@@ -1986,7 +2052,8 @@ def fetch_observations_from_github(
         except Exception:
             return 0, 0
     else:
-        raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_OBS_BRANCH}/{GITHUB_OBS_FILE}"
+        github_file = f"{_github_business_dir(business_code)}/{OBSERVATIONS_FILENAME}"
+        raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_OBS_BRANCH}/{github_file}"
         token = _load_github_token()
         headers = {"User-Agent": "flow-app"}
         if token:
@@ -2008,8 +2075,8 @@ def fetch_observations_from_github(
             return 0, 0
     remote = remote[OBSERVATIONS_COLS]
 
-    obs_path = Path(observations_path) if observations_path else _observations_path()
-    max_path = Path(artikel_max_path) if artikel_max_path else _artikel_max_path()
+    obs_path = Path(observations_path) if observations_path else business_observations_path(business_code)
+    max_path = Path(artikel_max_path) if artikel_max_path else business_artikel_max_path(business_code)
     obs_path.parent.mkdir(parents=True, exist_ok=True)
     max_path.parent.mkdir(parents=True, exist_ok=True)
     lokal = _read_observations(obs_path)
@@ -2030,7 +2097,7 @@ def fetch_observations_from_github(
     n_pushade = 0
     if push_orphaned and not orphaned.empty:
         try:
-            if push_new_observations_to_github(orphaned):
+            if push_new_observations_to_github(orphaned, business_code=business_code):
                 n_pushade = len(orphaned)
         except Exception:
             pass
@@ -2904,7 +2971,7 @@ def allocate(orders_raw: pd.DataFrame, buffer_raw: pd.DataFrame, log=None) -> Tu
     """
     Allokera beställningsrader mot buffert enligt HELPALL→AUTOSTORE→HUVUDPLOCK.
     - Buffert filter: status {29,30,32} + platsfilter (ej AA*, TRANSIT, TRANSIT_ERROR, MISSING, UT2).
-    - Ignorera orderrader med Status=35.
+    - Ignorera orderrader med Status > 33.
     Returnerar (allocated_df, near_miss_df).
     """
     def _log(msg: str):
@@ -2943,12 +3010,12 @@ def allocate(orders_raw: pd.DataFrame, buffer_raw: pd.DataFrame, log=None) -> Tu
         _status_str = orders[order_status_col].astype(str).str.strip()
         _status_num = pd.to_numeric(_status_str.str.extract(r"(-?\d+)")[0], errors="coerce")
         _before = len(orders)
-        orders = orders[~(_status_num == 35)].copy()
+        orders = orders[~(_status_num > ORDER_MAX_ALLOCATABLE_STATUS)].copy()
         _removed = _before - len(orders)
         if _removed:
-            _log(f"Ignorerar {_removed} orderrad(er) pga Status = 35.")
+            _log(f"Ignorerar {_removed} orderrad(er) pga Status > {ORDER_MAX_ALLOCATABLE_STATUS}.")
     else:
-        _log("OBS: Ingen order-statuskolumn hittad; kan inte filtrera Status = 35.")
+        _log(f"OBS: Ingen order-statuskolumn hittad; kan inte filtrera Status > {ORDER_MAX_ALLOCATABLE_STATUS}.")
 
     buffer_df = buffer_raw.copy()
     buffer_df["_artikel"] = buffer_df[buff_article_col].astype(str).str.strip()
@@ -3789,16 +3856,21 @@ def build_observations_update_result(
     observations_path: Optional[str] = None,
     artikel_max_out: Optional[str] = None,
     push_to_github: bool = False,
+    business_code: Optional[str] = None,
 ) -> ObservationsUpdateResult:
-    obs_path = Path(observations_path) if observations_path else _observations_path()
-    max_path = Path(artikel_max_out) if artikel_max_out else _artikel_max_path()
+    obs_path = Path(observations_path) if observations_path else business_observations_path(business_code)
+    max_path = Path(artikel_max_out) if artikel_max_out else business_artikel_max_path(business_code)
     article_max_before = _read_artikel_max(max_path)
     new_row_count, new_rows_df = update_observations_from_buffer(
         buffer_df,
         observations_path=obs_path,
         artikel_max_path=max_path,
     )
-    pushed = bool(push_to_github and new_row_count and push_new_observations_to_github(new_rows_df))
+    pushed = bool(
+        push_to_github
+        and new_row_count
+        and push_new_observations_to_github(new_rows_df, business_code=business_code)
+    )
     github_sent_rows = int(new_row_count) if pushed else 0
     article_max_after = _read_artikel_max(max_path)
     max_changes = _artikel_max_change_summary(article_max_before, article_max_after)
@@ -3830,14 +3902,16 @@ def build_observations_sync_result(
     artikel_max_out: Optional[str] = None,
     remote_file: Optional[str] = None,
     push_orphaned: bool = True,
+    business_code: Optional[str] = None,
 ) -> ObservationsSyncResult:
-    obs_path = Path(observations_path) if observations_path else _observations_path()
-    max_path = Path(artikel_max_out) if artikel_max_out else _artikel_max_path()
+    obs_path = Path(observations_path) if observations_path else business_observations_path(business_code)
+    max_path = Path(artikel_max_out) if artikel_max_out else business_artikel_max_path(business_code)
     fetched_rows, pushed_rows = fetch_observations_from_github(
         observations_path=obs_path,
         artikel_max_path=max_path,
         remote_file=remote_file,
         push_orphaned=push_orphaned,
+        business_code=business_code,
     )
     total_observations = int(len(_read_observations(obs_path)))
     article_max_rows = 0

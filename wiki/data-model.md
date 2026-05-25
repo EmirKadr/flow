@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-05-21
+updated: 2026-05-25
 tags: [databas, modeller]
 ---
 
@@ -48,11 +48,11 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - `has_fixed_schedule=false` gor personen till timmis utan fast schema.
 - Malltider maste ligga 06-24 och start < slut.
 
-## Soft delete
+## Borttagning och aktivflaggor
 
-- Personer, aktiviteter och anvandare inaktiveras med `is_active=false`.
-- UI-texter kan saga "Ta bort", men backend gor normalt mjuk borttagning.
-- Felsokningsrad: om nagot "raderat" fortfarande finns i databasen ar det sannolikt avsiktligt. Kontrollera `include_inactive=true`.
+- Personer, aktiviteter och anvandare halls aktiva i normal drift; gamla inaktiva rader backfylls till aktiva av migration/bootstrap.
+- `DELETE` for personer, aktiviteter och anvandare tar bort raden. Vid anvandarborttagning nollas gamla `updated_by`/`audit_log.user_id`-referenser innan kontot tas bort.
+- Omraden kan fortfarande inaktiveras nar de har kopplad data. Verksamheter har ocksa aktiv-status i Super User-vyn.
 
 ## Settings
 
