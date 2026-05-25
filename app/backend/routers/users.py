@@ -23,10 +23,11 @@ from ..business_scope import (
     visible_business_id,
 )
 from ..deps import get_db, require_view_access
+from ..demo_session import DEMO_USERNAME
 from ..models import AppSetting, Area, AuditLog, PersonScheduleTemplate, ScheduleCell, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserImportRowsRequest, UserUpdate
 from ..security import hash_password
-from ..user_access import SUPER_USER_ROLE, can_admin, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
+from ..user_access import SUPER_USER_ROLE, can_admin, is_demo_user, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -519,6 +520,15 @@ def update_user(
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Användare hittades inte")
 
+    if is_demo_user(user):
+        if payload.username is not None and payload.username.strip().lower() != DEMO_USERNAME:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Demo-användarens namn är låst")
+        proposed_roles = payload.roles if payload.roles is not None else ([payload.role] if payload.role else None)
+        if proposed_roles is not None and "admin" not in {str(r or "").strip().lower() for r in proposed_roles} and SUPER_USER_ROLE not in {str(r or "").strip().lower() for r in proposed_roles}:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Demo-användaren måste ha admin-rollen")
+        if payload.is_active is False:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Demo-användaren kan inte inaktiveras")
+
     if payload.username is not None and _find_username_conflict(db, payload.username, exclude_user_id=user_id):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Användarnamnet används redan")
     area = db.get(Area, payload.area_id) if payload.area_id is not None else None
@@ -597,6 +607,8 @@ def delete_user(
     admin: User = Depends(require_view_access("users", "edit")),
 ) -> None:
     user = scoped_get(db, User, user_id, admin, detail="Användare hittades inte")
+    if is_demo_user(user):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Demo-användaren kan inte tas bort")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Du kan inte ta bort ditt eget konto")
     if can_admin(user) and _active_admin_count(db, business_id=user.business_id, exclude_user_id=user.id) == 0:
