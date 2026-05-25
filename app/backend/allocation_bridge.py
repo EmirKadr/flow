@@ -43,6 +43,18 @@ SESSIONS: dict[str, dict] = {}
 UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
 UPLOAD_CACHE_TTL_SECONDS = 6 * 60 * 60
 UPLOAD_CACHE_MAX_FILES = 64
+
+
+def _active_upload_cache_dir() -> Path:
+    """Returnera demo-sessionens cache-mapp om aktiv, annars den globala."""
+    try:
+        from .demo_session import demo_data_root_var
+    except Exception:
+        return UPLOAD_CACHE_DIR
+    override = demo_data_root_var.get()
+    if override is not None:
+        return override / "allocation_upload_cache"
+    return UPLOAD_CACHE_DIR
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
 PROCESS_AREA_FOCUS_PARAM = "__process_area_focus"
 PROCESS_MATRIX_AREA_OPTIONS: tuple[dict[str, str], ...] = (
@@ -603,7 +615,7 @@ def _safe_upload_stem(filename: str | None) -> str:
 
 
 def _upload_cache_index_dir() -> Path:
-    return UPLOAD_CACHE_DIR / ".index"
+    return _active_upload_cache_dir() / ".index"
 
 
 def _upload_cache_reference_path(cache_key: str) -> Path:
@@ -659,18 +671,19 @@ def _remember_upload_cache(cache_key: str | None, target: Path) -> None:
 
     if previous and previous not in _upload_cache_referenced_names():
         try:
-            (UPLOAD_CACHE_DIR / previous).unlink(missing_ok=True)
+            (_active_upload_cache_dir() / previous).unlink(missing_ok=True)
         except OSError:
             pass
 
 
 def _cleanup_upload_cache(now: float | None = None) -> None:
+    cache_dir = _active_upload_cache_dir()
     try:
-        if not UPLOAD_CACHE_DIR.exists():
+        if not cache_dir.exists():
             return
         now_ts = time.time() if now is None else now
         retained: list[tuple[float, Path]] = []
-        for path in UPLOAD_CACHE_DIR.iterdir():
+        for path in cache_dir.iterdir():
             try:
                 if not path.is_file():
                     continue
@@ -691,7 +704,7 @@ def _cleanup_upload_cache(now: float | None = None) -> None:
                     continue
         index_dir = _upload_cache_index_dir()
         if index_dir.exists():
-            existing = {path.name for path in UPLOAD_CACHE_DIR.iterdir() if path.is_file()}
+            existing = {path.name for path in cache_dir.iterdir() if path.is_file()}
             for path in index_dir.iterdir():
                 try:
                     if path.is_file() and path.read_text(encoding="utf-8").strip() not in existing:
@@ -707,11 +720,12 @@ async def save_upload(upload: UploadFile, *, cache: bool = False, cache_key: str
     content = await upload.read()
     if cache:
         digest = hashlib.sha256(content).hexdigest()
-        UPLOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_dir = _active_upload_cache_dir()
+        cache_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_upload_cache()
-        target = UPLOAD_CACHE_DIR / f"{digest}{suffix}"
+        target = cache_dir / f"{digest}{suffix}"
         if not target.exists():
-            tmp = tempfile.NamedTemporaryFile(delete=False, dir=UPLOAD_CACHE_DIR, prefix="pending_", suffix=suffix)
+            tmp = tempfile.NamedTemporaryFile(delete=False, dir=cache_dir, prefix="pending_", suffix=suffix)
             try:
                 tmp.write(content)
                 tmp.close()

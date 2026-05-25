@@ -43,7 +43,7 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def default_data_dir() -> Path:
+def _real_default_data_dir() -> Path:
     configured = (settings.PRODUCTIVITY_DATA_DIR or "").strip()
     if configured:
         return Path(configured)
@@ -51,6 +51,22 @@ def default_data_dir() -> Path:
     if configured:
         return Path(configured)
     return _repo_root() / "data"
+
+
+def _demo_data_root_override() -> Path | None:
+    """Returnera demo-sessionens datakatalog om den aktiva requesten är demo."""
+    try:
+        from .demo_session import demo_data_root_var
+    except Exception:
+        return None
+    return demo_data_root_var.get()
+
+
+def default_data_dir() -> Path:
+    override = _demo_data_root_override()
+    if override is not None:
+        return override
+    return _real_default_data_dir()
 
 
 def coredata_root(reference_dir: Path | str | None = None) -> Path:
@@ -116,6 +132,18 @@ def coredata_read_dirs(
         legacy = coredata_legacy_base_dir(reference_dir) / coredata_business_segment(business_code)
         if legacy not in dirs:
             dirs.append(legacy)
+    # Demo-användaren ska kunna LÄSA prod-filer som fallback även om demo-mappen är tom,
+    # men WRITES (save_coredata_file) använder coredata_root som pekar mot demo-mappen.
+    if reference_dir is None and _demo_data_root_override() is not None:
+        real_root = _real_default_data_dir()
+        real_coredata_root = real_root if real_root.name.lower() == "coredata" else real_root / "coredata"
+        for path in _business_dirs(real_coredata_root, business_code):
+            if path not in dirs:
+                dirs.append(path)
+        if include_legacy_scoped and business_code:
+            legacy_real = (real_root.parent if real_root.name.lower() == "coredata" else real_root) / coredata_business_segment(business_code)
+            if legacy_real not in dirs:
+                dirs.append(legacy_real)
     return dirs
 
 

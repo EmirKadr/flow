@@ -49,6 +49,23 @@ async def prevent_stale_static_cache_in_development(request: Request, call_next)
     return response
 
 
+@app.middleware("http")
+async def demo_session_context_middleware(request: Request, call_next):
+    """Sätt demo_data_root_var per request så filsystem-IO routas till sandbox."""
+    try:
+        demo_id = request.session.get("demo_session_id")
+    except Exception:
+        demo_id = None
+    if demo_id and demo_session.session_exists(demo_id):
+        token = demo_session.demo_data_root_var.set(demo_session.demo_data_root(demo_id))
+    else:
+        token = demo_session.demo_data_root_var.set(None)
+    try:
+        return await call_next(request)
+    finally:
+        demo_session.demo_data_root_var.reset(token)
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "environment": settings.ENVIRONMENT}
