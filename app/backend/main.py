@@ -20,6 +20,7 @@ from .routers import (
     businesses,
     coredata,
     data_fetch,
+    healthcheck,
     overview,
     person_schedules,
     persons,
@@ -120,6 +121,7 @@ app.include_router(schedule.router)
 app.include_router(bulk.router)
 app.include_router(coredata.router)
 app.include_router(data_fetch.router)
+app.include_router(healthcheck.router)
 app.include_router(overview.router)
 app.include_router(productivity.router)
 app.include_router(app_settings.router)

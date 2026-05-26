@@ -7,9 +7,17 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-26] fix | Seed och lokal bootstrap spärras mot live
+
+`backend.seed` stoppar nu körning mot `ENVIRONMENT=production` och Render-databas-URL:er. `backend.bootstrap_local` vägrar köra mot annat än SQLite, så lokal schema-/seedbootstrap inte kan råka skriva till live-Postgres om `DATABASE_URL` pekar fel. Dokumentationen skiljer nu på engångsmigrationer, lokal/dev-seed och production-deploy.
+
 ## [2026-05-26] fix | Production kör inte seed vid deploy
 
 Render-builden kör nu bara `pip install` och `alembic upgrade head`. `backend.seed` är kvar för lokal/dev-bootstrap och manuell engångsseed, men körs inte längre automatiskt i produktion. Därmed återskapas inte raderade verksamheter, områden, aktiviteter, personer eller användare vid nästa deploy.
+
+## [2026-05-26] feature | Halsa och vantetidsanalys i Historik
+
+Historik har fatt flikarna `Vantetider` och `Halsa`. Klienten matar vyload, API-vantan, nedladdningar och idle-prefetch utan att skriva brus i dokumentloggen; backend sparar sanerade rader i `user_wait_metrics` och summerar p50/p95/max per vy, steg och event. `GET /api/healthcheck` samlar app-, databas- och Render-status for Super User nar Render-secrets finns, och `tools.healthcheck` kan kora samma halsa/vantetidsanalys lokalt eller mot en inloggad server.
 
 ## [2026-05-26] fix | Snabbare omradestoggle i planeringsvyer
 
@@ -317,3 +325,7 @@ Direktimporttabellerna for Personer, Aktiviteter och Anvandare visar nu `Obligat
 ## [2026-05-25] polish | Synlig dokumentlogg for fler floden
 
 Dokumentloggen i sidebaren sparas nu i browsersessionen, foljer med mellan vyer och kan rensas. `api.js` loggar anvandarnara success/failure for mutationer och nedladdningar, bakgrundsladdning varnar vid misslyckad forvarmning och Bearbeta-floden med egen fetch-wrapper skriver tydligare lyckat-/felstatus. Agents/wiki/testprotokoll har uppdaterats sa nya funktioner maste ta med synlig loggning, audit och teststod.
+
+## [2026-05-26] polish | Vectorikoner for webb och desktop
+
+Webben anvander nu SVG for favicon och brandlogga, med PNG/ICO kvar som fallback for plattformar som kraver raster. Desktop-fonstret foredrar `flow_icon.svg`, medan `.ico` fortfarande finns kvar for exe-/genvagsikon och fallback i Windows-bygget.

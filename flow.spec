@@ -4,7 +4,8 @@ from pathlib import Path
 
 
 project_root = Path(SPECPATH)
-app_icon = project_root / "desktop" / "assets" / "flow_icon.ico"
+app_icon_ico = project_root / "desktop" / "assets" / "flow_icon.ico"
+app_icon_svg = project_root / "desktop" / "assets" / "flow_icon.svg"
 frontend_dir = project_root / "app" / "frontend"
 warehouse_vendor_dir = project_root / "warehouse_tools" / "vendor"
 forecast_training = project_root / "warehouse_tools" / "mg_forecast" / "training.parquet"
@@ -21,7 +22,8 @@ a = Analysis(
     pathex=[str(project_root)],
     binaries=[],
     datas=[
-        (str(app_icon), "desktop/assets"),
+        (str(app_icon_ico), "desktop/assets"),
+        (str(app_icon_svg), "desktop/assets"),
         (str(frontend_dir), "app/frontend"),
         (str(warehouse_vendor_dir), "warehouse_tools/vendor"),
         *_optional_datas,
@@ -30,6 +32,7 @@ a = Analysis(
         "PyQt6.QtWebEngineCore",
         "PyQt6.QtWebEngineWidgets",
         "PyQt6.QtPrintSupport",
+        "PyQt6.QtSvg",
         "lightgbm",
         "numpy",
         "pyarrow",
@@ -61,7 +64,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(app_icon),
+    icon=str(app_icon_ico),
 )
 
 coll = COLLECT(

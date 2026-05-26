@@ -23,6 +23,14 @@ services:
         value: production
       - key: SUPER_USER_USERNAMES
         value: emikad,mikhal
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_SERVICE_ID
+        sync: false
+      - key: RENDER_POSTGRES_ID
+        sync: false
+      - key: HEALTHCHECK_PUBLIC_URL
+        sync: false
       - key: EXCEL_API_TOKEN
         generateValue: true
       - key: MINIMAX_API_KEY

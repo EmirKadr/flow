@@ -27,7 +27,8 @@ python -m tools.performance_benchmark --runs 1
 
 Samma skydd finns i GitHub Actions pa varje push och pull request via
 `.github/workflows/test.yml`. Den kor pytest, JS-syntaxkontroll, desktop smoke
-och en Render-liknande build med Alembic + seed.
+och en testdatabas-build med Alembic + lokal/test-seed. Render production kor
+bara Alembic och far inte kora seed.
 
 For release eller desktop-andringar:
 
@@ -71,6 +72,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_person_schedules.py` | Timmis/fast schema-regler for personers veckomallar. | Personschema, timmisflagga eller veckomalllogik. |
 | `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, rapportgruppering och tillgangliga datum. | Produktivitet, plock-/pallloggar, KPI-filer eller rapportbyggnad. |
 | `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
+| `tests/services/test_healthcheck_service.py` | Halsa-service, SQLite-databaskontroll, vantetidsinsamling och sammanfattning. | `/api/healthcheck`, `UserWaitMetric`, Render-/databashalsa eller vantetidsanalys. |
 | `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
 | `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
 | `tests/services/test_seed_data.py` | Seed-data, lokal SQLite-bootstrap, verksamhetsbackfill och dubblettsanering. | `backend.seed`, `bootstrap_local`, verksamheter eller standarddata. |
@@ -86,6 +88,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/tools/test_compare_warehouse_results.py` | CSV/XLSX-jamforelse for Flow mot Allokera, inklusive exportnormalisering. | `tools/compare_warehouse_results.py`, parityjamforelser eller lagerexportformat. |
 | `tests/tools/test_api_route_contracts.py` | Frontendens hardkodade API-anrop finns i FastAPI med ratt metod. | Nya/andrade API-anrop i JS eller backend-rutter. |
 | `tests/tools/test_flow_cli.py` | CLI-routekatalog, API_ROUTES-dokumentation, generiska API-call och DB-lookup. | `tools/flow_cli.py`, API-rutter, CLI-adapter eller API-dokumentation. |
+| `tests/tools/test_healthcheck_tool.py` | CLI-kontrakt for `tools.healthcheck` report/waits och textsummering. | Halsa-CLI, vantetids-CLI eller diagnostikutskrift. |
 | `tests/tools/test_warehouse_cli.py` | Lokal Bearbeta/Dela-CLI, scenariofiler, automatisk filmatchning och outputfiler. | `warehouse_tools/cli.py`, lagerflodes-CLI eller lokala regressionskommandon. |
 | `tests/tools/test_ci_workflows.py` | CI och release workflows kor ratt grindar fore build/deploy. | `.github/workflows/*` eller releasepipeline. |
 | `tests/tools/test_desktop_app_probe_runtime.py` | Desktop-proben kan starta lokal server/proxy och skriva runtime-artifacts. | `tools/desktop_app_probe.py` eller desktop-proxytest. |

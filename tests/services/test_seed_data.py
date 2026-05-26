@@ -4,7 +4,8 @@ from sqlalchemy.orm import sessionmaker
 
 import pytest
 
-from app.backend.bootstrap_local import _sync_lightweight_sqlite_columns, _sync_sqlite_business_constraints
+from app.backend import seed
+from app.backend.bootstrap_local import _assert_local_sqlite, _sync_lightweight_sqlite_columns, _sync_sqlite_business_constraints
 from app.backend.database import Base
 from app.backend.models import Activity, Area, Business, Person, PersonScheduleTemplate, ScheduleCell
 from app.backend.seed import ACTIVITIES, AREAS, PERSONS, remove_duplicate_persons, seed_persons
@@ -16,6 +17,33 @@ def test_seed_contains_ehandel_area_and_default_activities():
 
     assert areas_by_code["EH"]["name"] == "E-Handel"
     assert {"EH_PLOCK", "EH_PACK", "EH_STOD", "EH_VAS"} <= activity_codes
+
+
+def test_seed_is_blocked_in_production(monkeypatch):
+    monkeypatch.setattr(seed.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(seed.settings, "DATABASE_URL", "sqlite:///local.db")
+
+    with pytest.raises(RuntimeError, match="production/live"):
+        seed.assert_seed_target_allowed()
+
+
+def test_seed_is_blocked_for_render_database_url(monkeypatch):
+    monkeypatch.setattr(seed.settings, "ENVIRONMENT", "development")
+    monkeypatch.setattr(seed.settings, "DATABASE_URL", "postgresql://user:pass@example.render.com/db")
+
+    with pytest.raises(RuntimeError, match="Render-databas"):
+        seed.assert_seed_target_allowed()
+
+
+def test_local_bootstrap_refuses_non_sqlite_engine():
+    class Dialect:
+        name = "postgresql"
+
+    class Engine:
+        dialect = Dialect()
+
+    with pytest.raises(RuntimeError, match="lokal SQLite"):
+        _assert_local_sqlite(Engine())
 
 
 def test_seed_removes_existing_duplicate_person_names():

@@ -24,6 +24,7 @@ def test_performance_benchmark_covers_navigation_uploads_imports_and_interaction
     assert hasattr(source, "measure_area_toggle")
     assert hasattr(source, "measure_schedule_editing")
     assert hasattr(source, "measure_split_run_and_copy")
+    assert hasattr(source, "measure_history_tabs")
     assert hasattr(source, "measure_imports")
 
 

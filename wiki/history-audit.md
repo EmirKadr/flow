@@ -13,7 +13,7 @@ Kort svar: Historik har tre lagen: anvandarhistorik, analys och felkoder. Den ar
 
 | Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- |
-| Vy-toggle | Valjer `Anvandarhistorik`, `Analys` eller `Felkoder` | Visar ratt panel utan sidbyte | `history-mode-btn`, `setHistoryMode` | Alla filter ovanfor galler for alla tre lagen. |
+| Vy-toggle | Valjer `Anvandarhistorik`, `Analys`, `Felkoder`, `Vantetider` eller `Halsa` | Visar ratt panel utan sidbyte | `history-mode-btn`, `setHistoryMode` | Period och anvandare galler aven vantetider. Halsa hamtas med kort cache. |
 | Period | Valjer 24h, 7d, 30d, all | Raknar `start_at` for query | `periodStartIso`, `/api/audit*` | "All historik" kan bli tung om mycket data finns. |
 | Anvandare | Filtrerar pa user | Skickar user-filter | `userFilter` | Listan laddas fran `/api/users`; anvandare som finns kvar ar alltid aktiva. |
 | Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `app_setting`, `productivity_file`, `allocation_flow`. |
@@ -43,6 +43,9 @@ Kort svar: Historik har tre lagen: anvandarhistorik, analys och felkoder. Den ar
 - `GET /api/audit/errors` filtrerar auditlogg till felhandelser: `client_error` samt actions som innehaller `failed`, `error` eller `exception`.
 - `POST /api/audit/client-error` tar emot klientrapporter fran `api.js`. Endpointen kraver inloggad anvandare men inte Super User, sa vanliga anvandares fel kan felsokas i efterhand.
 - `POST /api/audit/client-event` tar emot tysta klienthandelser som `view_open` och sparar dem som `view/open` utan queryvarden.
+- `GET /api/healthcheck` visar Halsa-fliken med app-, databas- och Render-status for Super User.
+- `POST /api/healthcheck/wait-metrics` samlar tysta vantetidsmatningar fran klienten utan att skriva i dokumentloggen.
+- `GET /api/healthcheck/wait-metrics/summary` driver Vantetider-fliken och CLI-analys for var anvandare vantar mest.
 - Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget och exponerar `window.reportApiError` for sidmoduler med egna wrappers. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar.
 - Samma `api.js` skriver anvandarnara dokumentlogg for mutationer, nedladdningar och markerade GET-floden. Sidmoduler som anvander egna wrappers, till exempel Bearbeta, ska logga success/failure sjalva eller anropa `window.flowLog`.
 

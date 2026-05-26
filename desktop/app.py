@@ -77,6 +77,7 @@ def apply_windows_titlebar_blend(hwnd: int) -> None:
     _set_color(_DWMWA_BORDER_COLOR, "#e4e8ef")
     _set_color(_DWMWA_TEXT_COLOR, "#0f172a")
 
+from PyQt6 import QtSvg  # noqa: F401
 from PyQt6.QtCore import QProcess, Qt, QTimer, QUrl
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
@@ -119,9 +120,17 @@ def _resource_path(*parts: str) -> Path:
     return base.joinpath(*parts)
 
 
+def _app_icon_path() -> Path | None:
+    for icon_name in ("flow_icon.svg", "flow_icon.ico"):
+        icon_path = _resource_path("desktop", "assets", icon_name)
+        if icon_path.exists():
+            return icon_path
+    return None
+
+
 def _app_icon() -> QIcon:
-    icon_path = _resource_path("desktop", "assets", "flow_icon.ico")
-    if icon_path.exists():
+    icon_path = _app_icon_path()
+    if icon_path:
         return QIcon(str(icon_path))
     return QIcon()
 

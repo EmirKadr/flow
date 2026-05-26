@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-05-25
+updated: 2026-05-26
 tags: [databas, modeller]
 ---
 
@@ -21,12 +21,13 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
+| `user_wait_metrics` | `UserWaitMetric` | Tyst vantetids- och klientprestanda for Historik/Halsa | `business_id`, `user_id`, `event_type`, `view_id`, `target`, `duration_ms`, `status`, `detail`, `created_at` |
 | `app_settings` | `AppSetting` | Verksamhetsspecifika settings JSON/text | `business_id`, `key`, `value`, `updated_by` |
 
 ## Verksamheter
 
-- `STIGAMO` ar bakatkompatibel standardverksamhet. Migration/seed kopplar befintliga anvandare, omraden, personer, aktiviteter, auditlogg och settings dit.
-- `R3` skapas som egen verksamhet med ett aktivt omrade `R3` och egna franvaroaktiviteter, men utan Stigamos personer, anvandare eller arbetsaktiviteter.
+- `STIGAMO` ar bakatkompatibel standardverksamhet. Migrationen kopplar befintliga anvandare, omraden, personer, aktiviteter, auditlogg och settings dit nar verksamhetskolumnen infors.
+- `R3` skapas som egen verksamhet av migrationen. Lokal/dev-seed kan fylla R3-omrade och franvaroaktiviteter, men seed kor inte i production/live.
 - Icke-Super Users filtreras alltid till sin egen `business_id`.
 - Super User kan se allt med `∞`, eller filtrera pa `business_id`.
 - Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
@@ -50,7 +51,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 
 ## Borttagning och aktivflaggor
 
-- Personer, aktiviteter och anvandare halls aktiva i normal drift; gamla inaktiva rader backfylls till aktiva av migration/bootstrap.
+- Personer, aktiviteter och anvandare halls aktiva i normal drift; gamla inaktiva rader backfylldes till aktiva av engangsmigrationer och lokal SQLite-bootstrap. Production-seed och lokal bootstrap ar sparrade mot live.
 - `DELETE` for personer, aktiviteter och anvandare tar bort raden. Vid anvandarborttagning nollas gamla `updated_by`/`audit_log.user_id`-referenser innan kontot tas bort.
 - Omraden kan fortfarande inaktiveras nar de har kopplad data. Verksamheter har ocksa aktiv-status i Super User-vyn.
 

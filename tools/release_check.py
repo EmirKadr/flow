@@ -27,6 +27,8 @@ def _frontend_package_files() -> tuple[str, ...]:
 REQUIRED_PACKAGE_FILES = (
     "flow.exe",
     *_frontend_package_files(),
+    "_internal/desktop/assets/flow_icon.ico",
+    "_internal/desktop/assets/flow_icon.svg",
     "_internal/warehouse_tools/vendor/allokering12.1.py",
     "_internal/warehouse_tools/vendor/wms_sok79.py",
     "_internal/warehouse_tools/vendor/lowfreqdata/buffertpall/artikel_max.csv",

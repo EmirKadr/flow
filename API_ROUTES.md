@@ -57,6 +57,9 @@ verksamheter.
 | Namn | Metod | Väg | Beskrivning |
 | --- | --- | --- | --- |
 | `health` | `GET` | `/api/health` | Server health |
+| `healthcheck.report` | `GET` | `/api/healthcheck` | Server-, Render- och databashalsa |
+| `healthcheck.wait_metrics` | `POST` | `/api/healthcheck/wait-metrics` | Samla vantetidsmatningar |
+| `healthcheck.wait_summary` | `GET` | `/api/healthcheck/wait-metrics/summary` | Analysera anvandarvantetider |
 | `businesses.list` | `GET` | `/api/businesses` | Lista verksamheter |
 | `businesses.create` | `POST` | `/api/businesses` | Skapa verksamhet |
 | `businesses.update` | `PUT` | `/api/businesses/{business_id}` | Uppdatera verksamhet |

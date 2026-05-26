@@ -42,6 +42,9 @@ class ApiRoute:
 
 ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("health", "GET", "/api/health", "Server health"),
+    ApiRoute("healthcheck.report", "GET", "/api/healthcheck", "Server-, Render- och databashalsa"),
+    ApiRoute("healthcheck.wait_metrics", "POST", "/api/healthcheck/wait-metrics", "Samla vantetidsmatningar"),
+    ApiRoute("healthcheck.wait_summary", "GET", "/api/healthcheck/wait-metrics/summary", "Analysera anvandarvantetider"),
     ApiRoute("businesses.list", "GET", "/api/businesses", "Lista verksamheter"),
     ApiRoute("businesses.create", "POST", "/api/businesses", "Skapa verksamhet"),
     ApiRoute("businesses.update", "PUT", "/api/businesses/{business_id}", "Uppdatera verksamhet"),

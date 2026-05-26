@@ -359,6 +359,23 @@ class PerformanceRun:
 
         self.measure("interaction.copy_result_column", copy_column)
 
+    def measure_history_tabs(self) -> None:
+        self.page.goto(self.url("/historik.html"), wait_until="domcontentloaded")
+        self.page.wait_for_selector("#auditBody", timeout=15000)
+
+        def waits_tab() -> None:
+            self.page.click('[data-history-mode="waits"]')
+            self.page.wait_for_selector("#slowWaitBody", timeout=15000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+
+        def health_tab() -> None:
+            self.page.click('[data-history-mode="health"]')
+            self.page.wait_for_selector("#healthChecksBody", timeout=15000)
+            self.page.wait_for_load_state("networkidle", timeout=15000)
+
+        self.measure("interaction.history_waits_tab", waits_tab)
+        self.measure("interaction.history_health_tab", health_tab)
+
     def _write_workbook(self, name: str, rows: list[list[Any]]) -> Path:
         workbook = Workbook()
         sheet = workbook.active
@@ -419,6 +436,7 @@ class PerformanceRun:
         self.measure_area_toggle()
         self.measure_schedule_editing()
         self.measure_split_run_and_copy()
+        self.measure_history_tabs()
         self.measure_imports()
 
 

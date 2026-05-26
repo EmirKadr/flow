@@ -7,6 +7,12 @@ const ROLE_VIEW_ACCESS_CACHE_KEY = "flow-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "flow-allocation-upload-notice";
 const APP_LOG_STORAGE_KEY = "flow-app-log-v1";
 const APP_LOG_MAX_ENTRIES = 200;
+const COMMON_WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
+const WAIT_METRIC_FLUSH_MS = 10000;
+const WAIT_METRIC_MAX_QUEUE = 100;
+const FLOW_PAGE_STARTED_AT = typeof performance !== "undefined" && performance.now
+  ? performance.now()
+  : Date.now();
 const ALLOCATION_CORE_UPLOAD_KEYS = [
   "article_max",
   "custom",
@@ -80,6 +86,9 @@ const AREA_FOCUS_FALLBACK_NAMES = {
 };
 let dynamicAreaFocusOptions = null;
 const appLogEntries = readStoredAppLogEntries();
+let waitMetricQueue = [];
+let waitMetricFlushTimer = null;
+let waitMetricInFlight = false;
 
 const THEME_ICONS = {
   light: `
@@ -794,6 +803,140 @@ function clearAppLog() {
   persistAppLogEntries();
   renderAppLogEntries();
 }
+
+function waitMetricNow() {
+  return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+}
+
+function waitMetricPath(value) {
+  try {
+    const url = new URL(value || window.location?.pathname || "/", window.location.origin);
+    return url.pathname || "/";
+  } catch (_error) {
+    return String(value || "/").split("?")[0].split("#")[0] || "/";
+  }
+}
+
+function sanitizeWaitMetricText(value, maxLength = 160) {
+  if (value == null) return null;
+  const text = String(value).replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function sanitizeWaitMetricDetail(detail) {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const cleaned = {};
+  Object.entries(detail).slice(0, 20).forEach(([key, value]) => {
+    const safeKey = sanitizeWaitMetricText(key, 80);
+    if (!safeKey) return;
+    if (typeof value === "number" || typeof value === "boolean") {
+      cleaned[safeKey] = value;
+    } else {
+      cleaned[safeKey] = sanitizeWaitMetricText(value, 300);
+    }
+  });
+  return Object.keys(cleaned).length ? cleaned : null;
+}
+
+function activeWaitMetricViewId() {
+  return sanitizeWaitMetricText(document.body?.dataset.activePage || window.flowActivePage || "", 80);
+}
+
+function scheduleWaitMetricFlush() {
+  if (waitMetricFlushTimer || waitMetricInFlight || !waitMetricQueue.length) return;
+  waitMetricFlushTimer = setTimeout(() => {
+    waitMetricFlushTimer = null;
+    void flushWaitMetrics();
+  }, WAIT_METRIC_FLUSH_MS);
+}
+
+async function flushWaitMetrics({ keepalive = false } = {}) {
+  if (waitMetricFlushTimer) {
+    clearTimeout(waitMetricFlushTimer);
+    waitMetricFlushTimer = null;
+  }
+  if (waitMetricInFlight || !waitMetricQueue.length) return;
+  const items = waitMetricQueue.splice(0, WAIT_METRIC_MAX_QUEUE);
+  const body = JSON.stringify({ items });
+  if (keepalive && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([body], { type: "application/json" });
+      if (navigator.sendBeacon(COMMON_WAIT_METRIC_REPORT_PATH, blob)) return;
+    } catch (_error) {}
+  }
+  waitMetricInFlight = true;
+  try {
+    await fetch(COMMON_WAIT_METRIC_REPORT_PATH, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: keepalive && body.length < 60000,
+    });
+  } catch (_error) {
+    // Telemetri far aldrig sega ner anvandaren. Misslyckade batches slapps.
+  } finally {
+    waitMetricInFlight = false;
+    if (waitMetricQueue.length) scheduleWaitMetricFlush();
+  }
+}
+
+function recordWaitMetric(metric = {}) {
+  const duration = Number(metric.duration_ms ?? metric.durationMs ?? 0);
+  if (!Number.isFinite(duration) || duration < 0) return;
+  waitMetricQueue.push({
+    event_type: sanitizeWaitMetricText(metric.event_type || metric.eventType || "interaction", 80) || "interaction",
+    view_id: sanitizeWaitMetricText(metric.view_id || metric.viewId || activeWaitMetricViewId(), 80),
+    target: sanitizeWaitMetricText(metric.target || waitMetricPath(window.location?.pathname || "/"), 160),
+    duration_ms: Math.round(duration),
+    status: sanitizeWaitMetricText(metric.status || "ok", 20) || "ok",
+    detail: sanitizeWaitMetricDetail(metric.detail),
+  });
+  if (waitMetricQueue.length > WAIT_METRIC_MAX_QUEUE) {
+    waitMetricQueue = waitMetricQueue.slice(-WAIT_METRIC_MAX_QUEUE);
+  }
+  if (waitMetricQueue.length >= 20) {
+    void flushWaitMetrics();
+  } else {
+    scheduleWaitMetricFlush();
+  }
+}
+
+function reportPageLoadWaitMetric(activePage) {
+  if (!activePage || activePage === "passwordSetup") return;
+  recordWaitMetric({
+    event_type: "view_load",
+    view_id: activePage,
+    target: waitMetricPath(window.location?.pathname || "/"),
+    duration_ms: waitMetricNow() - FLOW_PAGE_STARTED_AT,
+    status: "ok",
+    detail: { source: "initPage" },
+  });
+}
+
+window.addEventListener("pagehide", () => {
+  void flushWaitMetrics({ keepalive: true });
+});
+
+try {
+  if ("PerformanceObserver" in window && PerformanceObserver.supportedEntryTypes?.includes("longtask")) {
+    const waitLongTaskObserver = new PerformanceObserver((list) => {
+      list.getEntries().forEach((entry) => {
+        if (Number(entry.duration || 0) < 75) return;
+        recordWaitMetric({
+          event_type: "client_long_task",
+          view_id: activeWaitMetricViewId(),
+          target: "main_thread",
+          duration_ms: entry.duration,
+          status: "warn",
+          detail: { name: entry.name || "longtask" },
+        });
+      });
+    });
+    waitLongTaskObserver.observe({ entryTypes: ["longtask"] });
+  }
+} catch (_error) {}
 
 const CLIENT_RUNTIME_LOGGED_MESSAGES = new Set();
 
@@ -2556,7 +2699,11 @@ function scheduleNextBackgroundPrefetch() {
     if (item) {
       try {
         if (typeof item.run === "function") await item.run();
-        else await window.api.prefetchGet(item.path, { cacheTtlMs: item.ttlMs });
+        else await window.api.prefetchGet(item.path, {
+          cacheTtlMs: item.ttlMs,
+          telemetryEventType: "background_prefetch",
+          telemetrySource: "idle_prefetch",
+        });
       } catch (error) {
         appendAppLog(
           `Bakgrundsladdning misslyckades: ${item.path || item.key || "okänt underlag"}${error?.message ? ` (${error.message})` : ""}`,
@@ -2674,6 +2821,8 @@ function reportPageOpen(user, activePage) {
 }
 
 async function initPage(activePage, options = {}) {
+  window.flowActivePage = activePage || "";
+  if (document.body) document.body.dataset.activePage = activePage || "";
   const cachedUser = readCachedSidebarUser();
   if (cachedUserCanRenderPage(cachedUser, activePage, options)) {
     renderSidebar(cachedUser, activePage);
@@ -2727,6 +2876,7 @@ async function initPage(activePage, options = {}) {
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
   reportPageOpen(user, activePage);
+  reportPageLoadWaitMetric(activePage);
   void refreshRoleViewAccess(user, activePage);
   void refreshSidebarLayout(user, activePage);
   void enqueueVisiblePagePrefetches(user, activePage);
@@ -3015,6 +3165,8 @@ window.setupImportHelpButton = setupImportHelpButton;
 window.openBulkImportGrid = openBulkImportGrid;
 window.appendAppLog = appendAppLog;
 window.clearAppLog = clearAppLog;
+window.flowRecordWaitMetric = recordWaitMetric;
+window.flowFlushWaitMetrics = flushWaitMetrics;
 window.flowLog = {
   append: appendAppLog,
   info: (message, title = "Info") => appendAppLog(message, "info", title),

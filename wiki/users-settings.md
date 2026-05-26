@@ -1,7 +1,7 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-05-25
+updated: 2026-05-26
 tags: [anvandare, settings, roller, ui]
 ---
 
@@ -56,7 +56,7 @@ Knappar:
 
 ### Demo-anvandaren
 
-Det fasta `demo`-kontot (se [demo-laget](demo-mode.md)) visas med en `DEMO`-pill i listan, har dold delete-knapp och har disablade `Anvandarnamn` + `Roller` i edit-modalen. Lösenord, visningsnamn och omrade kan fortfarande andras av super_user — backend nekar 409 om någon försoker dopa om, ta bort admin-rollen eller inaktivera kontot. Konton skapas och uppdateras automatiskt vid varje deploy av `seed_demo_user()`.
+Det fasta `demo`-kontot (se [demo-laget](demo-mode.md)) visas med en `DEMO`-pill i listan, har dold delete-knapp och har disablade `Anvandarnamn` + `Roller` i edit-modalen. Lösenord, visningsnamn och omrade kan fortfarande andras av super_user — backend nekar 409 om någon försoker dopa om, ta bort admin-rollen eller inaktivera kontot. Kontot skapas inte längre automatiskt vid production-deploy; det måste redan finnas eller skapas via kontrollerad bootstrap.
 
 ## Vybehorigheter-modal
 

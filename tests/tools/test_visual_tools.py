@@ -4,6 +4,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from tools import interactive_e2e
@@ -69,10 +70,20 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'data-history-mode="history"' in html
     assert 'data-history-mode="analysis"' in html
     assert 'data-history-mode="errors"' in html
+    assert 'data-history-mode="waits"' in html
+    assert 'data-history-mode="health"' in html
     assert 'id="recentErrorBody"' in html
+    assert 'id="slowWaitBody"' in html
+    assert 'id="healthChecksBody"' in html
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
+    assert 'api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`)' in analytics
+    assert 'api.get("/api/healthcheck?include_render=true"' in analytics
     assert "function renderErrorDashboard" in analytics
+    assert "function renderWaitMetrics" in analytics
+    assert "function renderHealthReport" in analytics
     assert 'const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";' in api
+    assert 'const WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";' in api
+    assert "function reportApiWaitMetric" in api
     assert "function reportApiError" in api
     assert "window.reportApiError = reportApiError;" in api
     assert 'const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";' in api
@@ -84,7 +95,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "window.reportApiError?.(path" in allocation
     assert "appendAppLog(message" in common
     assert "APP_LOG_STORAGE_KEY" in common
+    assert "function recordWaitMetric" in common
+    assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
+    assert "client_long_task" in common
     assert "reportPageOpen(user, activePage)" in common
+    assert "reportPageLoadWaitMetric(activePage)" in common
     assert 'appendAppLog(`Öppnade vy:' not in common
     assert "window.flowLog" in common
     assert "clearAppLog" in common
@@ -115,6 +130,8 @@ def test_visual_smoke_covers_critical_scenarios():
         "anvandare-vybehorigheter-modal",
         "verksamheter-ny-verksamhet-modal",
         "historik-filter",
+        "historik-vantetider",
+        "historik-halsa",
         "viewer-nekad-personer",
         "viewer-nekad-produktivitet",
         "leader-nekad-historik",
@@ -405,7 +422,8 @@ def test_local_bootstrap_upgrades_existing_persons_table(tmp_path):
 def test_frontend_icon_assets_are_referenced_and_present():
     frontend = ROOT / "app" / "frontend"
     expected_links = [
-        '<link rel="icon" href="/favicon.ico" sizes="any" />',
+        '<link rel="icon" href="/favicon.svg" type="image/svg+xml" />',
+        '<link rel="alternate icon" href="/favicon.ico" sizes="any" />',
         '<link rel="apple-touch-icon" href="/app-icon-192.png" />',
         '<link rel="manifest" href="/manifest.webmanifest" />',
     ]
@@ -415,8 +433,31 @@ def test_frontend_icon_assets_are_referenced_and_present():
         for link in expected_links:
             assert link in html, f"{html_path.name} saknar {link}"
 
-    for asset in ("favicon.ico", "app-icon-192.png", "app-icon-512.png", "manifest.webmanifest"):
+    assert 'src="/flow-logo.svg"' in (frontend / "login.html").read_text(encoding="utf-8")
+    assert 'src="/flow-logo.svg"' in (frontend / "set-password.html").read_text(encoding="utf-8")
+    assert "flow-logo.png" not in "\n".join(
+        path.read_text(encoding="utf-8") for path in frontend.glob("*.html")
+    )
+
+    for asset in (
+        "favicon.svg",
+        "favicon.ico",
+        "app-icon.svg",
+        "app-icon-192.png",
+        "app-icon-512.png",
+        "flow-logo.svg",
+        "manifest.webmanifest",
+    ):
         assert (frontend / asset).is_file()
+
+    for asset in ("favicon.svg", "app-icon.svg", "flow-logo.svg"):
+        root = ET.parse(frontend / asset).getroot()
+        assert root.tag.endswith("svg")
+
+    manifest = (frontend / "manifest.webmanifest").read_text(encoding="utf-8")
+    assert '"src": "/app-icon.svg"' in manifest
+    assert '"sizes": "any"' in manifest
+    assert '"type": "image/svg+xml"' in manifest
 
 
 def test_frontend_theme_toggle_is_wired_globally():

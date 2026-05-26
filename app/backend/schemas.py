@@ -547,6 +547,19 @@ class AuditClientEventIn(BaseModel):
     page_path: str | None = Field(default=None, max_length=300)
 
 
+class WaitMetricIn(BaseModel):
+    event_type: str = Field(max_length=80)
+    view_id: str | None = Field(default=None, max_length=80)
+    target: str | None = Field(default=None, max_length=160)
+    duration_ms: int = Field(ge=0, le=10 * 60 * 1000)
+    status: str = Field(default="ok", max_length=20)
+    detail: dict | None = None
+
+
+class WaitMetricBatchIn(BaseModel):
+    items: list[WaitMetricIn] = Field(default_factory=list, max_length=100)
+
+
 class AuditErrorEventOut(BaseModel):
     id: int
     created_at: datetime

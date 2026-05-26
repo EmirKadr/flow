@@ -131,6 +131,11 @@ historik for felsokning och uppfoljning. Dokumentloggen ar anvandarnara feedback
 i aktuell browser/session. Nar ett flode paverkar anvandaren ska bada anvandas
 om bada perspektiven ar relevanta.
 
+Vantetidsmatningar ar ett tredje spar: tyst prestandatelemetri for hur lange
+anvandaren faktiskt vantar pa vyer, API:er, nedladdningar och bakgrundsladdning.
+Den ska vara sanerad, kortfattad och synas i Historik/Halsa-analys, inte i
+dokumentloggen.
+
 ## Testregel for agenter
 
 Varje gang en agent bygger nytt, andrar befintligt beteende eller lagger till ett

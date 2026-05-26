@@ -3,7 +3,7 @@ from unittest.mock import patch
 from PyQt6.QtWidgets import QWidget
 
 from core.app_info import UPDATE_DISABLED_ENV
-from desktop.app import MainWindow
+from desktop.app import MainWindow, _app_icon, _app_icon_path
 from services.health_service import HealthInfo
 
 
@@ -101,6 +101,15 @@ def test_startup_health_check_loads_server(qapp, monkeypatch):
     assert window._stack.currentWidget() is browser
     assert local_server.start_called == 1
     assert browser.loaded_urls == [local_server.url]
+
+
+def test_desktop_window_icon_prefers_vector_asset(qapp):
+    icon_path = _app_icon_path()
+
+    assert icon_path is not None
+    assert icon_path.name == "flow_icon.svg"
+    assert icon_path.is_file()
+    assert not _app_icon().isNull()
 
 
 def test_startup_local_app_error_shows_error_view(qapp, monkeypatch):

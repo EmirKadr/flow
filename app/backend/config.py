@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     DATA_SOURCE_CATALOG_JSON: str = ""
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0
+    RENDER_API_KEY: str = ""
+    RENDER_API_BASE_URL: str = "https://api.render.com/v1"
+    RENDER_SERVICE_ID: str = ""
+    RENDER_WEB_SERVICE_ID: str = ""
+    RENDER_POSTGRES_ID: str = ""
+    RENDER_DATABASE_ID: str = ""
+    HEALTHCHECK_PUBLIC_URL: str = ""
 
     @property
     def is_production(self) -> bool:

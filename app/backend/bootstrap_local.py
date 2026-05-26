@@ -18,7 +18,13 @@ from .business_scope import DEFAULT_BUSINESS_CODE, DEFAULT_BUSINESS_NAME, R3_BUS
 from .seed import run as seed_run
 
 
+def _assert_local_sqlite(target_engine=engine) -> None:
+    if target_engine.dialect.name != "sqlite":
+        raise RuntimeError("bootstrap_local får bara köras mot lokal SQLite, aldrig mot live/Postgres.")
+
+
 def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
+    _assert_local_sqlite(target_engine)
     inspector = inspect(target_engine)
 
     def columns_for(table: str) -> set[str]:
@@ -32,6 +38,7 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
     activity_columns = columns_for("activities")
     audit_columns = columns_for("audit_log")
     settings_columns = columns_for("app_settings")
+    Base.metadata.create_all(bind=target_engine)
     with target_engine.begin() as connection:
         if user_columns and "business_id" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
@@ -204,6 +211,7 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
 
 
 def main() -> None:
+    _assert_local_sqlite(engine)
     Base.metadata.create_all(engine)
     _sync_lightweight_sqlite_columns()
     _sync_sqlite_business_constraints()

@@ -4,6 +4,8 @@ let persons = [];
 let activities = [];
 let areas = [];
 let currentHistoryMode = "history";
+let healthReportCache = null;
+let healthReportLoadedAt = 0;
 
 const ENTITY_LABELS = {
   schedule_cell: "Schema",
@@ -348,6 +350,180 @@ function renderErrorDashboard(summary) {
   renderErrorRows(summary.recent || []);
 }
 
+function formatMs(value) {
+  const ms = Number(value || 0);
+  if (!Number.isFinite(ms)) return "0 ms";
+  if (ms >= 1000) return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)} s`;
+  return `${Math.round(ms)} ms`;
+}
+
+function waitMetricParams() {
+  const params = new URLSearchParams();
+  params.set("period", document.getElementById("periodSelect").value || "24h");
+  params.set("limit", "10000");
+  const userId = document.getElementById("userFilter").value;
+  if (userId) params.set("user_id", userId);
+  const query = document.getElementById("actionFilter").value.trim();
+  if (query) params.set("q", query);
+  return params;
+}
+
+function renderWaitAnalysis(items = []) {
+  const target = document.getElementById("waitAnalysis");
+  target.innerHTML = "";
+  if (!items.length) {
+    target.innerHTML = '<div class="health-list-item info">Ingen analys i urvalet.</div>';
+    return;
+  }
+  items.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = `health-list-item ${escapeHtml(item.severity || "info")}`;
+    div.textContent = item.message || "";
+    target.appendChild(div);
+  });
+}
+
+function renderWaitChart(buckets = []) {
+  const chart = document.getElementById("waitTargetChart");
+  chart.innerHTML = "";
+  if (!buckets.length) {
+    chart.innerHTML = '<div class="muted-cell">Inga m&auml;tningar</div>';
+    return;
+  }
+  const max = Math.max(...buckets.map((bucket) => Number(bucket.p95_ms || 0)), 1);
+  buckets.slice(0, 12).forEach((bucket) => {
+    const width = Math.max(3, Math.round((Number(bucket.p95_ms || 0) / max) * 100));
+    const row = document.createElement("div");
+    row.className = "wait-bar-row";
+    row.innerHTML = `
+      <div title="${escapeHtml(bucket.key)}">${escapeHtml(bucket.key)}</div>
+      <div class="wait-bar-track" aria-hidden="true"><div class="wait-bar-fill" style="width:${width}%"></div></div>
+      <strong>${escapeHtml(formatMs(bucket.p95_ms))}</strong>
+    `;
+    chart.appendChild(row);
+  });
+}
+
+function renderSlowWaitRows(entries = []) {
+  const body = document.getElementById("slowWaitBody");
+  body.innerHTML = "";
+  if (!entries.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted-cell">Inga v&auml;ntem&auml;tningar matchade filtret.</td></tr>';
+    return;
+  }
+  entries.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(formatTimestamp(entry.created_at))}</td>
+      <td>${escapeHtml(entry.event_type || "-")}</td>
+      <td>${escapeHtml(entry.view_id || "-")}</td>
+      <td>${escapeHtml(entry.target || "-")}</td>
+      <td>${escapeHtml(formatMs(entry.duration_ms))}</td>
+      <td>${escapeHtml(entry.status || "ok")}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function renderWaitMetrics(summary) {
+  const safeSummary = summary || {};
+  document.getElementById("waitCount").textContent = String(safeSummary.count || 0);
+  document.getElementById("waitAvg").textContent = formatMs(safeSummary.avg_ms);
+  document.getElementById("waitP95").textContent = formatMs(safeSummary.p95_ms);
+  renderWaitChart(safeSummary.by_target || []);
+  renderWaitAnalysis(safeSummary.analysis || []);
+  renderSlowWaitRows(safeSummary.slow_events || []);
+}
+
+function statusClass(value) {
+  const status = String(value || "unknown").toLowerCase();
+  if (status === "ok") return "ok";
+  if (status === "error") return "error";
+  if (status === "warn" || status === "warning") return "warn";
+  return "info";
+}
+
+function renderHealthChecks(checks = []) {
+  const body = document.getElementById("healthChecksBody");
+  body.innerHTML = "";
+  if (!checks.length) {
+    body.innerHTML = '<tr><td colspan="3" class="muted-cell">Inga kontroller</td></tr>';
+    return;
+  }
+  checks.forEach((item) => {
+    const tr = document.createElement("tr");
+    const status = statusClass(item.status);
+    tr.innerHTML = `
+      <td>${escapeHtml(item.name || "-")}</td>
+      <td><span class="health-pill ${status}">${escapeHtml(item.status || "-")}</span></td>
+      <td class="log-detail">${escapeHtml(item.message || "-")}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function renderHealthRecommendations(items = []) {
+  const target = document.getElementById("healthRecommendations");
+  target.innerHTML = "";
+  if (!items.length) {
+    target.innerHTML = '<div class="health-list-item info">Inga rekommendationer.</div>';
+    return;
+  }
+  items.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = `health-list-item ${statusClass(item.severity)}`;
+    div.textContent = item.message || "";
+    target.appendChild(div);
+  });
+}
+
+function renderHealthRender(report = {}) {
+  const body = document.getElementById("healthRenderBody");
+  const render = report.render || {};
+  const rows = [
+    ["API", render.configured?.api_key ? "Konfigurerad" : "Saknas"],
+    ["Service", render.service?.resource?.status || render.service?.error || "-"],
+    ["Deploy", render.deploys?.items?.[0]?.status || render.deploys?.error || "-"],
+    ["Loggar", render.logs?.error_count != null ? `${render.logs.error_count} fel, ${render.logs.warning_count || 0} varningar` : (render.logs?.error || "-")],
+    ["Databas", render.database?.resource?.status || render.database?.error || "-"],
+  ];
+  body.innerHTML = rows.map(([label, value]) => `
+    <tr>
+      <td>${escapeHtml(label)}</td>
+      <td>${escapeHtml(value)}</td>
+    </tr>
+  `).join("");
+}
+
+function renderHealthReport(report) {
+  const safeReport = report || {};
+  document.getElementById("healthStatus").textContent = String(safeReport.status || "-").toUpperCase();
+  document.getElementById("healthDbLatency").textContent = safeReport.database?.latency_ms != null
+    ? formatMs(safeReport.database.latency_ms)
+    : "-";
+  const renderStatus = safeReport.render?.enabled === false
+    ? "Av"
+    : (safeReport.render?.configured?.api_key ? "API" : "Ej kopplad");
+  document.getElementById("healthRenderStatus").textContent = renderStatus;
+  renderHealthChecks(safeReport.checks || []);
+  renderHealthRecommendations(safeReport.recommendations || []);
+  renderHealthRender(safeReport);
+}
+
+async function loadHealthReport(force = false) {
+  const now = Date.now();
+  if (!force && healthReportCache && now - healthReportLoadedAt < 30000) {
+    return healthReportCache;
+  }
+  healthReportCache = await api.get("/api/healthcheck?include_render=true", {
+    skipCache: true,
+    logGetUserEvent: false,
+    telemetryEventType: "healthcheck",
+  });
+  healthReportLoadedAt = now;
+  return healthReportCache;
+}
+
 function fillUserFilter() {
   const select = document.getElementById("userFilter");
   select.innerHTML = '<option value="">Alla</option>';
@@ -375,14 +551,20 @@ async function loadLookups() {
 
 async function refreshAnalytics() {
   const params = currentParams();
-  const [summary, entries, errorSummary] = await Promise.all([
+  const loadWaits = currentHistoryMode === "waits";
+  const loadHealth = currentHistoryMode === "health";
+  const [summary, entries, errorSummary, waitSummary, healthReport] = await Promise.all([
     api.get(`/api/audit/summary?${params.toString()}`),
     api.get(`/api/audit?${params.toString()}`),
     api.get(`/api/audit/errors?${params.toString()}`),
+    loadWaits ? api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`) : Promise.resolve(null),
+    loadHealth ? loadHealthReport() : Promise.resolve(null),
   ]);
   renderSummary(summary);
   renderAuditRows(entries);
   renderErrorDashboard(errorSummary);
+  if (waitSummary) renderWaitMetrics(waitSummary);
+  if (healthReport) renderHealthReport(healthReport);
 }
 
 (async () => {
@@ -395,7 +577,10 @@ async function refreshAnalytics() {
 
   document.getElementById("refreshAuditBtn").addEventListener("click", refreshAnalytics);
   document.querySelectorAll("[data-history-mode]").forEach((button) => {
-    button.addEventListener("click", () => setHistoryMode(button.dataset.historyMode));
+    button.addEventListener("click", () => {
+      setHistoryMode(button.dataset.historyMode);
+      void refreshAnalytics();
+    });
   });
   ["periodSelect", "userFilter", "entityFilter"].forEach((id) => {
     document.getElementById(id).addEventListener("change", refreshAnalytics);

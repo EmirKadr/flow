@@ -179,6 +179,25 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UserWaitMetric(Base):
+    __tablename__ = "user_wait_metrics"
+    __table_args__ = (
+        Index("ix_user_wait_metrics_created_at", "created_at"),
+        Index("ix_user_wait_metrics_view_target", "view_id", "target"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    view_id: Mapped[str | None] = mapped_column(String(80))
+    target: Mapped[str | None] = mapped_column(String(160))
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")
+    detail: Mapped[dict | None] = mapped_column(JsonField)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
     __table_args__ = (

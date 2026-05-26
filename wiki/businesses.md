@@ -1,7 +1,7 @@
 ---
 title: Verksamheter och isolering
 status: aktiv
-updated: 2026-05-25
+updated: 2026-05-26
 tags: [verksamheter, behorighet, isolering, super-user]
 ---
 
@@ -39,8 +39,8 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 - `businesses` innehåller `code`, `name`, `sort_order` och `is_active`.
 - `verksamheter.html` visar varje verksamhet med en undersektion Omraden. Den hamtar `/api/businesses` och `/api/areas?include_inactive=true`, grupperar omradena pa `business_id` och uppdaterar sidebarens omradesfokus efter andringar.
 - `users`, `areas`, `persons`, `activities`, `audit_log` och verksamhetsspecifika `app_settings` har `business_id`.
-- `STIGAMO` är bakåtkompatibel default. Migration och seed kopplar befintliga användare, områden, personer, aktiviteter, historik och settings dit.
-- `R3` seedas separat med verksamhet `R3`, område `R3` och egna frånvaroaktiviteter. Stigamos personer, användare och arbetsaktiviteter kopieras inte.
+- `STIGAMO` är bakåtkompatibel default. Migrationen kopplar befintliga användare, områden, personer, aktiviteter, historik och settings dit när verksamhetskolumnen införs.
+- `R3` skapas av verksamhetsmigrationen. Lokal/dev-seed kan fylla R3-område och frånvaroaktiviteter, men seed körs inte och är spärrad mot production/live.
 - Unika regler för område, person och aktivitet är verksamhetsscopeade där samma namn/kod får finnas i flera verksamheter. Användarnamn är fortsatt globalt unika.
 - `business_scope.py` är den gemensamma spärren för listfilter, detail/update/delete och write-inferens.
 - Schemaceller pekar fortfarande på person och aktivitet, men writes validerar att person och aktivitet tillhör samma verksamhet.

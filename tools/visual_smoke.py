@@ -109,6 +109,8 @@ STATES: tuple[VisualState, ...] = (
     VisualState("anvandare-vybehorigheter-modal", "/anvandare.html", "#role-view-access", "role_access_modal"),
     VisualState("verksamheter-ny-verksamhet-modal", "/verksamheter.html", "#new-business", "click_new_business", ("admin",)),
     VisualState("historik-filter", "/historik.html", "#auditBody", "analytics_filter", ("admin",)),
+    VisualState("historik-vantetider", "/historik.html", "#auditBody", "history_waits", ("admin",)),
+    VisualState("historik-halsa", "/historik.html", "#auditBody", "history_health", ("admin",)),
     VisualState("viewer-nekad-personer", "/personer.html", "#scheduleTable", "noop", ("viewer",)),
     VisualState("viewer-nekad-aktiviteter", "/aktiviteter.html", "#scheduleTable", "noop", ("viewer",)),
     VisualState("viewer-nekad-anvandare", "/anvandare.html", "#scheduleTable", "noop", ("viewer",)),
@@ -399,6 +401,18 @@ def _apply_state(page, state: VisualState) -> None:
         page.select_option("#periodSelect", "all")
         page.fill("#actionFilter", "visual_seed")
         page.click("#refreshAuditBtn")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_waits":
+        page.click('[data-history-mode="waits"]')
+        page.wait_for_selector("#slowWaitBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_health":
+        page.click('[data-history-mode="health"]')
+        page.wait_for_selector("#healthChecksBody", timeout=15000)
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(500)
         return

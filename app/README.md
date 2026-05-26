@@ -70,6 +70,17 @@ python tools/build_external_data_catalog.py --views <views.xlsx> --columns <colu
 
 Den skriver `data/external_data_catalog.json`, som commitas så Render får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/Render secrets.
 
+## Halsa
+
+Historik-fliken Halsa kan kora server-, databas- och Render-kontroller. Lokalt
+fungerar app- och databaskontroller utan extra nycklar. For Render-data behovs
+hemliga miljo variabler i driftens secret store:
+
+- `RENDER_API_KEY`
+- `RENDER_SERVICE_ID`
+- `RENDER_POSTGRES_ID`
+- `HEALTHCHECK_PUBLIC_URL` (valfri publik ping-URL)
+
 ## Lokal seed-inlogg
 
 När du kör `python -m backend.seed` lokalt skapas en admin-användare:
@@ -79,6 +90,7 @@ När du kör `python -m backend.seed` lokalt skapas en admin-användare:
 **Byt lösenordet direkt efter första inloggning** och lägg gärna upp minst en extra administratör i adminvyn.
 
 I produktion kör Render inte seed. Live-data är användarstyrd och första admin-kontot ska redan finnas eller skapas via en kontrollerad engångsbootstrap.
+`backend.seed` stoppar dessutom körning när `ENVIRONMENT=production` eller databasen ser ut att vara en Render-databas.
 
 ## Deploya till Render
 
@@ -124,6 +136,8 @@ rader, lägger till saknade kolumner/tabeller och backfyller äldre lokal data t
 standardverksamheten `STIGAMO`. Om något ser fel ut lokalt, stäng den gamla
 servern med `stop_local.bat`, starta `start_local.bat` igen och ladda om
 browsern hårt.
+Den lokala bootstrappen vägrar köra mot annat än SQLite, så den kan inte råka
+skriva seed/backfill till live-Postgres.
 
 Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa Render-URL som en lokal miljövariabel innan du kör `start_local.bat`:
 

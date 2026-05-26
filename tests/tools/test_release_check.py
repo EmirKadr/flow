@@ -43,10 +43,15 @@ def test_release_check_requires_every_frontend_file():
     required = set(REQUIRED_PACKAGE_FILES)
 
     assert "_internal/app/frontend/aktiviteter.html" in required
+    assert "_internal/app/frontend/favicon.svg" in required
+    assert "_internal/app/frontend/app-icon.svg" in required
+    assert "_internal/app/frontend/flow-logo.svg" in required
     assert "_internal/app/frontend/stallen.html" in required
     assert "_internal/app/frontend/js/activities.js" in required
     assert "_internal/app/frontend/js/common.js" in required
     assert "_internal/app/frontend/css/styles.css" in required
+    assert "_internal/desktop/assets/flow_icon.ico" in required
+    assert "_internal/desktop/assets/flow_icon.svg" in required
 
 
 def test_release_check_reports_missing_frontend_in_zip(tmp_path):

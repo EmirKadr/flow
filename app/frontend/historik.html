@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Historik – flow</title>
-  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/app-icon-192.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="/css/styles.css" />
@@ -56,6 +57,8 @@
         <button type="button" class="history-mode-btn active" data-history-mode="history" role="tab" aria-selected="true">Användarhistorik</button>
         <button type="button" class="history-mode-btn" data-history-mode="analysis" role="tab" aria-selected="false">Analys</button>
         <button type="button" class="history-mode-btn" data-history-mode="errors" role="tab" aria-selected="false">Felkoder</button>
+        <button type="button" class="history-mode-btn" data-history-mode="waits" role="tab" aria-selected="false">V&auml;ntetider</button>
+        <button type="button" class="history-mode-btn" data-history-mode="health" role="tab" aria-selected="false">H&auml;lsa</button>
       </div>
     </div>
 
@@ -185,6 +188,92 @@
           </thead>
           <tbody id="recentErrorBody"></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="waits" hidden>
+      <div class="analytics-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="waitCount">0</div>
+          <div class="stat-label">M&auml;tningar i urvalet</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="waitAvg">0 ms</div>
+          <div class="stat-label">Snittv&auml;ntan</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="waitP95">0 ms</div>
+          <div class="stat-label">P95-v&auml;ntan</div>
+        </div>
+      </div>
+
+      <div class="analytics-split">
+        <div class="card wait-card-wide">
+          <h3>Tyngsta steg</h3>
+          <div id="waitTargetChart" class="wait-chart"></div>
+        </div>
+        <div class="card">
+          <h3>Analys</h3>
+          <div id="waitAnalysis" class="health-list"></div>
+        </div>
+      </div>
+
+      <div class="table-wrap history-error-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Tid</th>
+              <th>Typ</th>
+              <th>Vy</th>
+              <th>Steg</th>
+              <th>V&auml;ntan</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="slowWaitBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="health" hidden>
+      <div class="analytics-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="healthStatus">-</div>
+          <div class="stat-label">Systemstatus</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="healthDbLatency">-</div>
+          <div class="stat-label">Databaslatens</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="healthRenderStatus">-</div>
+          <div class="stat-label">Render</div>
+        </div>
+      </div>
+
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Kontroller</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Namn</th><th>Status</th><th>Meddelande</th></tr>
+            </thead>
+            <tbody id="healthChecksBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Rekommendationer</h3>
+          <div id="healthRecommendations" class="health-list"></div>
+        </div>
+        <div class="card">
+          <h3>Render</h3>
+          <table class="small-table">
+            <thead>
+              <tr><th>Del</th><th>Status</th></tr>
+            </thead>
+            <tbody id="healthRenderBody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
   </main>
