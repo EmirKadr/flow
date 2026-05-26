@@ -59,10 +59,15 @@ python -m tools.healthcheck report --local --no-render
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Om `DATABASE_URL` i terminalen pekar mot en annan databas ska agenten satta den
-till lokal SQLite for lokal grind, till exempel
-`$env:DATABASE_URL='sqlite:///app/flow_local.db'`, eller rapportera miljoavvikelsen
-som en healthcheck-risk.
+Produktionens databas ar Postgres. Nar production/Render kontrolleras ska
+`DATABASE_URL` peka mot Render Postgres eller sa ska serverns `/api/healthcheck`
+anvandas efter deploy. SQLite anvands bara for lokal utveckling och temporara
+tester. Om agenten bara ska hamta Render deploy/loggar utan databaskoppling kan
+den kora:
+
+```powershell
+python -m tools.healthcheck report --local --skip-db
+```
 
 Efter deploy ska agenten dessutom kora servercheck nar auth och Render-secrets
 finns:

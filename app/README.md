@@ -88,8 +88,13 @@ python -m tools.healthcheck report --local --no-render
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Om terminalens `DATABASE_URL` pekar mot annan databas, satt den till lokal
-SQLite for lokal kontroll: `$env:DATABASE_URL='sqlite:///app/flow_local.db'`.
+Produktionens databas ar Postgres via Render. SQLite anvands bara for lokal
+utveckling och temporara tester. Om du bara vill hamta Render deploy/loggar utan
+att koppla verktyget mot en databas kan du kora:
+
+```powershell
+python -m tools.healthcheck report --local --skip-db
+```
 
 ## Lokal seed-inlogg
 

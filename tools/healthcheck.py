@@ -2,6 +2,7 @@
 
 Examples:
   python -m tools.healthcheck report --local
+  python -m tools.healthcheck report --local --skip-db
   python -m tools.healthcheck waits --local --period 24h
   python -m tools.healthcheck report --base-url https://stigamo.nu --username admin --password ***
 """
@@ -58,8 +59,12 @@ def get_remote(args: argparse.Namespace, path: str, params: dict[str, Any] | Non
 
 
 def local_report(args: argparse.Namespace) -> dict[str, Any]:
-    from app.backend.database import SessionLocal
     from app.backend.healthcheck_service import run_healthcheck
+
+    if args.skip_db:
+        return run_healthcheck(db=None, include_render=args.include_render, base_url=args.public_url)
+
+    from app.backend.database import SessionLocal
 
     db = SessionLocal()
     try:
@@ -126,6 +131,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--json", action="store_true", help="Skriv full JSON.")
     parser.add_argument("--no-render", dest="include_render", action="store_false", help="Hoppa over Render API.")
+    parser.add_argument("--skip-db", action="store_true", help="Hoppa over lokal databaskoppling, t.ex. nar bara Render-loggar ska hamtas.")
     parser.add_argument("--public-url", help="Publik URL for lokal extern ping.")
     parser.add_argument("--period", default="24h", choices=("1h", "24h", "7d", "30d", "all"))
     parser.add_argument("--limit", type=int, default=10000)

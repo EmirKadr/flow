@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-26] fix | Healthcheck skiljer Postgres och lokal test
+
+`tools.healthcheck` har fatt `--skip-db` sa agenter kan hamta Render deploy/loggar
+utan att fejka lokal SQLite eller koppla upp mot en databas. Dokumentationen
+fortydligar att produktionens databas ar Render Postgres; SQLite anvands bara
+for lokal utveckling och temporara tester.
+
 ## [2026-05-26] fix | Coredata följer med deploy
 
 `data/coredata/` är inte längre ignorerad av git, så verksamhetens kärnfiler kan

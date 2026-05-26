@@ -30,6 +30,18 @@ def test_healthcheck_reports_sqlite_database_without_render():
     assert any(item["name"] == "Databas" for item in report["checks"])
 
 
+def test_healthcheck_can_skip_database_for_render_only_diagnostics():
+    report = run_healthcheck(db=None, include_render=False)
+
+    assert report["database"]["skipped"] is True
+    assert report["database"]["connected"] is None
+    assert any(
+        item["name"] == "Databas" and item["status"] == "info"
+        for item in report["checks"]
+    )
+    assert all(item["severity"] != "error" for item in report["recommendations"])
+
+
 def test_wait_metric_collection_summarizes_slowest_steps():
     engine, db = make_session()
     try:

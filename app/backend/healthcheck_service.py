@@ -286,8 +286,8 @@ def collect_render(include_render: bool, checks: list[dict[str, Any]]) -> dict[s
 
 def collect_database(db: Session | None, checks: list[dict[str, Any]]) -> dict[str, Any]:
     if db is None:
-        checks.append(check("Databas", "unknown", "Ingen databassession skickades till healthcheck."))
-        return {"connected": False}
+        checks.append(check("Databas", "info", "Databaskontroll hoppades over."))
+        return {"connected": None, "skipped": True}
     started = time.perf_counter()
     try:
         db.execute(text("select 1")).scalar()
