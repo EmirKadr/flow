@@ -1,0 +1,85 @@
+# Versionskontroll
+.git
+.gitignore
+.gitattributes
+
+# Python build/cache
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+env
+.pytest_cache
+.coverage
+.mypy_cache
+.ruff_cache
+
+# Lokala miljöfiler / hemligheter
+.env
+.env.*
+app/.env
+app/.env.*
+
+# Lokala databaser
+*.db
+*.sqlite
+*.sqlite3
+
+# Tempfiler / loggar
+tmp_*
+*.log
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Stora lokala dataset (laddas/uppladdas i körning)
+data/v_ask_pick_log_full*.csv
+data/v_ask_trans_log*.csv
+data/v_ask_palletloading_log*.csv
+data/v_ask_kpi_target*.csv
+data/external_data_catalog.local*.json
+warehouse_tools/mg_forecast/data/
+warehouse_tools/mg_forecast/training.parquet
+
+# Privata exempel/referenser
+demo
+referens
+testdata
+private-data
+FELSÖK
+
+# Desktop / packaging-artefakter (behövs inte i web-image)
+build
+dist
+release
+artifacts
+desktop
+packaging
+design-demo
+flow.spec
+requirements-build.txt
+requirements-desktop.txt
+requirements-dev.txt
+build_windows.bat
+start.bat
+start_local.bat
+stop_local.bat
+
+# Tester (kör i CI, inte i produktions-image)
+tests
+app/tests
+pytest.ini
+
+# Dokumentation som inte behövs i runtime
+*.md
+!app/README.md
+wiki
+tools
+
+# Egen Docker-fil ska inte kopieras in
+Dockerfile
+.dockerignore
