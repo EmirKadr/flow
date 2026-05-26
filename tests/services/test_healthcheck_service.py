@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.healthcheck_service import clean_text, collect_render_logs, run_healthcheck
+from app.backend.healthcheck_service import clean_text, collect_render_logs, collect_render_resource, run_healthcheck
 from app.backend.models import Business, User, UserWaitMetric
 from app.backend.routers import healthcheck
 from app.backend.schemas import WaitMetricBatchIn, WaitMetricIn
@@ -117,3 +117,15 @@ def test_render_logs_explains_missing_owner_id():
     assert result["error"] == "owner_id_missing"
     assert checks[0]["name"] == "Render loggar"
     assert "ownerId" in checks[0]["message"]
+
+
+def test_render_service_not_suspended_is_ok():
+    class FakeRenderClient:
+        def get(self, path, params=None):
+            return {"suspended": "not_suspended"}, None
+
+    checks = []
+    result = collect_render_resource(FakeRenderClient(), "service", "srv-test", checks)
+
+    assert result["error"] is None
+    assert checks[0]["status"] == "ok"

@@ -183,7 +183,8 @@ def collect_render_resource(client: RenderClient, kind: str, rid: str, checks: l
         return {"resource": None, "error": error}
     resource = unwrap_named(payload, kind)
     status = str(resource.get("status") or resource.get("suspended") or "ok").lower()
-    checks.append(check(f"Render {kind}", "ok" if status in {"ok", "available", "running", "false"} else "warn", f"Render {kind} status: {status}"))
+    ok_statuses = {"ok", "available", "running", "false", "not_suspended"}
+    checks.append(check(f"Render {kind}", "ok" if status in ok_statuses else "warn", f"Render {kind} status: {status}"))
     return {"resource": resource, "error": None}
 
 
@@ -270,7 +271,7 @@ def collect_render_metrics(client: RenderClient, sid: str, pid: str, checks: lis
     if metric_results["service"] or metric_results["database"]:
         checks.append(check("Render metrics", "ok", "Render metrics kunde hamtas."))
     elif attempts:
-        checks.append(check("Render metrics", "warn", "Render metrics kunde inte hamtas via API."))
+        checks.append(check("Render metrics", "info", "Render metrics kunde inte hamtas via API. Anvand Render dashboard om API:t inte exponerar metrics for planen."))
     return metric_results
 
 
