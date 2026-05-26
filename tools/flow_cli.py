@@ -112,6 +112,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("schedule.restore_hours", "PUT", "/api/schedule/hours/restore", "Återställ timmar"),
     ApiRoute("schedule.summary", "GET", "/api/schedule/summary", "Schema-summering"),
     ApiRoute("schedule.revision", "GET", "/api/schedule/revision", "Schema-revision"),
+    ApiRoute("schedule.presence", "GET", "/api/schedule/presence", "Närvarolista för utskrift"),
     ApiRoute("schedule.copy", "POST", "/api/schedule/copy", "Kopiera dag/vecka"),
     ApiRoute("schedule.clear", "POST", "/api/schedule/clear", "Rensa schema"),
     ApiRoute("schedule.fill_from_left", "POST", "/api/schedule/fill-from-left", "Fyll från vänster"),

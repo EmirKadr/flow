@@ -53,6 +53,8 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Ctrl utan fokus | "Ctrl+C: klicka forst pa en cell" | Ingen fokuserad cell | Klicka/fokusera cell och prova igen. |
 | Undo fel dag | "Byt tillbaka till dagen..." | Undo-stackens andring hor till annan dag | Ga tillbaka till dag dar andringen gjordes. |
 | Rensa confirm | "Rensa hela dagen for det valda omradet?" | Skydd mot massandring | Avbryt om du ar osaker; annars OK. |
+| Narvarande hamtas | "Hamtar narvarolista..." och sedan "Narvarolista oppnas for utskrift (X personer)." | Anvandaren klickar `Narvarande` och valjer omfang | Printdialogen oppnas; Alla omraden skrivs ut per verksamhet. |
+| Narvarande tom | "Inga narvarande hittades for den valda dagen och tiden." | Ingen person uppfyller work/icke-franvaro-reglerna | Kontrollera dag, tid och omradesval. |
 
 ## Oversikt
 
@@ -63,6 +65,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Drag for stort | "For manga celler (max 100)" | For manga dagceller markerade | Dela upp draget. |
 | Heldag sparad | "Bemannade X h, tog bort Y h" | Oversikt skrev/tomde dag enligt mall | Kontrollera Bemanning om timmarna ser ovantade ut. |
 | Drag klar med fel | "Drag klar: skrev X h, tog bort Y h, Z fel" | Bulk gjorde vissa dagar men inte alla | Kontrollera dagarna som inte andrades. |
+| Narvarande | Samma toastar som i Bemanning | Knappen anvander Bemannings schema for vald/klickad dag | Klicka ratt dag i Oversikt innan utskrift om perioden visar flera dagar. |
 
 ## Register: personer, aktiviteter, anvandare
 

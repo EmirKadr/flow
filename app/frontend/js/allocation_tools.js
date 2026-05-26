@@ -932,10 +932,16 @@ function observationsUpdateStatusText(result) {
 }
 
 function observationsUpdateLogText(result) {
+  const newRows = Number(result?.new_rows || 0);
+  const githubState = result?.pushed_to_github
+    ? "bekräftad"
+    : newRows
+      ? "ej bekräftad"
+      : "inte aktuell (0 nya pallid)";
   const lines = [
-    `Nya pallid hittade: ${Number(result?.new_rows || 0)}`,
+    `Nya pallid hittade: ${newRows}`,
     `Pallid skickade till GitHub: ${Number(result?.github_sent_rows || 0)}`,
-    `GitHub-push: ${result?.pushed_to_github ? "bekräftad" : "ej bekräftad"}`,
+    `GitHub-push: ${githubState}`,
     `Artikel-max-rader: ${Number(result?.article_max_rows || 0)}`,
     `Ändrade maxvärden: ${Number(result?.article_max_changed_rows || 0)}`,
     `Max upp/ned: ${Number(result?.article_max_increased_rows || 0)} / ${Number(result?.article_max_decreased_rows || 0)}`,
@@ -962,6 +968,7 @@ async function triggerAllocationObservationsUpdate(entry) {
   const file = allocationFileForForm(entry);
   if (!file) return;
   const fd = new FormData();
+  appendAllocationAreaFocus(fd);
   fd.append("file", file, entry.name);
   try {
     const result = await allocationPostForm(`${ALLOCATION_API}/observations/update`, fd);
@@ -1287,6 +1294,7 @@ async function runAllocationFlow(flow) {
     }
     allocationState.status = `Klart: ${flow.label}`;
     await copyOrdersaldoCompleteOrders(data);
+    await downloadAllocationAutoDownloads(data);
   } catch (error) {
     showToast(error.message, "error");
     allocationState.status = "";
@@ -1294,6 +1302,22 @@ async function runAllocationFlow(flow) {
     allocationState.busyId = "";
     persistAllocationWorkState();
     renderAllocationPage();
+  }
+}
+
+async function downloadAllocationAutoDownloads(data) {
+  const downloads = Array.isArray(data?.auto_downloads) ? data.auto_downloads : [];
+  const sessionId = data?.session_id;
+  if (!downloads.length || !sessionId) return;
+  for (const entry of downloads) {
+    const key = entry?.key;
+    if (!key) continue;
+    const filename = entry?.filename || `${key}.csv`;
+    try {
+      await api.download(`${ALLOCATION_API}/download/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`, filename);
+    } catch (error) {
+      showToast(error.message || "Kunde inte ladda ner importfilen automatiskt.", "error", 7000);
+    }
   }
 }
 

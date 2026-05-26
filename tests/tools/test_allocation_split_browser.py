@@ -386,6 +386,7 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                         ],
                         "log": [],
                         "artifact_keys": ["forecast_json"],
+                        "auto_downloads": [],
                     },
                     ensure_ascii=False,
                 ),
@@ -416,12 +417,29 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                             }
                         ],
                         "log": [],
+                        "auto_downloads": [
+                            {
+                                "key": "order_set_area_import",
+                                "filename": "v_ask_order_overview_order_set_area_execute_command.csv",
+                            }
+                        ],
                     },
                     ensure_ascii=False,
                 ),
             )
 
         page.route("**/api/allokering/flow/ytgenerering", handle_ytgenerering)
+        page.route(
+            "**/api/allokering/download/ytgenerering-session-1/order_set_area_import",
+            lambda route: route.fulfill(
+                status=200,
+                headers={
+                    "content-type": "text/csv",
+                    "content-disposition": 'attachment; filename="v_ask_order_overview_order_set_area_execute_command.csv"',
+                },
+                body="area_num\tcompany\torder_num\tpick_zone\nUTL100\tMG\tO-1\tA\n",
+            ),
+        )
 
         page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
         forecast_button = page.locator('button[data-run-flow="forecast"]')
@@ -435,10 +453,12 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         expect(page.locator(".allocation-result")).to_contain_text("S-1")
         expect(ytgenerering_button).to_be_enabled(timeout=15000)
 
-        ytgenerering_button.click()
+        with page.expect_response("**/api/allokering/download/ytgenerering-session-1/order_set_area_import") as download_response:
+            ytgenerering_button.click()
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Ytgenerering")
         expect(page.locator(".allocation-result")).to_contain_text("UTL100")
+        assert download_response.value.status == 200
         assert "forecast-session-1" in captured["post_data"]
         assert 'name="forecast_session_id"' in captured["post_data"]
     finally:

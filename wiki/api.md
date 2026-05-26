@@ -33,6 +33,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `PUT /api/schedule/hours/restore` - undo/redo for Bemanning och Oversikt.
 - `GET /api/schedule/summary` - summering per aktivitet.
 - `GET /api/schedule/revision` - latt revisionsnyckel for aktuell schemaperiod, anvands for tyst bakgrundsrefresh.
+- `GET /api/schedule/presence` - narvarolista for utskrift fran Bemanning/Oversikt. `area_id` begransar till omrade; utan `area_id` grupperas svaret per verksamhet.
 - `POST /api/schedule/copy` - kopiera dag/vecka.
 - `POST /api/schedule/clear` - rensa schema.
 - `POST /api/schedule/fill-from-left` - fyll tomma celler fran vanster.

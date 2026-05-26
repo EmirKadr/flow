@@ -320,7 +320,7 @@ function isoWeek(d = new Date()) {
   date.setUTCDate(date.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   const week = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
-  return { year: date.getUTCFullYear(), week };
+  return { year: date.getUTCFullYear(), week, weekday: dayNum };
 }
 
 function isoWeekToMonday(year, week) {
@@ -351,6 +351,23 @@ function dateFromParts(parts) {
   const [year, month, day] = parts.map(Number);
   if (!year || !month || !day) return null;
   return new Date(Date.UTC(year, month - 1, day));
+}
+
+function dateFromYmdString(value) {
+  const parts = String(value || "").split("-").map(Number);
+  return dateFromParts(parts);
+}
+
+function overviewDateFromCell(td) {
+  if (!td) return null;
+  if (td.dataset.date) return dateFromYmdString(td.dataset.date);
+  const year = Number(td.dataset.year);
+  const week = Number(td.dataset.week);
+  const weekday = Number(td.dataset.weekday);
+  if (!year || !week || !weekday) return null;
+  const monday = isoWeekToMonday(year, week);
+  monday.setUTCDate(monday.getUTCDate() + weekday - 1);
+  return monday;
 }
 
 function storedDateForCurrentPeriod() {
@@ -385,6 +402,24 @@ function persistOverviewState() {
     date = monday;
   }
   writeOverviewSelectedDate(date);
+}
+
+function overviewPresenceSelection() {
+  let date = overviewDateFromCell(state.focusedCell?.td) || storedDateForCurrentPeriod();
+  if (!date) {
+    if (state.view === "month") date = new Date(Date.UTC(state.year, state.month - 1, 1));
+    else date = isoWeekToMonday(state.year, state.week);
+  }
+  const selectedWeek = isoWeek(date);
+  return {
+    year: selectedWeek.year,
+    week: selectedWeek.week,
+    weekday: selectedWeek.weekday,
+    areaId: state.areaId,
+    areaName: state.areaId == null
+      ? "Alla områden"
+      : (state.areas.find((area) => area.id === state.areaId)?.name || "Nuvarande område"),
+  };
 }
 
 function escapeHtml(s) {
@@ -642,6 +677,8 @@ function setupPersonOrderDrag() {
 
 function focusDayCell(td) {
   if (state.focusedCell?.td) state.focusedCell.td.classList.remove("focused");
+  const selectedDate = overviewDateFromCell(td);
+  if (selectedDate) writeOverviewSelectedDate(selectedDate);
   state.focusedCell = {
     td,
     personId: Number(td.dataset.personId),
@@ -1627,6 +1664,11 @@ function updateViewVisibility() {
   });
   document.getElementById("prev").addEventListener("click", () => shiftPeriod(-1));
   document.getElementById("next").addEventListener("click", () => shiftPeriod(1));
+  if (typeof setupPresencePrintButton === "function") {
+    setupPresencePrintButton("presenceBtn", {
+      getSelection: () => overviewPresenceSelection(),
+    });
+  }
   document.getElementById("undoBtn").addEventListener("click", () => undoLastOverviewAction());
   document.getElementById("redoBtn").addEventListener("click", () => redoLastOverviewAction());
   updateUndoRedoButtons();

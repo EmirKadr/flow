@@ -806,6 +806,38 @@ def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     assert "Number(person.home_area_id) === selectedAreaId" in overview
 
 
+def test_presence_print_is_wired_to_both_planning_views():
+    frontend = ROOT / "app" / "frontend"
+    schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
+    overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
+    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    presence = (frontend / "js" / "presence_print.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert '<button id="presenceBtn" type="button">Närvarande</button>' in schedule_html
+    assert '<button id="presenceBtn" type="button">Närvarande</button>' in overview_html
+    assert '<script src="/js/presence_print.js"></script>' in schedule_html
+    assert '<script src="/js/presence_print.js"></script>' in overview_html
+    assert "setupPresencePrintButton(\"presenceBtn\"" in schedule
+    assert "setupPresencePrintButton(\"presenceBtn\"" in overview
+    assert "function overviewPresenceSelection" in overview
+    assert "writeOverviewSelectedDate(selectedDate)" in overview
+    assert 'const PRESENCE_API_PATH = "/api/schedule/presence";' in presence
+    assert 'value="all" checked' in presence
+    assert 'value="current"' in presence
+    assert 'params.set("area_id"' in presence
+    assert 'params.set("business_id"' in presence
+    assert "api.get(presenceQuery(selection, scope)" in presence
+    assert "Alla områden" in presence
+    assert "groups.map((group)" in presence
+    assert "presence-print-group" in presence
+    assert "group.business_name" in presence
+    assert "window.print()" in presence
+    assert "@media print" in styles
+    assert "body.presence-printing" in styles
+
+
 def test_super_user_business_fields_are_wired_in_register_ui():
     frontend = ROOT / "app" / "frontend"
     persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")

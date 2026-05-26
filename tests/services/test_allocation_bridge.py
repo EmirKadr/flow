@@ -1253,6 +1253,31 @@ def test_download_result_formats_integer_like_floats_as_in_excel():
     assert content == "Artikel,Beställt,Tom\nA1,1,\n"
 
 
+def test_download_result_returns_exact_tab_separated_export_file():
+    content = (
+        "area_num\tcompany\torder_num\tpick_zone\n"
+        "UTL100, UTL101\tMG\t1001\tA\n"
+    )
+    bridge.SESSIONS["abc"] = {
+        "flow_id": "ytgenerering",
+        "tables": {},
+        "labels": {},
+        "download_files": {
+            "order_set_area_import": {
+                "filename": "v_ask_order_overview_order_set_area_execute_command.csv",
+                "content": content,
+                "media_type": "text/csv",
+            }
+        },
+    }
+
+    response = bridge.download_result("abc", "order_set_area_import")
+
+    assert Path(response.path).read_bytes().startswith(b"\xef\xbb\xbf")
+    assert Path(response.path).read_text(encoding="utf-8-sig") == content
+    assert "v_ask_order_overview_order_set_area_execute_command.csv" in response.headers["content-disposition"]
+
+
 def test_run_split_values_uses_native_flow_without_legacy_runtime(monkeypatch):
     def fail_available():
         raise AssertionError("legacy allocation runtime should not load for split-values")

@@ -66,6 +66,7 @@ STAGED_SUPPORT_FILENAMES = {
     file_type: pattern.replace("*", "flow")
     for file_type, pattern in FILE_TYPE_GLOBS.items()
 }
+UNKNOWN_TRANSPORTOR_LABEL = "Okänd"
 
 
 def _round_for_display(series: pd.Series) -> pd.Series:
@@ -75,6 +76,32 @@ def _round_for_display(series: pd.Series) -> pd.Series:
 
 def _format_decimal(value: float | int) -> str:
     return f"{float(value):.2f}"
+
+
+def _clean_transportor(value: object) -> str:
+    text = "" if value is None or pd.isna(value) else str(value).strip()
+    if not text or text.lower() in {"nan", "nat", "none"}:
+        return ""
+    return text
+
+
+def _transportor_or_default(value: object, default_transportor: str) -> str:
+    return _clean_transportor(value) or default_transportor
+
+
+def _transportor_for_result(value: object) -> str:
+    return _clean_transportor(value) or UNKNOWN_TRANSPORTOR_LABEL
+
+
+def _dominant_transportor(series: pd.Series) -> str:
+    values = series.dropna().astype(str).str.strip()
+    values = values[values.ne("") & ~values.str.lower().isin({"nan", "nat", "none"})]
+    if values.empty:
+        return ""
+    mode = values.mode()
+    if mode.empty:
+        return ""
+    return _clean_transportor(mode.iloc[0])
 
 
 def _ascii_fold(value: object) -> str:
@@ -399,7 +426,14 @@ def build_inference_features(
         n_status_35=("status_35", "sum"),
         n_status_other_picked=("status_other_picked", "sum"),
         n_ar_plockad=("is_ar_plockad", "sum"),
-        transportor=("order_transportor", lambda s: s.mode().iloc[0] if not s.empty else default_transportor),
+        transportor=(
+            "order_transportor",
+            lambda s: _transportor_or_default(_dominant_transportor(s), default_transportor),
+        ),
+        transportor_result=(
+            "order_transportor",
+            lambda s: _transportor_for_result(_dominant_transportor(s)),
+        ),
     ).reset_index()
 
     feats["kund_max_hojd"] = feats["kund_max_hojd"].fillna(280)
@@ -414,7 +448,10 @@ def build_inference_features(
     feats["max_art_langd"] = feats["max_art_langd"].fillna(0)
     feats["max_art_hojd"] = feats["max_art_hojd"].fillna(0)
     feats["max_palltype_langd"] = feats["max_palltype_langd"].fillna(0)
-    feats["transportor"] = feats["transportor"].fillna(default_transportor)
+    feats["transportor"] = feats["transportor"].map(
+        lambda value: _transportor_or_default(value, default_transportor)
+    )
+    feats["transportor_result"] = feats["transportor_result"].map(_transportor_for_result)
     feats["orderdatum"] = pd.to_datetime(feats["orderdatum"], errors="coerce")
 
     num_cols = [
@@ -554,7 +591,7 @@ def run_forecast(
         "ordernummer",
         "n_ordrar",
         "n_rader",
-        "transportor",
+        "transportor_result",
         "predikterad_pallplatser",
     ]
     out = features[out_cols].sort_values(["orderdatum", "kund", "grupp"]).reset_index(drop=True)
@@ -572,7 +609,7 @@ def run_forecast(
             "ordernummer": "Ordernummer",
             "n_ordrar": "Antal order",
             "n_rader": "Rader",
-            "transportor": "Transportör",
+            "transportor_result": "Transportör",
             "predikterad_pallplatser": "Predikterade pallplatser",
         }
     )

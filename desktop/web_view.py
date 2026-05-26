@@ -4,12 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import QStandardPaths
+from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
 from PyQt6.QtWebEngineCore import (
     QWebEnginePage,
     QWebEngineProfile,
     QWebEngineSettings,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWidgets import QDialog
 
 from core.app_info import APP_NAME
 
@@ -34,6 +36,29 @@ def configure_downloads(profile: QWebEngineProfile) -> None:
     profile._flow_download_handler = accept_download
 
 
+def configure_printing(
+    view: QWebEngineView,
+    printer_factory=QPrinter,
+    dialog_factory=QPrintDialog,
+) -> None:
+    def clear_active_printer(_success: bool) -> None:
+        view._flow_active_printer = None
+
+    def handle_print_requested() -> None:
+        printer = printer_factory(QPrinter.PrinterMode.HighResolution)
+        dialog = dialog_factory(printer, view)
+        dialog.setWindowTitle("Skriv ut")
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            view._flow_active_printer = printer
+            view.print(printer)
+
+    view.printRequested.connect(handle_print_requested)
+    if hasattr(view, "printFinished"):
+        view.printFinished.connect(clear_active_printer)
+    view._flow_print_handler = handle_print_requested
+    view._flow_active_printer = None
+
+
 def create_web_view(parent=None) -> QWebEngineView:
     view = QWebEngineView(parent)
 
@@ -54,6 +79,7 @@ def create_web_view(parent=None) -> QWebEngineView:
 
     page = QWebEnginePage(profile, view)
     view.setPage(page)
+    configure_printing(view)
 
     settings = view.settings()
     settings.setAttribute(

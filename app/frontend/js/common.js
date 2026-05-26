@@ -2441,14 +2441,14 @@ const DEMO_TOUR_DESCRIPTIONS = {
     + "<strong>Högerklick</strong> öppnar samma aktivitetsval direkt i en kontextmeny.<br>"
     + "<strong>Dubbelklick</strong> delar timmen i två halvor om du behöver två aktiviteter inom samma timme.<br>"
     + "<strong>Dra</strong> över flera celler för att fylla dem med samma aktivitet på en gång.<br>"
-    + "Knapparna högst upp: <strong>Föregående/Nästa dag</strong>, <strong>Kopiera dag</strong> (klona en dag till en annan), <strong>Rensa dag</strong> samt <strong>Ångra</strong> och <strong>Gör om</strong> för dina senaste ändringar.<br>"
+    + "Knapparna högst upp: <strong>Föregående/Nästa dag</strong>, <strong>Kopiera dag</strong> (klona en dag till en annan), <strong>Rensa dag</strong>, <strong>Närvarande</strong> för utskriftslista samt <strong>Ångra</strong> och <strong>Gör om</strong> för dina senaste ändringar.<br>"
     + "Drag i personnamnen till vänster för att ändra sorteringsordningen (om rollen tillåter det).",
   overview:
     "Översikt visar bemanningen i ett kondenserat format — bra för att se helbilden över veckan eller månaden.<br><br>"
     + "Växla mellan <strong>vecka</strong> och <strong>månad</strong> högst upp.<br>"
     + "<strong>Vänsterklick</strong> på en dag öppnar aktivitetsval för heldagen.<br>"
     + "<strong>Dra</strong> över flera dagar för att sätta samma heldagsaktivitet snabbt.<br>"
-    + "<strong>Ångra/Gör om</strong> fungerar som i Bemanning.",
+    + "<strong>Närvarande</strong> skriver ut vald dags bemannade personer och <strong>Ångra/Gör om</strong> fungerar som i Bemanning.",
   productivity:
     "Produktivitet räknar ut KPI per process och bolag baserat på pick/trans/pallet-loggar plus KPI-mål.<br><br>"
     + "Välj <strong>period</strong> och <strong>verksamhet</strong> i topbaren.<br>"

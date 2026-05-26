@@ -1,9 +1,11 @@
 from unittest.mock import patch
 
+from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QWidget
 
 from core.app_info import UPDATE_DISABLED_ENV
 from desktop.app import MainWindow, _app_icon, _app_icon_path
+from desktop.web_view import configure_printing
 from services.health_service import HealthInfo
 
 
@@ -82,6 +84,28 @@ class FailingLocalAppServer:
         return None
 
 
+class FakePrintView:
+    def __init__(self):
+        self.printRequested = FakeSignal()
+        self.printed = []
+
+    def print(self, printer):
+        self.printed.append(printer)
+
+
+class FakePrintDialog:
+    def __init__(self, printer, parent):
+        self.printer = printer
+        self.parent = parent
+        self.title = ""
+
+    def setWindowTitle(self, title):
+        self.title = title
+
+    def exec(self):
+        return QDialog.DialogCode.Accepted
+
+
 def test_startup_health_check_loads_server(qapp, monkeypatch):
     monkeypatch.setenv(UPDATE_DISABLED_ENV, "1")
     browser = FakeBrowser()
@@ -101,6 +125,21 @@ def test_startup_health_check_loads_server(qapp, monkeypatch):
     assert window._stack.currentWidget() is browser
     assert local_server.start_called == 1
     assert browser.loaded_urls == [local_server.url]
+
+
+def test_web_view_print_signal_opens_print_dialog(qapp):
+    view = FakePrintView()
+    printer = object()
+
+    configure_printing(
+        view,
+        printer_factory=lambda _mode: printer,
+        dialog_factory=lambda printer_arg, parent: FakePrintDialog(printer_arg, parent),
+    )
+    view.printRequested.emit()
+
+    assert view.printed == [printer]
+    assert hasattr(view, "_flow_print_handler")
 
 
 def test_desktop_window_icon_prefers_vector_asset(qapp):

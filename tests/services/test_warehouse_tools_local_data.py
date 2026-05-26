@@ -393,7 +393,7 @@ def test_warehouse_registry_is_loaded_from_flow_package():
     assert any(input_def["key"] == "max_csv" for input_def in ordersaldo["inputs"])
 
 
-def test_ytgenerering_filters_locations_and_groups_transporters():
+def test_ytgenerering_places_shipments_separately_and_sorts_by_carrier():
     forecast = pd.DataFrame(
         [
             {"Sändningsnr": "S1", "Transportör": "Akeri A", "Predikterade pallplatser": 2.5},
@@ -507,6 +507,144 @@ def test_forecast_stage_support_files_uses_canonical_names(tmp_path):
     assert (fore_dir / "item_option-flow.csv").is_file()
 
 
+def test_forecast_inference_uses_default_transportor_when_overview_value_missing(monkeypatch, tmp_path):
+    from warehouse_tools.mg_forecast import forecast as mg_forecast
+
+    orders_path = tmp_path / "orders.csv"
+    pd.DataFrame(
+        [
+            {
+                "Bolag": "MG",
+                "Kund": "50000",
+                "Order nr": "O1",
+                "Artikel": "A1",
+                "Best\u00e4llt": "12",
+                "Orderdatum": "2026-05-26",
+                "Robot": "",
+                "Zon": "A",
+                "Pack klass": "K",
+                "Status": "30",
+                "\u00c4r plockad": "0",
+            }
+        ]
+    ).to_csv(orders_path, index=False, sep="\t", encoding="utf-8-sig")
+
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_order_overview",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "Ordernr": "O1",
+                    "order_transportor": pd.NA,
+                    "order_sandningsnr": "S1",
+                    "order_typ": "",
+                    "order_multi": False,
+                    "order_multi_size": 1.0,
+                    "order_volym_huvud": 0.0,
+                    "order_vikt_huvud": 0.0,
+                    "order_antal_huvud": 0.0,
+                    "order_rader_huvud": 1.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_customers",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "Kund": "50000",
+                    "kund_max_hojd": 280.0,
+                    "kund_postnr_prefix2": 0.0,
+                    "kund_postnr_prefix3": 0.0,
+                    "kund_postnr_missing": 1.0,
+                    "kund_is_foreign": 0.0,
+                    "kund_standard_transportornr": 0.0,
+                    "kund_has_standard_transportor": 0.0,
+                    "kund_requires_lift": 0.0,
+                    "kund_special_delivery_text": 0.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_items",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "Artikel": "A1",
+                    "per_pall": 12.0,
+                    "vikt_brutto": 1.0,
+                    "volym": 1.0,
+                    "item_palltyp": "E",
+                    "item_robot": False,
+                    "item_staplingsbar": True,
+                    "item_pack_klass": "",
+                    "item_pall_flakmeter": 0.0,
+                    "item_pall_langd": 120.0,
+                    "item_pall_bredd": 80.0,
+                    "item_pall_hojd": 120.0,
+                    "item_pall_langgods": False,
+                    "item_pall_extra_lang": False,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_item_dimensions",
+        lambda: pd.DataFrame([{"Artikel": "A1", "art_langd": 120.0, "art_bredd": 80.0, "art_hojd": 120.0}]),
+    )
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_item_options",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "Artikel": "A1",
+                    "opt_ej_staplingsbar": False,
+                    "opt_helpalls_avvikelse_pct": 0.0,
+                    "opt_plockzon": "",
+                    "opt_robot": False,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        mg_forecast,
+        "load_buffert_pallets",
+        lambda: pd.DataFrame([{"Artikel": "A1", "buffert_n_pallar": 1.0, "buffert_total_antal": 12.0}]),
+    )
+
+    features = mg_forecast.build_inference_features(
+        orders_path,
+        default_transportor="Schenker",
+        data_fore=tmp_path,
+    )
+
+    assert features["transportor"].tolist() == ["Schenker"]
+    assert features["transportor_result"].tolist() == ["Okänd"]
+    assert features["grupp"].tolist() == ["S1"]
+
+    monkeypatch.setattr(
+        mg_forecast,
+        "_predict",
+        lambda forecast_features: pd.Series([1.5], index=forecast_features.index),
+    )
+
+    out, summary = mg_forecast.run_forecast(
+        orders_path,
+        default_transportor="Schenker",
+        data_fore=tmp_path,
+    )
+
+    assert summary["antal_grupper"] == 1
+    assert out["Transportör"].tolist() == ["Okänd"]
+
+
 def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypatch, tmp_path):
     forecast_payload = {
         "columns": ["Sändningsnr", "Transportör", "Predikterade pallplatser"],
@@ -537,6 +675,58 @@ def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypa
     assert result["summary"]["Ej placerade pallplatser"] == 0
     assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL100", "UTL101"]
     assert list(tables["ytgenerering"]["Placerade pallplatser"]) == [1.0, 0.5]
+    assert "order_set_area_import" not in tables
+    assert result["auto_downloads"] == []
+    assert any("Forecast saknar kolumnen Ordernummer" in line for line in result["log"])
+
+
+def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface(monkeypatch, tmp_path):
+    forecast_payload = {
+        "columns": ["Sändningsnr", "Ordernummer", "Transportör", "Predikterade pallplatser"],
+        "rows": [
+            {
+                "Sändningsnr": "S-1",
+                "Ordernummer": "1001, 1002",
+                "Transportör": "Akeri A",
+                "Predikterade pallplatser": 1.5,
+            },
+        ],
+    }
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1},
+                {"Lagerplats": "UTL101", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_json": json.dumps(forecast_payload, ensure_ascii=False)},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    import_table = tables["order_set_area_import"]
+    assert import_table.to_dict("records") == [
+        {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1001", "pick_zone": "A"},
+        {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1002", "pick_zone": "A"},
+    ]
+    assert result["auto_downloads"] == [
+        {
+            "key": "order_set_area_import",
+            "filename": "v_ask_order_overview_order_set_area_execute_command.csv",
+        }
+    ]
+    assert result["download_files"]["order_set_area_import"]["content"] == (
+        "area_num\tcompany\torder_num\tpick_zone\n"
+        "UTL100, UTL101\tMG\t1001\tA\n"
+        "UTL100, UTL101\tMG\t1002\tA\n"
+    )
 
 
 def test_ytgenerering_flow_consumes_forecast_dataframe_fast_path(monkeypatch, tmp_path):

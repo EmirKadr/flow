@@ -7,6 +7,21 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-05-26] feature | Narvarande-lista for utskrift
+
+Bemanning och Oversikt har nu knappen `Narvarande`. Den hamtar en serverraknad
+narvarolista fran `/api/schedule/presence`, valjer Alla omraden eller nuvarande
+omrade fore utskrift och grupperar Alla per verksamhet sa Super User inte far
+blandade verksamheter i samma lista. Windows-appen anvander en QWebEngine-
+printbrygga for samma printflode.
+
+## [2026-05-26] feature | Ytgenerering laddar ASK-import
+
+Ytgenerering skapar nu en tabbseparerad ASK-importfil for order/yta nar alla
+sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer`. Varje
+ordernummer far en rad med sandningens UTL-ytor i `area_num`, `company=MG` och
+`pick_zone=A`; frontend laddar ner filen automatiskt efter klart flode.
+
 ## [2026-05-26] fix | Observations foljer R3-toggle
 
 Automatisk observations-uppdatering fran buffertfil skickar nu med samma
@@ -17,10 +32,17 @@ push inte ar aktuell, och nya pallid dar GitHub inte bekraftade pushen.
 
 ## [2026-05-26] fix | Forecast tal saknad transportor
 
-Forecast faller nu tillbaka till default-transportoren `Schenker` nar en
-sandningsgrupp finns men orderoversikten saknar transportorvarde for gruppen.
-Det hindrar att Bearbeta/Forecast stoppar pa `mode().iloc[0]` nar underlaget i
-ovrigt ar giltigt.
+Forecast faller nu tillbaka till default-transportoren `Schenker` internt for
+modellens transportorsignal nar en sandningsgrupp finns men orderoversikten
+saknar transportorvarde for gruppen. Forecast-resultatet och Ytgenerering far
+i stallet `Okand`, sa fallbacken inte styr ytregler. Det hindrar att
+Bearbeta/Forecast stoppar pa `mode().iloc[0]` nar underlaget i ovrigt ar giltigt.
+
+## [2026-05-26] fix | Ytgenerering tydliggor sandningsplacering
+
+Ytgenereringens logg, tabellnamn och dokumentation forklarar nu att placeringen
+sker per sandning. Transportor anvands for sortering och
+`Transportorsoversikt`, men en lagerplats delas inte mellan flera sandningar.
 
 ## [2026-05-26] fix | Stoppa vy-redirect-loop
 

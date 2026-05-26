@@ -963,12 +963,14 @@ def run_flow_handler(
 
     tables = result.get("tables", [])
     artifacts = result.get("artifacts", {}) or {}
+    download_files = result.get("download_files", {}) or {}
     session_id = uuid.uuid4().hex
     SESSIONS[session_id] = {
         "flow_id": flow_id,
         "tables": {key: df for key, _label, df in tables},
         "labels": {key: label for key, label, _df in tables},
         "artifacts": artifacts,
+        "download_files": download_files,
     }
     return {
         "flow_id": flow_id,
@@ -982,6 +984,7 @@ def run_flow_handler(
         "text": result.get("text"),
         "log": result.get("log", []),
         "artifact_keys": sorted(artifacts),
+        "auto_downloads": result.get("auto_downloads") or [],
     }
 
 
@@ -1021,9 +1024,32 @@ def table_column_text(session_id: str, key: str, column_index: int) -> dict:
     return {"text": "\n".join(values)}
 
 
+def _download_file_response(payload: dict) -> FileResponse:
+    filename = str(payload.get("filename") or "download.csv")
+    suffix = Path(filename).suffix or ".csv"
+    media_type = str(payload.get("media_type") or "text/csv")
+    encoding = str(payload.get("encoding") or "utf-8-sig")
+    content = payload.get("content", "")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        if isinstance(content, bytes):
+            tmp.write(content)
+        else:
+            tmp.write(str(content).encode(encoding))
+    finally:
+        tmp.close()
+    return FileResponse(tmp.name, filename=filename, media_type=media_type)
+
+
 def download_result(session_id: str, key: str):
     session = SESSIONS.get(session_id)
-    if session is None or key not in session["tables"]:
+    if session is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
+    download_file = (session.get("download_files") or {}).get(key)
+    if download_file is not None:
+        return _download_file_response(download_file)
+    if key not in session["tables"]:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
     label = session["labels"].get(key, key)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")

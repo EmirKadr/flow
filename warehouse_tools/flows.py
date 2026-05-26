@@ -16,8 +16,10 @@ All domänlogik kommer från motorn - inga beräkningar dupliceras här.
 """
 from __future__ import annotations
 
+import io
 import json
 import tempfile
+import unicodedata
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +29,11 @@ import pandas as pd
 
 from .engine import engine as E
 from .surface_generation import generate_surface_plan, prepare_locations
+
+ORDER_SET_AREA_IMPORT_KEY = "order_set_area_import"
+ORDER_SET_AREA_IMPORT_LABEL = "ASK-import order/yta"
+ORDER_SET_AREA_IMPORT_FILENAME = "v_ask_order_overview_order_set_area_execute_command.csv"
+ORDER_SET_AREA_IMPORT_COLUMNS = ["area_num", "company", "order_num", "pick_zone"]
 
 NEAR_MISS_COLUMNS = [
     "Artikel", "OrderID", "OrderRad", "PallID", "Kallplats", "Mottagen",
@@ -171,6 +178,98 @@ def _max_csv_path(files: dict, params: dict) -> Path:
     if params.get(DEFAULT_MAX_CSV_PARAM):
         return Path(params[DEFAULT_MAX_CSV_PARAM])
     return E._resolve_max_csv_path(None)
+
+
+def _column_key(value: object) -> str:
+    text = "" if value is None else str(value)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return "".join(ch for ch in text.strip().lower() if ch.isalnum())
+
+
+def _find_table_column(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
+    lookup = {_column_key(column): column for column in df.columns}
+    for alias in aliases:
+        column = lookup.get(_column_key(alias))
+        if column is not None:
+            return column
+    return None
+
+
+def _clean_cell(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "nat", "none"} else text
+
+
+def _split_order_numbers(value: object) -> list[str]:
+    text = _clean_cell(value)
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _tsv_content(df: pd.DataFrame) -> str:
+    output = io.StringIO()
+    df.to_csv(output, sep="\t", index=False, lineterminator="\n")
+    return output.getvalue()
+
+
+def build_order_set_area_import(forecast_df: pd.DataFrame, assignments_df: pd.DataFrame) -> tuple[pd.DataFrame | None, str | None]:
+    forecast_shipment_col = _find_table_column(forecast_df, ("Sändningsnr", "Sandningsnr", "Grupp", "Shipment"))
+    order_col = _find_table_column(forecast_df, ("Ordernummer", "Ordernr", "order_num"))
+    assignment_shipment_col = _find_table_column(assignments_df, ("Sändningsnr", "Sandningsnr", "Grupp", "Shipment"))
+    location_col = _find_table_column(assignments_df, ("Lagerplats", "Location", "area_num"))
+
+    if forecast_shipment_col is None:
+        return None, "ASK-importfil skapades inte: Forecast saknar sändningsnummer."
+    if order_col is None:
+        return None, "ASK-importfil skapades inte: Forecast saknar kolumnen Ordernummer."
+    if assignment_shipment_col is None or location_col is None:
+        return None, "ASK-importfil skapades inte: Ytgenerering saknar sändning/yta-placering."
+    if assignments_df.empty:
+        return None, "ASK-importfil skapades inte: inga sändningar placerades på yta."
+
+    surfaces_by_shipment: dict[str, str] = {}
+    for shipment, group in assignments_df.groupby(assignment_shipment_col, sort=False):
+        shipment_key = _clean_cell(shipment)
+        surfaces = [_clean_cell(value) for value in group[location_col].tolist()]
+        surfaces = [value for value in surfaces if value]
+        if shipment_key and surfaces:
+            surfaces_by_shipment[shipment_key] = ", ".join(surfaces)
+
+    orders_by_shipment: dict[str, list[str]] = {}
+    for _, forecast_row in forecast_df.iterrows():
+        shipment_key = _clean_cell(forecast_row.get(forecast_shipment_col))
+        if not shipment_key:
+            continue
+        order_numbers = _split_order_numbers(forecast_row.get(order_col))
+        if order_numbers:
+            orders_by_shipment.setdefault(shipment_key, []).extend(order_numbers)
+
+    rows: list[dict[str, str]] = []
+    missing_order_shipments: list[str] = []
+    for shipment_key, area_num in surfaces_by_shipment.items():
+        order_numbers = orders_by_shipment.get(shipment_key, [])
+        if not order_numbers:
+            missing_order_shipments.append(shipment_key)
+            continue
+        rows.extend(
+            {
+                "area_num": area_num,
+                "company": "MG",
+                "order_num": order_num,
+                "pick_zone": "A",
+            }
+            for order_num in order_numbers
+        )
+
+    if missing_order_shipments:
+        sample = ", ".join(missing_order_shipments[:5])
+        return None, f"ASK-importfil skapades inte: {len(missing_order_shipments)} placerade sändningar saknar ordernummer ({sample})."
+    if not rows:
+        return None, "ASK-importfil skapades inte: inga placerade ordernummer hittades."
+    return pd.DataFrame(rows, columns=ORDER_SET_AREA_IMPORT_COLUMNS), None
 
 
 def build_allocate_display_summary(
@@ -623,10 +722,37 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
 
     tables = [
         ("ytgenerering", "Ytgenerering", result.assignments),
-        ("transportorer", "Transportörer", result.carrier_overview),
+        ("transportorer", "Transportörsöversikt", result.carrier_overview),
     ]
     if not result.unplaced.empty:
         tables.append(("ej_placerade", "Ej placerade", result.unplaced))
+
+    log = [
+        "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
+        "Sändningar placerade en och en. Transportör används för sortering och översikt.",
+    ]
+    download_files: dict[str, dict[str, str]] = {}
+    auto_downloads: list[dict[str, str]] = []
+    if result.unplaced.empty:
+        import_df, import_log = build_order_set_area_import(forecast_df, result.assignments)
+        if import_df is not None:
+            tables.append((ORDER_SET_AREA_IMPORT_KEY, ORDER_SET_AREA_IMPORT_LABEL, import_df))
+            download_files[ORDER_SET_AREA_IMPORT_KEY] = {
+                "filename": ORDER_SET_AREA_IMPORT_FILENAME,
+                "content": _tsv_content(import_df),
+                "media_type": "text/csv",
+            }
+            auto_downloads.append(
+                {
+                    "key": ORDER_SET_AREA_IMPORT_KEY,
+                    "filename": ORDER_SET_AREA_IMPORT_FILENAME,
+                }
+            )
+            log.append(f"ASK-importfil skapad: {len(import_df)} orderrader.")
+        elif import_log:
+            log.append(import_log)
+    else:
+        log.append("ASK-importfil skapades inte: Ytgenerering har ej placerade sändningar.")
 
     summary = {
         "Sändningar": result.summary["antal_sändningar"],
@@ -637,10 +763,9 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
     return {
         "summary": summary,
         "tables": tables,
-        "log": [
-            "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
-            "Sändningar placerade carrier-vis så transportörer hålls ihop.",
-        ],
+        "download_files": download_files,
+        "auto_downloads": auto_downloads,
+        "log": log,
     }
 
 

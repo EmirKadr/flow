@@ -1,7 +1,7 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-05-25
+updated: 2026-05-26
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
@@ -70,9 +70,9 @@ Reglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix`
 | Forecast | Detalj Kundorder, Orderoversikt, Buffertpallar och karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` | Forecast per `Sandningsnr`, Excel/CSV-tabell och sessiondata for Ytgenerering |
 | Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser, UTL1-UTL652, minst 6 tecken och `Max pall > 0` |
 
-Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion. Nar en ny `location`-karnfil laddas upp rensas den gamla location-cachen och den nya ytlistan forvarms direkt, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
+Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil. Om orderoversikten saknar transportor pa en sandning anvander Forecast default-transportoren `Schenker` internt for modellens transportorsignal, men resultatet och Ytgenerering far transportoren `Okand` sa fallbacken inte styr ytregler. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion. Nar en ny `location`-karnfil laddas upp rensas den gamla location-cachen och den nya ytlistan forvarms direkt, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
 
-Ytgenerering sorterar transportorer efter total pallplatsbehov och placerar deras sandningar i sammanhallna block. En lagerplats delas aldrig mellan flera sandningar; en sandning kan daremot spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har.
+Ytgenerering sorterar transportorer efter total pallplatsbehov for att ge ett stabilt flode och en transportorsoversikt. Placeringen sker fortfarande per sandning: en lagerplats delas aldrig mellan flera sandningar, och en sandning kan spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har. Nar alla sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer` skapas ocksa `ASK-import order/yta` och laddas ner automatiskt som `v_ask_order_overview_order_set_area_execute_command.csv`. Importfilen ar tabbseparerad med kolumnerna `area_num`, `company`, `order_num`, `pick_zone`; `area_num` innehaller sandningens UTL-ytor kommaseparerade, `company` ar `MG` och `pick_zone` ar `A`.
 
 Dolda/tekniska floden finns for observations-update, observations-sync och update-check. Observations kan aven triggas automatiskt nar ny buffertfil laggs in. Observations och den framraknade karnfilen `artikel_max.csv` ar verksamhetsseparerade: Stigamo anvander legacy-filerna i `lowfreqdata/buffertpall/`, medan R3 anvander egna filer under `lowfreqdata/buffertpall/r3/`. En R3-uppladdning ska darfor inte andra Stigamos observations- eller artikel_max-underlag, och tvartom.
 

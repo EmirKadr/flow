@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
@@ -9,7 +10,7 @@ from ..audit import log as audit_log
 from ..business_scope import assert_scoped_object, scoped_get, visible_business_id
 from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
-from ..models import Activity, Area, Person, ScheduleCell, User
+from ..models import Activity, Area, Business, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..template_service import get_template_hours, get_template_hours_map
 from ..schemas import (
@@ -17,6 +18,9 @@ from ..schemas import (
     CellOut,
     CellUpdate,
     PersonOut,
+    PresenceBusinessGroup,
+    PresenceOut,
+    PresenceRow,
     RestoreHoursRequest,
     ScheduleOut,
     SplitCellRequest,
@@ -119,6 +123,126 @@ def _schedule_revision_for_persons(
     )
 
 
+def _covered_intervals(cells: list[ScheduleCell]) -> list[tuple[int, int]]:
+    intervals = sorted(
+        (
+            max(0, int(cell.minute_start)),
+            min(60, int(cell.minute_end)),
+        )
+        for cell in cells
+        if cell.activity_id is not None or cell.empty_override
+    )
+    merged: list[tuple[int, int]] = []
+    for start, end in intervals:
+        if end <= start:
+            continue
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+    return merged
+
+
+def _uncovered_intervals(covered: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    result: list[tuple[int, int]] = []
+    cursor = 0
+    for start, end in covered:
+        if start > cursor:
+            result.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < 60:
+        result.append((cursor, 60))
+    return result
+
+
+def _effective_activity_ids_for_hour(
+    cells: list[ScheduleCell],
+    *,
+    is_scheduled: bool,
+    home_activity_id: int | None,
+) -> list[int]:
+    intervals: list[tuple[int, int, int]] = []
+    sorted_cells = sorted(cells, key=lambda cell: (cell.minute_start, cell.minute_end))
+    for cell in sorted_cells:
+        if cell.activity_id is not None:
+            intervals.append((int(cell.minute_start), int(cell.minute_end), int(cell.activity_id)))
+
+    if is_scheduled and home_activity_id is not None:
+        for start, end in _uncovered_intervals(_covered_intervals(sorted_cells)):
+            intervals.append((start, end, int(home_activity_id)))
+
+    return [activity_id for _start, _end, activity_id in sorted(intervals)]
+
+
+def _unique_activity_ids(activity_ids: list[int]) -> list[int]:
+    seen: set[int] = set()
+    unique: list[int] = []
+    for activity_id in activity_ids:
+        if activity_id in seen:
+            continue
+        seen.add(activity_id)
+        unique.append(activity_id)
+    return unique
+
+
+def _has_activity_category(activity_ids: list[int], activities_by_id: dict[int, Activity], category: str) -> bool:
+    return any(
+        (activity := activities_by_id.get(activity_id)) is not None and activity.category == category
+        for activity_id in activity_ids
+    )
+
+
+def _has_non_absence_activity(activity_ids: list[int], activities_by_id: dict[int, Activity]) -> bool:
+    return any(
+        (activity := activities_by_id.get(activity_id)) is not None and activity.category != "absence"
+        for activity_id in activity_ids
+    )
+
+
+def _presence_current_activity(
+    activity_ids: list[int],
+    activities_by_id: dict[int, Activity],
+) -> tuple[int | None, str, str | None]:
+    unique_ids = _unique_activity_ids([activity_id for activity_id in activity_ids if activity_id in activities_by_id])
+    if not unique_ids:
+        return None, "Ingen", None
+    if len(unique_ids) == 1:
+        activity = activities_by_id[unique_ids[0]]
+        return activity.id, activity.label, activity.category
+    labels = [activities_by_id[activity_id].label for activity_id in unique_ids]
+    return None, "Blandat: " + " / ".join(labels), "mixed"
+
+
+def _presence_business_sort_key(group: PresenceBusinessGroup, businesses_by_id: dict[int, Business]) -> tuple[int, str, int]:
+    if group.business_id is None:
+        return (999999, group.business_name.lower(), 999999)
+    business = businesses_by_id.get(group.business_id)
+    return (
+        int(business.sort_order if business is not None else 999999),
+        (business.name if business is not None else group.business_name).lower(),
+        int(group.business_id),
+    )
+
+
+def _presence_business_group(
+    business_id: int | None,
+    businesses_by_id: dict[int, Business],
+) -> PresenceBusinessGroup:
+    business = businesses_by_id.get(business_id) if business_id is not None else None
+    if business is None:
+        return PresenceBusinessGroup(
+            business_id=business_id,
+            business_code="",
+            business_name="Utan verksamhet",
+            rows=[],
+        )
+    return PresenceBusinessGroup(
+        business_id=business.id,
+        business_code=business.code,
+        business_name=business.name,
+        rows=[],
+    )
+
 def _cell_to_dict(cell: ScheduleCell) -> dict:
     return {
         "person_id": cell.person_id,
@@ -145,6 +269,13 @@ def _empty_segment_dict(person_id: int, hour: int, minute_start: int, minute_end
         "updated_at": None,
         "updated_by": None,
     }
+
+
+def _schedule_date(year: int, week: int, weekday: int) -> date:
+    try:
+        return date.fromisocalendar(year, week, weekday)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltig ISO-vecka eller dag")
 
 
 def _serialize_segments(cells: list[ScheduleCell]) -> list[dict]:
@@ -286,6 +417,125 @@ def get_schedule_revision(
             persons=persons,
         ),
     }
+
+
+@router.get("/presence", response_model=PresenceOut)
+def get_schedule_presence(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    hour: int = Query(..., ge=0, le=23),
+    area_id: int | None = Query(None),
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> PresenceOut:
+    selected_date = _schedule_date(year, week, weekday)
+    scoped_business_id = visible_business_id(db, user, business_id)
+
+    persons_q = select(Person).where(Person.is_active.is_(True))
+    if scoped_business_id is not None:
+        persons_q = persons_q.where(Person.business_id == scoped_business_id)
+    if area_id is not None:
+        area = scoped_get(db, Area, area_id, user, detail="OmrÃ¥de hittades inte")
+        if area.is_active is not True:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="OmrÃ¥de hittades inte")
+        if scoped_business_id is not None and area.business_id != scoped_business_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="OmrÃ¥de hittades inte")
+        persons_q = persons_q.where(Person.home_area_id == area_id)
+    persons_q = persons_q.order_by(Person.sort_order, Person.name)
+    persons = db.execute(persons_q).scalars().all()
+    person_ids = [person.id for person in persons]
+
+    rest_hours = [candidate for candidate in HOURS if candidate >= hour]
+    near_hours = [candidate for candidate in (hour, hour + 1) if candidate in HOURS]
+    cells_by_person_hour: dict[tuple[int, int], list[ScheduleCell]] = defaultdict(list)
+    if person_ids and rest_hours:
+        rows = db.execute(
+            select(ScheduleCell).where(
+                ScheduleCell.year == year,
+                ScheduleCell.week == week,
+                ScheduleCell.weekday == weekday,
+                ScheduleCell.person_id.in_(person_ids),
+                ScheduleCell.hour.in_(rest_hours),
+            )
+        ).scalars().all()
+        for cell in rows:
+            cells_by_person_hour[(cell.person_id, cell.hour)].append(cell)
+
+    activity_query = db.query(Activity)
+    area_query = db.query(Area)
+    business_query = db.query(Business)
+    if scoped_business_id is not None:
+        activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
+        area_query = area_query.filter(Area.business_id == scoped_business_id)
+        business_query = business_query.filter(Business.id == scoped_business_id)
+    activities = activity_query.all()
+    areas = area_query.all()
+    businesses = business_query.all()
+    activities_by_id = {activity.id: activity for activity in activities}
+    areas_by_id = {area.id: area for area in areas}
+    businesses_by_id = {business.id: business for business in businesses}
+    home_activity_for = build_home_activity_resolver(activities, areas)
+    home_activity_by_person_id = {person.id: home_activity_for(person) for person in persons}
+    template_hours_map = get_template_hours_map(db, person_ids, [weekday])
+
+    groups_by_business_id: dict[int | None, PresenceBusinessGroup] = {}
+    for person in persons:
+        template_hours = template_hours_map.get((person.id, weekday))
+        home_activity_id = home_activity_by_person_id.get(person.id)
+
+        effective_by_hour = {
+            candidate: _effective_activity_ids_for_hour(
+                cells_by_person_hour.get((person.id, candidate), []),
+                is_scheduled=template_hours is not None and candidate in template_hours,
+                home_activity_id=home_activity_id,
+            )
+            for candidate in set(rest_hours + near_hours)
+        }
+        has_non_absence_rest = any(
+            _has_non_absence_activity(effective_by_hour.get(candidate, []), activities_by_id)
+            for candidate in rest_hours
+        )
+        has_work_now_or_next = any(
+            _has_activity_category(effective_by_hour.get(candidate, []), activities_by_id, "work")
+            for candidate in near_hours
+        )
+        if not has_non_absence_rest or not has_work_now_or_next:
+            continue
+
+        current_activity_id, current_activity, current_category = _presence_current_activity(
+            effective_by_hour.get(hour, []),
+            activities_by_id,
+        )
+        group = groups_by_business_id.setdefault(
+            person.business_id,
+            _presence_business_group(person.business_id, businesses_by_id),
+        )
+        home_area = areas_by_id.get(person.home_area_id)
+        group.rows.append(
+            PresenceRow(
+                person_id=person.id,
+                name=person.name,
+                home_area_id=person.home_area_id,
+                home_area=home_area.name if home_area is not None else None,
+                current_activity_id=current_activity_id,
+                current_activity=current_activity,
+                current_activity_category=current_category,
+            )
+        )
+
+    groups = sorted(groups_by_business_id.values(), key=lambda group: _presence_business_sort_key(group, businesses_by_id))
+    return PresenceOut(
+        date=selected_date.isoformat(),
+        year=year,
+        week=week,
+        weekday=weekday,
+        hour=hour,
+        generated_at=datetime.now(timezone.utc),
+        area_id=area_id,
+        groups=groups,
+    )
 
 
 @router.get("", response_model=ScheduleOut)

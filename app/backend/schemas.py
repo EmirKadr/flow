@@ -216,6 +216,34 @@ class ScheduleOut(BaseModel):
     lock_foreign_schedule_cells: bool = False
 
 
+class PresenceRow(BaseModel):
+    person_id: int
+    name: str
+    home_area_id: int | None = None
+    home_area: str | None = None
+    current_activity_id: int | None = None
+    current_activity: str
+    current_activity_category: str | None = None
+
+
+class PresenceBusinessGroup(BaseModel):
+    business_id: int | None = None
+    business_code: str
+    business_name: str
+    rows: list[PresenceRow] = Field(default_factory=list)
+
+
+class PresenceOut(BaseModel):
+    date: str
+    year: int
+    week: int
+    weekday: int
+    hour: int
+    generated_at: datetime
+    area_id: int | None = None
+    groups: list[PresenceBusinessGroup] = Field(default_factory=list)
+
+
 class CellUpdate(BaseModel):
     year: int
     week: int

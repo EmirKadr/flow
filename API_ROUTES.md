@@ -127,6 +127,7 @@ verksamheter.
 | `schedule.restore_hours` | `PUT` | `/api/schedule/hours/restore` | Återställ timmar |
 | `schedule.summary` | `GET` | `/api/schedule/summary` | Schema-summering |
 | `schedule.revision` | `GET` | `/api/schedule/revision` | Schema-revision |
+| `schedule.presence` | `GET` | `/api/schedule/presence` | NÃ¤rvarolista fÃ¶r utskrift |
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |
 | `schedule.fill_from_left` | `POST` | `/api/schedule/fill-from-left` | Fyll från vänster |
