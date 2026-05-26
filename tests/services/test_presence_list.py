@@ -65,7 +65,7 @@ def seed_presence_data(session):
     add_cell(session, split_current, work, hour=7, minute_start=0, minute_end=30)
     add_cell(session, split_current, pack, hour=7, minute_start=30, minute_end=60)
 
-    user = User(username="admin", role="admin", roles=["admin"], business_id=stigamo.id, area_id=gg.id, is_active=True)
+    user = User(username="planner", role="admin", roles=["admin"], business_id=stigamo.id, area_id=gg.id, is_active=True)
     super_user = User(username="root", role="super_user", roles=["super_user"], business_id=stigamo.id, is_active=True)
     session.add_all([user, super_user])
     session.commit()
