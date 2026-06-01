@@ -809,6 +809,23 @@ def test_bearbeta_area_focus_filter_contract():
     assert "openAllocationCarrierClusterModal" in allocation
     assert "allocationCarrierClustersFromForecastTable" in allocation
     assert "generated: true" in allocation
+    # Kluster-popupen i demo-stil: drag-sortering, tidskolumner och färgväljare.
+    assert "allocation-cluster-advanced-table" in allocation
+    assert "initAllocationCarrierClusterDrag" in allocation
+    for advanced_header in (">ASN<", ">Arrive<", ">Depart<", ">Group<", ">Start seq<", ">End seq<", ">Color<"):
+        assert advanced_header in allocation
+    assert 'type="color" class="adv-color"' in allocation
+    assert "ALLOCATION_CLUSTER_DEFAULT_TIMES" in allocation
+    # Kundnamn på ytor + klusterfärger med nyanser.
+    assert "function allocationClusterColorMap" in allocation
+    assert "function allocationHslToHex" in allocation
+    assert "assignment.customer || assignment.carrier" in allocation
+    # Saknade kunder-panelen byggd från ej placerade sändningar.
+    assert "Saknade kunder" in allocation
+    assert "data-map-missing-panel" in allocation
+    assert "function renderMissingPanel" in allocation
+    assert ".allocation-map-missing-panel" in styles
+    assert "paint-order: stroke" in styles
     assert "function allocationFlowsForCurrentView" in allocation
     assert 'window.addEventListener("flow:areaFocusChanged", handleAllocationAreaFocusChanged)' in allocation
 

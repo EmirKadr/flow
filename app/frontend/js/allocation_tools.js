@@ -538,9 +538,57 @@ function normalizeAllocationProcessMatrix(data = null) {
   return { areas, flows, matrix };
 }
 
+const ALLOCATION_CLUSTER_DEFAULT_TIMES = { asn: "11:00", arrive: "12:00", depart: "14:00" };
+const ALLOCATION_CLUSTER_HUES = [350, 265, 150, 40, 210, 320, 175, 285, 25, 130, 195, 300];
+
 function allocationCarrierClusterText(value) {
   const text = String(value ?? "").trim();
   return ["nan", "nat", "none", "null"].includes(text.toLowerCase()) ? "" : text;
+}
+
+function allocationHslToHex(h, s, l) {
+  const sat = s / 100;
+  const light = l / 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n) => {
+    const color = light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return Math.round(255 * color).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// Bygg transportör -> färg där ett kluster delar basnyans och varje transportör i
+// klustret får en egen ljushet. Manuella färger i `overrides` vinner över auto.
+function allocationClusterColorMap(entries, overrides) {
+  const overrideMap = overrides instanceof Map ? overrides : new Map();
+  const clusterCarriers = new Map();
+  const clusterOrder = [];
+  (entries || []).forEach((entry) => {
+    const carrierKey = String(entry.carrier || "Okänd");
+    const clusterKey = String(entry.cluster || "").trim() || `__solo__:${carrierKey}`;
+    if (!clusterCarriers.has(clusterKey)) {
+      clusterCarriers.set(clusterKey, []);
+      clusterOrder.push(clusterKey);
+    }
+    const carriers = clusterCarriers.get(clusterKey);
+    if (!carriers.includes(carrierKey)) carriers.push(carrierKey);
+  });
+  const colorMap = new Map();
+  clusterOrder.forEach((clusterKey, clusterIndex) => {
+    const hue = ALLOCATION_CLUSTER_HUES[clusterIndex % ALLOCATION_CLUSTER_HUES.length];
+    const carriers = clusterCarriers.get(clusterKey);
+    const span = carriers.length;
+    carriers.forEach((carrierKey, i) => {
+      const light = span <= 1 ? 58 : 46 + Math.round((i / (span - 1)) * 26);
+      colorMap.set(carrierKey, allocationHslToHex(hue, 65, light));
+    });
+  });
+  overrideMap.forEach((color, carrier) => {
+    const key = String(carrier || "");
+    if (key && color) colorMap.set(key, color);
+  });
+  return colorMap;
 }
 
 function allocationCarrierClusterNumber(value) {
@@ -571,6 +619,9 @@ function normalizeAllocationCarrierClusters(payload) {
     const alias = allocationCarrierClusterText(row.alias ?? row.agencyAlias ?? row.agency_alias ?? row.AGENCY_ALIAS);
     const label = alias || description || carrierNum;
     if (!label) return null;
+    const asn = allocationCarrierClusterText(row.asn ?? row.agency_asn ?? row.agencyAsn ?? row.ASN);
+    const arrive = allocationCarrierClusterText(row.arrive ?? row.agency_arrive ?? row.agencyArrive ?? row.ARRIVE);
+    const depart = allocationCarrierClusterText(row.depart ?? row.agency_depart ?? row.agencyDepart ?? row.DEPART);
     return {
       id: allocationCarrierClusterText(row.id) || carrierNum || `row-${index + 1}`,
       carrierNum,
@@ -580,6 +631,9 @@ function normalizeAllocationCarrierClusters(payload) {
       assignmentOrder: allocationCarrierClusterNumber(row.assignmentOrder ?? row.assignment_order ?? row.ASSIGNMENT_ORDER ?? row.order),
       startSeq: allocationCarrierClusterNumber(row.startSeq ?? row.start_seq ?? row.START_SEQ ?? row.from ?? row.utlFrom),
       endSeq: allocationCarrierClusterNumber(row.endSeq ?? row.end_seq ?? row.END_SEQ ?? row.to ?? row.utlTo),
+      asn: asn || ALLOCATION_CLUSTER_DEFAULT_TIMES.asn,
+      arrive: arrive || ALLOCATION_CLUSTER_DEFAULT_TIMES.arrive,
+      depart: depart || ALLOCATION_CLUSTER_DEFAULT_TIMES.depart,
       color: allocationCarrierClusterText(row.color ?? row.colour),
     };
   }).filter(Boolean);
@@ -1682,6 +1736,7 @@ function renderResultPanel(result) {
 function renderResultMap(entry, index) {
   const locationCount = Array.isArray(entry?.locations) ? entry.locations.length : 0;
   const assignmentCount = Array.isArray(entry?.assignments) ? entry.assignments.length : 0;
+  const missingCount = Array.isArray(entry?.unplaced) ? entry.unplaced.length : 0;
   return `
     <div class="allocation-map-block" data-allocation-map data-map-index="${index}" tabindex="0" aria-keyshortcuts="Control+C Control+X Control+V Control+Z">
       <div class="allocation-table-head allocation-map-head">
@@ -1695,6 +1750,10 @@ function renderResultMap(entry, index) {
         </div>
       </div>
       <div class="allocation-warehouse-map">
+        <button type="button" class="allocation-map-missing-toggle${missingCount ? " has-missing" : ""}" data-map-missing aria-pressed="false">
+          Saknade kunder${missingCount ? ` (${missingCount})` : ""}
+        </button>
+        <div class="allocation-map-missing-panel" data-map-missing-panel hidden></div>
         <svg class="allocation-warehouse-map-svg" data-map-svg aria-label="${allocationEscape(entry?.label || "Ytkarta")}">
           <defs>
             <pattern data-map-grid id="allocation-map-grid-${index}" width="80" height="80" patternUnits="userSpaceOnUse">
@@ -1751,10 +1810,6 @@ function renderResultTable(sessionId, entry) {
 }
 
 const ALLOCATION_MAP_NS = "http://www.w3.org/2000/svg";
-const ALLOCATION_MAP_COLORS = [
-  "#fb7185", "#a78bfa", "#34d399", "#fbbf24", "#60a5fa", "#f472b6",
-  "#2dd4bf", "#c084fc", "#f97316", "#22c55e", "#38bdf8", "#e879f9",
-];
 
 function allocationMapNumber(value, fallback = 0) {
   const parsed = Number.parseFloat(String(value ?? "").replace(",", "."));
@@ -1775,12 +1830,6 @@ function allocationMapCompareLocation(a, b) {
   const left = allocationMapLocationSortValue(a);
   const right = allocationMapLocationSortValue(b);
   return left[0] - right[0] || left[1].localeCompare(right[1], "sv");
-}
-
-function allocationMapCarrierColor(carrier, colorMap) {
-  const key = String(carrier || "Okänd");
-  if (!colorMap.has(key)) colorMap.set(key, ALLOCATION_MAP_COLORS[colorMap.size % ALLOCATION_MAP_COLORS.length]);
-  return colorMap.get(key);
 }
 
 function allocationMapTsvCell(value) {
@@ -1816,6 +1865,8 @@ function setupAllocationWarehouseMap(host, entry) {
   const detail = host.querySelector("[data-map-detail]");
   const overview = host.querySelector("[data-map-overview]");
   const search = host.querySelector("[data-map-search]");
+  const missingToggle = host.querySelector("[data-map-missing]");
+  const missingPanel = host.querySelector("[data-map-missing-panel]");
   if (!svg || !canvas || !entry) return;
 
   const locations = (Array.isArray(entry.locations) ? entry.locations : [])
@@ -1830,13 +1881,14 @@ function setupAllocationWarehouseMap(host, entry) {
     .filter((loc) => loc.location);
   locations.sort((a, b) => allocationMapCompareLocation(a.location, b.location));
   const locationByName = new Map(locations.map((loc) => [loc.location, loc]));
-  const colorMap = new Map();
   const assignments = (Array.isArray(entry.assignments) ? entry.assignments : [])
     .map((assignment, index) => ({
       id: String(assignment.id || `assignment-${index}`),
       shipment: String(assignment.shipment || ""),
       carrier: String(assignment.carrier || "Okänd"),
       cluster: String(assignment.cluster || ""),
+      customer: String(assignment.customer || ""),
+      customerNum: String(assignment.customerNum || ""),
       location: String(assignment.location || "").trim().toUpperCase(),
       placedPallets: allocationMapRound(assignment.placedPallets),
       shipmentPallets: allocationMapRound(assignment.shipmentPallets),
@@ -1850,6 +1902,16 @@ function setupAllocationWarehouseMap(host, entry) {
   assignments.forEach((assignment) => {
     assignmentByLocation.set(assignment.location, assignment);
   });
+
+  const clusterColorOverrides = new Map(
+    (allocationState.carrierClusters?.rows || [])
+      .map((row) => [String(row.alias || row.description || row.carrierNum || ""), row.color])
+      .filter(([carrier, color]) => carrier && color),
+  );
+  const colorMap = allocationClusterColorMap(
+    assignments.map((assignment) => ({ carrier: assignment.carrier, cluster: assignment.cluster })),
+    clusterColorOverrides,
+  );
 
   const state = {
     transform: { x: 0, y: 0, scale: 1 },
@@ -1958,7 +2020,7 @@ function setupAllocationWarehouseMap(host, entry) {
     const lines = assignment
       ? [
           { text: loc.location, cls: "allocation-map-label-sub" },
-          { text: assignment.carrier || assignment.cluster || assignment.shipment, cls: "allocation-map-label-main" },
+          { text: assignment.customer || assignment.carrier || assignment.cluster || assignment.shipment, cls: "allocation-map-label-main" },
           { text: `${assignment.placedPallets}/${assignment.maxPall || "?"} pall`, cls: "allocation-map-label-sub" },
         ]
       : [{ text: loc.location, cls: "allocation-map-label" }];
@@ -1984,7 +2046,7 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.rect.classList.toggle("is-selected", state.selectedLocation === location);
     elements.rect.classList.toggle("is-clipboard-source", state.clipboard?.source === location);
     elements.rect.classList.toggle("is-over-capacity", Boolean(assignment && assignment.unusedCapacity < -0.001));
-    elements.rect.style.fill = assignment ? allocationMapCarrierColor(assignment.cluster || assignment.carrier, colorMap) : "";
+    elements.rect.style.fill = assignment ? (colorMap.get(assignment.carrier) || "") : "";
     setMapText(elements.text, loc, assignment);
   }
 
@@ -2017,6 +2079,7 @@ function setupAllocationWarehouseMap(host, entry) {
         <div><dt>Max pall</dt><dd>${allocationEscape(loc.maxPall || "")}</dd></div>
         ${assignment ? `
           <div><dt>Sändning</dt><dd>${allocationEscape(assignment.shipment)}</dd></div>
+          ${assignment.customer ? `<div><dt>Kund</dt><dd>${allocationEscape(assignment.customer)}</dd></div>` : ""}
           <div><dt>Transportör</dt><dd>${allocationEscape(assignment.carrier)}</dd></div>
           ${assignment.cluster ? `<div><dt>Kluster</dt><dd>${allocationEscape(assignment.cluster)}</dd></div>` : ""}
           <div><dt>Placerade</dt><dd>${allocationEscape(assignment.placedPallets)}</dd></div>
@@ -2032,17 +2095,17 @@ function setupAllocationWarehouseMap(host, entry) {
     const rows = [...assignments]
       .sort((a, b) => allocationMapCompareLocation(a.location, b.location))
       .filter((assignment) => {
-        const haystack = `${assignment.location} ${assignment.shipment} ${assignment.carrier} ${assignment.cluster}`.toLowerCase();
+        const haystack = `${assignment.location} ${assignment.shipment} ${assignment.customer} ${assignment.carrier} ${assignment.cluster}`.toLowerCase();
         return !query || haystack.includes(query);
       });
     overview.innerHTML = `
       <table>
-        <thead><tr><th>UTL</th><th>Sändning</th><th>Pall</th></tr></thead>
+        <thead><tr><th>UTL</th><th>Kund</th><th>Pall</th></tr></thead>
         <tbody>
           ${rows.map((assignment) => `
             <tr data-map-overview-location="${allocationEscape(assignment.location)}" class="${assignment.location === state.selectedLocation ? "is-selected" : ""}">
               <td>${allocationEscape(assignment.location)}</td>
-              <td>${allocationEscape(assignment.shipment || assignment.carrier)}</td>
+              <td>${allocationEscape(assignment.customer || assignment.shipment || assignment.carrier)}</td>
               <td>${allocationEscape(assignment.placedPallets)}</td>
             </tr>
           `).join("")}
@@ -2404,36 +2467,82 @@ function setupAllocationWarehouseMap(host, entry) {
   });
   host.querySelector("[data-map-export-csv]")?.addEventListener("click", exportMapCsv);
   host.querySelector("[data-map-export-ask]")?.addEventListener("click", exportAskCsv);
+
+  function renderMissingPanel() {
+    if (!missingPanel) return;
+    const rows = (Array.isArray(entry.unplaced) ? entry.unplaced : [])
+      .map((row) => ({
+        customer: String(row.customer || ""),
+        carrier: String(row.carrier || ""),
+        shipment: String(row.shipment || ""),
+        unplacedPallets: allocationMapRound(row.unplacedPallets),
+      }))
+      .sort((a, b) => b.unplacedPallets - a.unplacedPallets);
+    if (!rows.length) {
+      missingPanel.innerHTML = `<p class="allocation-muted">Alla sändningar fick plats.</p>`;
+      return;
+    }
+    missingPanel.innerHTML = `
+      <h4>Saknade kunder <span>${rows.length}</span></h4>
+      <ul class="allocation-map-missing-list">
+        ${rows.map((row) => `
+          <li>
+            <span class="allocation-map-missing-dot" style="background:${colorMap.get(row.carrier) || "#d1d5db"}"></span>
+            <span class="allocation-map-missing-name">${allocationEscape(row.customer || row.shipment || row.carrier)}</span>
+            <span class="allocation-map-missing-meta">${allocationEscape(row.carrier)} · −${allocationEscape(row.unplacedPallets)} pall</span>
+          </li>
+        `).join("")}
+      </ul>
+    `;
+  }
+
+  renderMissingPanel();
+  missingToggle?.addEventListener("click", () => {
+    const open = missingPanel.hidden;
+    missingPanel.hidden = !open;
+    missingToggle.setAttribute("aria-pressed", String(open));
+  });
 }
 
 function renderAllocationCarrierClusterEditor(host, clusters) {
   const rows = clusters?.rows || [];
+  const colorMap = allocationClusterColorMap(
+    rows.map((row) => ({ carrier: row.alias || row.description || row.carrierNum, cluster: row.clusterGroup })),
+    new Map(rows.map((row) => [String(row.alias || row.description || row.carrierNum || ""), row.color]).filter(([, color]) => color)),
+  );
   host.innerHTML = `
     <div class="modal-table-scroll allocation-carrier-cluster-scroll">
-      <table class="allocation-carrier-cluster-table">
+      <table class="allocation-carrier-cluster-table allocation-cluster-advanced-table">
         <thead>
           <tr>
+            <th style="width:28px"></th>
+            <th style="width:32px"></th>
             <th>Transportör</th>
-            <th>Kluster</th>
-            <th>Från</th>
-            <th>Till</th>
-            <th>Ordning</th>
+            <th style="width:74px">ASN</th>
+            <th style="width:74px">Arrive</th>
+            <th style="width:74px">Depart</th>
+            <th style="width:150px">Group</th>
+            <th style="width:80px">Start seq</th>
+            <th style="width:80px">End seq</th>
+            <th style="width:54px">Color</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((row, index) => {
-            const title = row.alias || row.description || row.carrierNum || `Rad ${index + 1}`;
-            const sub = [row.description && row.description !== title ? row.description : "", row.carrierNum ? `Nr ${row.carrierNum}` : ""].filter(Boolean).join(" - ");
+            const carrier = row.alias || row.description || row.carrierNum || `Rad ${index + 1}`;
+            const swatch = row.color || colorMap.get(String(row.alias || row.description || row.carrierNum || "")) || "#d1d5db";
             return `
-              <tr data-carrier-cluster-row="${index}">
-                <th>
-                  <strong>${allocationEscape(title)}</strong>
-                  ${sub ? `<span>${allocationEscape(sub)}</span>` : ""}
-                </th>
+              <tr data-carrier-cluster-row="${index}" draggable="true">
+                <td class="adv-handle" aria-hidden="true">⠿</td>
+                <td class="adv-index">${index + 1}</td>
+                <th class="adv-agency">${allocationEscape(carrier)}</th>
+                <td><input type="text" data-carrier-cluster-field="asn" value="${allocationEscape(row.asn || "")}" /></td>
+                <td><input type="text" data-carrier-cluster-field="arrive" value="${allocationEscape(row.arrive || "")}" /></td>
+                <td><input type="text" data-carrier-cluster-field="depart" value="${allocationEscape(row.depart || "")}" /></td>
                 <td><input type="text" data-carrier-cluster-field="clusterGroup" value="${allocationEscape(row.clusterGroup || "")}" /></td>
                 <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="startSeq" value="${allocationEscape(row.startSeq || "")}" /></td>
                 <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="endSeq" value="${allocationEscape(row.endSeq || "")}" /></td>
-                <td><input type="number" step="1" data-carrier-cluster-field="assignmentOrder" value="${allocationEscape(row.assignmentOrder || "")}" /></td>
+                <td><input type="color" class="adv-color" data-carrier-cluster-field="color" value="${allocationEscape(swatch)}" aria-label="Färg ${allocationEscape(carrier)}" /></td>
               </tr>
             `;
           }).join("")}
@@ -2441,20 +2550,55 @@ function renderAllocationCarrierClusterEditor(host, clusters) {
       </table>
     </div>
   `;
+  initAllocationCarrierClusterDrag(host.querySelector("tbody"));
+}
+
+function initAllocationCarrierClusterDrag(tbody) {
+  if (!tbody) return;
+  let dragSrc = null;
+  tbody.addEventListener("dragstart", (event) => {
+    dragSrc = event.target.closest("tr");
+    if (!dragSrc) return;
+    dragSrc.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+  });
+  tbody.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    const target = event.target.closest("tr");
+    if (!target || target === dragSrc || !dragSrc) return;
+    const rect = target.getBoundingClientRect();
+    const after = event.clientY > rect.top + rect.height / 2;
+    tbody.insertBefore(dragSrc, after ? target.nextSibling : target);
+  });
+  tbody.addEventListener("dragend", () => {
+    if (!dragSrc) return;
+    dragSrc.classList.remove("dragging");
+    dragSrc = null;
+    [...tbody.querySelectorAll("tr")].forEach((tr, index) => {
+      const indexCell = tr.querySelector(".adv-index");
+      if (indexCell) indexCell.textContent = index + 1;
+    });
+  });
 }
 
 function collectAllocationCarrierClusterDraft(host, clusters) {
   const sourceRows = clusters?.rows || [];
   const rows = [];
-  host.querySelectorAll("[data-carrier-cluster-row]").forEach((tr) => {
+  host.querySelectorAll("[data-carrier-cluster-row]").forEach((tr, position) => {
     const index = Number.parseInt(tr.dataset.carrierClusterRow || "0", 10);
     const source = sourceRows[index] || {};
     const row = { ...source };
     tr.querySelectorAll("[data-carrier-cluster-field]").forEach((input) => {
       const key = input.dataset.carrierClusterField;
       if (!key) return;
-      row[key] = key === "clusterGroup" ? allocationCarrierClusterText(input.value) : allocationCarrierClusterNumber(input.value);
+      if (key === "startSeq" || key === "endSeq") {
+        row[key] = allocationCarrierClusterNumber(input.value);
+      } else {
+        row[key] = allocationCarrierClusterText(input.value);
+      }
     });
+    // Radordningen efter drag bestämmer ordningen.
+    row.assignmentOrder = String(position + 1);
     rows.push(row);
   });
   return normalizeAllocationCarrierClusters({ ...clusters, rows });

@@ -104,6 +104,30 @@ def _dominant_transportor(series: pd.Series) -> str:
     return _clean_transportor(mode.iloc[0])
 
 
+def _find_customer_name_col(df: pd.DataFrame) -> str | None:
+    """Hitta kundnamnskolumnen i orderdetaljerna (tolerant mot ASK-varianter)."""
+    candidates = ("kund.1", "kund namn", "kundnamn", "custom desc", "customer name")
+    lookup = {_ascii_fold(col): col for col in df.columns}
+    for candidate in candidates:
+        match = lookup.get(candidate)
+        if match is not None:
+            return match
+    return None
+
+
+def _dominant_customer_by_group(orders: pd.DataFrame, name_col: str | None) -> pd.DataFrame:
+    """Per Sandningsnr (grupp): valj kunden med storst andel pallplatser och dess namn."""
+    work = orders[["grupp", "Kund", "pall_estimate_rad"]].copy()
+    work["_kundnamn"] = orders[name_col].astype(str).str.strip() if name_col else ""
+    grouped = (
+        work.groupby(["grupp", "Kund"], dropna=False)
+        .agg(_pall=("pall_estimate_rad", "sum"), _kundnamn=("_kundnamn", "first"))
+        .reset_index()
+        .sort_values(["grupp", "_pall"], ascending=[True, False])
+    )
+    return grouped.groupby("grupp", sort=False).first()
+
+
 def _ascii_fold(value: object) -> str:
     text = "" if value is None else str(value)
     return (
@@ -436,6 +460,10 @@ def build_inference_features(
         ),
     ).reset_index()
 
+    dominant_customer = _dominant_customer_by_group(orders, _find_customer_name_col(orders))
+    feats["kund"] = feats["grupp"].map(dominant_customer["Kund"]).fillna(feats["kund"])
+    feats["kundnamn"] = feats["grupp"].map(dominant_customer["_kundnamn"]).fillna("").astype(str)
+
     feats["kund_max_hojd"] = feats["kund_max_hojd"].fillna(280)
     feats["kund_postnr_prefix2"] = feats["kund_postnr_prefix2"].fillna(0)
     feats["kund_postnr_prefix3"] = feats["kund_postnr_prefix3"].fillna(0)
@@ -587,6 +615,7 @@ def run_forecast(
     out_cols = [
         "grupp",
         "kund",
+        "kundnamn",
         "orderdatum",
         "ordernummer",
         "n_ordrar",
@@ -605,6 +634,7 @@ def run_forecast(
         columns={
             "grupp": "Sändningsnr",
             "kund": "Kund",
+            "kundnamn": "Kundnamn",
             "orderdatum": "Orderdatum",
             "ordernummer": "Ordernummer",
             "n_ordrar": "Antal order",

@@ -554,6 +554,10 @@ Den publika Meta-uppladdningen later anvandaren valja manga bilder/videor pa en 
 
 Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster och skickar klustren som `carrier_clusters` i Forecast-sessionen. Forecast-resultatet visar `Redigera kluster`, dar anvandaren kan andra kluster, UTL-fran/till och ordning innan `Kor Ytgenerering`. Ytgenerering tar emot den redigerade `carrier_clusters_json`, grupperar transportorer med samma `cluster_group` och placerar sandningar inom respektive klusters UTL-intervall innan kartan visas.
 
+## [2026-06-01] fix | Forecast ignorerar orderstatus 11
+
+Forecast filtrerar nu orderoversikten efter senaste orderhuvud per `Ordernr` och ignorerar ordrar med `Status=11`. Det gor att matchande rader i Detalj Kundorder ocksa faller bort nar Forecast inner-joinar orderdetaljer mot orderoversikten, sa stoppade/avvikande status-11-ordrar inte skapar sandningar eller pallplatsprognos.
+
 ## [2026-06-01] feature | Kortkommandon i Ytgenerering-kartan
 
 Ytgenerering-kartan i Bearbeta kan nu fa fokus och hanterar `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa vald placering, klistra in den pa vald UTL-yta och angra senaste kartandringen. Kortkommandona anvander samma flytt-/byteslogik som drag i kartan och visar toastar nar anvandaren kopierar, klipper, klistrar in eller angrar.
@@ -569,3 +573,7 @@ Ytgenerering-kartans knappar, sökfält, detaljrad, översikt, toastar och juste
 ## [2026-06-01] fix | Kärnfiler blir serverns sanning
 
 Kärnfiluppladdningar känner nu igen `location-...`, `lagerplats-...` och `lagerplatser-...` som samma `location`-underlag. När en ny kärnfil sparas i databasen tas äldre lokala fallbackfiler för samma verksamhet och filtyp bort, och Uppladdningar läser kärnfilstatus från servern utan GET-cache så gamla lokala filer inte kan se ut som sanning.
+
+## [2026-06-01] feature | Ytgenerering: kundnamn, klusterfärger och saknade kunder
+
+Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudtext på ytorna med en vit kontrast-halo för bättre läsbarhet. Forecast-tabellen får en `Kundnamn`-kolumn och kartans payload bär `customer`/`customerNum` per placering och i listan över ej placerade sändningar. Färgen baseras på transportör men ett kluster delar basnyans och varje transportör i klustret får en egen ljushet (`allocationClusterColorMap`). Kluster-editorn (`Redigera kluster`) är ombyggd som referensdemons *Advanced settings*-tabell med drag-sortering, ASN/Arrive/Depart, Group, Start/End seq och färgväljare; tiderna seedas med demons standardvärden och sparas i `carrier_clusters`. En `Saknade kunder`-panel listar ej placerade sändningar. `ytgeneringdemo/` är endast referens – ingen kod eller sökväg dit.

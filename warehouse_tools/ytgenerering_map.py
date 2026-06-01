@@ -84,6 +84,27 @@ def _forecast_order_numbers(forecast_df: pd.DataFrame) -> dict[str, list[str]]:
     return orders
 
 
+def _forecast_customers(forecast_df: pd.DataFrame) -> dict[str, dict[str, str]]:
+    """Mappa Sandningsnr -> {customer, customerNum} ur forecast-tabellen."""
+    if forecast_df.empty:
+        return {}
+    shipment_col = _find_col(forecast_df, ("Sandningsnr", "Grupp", "Shipment"), required=False)
+    name_col = _find_col(forecast_df, ("Kundnamn", "Kund namn", "Customer"), required=False)
+    num_col = _find_col(forecast_df, ("Kund", "Kundnr", "Custom Num"), required=False)
+    if not shipment_col or (not name_col and not num_col):
+        return {}
+    customers: dict[str, dict[str, str]] = {}
+    for _, row in forecast_df.iterrows():
+        shipment = _text(row.get(shipment_col))
+        if not shipment or shipment in customers:
+            continue
+        customers[shipment] = {
+            "customer": _text(row.get(name_col)) if name_col else "",
+            "customerNum": _text(row.get(num_col)) if num_col else "",
+        }
+    return customers
+
+
 def build_ytgenerering_map_payload(
     assignments_df: pd.DataFrame,
     unplaced_df: pd.DataFrame,
@@ -144,6 +165,7 @@ def build_ytgenerering_map_payload(
     unused_col = _find_col(assignments_df, ("Outnyttjad kapacitet", "Unused capacity"), required=False)
     placement_col = _find_col(assignments_df, ("Placering nr", "Placement"), required=False)
     order_numbers = _forecast_order_numbers(forecast_df)
+    customers = _forecast_customers(forecast_df)
 
     assignments: list[dict[str, object]] = []
     if assignment_location_col:
@@ -152,12 +174,15 @@ def build_ytgenerering_map_payload(
             shipment = _text(row.get(shipment_col)) if shipment_col else ""
             placed = _number(row.get(placed_col)) if placed_col else 0.0
             max_pall = _number(row.get(max_col)) if max_col else capacity_by_location.get(location, 0.0)
+            customer = customers.get(shipment, {})
             assignments.append(
                 {
                     "id": f"{index + 1}:{shipment}:{location}",
                     "shipment": shipment,
                     "carrier": _text(row.get(carrier_col)) if carrier_col else "",
                     "cluster": _text(row.get(cluster_col)) if cluster_col else "",
+                    "customer": customer.get("customer", ""),
+                    "customerNum": customer.get("customerNum", ""),
                     "location": location,
                     "placedPallets": round(placed, 2),
                     "shipmentPallets": round(_number(row.get(shipment_pallets_col)), 2)
@@ -197,7 +222,20 @@ def build_ytgenerering_map_payload(
             "maxY": max(float(loc["y"]) + float(loc["h"]) for loc in locations),
         }
 
-    unplaced = unplaced_df.to_dict("records") if not unplaced_df.empty else []
+    unplaced = []
+    if not unplaced_df.empty:
+        unplaced_shipment_col = _find_col(unplaced_df, ("Sandningsnr", "Grupp", "Shipment"), required=False)
+        unplaced_carrier_col = _find_col(unplaced_df, ("Transportor", "Carrier"), required=False)
+        unplaced_pall_col = _find_col(unplaced_df, ("Ej placerade pallplatser", "Pallplatser"), required=False)
+        for record in unplaced_df.to_dict("records"):
+            shipment = _text(record.get(unplaced_shipment_col)) if unplaced_shipment_col else ""
+            customer = customers.get(shipment, {})
+            record["shipment"] = shipment
+            record["carrier"] = _text(record.get(unplaced_carrier_col)) if unplaced_carrier_col else ""
+            record["customer"] = customer.get("customer", "")
+            record["customerNum"] = customer.get("customerNum", "")
+            record["unplacedPallets"] = _number(record.get(unplaced_pall_col)) if unplaced_pall_col else 0.0
+            unplaced.append(record)
     return {
         "key": "ytgenerering-map",
         "type": "warehouse-location-map",
