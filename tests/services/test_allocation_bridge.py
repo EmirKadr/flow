@@ -423,6 +423,7 @@ def test_allocation_run_flow_stores_session_owner(monkeypatch):
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
 
     result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=object()))
 
