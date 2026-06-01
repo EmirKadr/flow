@@ -96,6 +96,14 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         admin_page.locator("#area-focus-toggle").click(button="right")
         expect(admin_page.locator(".area-focus-menu")).to_be_visible()
         expect(admin_page.locator(".area-focus-menu button").first).to_be_visible()
+        admin_page.locator(".area-focus-menu").evaluate(
+            """(menu) => {
+                menu.scrollTop = 80;
+                menu.dispatchEvent(new Event("scroll", { bubbles: false }));
+                menu.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            }"""
+        )
+        expect(admin_page.locator(".area-focus-menu")).to_be_visible()
 
         admin_items = admin_page.locator(".area-focus-menu button").evaluate_all(
             """(nodes) => nodes.map((node) => ({ value: node.dataset.value, text: node.innerText }))"""

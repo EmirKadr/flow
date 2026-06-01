@@ -497,3 +497,7 @@ Verksamheters `∞`-lage styrs nu av ett aktivt omrade med kod `ANNAT` i respekt
 ## [2026-06-01] feature | Meta sändningsnummer från etiketter
 
 Meta-analysen har fått `shipment_number`/sändningsnummer i `meta_shipment_observations`, API-svaret och Super User-tabellen. Gemini-prompten beskriver nu både transportetikett och innehållsförteckning: `Sändnings-ID` på transportetiketten blir sändningsnummer, `Avs. ref.` kan bli ordernummer, `Godsmärks`/`Box ID` kan bli pall-id och innehållsförteckningens ordernummerlista kan användas när den är tydligare. `record_hash` räknas om med sändningsnummer så tabellraden fortsatt kopplas till rätt video och etikettdata.
+
+## [2026-06-01] fix | Scrollbar omradestoggle
+
+Sidebarens omradesmeny kan nu scrollas utan att stangas. `common.js` ignorerar scroll-event som kommer fran sjalva `.area-focus-menu`, stoppar klick/scroll inne i menyn fran att trigga dokumentets utanfor-klick och behaller stangning vid sidscroll, resize, Escape eller klick utanfor.

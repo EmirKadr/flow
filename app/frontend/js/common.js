@@ -530,13 +530,28 @@ function updateAreaFocusToggle(value = readAreaFocus()) {
 
 function closeAreaFocusMenu() {
   document.querySelector(".area-focus-menu")?.remove();
+  document.removeEventListener("click", handleAreaFocusMenuDocumentClick);
   document.removeEventListener("keydown", handleAreaFocusMenuKeydown);
   window.removeEventListener("resize", closeAreaFocusMenu);
-  window.removeEventListener("scroll", closeAreaFocusMenu, true);
+  window.removeEventListener("scroll", handleAreaFocusMenuWindowScroll, true);
 }
 
 function handleAreaFocusMenuKeydown(event) {
   if (event.key === "Escape") closeAreaFocusMenu();
+}
+
+function handleAreaFocusMenuDocumentClick(event) {
+  const menu = document.querySelector(".area-focus-menu");
+  const target = event.target;
+  if (menu && target?.nodeType && menu.contains(target)) return;
+  closeAreaFocusMenu();
+}
+
+function handleAreaFocusMenuWindowScroll(event) {
+  const menu = document.querySelector(".area-focus-menu");
+  const target = event.target;
+  if (menu && target?.nodeType && menu.contains(target)) return;
+  closeAreaFocusMenu();
 }
 
 function positionAreaFocusMenu(menu, event, anchor) {
@@ -611,6 +626,9 @@ function openAreaFocusMenu(event, user = null) {
   menu.className = "area-focus-menu";
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", "Välj områdesfokus");
+  menu.addEventListener("click", (event) => event.stopPropagation());
+  menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+  menu.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
   document.body.appendChild(menu);
 
   const options = areaFocusMenuOptions();
@@ -632,10 +650,10 @@ function openAreaFocusMenu(event, user = null) {
   }
 
   setTimeout(() => {
-    document.addEventListener("click", closeAreaFocusMenu, { once: true });
+    document.addEventListener("click", handleAreaFocusMenuDocumentClick);
     document.addEventListener("keydown", handleAreaFocusMenuKeydown);
     window.addEventListener("resize", closeAreaFocusMenu);
-    window.addEventListener("scroll", closeAreaFocusMenu, true);
+    window.addEventListener("scroll", handleAreaFocusMenuWindowScroll, true);
   });
 }
 

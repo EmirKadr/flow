@@ -26,7 +26,7 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 
 | Kontroll | Var | Vem får | Vad händer | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- | --- |
-| Områdestoggle | Sidebar footer | Alla inloggade | Vanligt klick stegar mellan fokuslagen; hogerklick oppnar omradesmenyn. Filtrerar vyer efter synliga områden och verksamhet | `common.js`, `flow-area-focus`, `/api/areas` | Gammalt lokalt fokus migreras från områdeskod till `AREA:<id>`. |
+| Områdestoggle | Sidebar footer | Alla inloggade | Vanligt klick stegar mellan fokuslagen; hogerklick oppnar omradesmenyn. Menyn kan scrollas nar manga omraden finns och stangs inte av scroll inne i menyn. Filtrerar vyer efter synliga områden och verksamhet | `common.js`, `flow-area-focus`, `/api/areas` | Gammalt lokalt fokus migreras från områdeskod till `AREA:<id>`. |
 | `∞` | Områdestoggle | Alla, men med olika scope | Vanliga användare får `∞` när egen verksamhet har aktivt `ANNAT`; Super User ser globalt allt | `areaFocusOptions`, `ANNAT`, business-scopeade API | Om `∞` saknas för en verksamhet: lägg till `ANNAT` i Verksamheter-vyn. |
 | Verksamheter | Sidebar | Super User | Oppnar lista over verksamheter och deras omraden | `verksamheter.html`, `businesses.js` | Saknas korrekt for vanliga anvandare. |
 | Ny verksamhet | Verksamheter | Super User | Skapar verksamhet med namn, sortering och aktiv-status. Kod skapas automatiskt från namnet | `POST /api/businesses` | Namn krävs. Om koden redan finns får den automatiskt suffix. |
