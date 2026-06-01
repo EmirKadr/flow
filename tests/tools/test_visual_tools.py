@@ -807,6 +807,8 @@ def test_bearbeta_area_focus_filter_contract():
     assert "Redigera kluster" in allocation
     assert "carrier_clusters_json" in allocation
     assert "openAllocationCarrierClusterModal" in allocation
+    assert "allocationCarrierClustersFromForecastTable" in allocation
+    assert "generated: true" in allocation
     assert "function allocationFlowsForCurrentView" in allocation
     assert 'window.addEventListener("flow:areaFocusChanged", handleAllocationAreaFocusChanged)' in allocation
 

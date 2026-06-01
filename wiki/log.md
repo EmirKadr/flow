@@ -558,6 +558,10 @@ Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster o
 
 Ytgenerering-kartan i Bearbeta kan nu fa fokus och hanterar `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa vald placering, klistra in den pa vald UTL-yta och angra senaste kartandringen. Kortkommandona anvander samma flytt-/byteslogik som drag i kartan och visar toastar nar anvandaren kopierar, klipper, klistrar in eller angrar.
 
+## [2026-06-01] fix | Klusterknapp visas utan trans_agency-rader
+
+Forecast-resultatet bygger nu en redigerbar klusterlista fran Forecast-tabellens unika transportorer nar `carrier_clusters` saknas i svaret. Det gor att `Redigera kluster` visas aven om transportorsfilen inte gav klusterrader, och sparade andringar skickas fortsatt som `carrier_clusters_json` till Ytgenerering.
+
 ## [2026-06-01] fix | Svenska tecken i Ytgenerering-kartan
 
 Ytgenerering-kartans knappar, sökfält, detaljrad, översikt, toastar och justerade karta-CSV använder nu svenska tecken i texter som `Återställ vy`, `Fullskärm`, `Sök UTL, sändning eller transportör`, `Över kapacitet`, `Sändningsnr` och `Transportör`.

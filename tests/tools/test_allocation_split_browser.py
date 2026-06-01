@@ -442,20 +442,7 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                             }
                         ],
                         "log": [],
-                        "artifact_keys": ["carrier_clusters", "forecast_json"],
-                        "carrier_clusters": {
-                            "rows": [
-                                {
-                                    "carrierNum": "42",
-                                    "description": "Akeri A - Parti",
-                                    "alias": "Akeri A",
-                                    "clusterGroup": "Freja",
-                                    "assignmentOrder": 9,
-                                    "startSeq": 600,
-                                    "endSeq": 652,
-                                }
-                            ]
-                        },
+                        "artifact_keys": ["forecast_json"],
                         "auto_downloads": [],
                     },
                     ensure_ascii=False,

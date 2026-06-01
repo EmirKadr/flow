@@ -548,6 +548,14 @@ function allocationCarrierClusterNumber(value) {
   return Number.isFinite(parsed) ? String(parsed) : "";
 }
 
+function allocationCarrierClusterKey(value) {
+  return allocationCarrierClusterText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function normalizeAllocationCarrierClusters(payload) {
   if (!payload) return null;
   const rows = Array.isArray(payload)
@@ -584,9 +592,46 @@ function normalizeAllocationCarrierClusters(payload) {
   return { version: 1, source, rows: normalizedRows };
 }
 
+function allocationCarrierClustersFromForecastTable(data) {
+  if (data?.flow_id !== "forecast") return null;
+  const tableEntry = (data.tables || []).find((entry) => entry.key === "forecast") || (data.tables || [])[0];
+  const table = tableEntry?.table || {};
+  const columns = Array.isArray(table.columns) ? table.columns : [];
+  const carrierIndex = columns.findIndex((column) => {
+    const key = allocationCarrierClusterKey(column);
+    return key === "transportor" || key === "carrier" || key === "agency";
+  });
+  if (carrierIndex < 0 || !Array.isArray(table.rows)) return null;
+  const seen = new Set();
+  const rows = [];
+  table.rows.forEach((row) => {
+    const carrier = allocationCarrierClusterText(Array.isArray(row) ? row[carrierIndex] : "");
+    const key = allocationCarrierClusterKey(carrier);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const order = rows.length + 1;
+    rows.push({
+      id: `forecast-${order}`,
+      description: carrier,
+      alias: carrier,
+      clusterGroup: carrier,
+      assignmentOrder: String(order),
+      startSeq: "",
+      endSeq: "",
+    });
+  });
+  return normalizeAllocationCarrierClusters({
+    version: 1,
+    source: { name: "Forecast", rowCount: rows.length, generated: true },
+    rows,
+  });
+}
+
 function allocationCarrierClustersForResult(data = allocationState.result?.data) {
   const fromData = normalizeAllocationCarrierClusters(data?.carrier_clusters);
   if (fromData?.rows?.length) return fromData;
+  const fromForecast = allocationCarrierClustersFromForecastTable(data);
+  if (fromForecast?.rows?.length) return fromForecast;
   return normalizeAllocationCarrierClusters(allocationState.carrierClusters);
 }
 
