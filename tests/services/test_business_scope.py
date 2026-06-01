@@ -11,7 +11,7 @@ from app.backend.routers.areas import create_area, delete_area, list_areas
 from app.backend.routers.businesses import create_business
 from app.backend.routers.overview import get_overview_revision
 from app.backend.routers.persons import create_person, get_person, list_persons, update_person
-from app.backend.routers.schedule import get_schedule_revision, update_cell
+from app.backend.routers.schedule import get_schedule, get_schedule_revision, get_summary, update_cell
 from app.backend.routers.settings import get_app_settings, update_app_settings
 from app.backend.routers.users import create_user, list_users, update_user
 from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BusinessCreate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
@@ -493,6 +493,80 @@ def test_public_api_defaults_to_stigamo_and_never_sums_globally(business_session
     assert "GG_PLOCK" in default_summary
     assert "R3_LEDIG" not in default_summary
     assert "R3_LEDIG" in r3_summary
+
+
+def test_schedule_area_view_includes_people_borrowed_by_activity_area(business_session):
+    session, data = business_session
+    mg = Area(business_id=data["stigamo"].id, code="MG", name="MG", sort_order=2)
+    session.add(mg)
+    session.flush()
+    mg_activity = Activity(
+        business_id=data["stigamo"].id,
+        code="MG_PLOCK",
+        label="MG Plock",
+        area_id=mg.id,
+        color="#dbeafe",
+        category="work",
+        sort_order=2,
+    )
+    session.add(mg_activity)
+    session.flush()
+    before = get_schedule_revision(
+        year=2026,
+        week=21,
+        weekday=1,
+        area_id=mg.id,
+        business_id=None,
+        db=session,
+        user=data["user"],
+    )["revision_key"]
+    session.add_all(
+        [
+            ScheduleCell(
+                year=2026,
+                week=21,
+                weekday=1,
+                hour=7,
+                minute_start=0,
+                minute_end=60,
+                person_id=data["stigamo_person"].id,
+                activity_id=mg_activity.id,
+                updated_by=data["user"].id,
+            ),
+            ScheduleCell(
+                year=2026,
+                week=21,
+                weekday=1,
+                hour=8,
+                minute_start=0,
+                minute_end=60,
+                person_id=data["stigamo_person"].id,
+                activity_id=data["stigamo_activity"].id,
+                updated_by=data["user"].id,
+            ),
+        ]
+    )
+    session.commit()
+
+    schedule = get_schedule(year=2026, week=21, weekday=1, area_id=mg.id, business_id=None, db=session, user=data["user"])
+    summary = get_summary(year=2026, week=21, weekday=1, area_id=mg.id, business_id=None, db=session, user=data["user"])
+    after = get_schedule_revision(
+        year=2026,
+        week=21,
+        weekday=1,
+        area_id=mg.id,
+        business_id=None,
+        db=session,
+        user=data["user"],
+    )["revision_key"]
+
+    assert [person.name for person in schedule.persons] == ["Stigamo Person"]
+    assert {(cell.hour, cell.activity_id) for cell in schedule.cells} == {
+        (7, mg_activity.id),
+        (8, data["stigamo_activity"].id),
+    }
+    assert [(row.activity_label, row.hours) for row in summary] == [("MG Plock", 1.0)]
+    assert after != before
 
 
 def test_planning_revision_keys_are_business_scoped_and_change_on_visible_cells(business_session):

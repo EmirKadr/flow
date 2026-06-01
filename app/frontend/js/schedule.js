@@ -176,7 +176,18 @@ function filterScheduleDataForArea(data, areaId) {
   }
 
   const selectedAreaId = Number(areaId);
-  const visiblePersons = persons.filter((person) => Number(person.home_area_id) === selectedAreaId);
+  const selectedAreaCellPersonIds = new Set(
+    cells
+      .filter((cell) => {
+        const activity = activityById(Number(cell.activity_id));
+        return activity && Number(activity.area_id) === selectedAreaId;
+      })
+      .map((cell) => Number(cell.person_id))
+  );
+  const visiblePersons = persons.filter((person) =>
+    Number(person.home_area_id) === selectedAreaId
+    || selectedAreaCellPersonIds.has(Number(person.id))
+  );
   const personIds = new Set(visiblePersons.map((person) => Number(person.id)));
   return {
     ...source,

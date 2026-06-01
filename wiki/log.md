@@ -1,7 +1,7 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-05-29
+updated: 2026-06-01
 tags: [wiki, logg]
 ---
 
@@ -573,6 +573,10 @@ Ytgenerering-kartans knappar, sökfält, detaljrad, översikt, toastar och juste
 ## [2026-06-01] fix | Kärnfiler blir serverns sanning
 
 Kärnfiluppladdningar känner nu igen `location-...`, `lagerplats-...` och `lagerplatser-...` som samma `location`-underlag. När en ny kärnfil sparas i databasen tas äldre lokala fallbackfiler för samma verksamhet och filtyp bort, och Uppladdningar läser kärnfilstatus från servern utan GET-cache så gamla lokala filer inte kan se ut som sanning.
+
+## [2026-06-01] fix | Bemanning visar lånade personer per aktivitetsområde
+
+Bemanningens områdesfilter visar nu en person i valt område om personen antingen har hemområdet där eller har en schemacell samma dag med en aktivitet som tillhör området. Summeringen räknar lånade personer på de explicita cellerna i valt område utan att dra med personens hemområdesmall till fel områdessummering.
 
 ## [2026-06-01] feature | Ytgenerering: kundnamn, klusterfärger och saknade kunder
 

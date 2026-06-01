@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
@@ -45,6 +45,10 @@ def _visible_schedule_persons(
     user: User,
     area_id: int | None = None,
     business_id: int | None = None,
+    *,
+    year: int | None = None,
+    week: int | None = None,
+    weekdays: list[int] | None = None,
 ) -> tuple[list[Person], int | None]:
     scoped_business_id = visible_business_id(db, user, business_id)
     persons_q = select(Person).where(Person.is_active.is_(True))
@@ -54,7 +58,23 @@ def _visible_schedule_persons(
         area = scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         if area.is_active is not True:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
-        persons_q = persons_q.where(Person.home_area_id == area_id)
+        assigned_person_ids = None
+        if year is not None and week is not None and weekdays:
+            assigned_person_ids = (
+                select(ScheduleCell.person_id)
+                .join(Activity, ScheduleCell.activity_id == Activity.id)
+                .where(
+                    ScheduleCell.year == year,
+                    ScheduleCell.week == week,
+                    ScheduleCell.weekday.in_(weekdays),
+                    Activity.area_id == area_id,
+                )
+                .distinct()
+            )
+        if assigned_person_ids is not None:
+            persons_q = persons_q.where(or_(Person.home_area_id == area_id, Person.id.in_(assigned_person_ids)))
+        else:
+            persons_q = persons_q.where(Person.home_area_id == area_id)
     persons_q = persons_q.order_by(Person.sort_order, Person.name)
     return db.execute(persons_q).scalars().all(), scoped_business_id
 
@@ -403,7 +423,15 @@ def get_schedule_revision(
         area_id = None
     if not isinstance(business_id, int):
         business_id = None
-    persons, _scoped_business_id = _visible_schedule_persons(db, user, area_id, business_id)
+    persons, _scoped_business_id = _visible_schedule_persons(
+        db,
+        user,
+        area_id,
+        business_id,
+        year=year,
+        week=week,
+        weekdays=[weekday],
+    )
     return {
         "year": year,
         "week": week,
@@ -548,17 +576,15 @@ def get_schedule(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("schedule", "view")),
 ) -> ScheduleOut:
-    scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active.is_(True))
-    if scoped_business_id is not None:
-        persons_q = persons_q.where(Person.business_id == scoped_business_id)
-    if area_id is not None:
-        area = scoped_get(db, Area, area_id, user, detail="Område hittades inte")
-        if area.is_active is not True:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
-        persons_q = persons_q.where(Person.home_area_id == area_id)
-    persons_q = persons_q.order_by(Person.sort_order, Person.name)
-    persons = db.execute(persons_q).scalars().all()
+    persons, scoped_business_id = _visible_schedule_persons(
+        db,
+        user,
+        area_id,
+        business_id,
+        year=year,
+        week=week,
+        weekdays=[weekday],
+    )
     person_ids = [p.id for p in persons]
 
     cells: list[ScheduleCell] = []
@@ -1332,17 +1358,21 @@ def get_summary(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("schedule", "view")),
 ) -> list[SummaryRow]:
-    scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active.is_(True))
-    if scoped_business_id is not None:
-        persons_q = persons_q.where(Person.business_id == scoped_business_id)
-    if area_id is not None:
-        area = scoped_get(db, Area, area_id, user, detail="Område hittades inte")
-        if area.is_active is not True:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
-        persons_q = persons_q.where(Person.home_area_id == area_id)
-    persons = db.execute(persons_q).scalars().all()
+    persons, scoped_business_id = _visible_schedule_persons(
+        db,
+        user,
+        area_id,
+        business_id,
+        year=year,
+        week=week,
+        weekdays=[weekday],
+    )
     person_ids = [person.id for person in persons]
+    home_area_person_ids = {
+        person.id
+        for person in persons
+        if area_id is None or person.home_area_id == area_id
+    }
 
     activity_query = db.query(Activity)
     area_query = db.query(Area)
@@ -1375,15 +1405,24 @@ def get_summary(
         for row in explicit_rows:
             duration = int(row.minute_end - row.minute_start)
             if row.activity_id is not None:
-                minutes_by_activity[row.activity_id] = (
-                    minutes_by_activity.get(row.activity_id, 0) + duration
+                activity = activities.get(row.activity_id)
+                count_for_area = (
+                    area_id is None
+                    or row.person_id in home_area_person_ids
+                    or (activity is not None and activity.area_id == area_id)
                 )
+                if count_for_area:
+                    minutes_by_activity[row.activity_id] = (
+                        minutes_by_activity.get(row.activity_id, 0) + duration
+                    )
             if row.activity_id is not None or row.empty_override:
                 key = (row.person_id, row.hour)
                 covered_minutes[key] = min(60, covered_minutes.get(key, 0) + duration)
 
         template_hours_map = get_template_hours_map(db, person_ids, [weekday])
         for person in persons:
+            if area_id is not None and person.id not in home_area_person_ids:
+                continue
             template_hours = template_hours_map.get((person.id, weekday))
             home_activity_id = home_activity_for(person)
             if template_hours is None or home_activity_id is None:

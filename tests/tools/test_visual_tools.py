@@ -872,6 +872,8 @@ def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     assert "SCHEDULE_REVALIDATE_ACTIVE_MS = 10000" in schedule
     assert "SCHEDULE_REVALIDATE_IDLE_MS = 30000" in schedule
     assert "patchScheduleFromAllData" in schedule
+    assert "selectedAreaCellPersonIds" in schedule
+    assert "Number(activity.area_id) === selectedAreaId" in schedule
     assert "overviewUrl(null)" in overview
     assert "overviewRevisionUrl(null)" in overview
     assert "OVERVIEW_REVALIDATE_ACTIVE_MS = 10000" in overview
