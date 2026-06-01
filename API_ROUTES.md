@@ -79,6 +79,8 @@ verksamheter.
 | `allocation.pool` | `GET` | `/api/allokering/pool` | Lista lagerverktygens uppladdningsslots |
 | `allocation.process_matrix_get` | `GET` | `/api/allokering/process-matrix` | Hämta Bearbeta-matris |
 | `allocation.process_matrix_update` | `PUT` | `/api/allokering/process-matrix` | Uppdatera Bearbeta-matris |
+| `allocation.map_layout_get` | `GET` | `/api/allokering/ytgenerering-map-layout` | Hamta Ytgenerering-kartlayout |
+| `allocation.map_layout_update` | `PUT` | `/api/allokering/ytgenerering-map-layout` | Uppdatera Ytgenerering-kartlayout |
 | `allocation.detect` | `POST` | `/api/allokering/detect` | Identifiera lagerverktygsfil |
 | `allocation.observations_update` | `POST` | `/api/allokering/observations/update` | Uppdatera observations från buffert |
 | `allocation.run_flow` | `POST` | `/api/allokering/flow/{flow_id}` | Kör lagerverktygsflöde |
@@ -86,6 +88,7 @@ verksamheter.
 | `allocation.table_column` | `GET` | `/api/allokering/table-column/{session_id}/{key}/{column_index}` | Hämta resultatkolumn |
 | `allocation.download` | `GET` | `/api/allokering/download/{session_id}/{key}` | Ladda ner Allokering-resultat |
 | `coredata.files` | `GET` | `/api/coredata/files` | Coredata-karnfiler fran Postgres/fallback och sammanstalld data for verksamheten |
+| `coredata.preview` | `GET` | `/api/coredata/files/{file_key}/preview` | Forhandsvisa coredata-karnfil eller sammanstalld data |
 | `coredata.upload_raw` | `POST` | `/api/coredata/files/raw` | Ladda upp coredata-karnfil till Postgres eller sammanstalld datafil |
 | `areas.list` | `GET` | `/api/areas` | Lista områden |
 | `areas.create` | `POST` | `/api/areas` | Skapa område |

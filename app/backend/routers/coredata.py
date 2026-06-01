@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import logging
 import os
 import re
@@ -16,6 +17,7 @@ from .. import audit
 from .. import allocation_bridge as bridge
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, user_business_id
 from ..coredata_service import (
+    CORE_DATA_SPEC_BY_KEY,
     CoreDataError,
     build_coredata_status,
     classify_coredata_file,
@@ -24,13 +26,19 @@ from ..coredata_service import (
 )
 from ..deps import get_db, require_allocation_tools_user, require_view_access
 from ..models import Business, User
-from ..productivity_service import build_productivity_compiled_data_status
+from ..productivity_service import (
+    COMPILED_PRODUCTIVITY_LOG_SPECS,
+    build_productivity_compiled_data_status,
+    productivity_compiled_log_path,
+)
 
 
 router = APIRouter(prefix="/api/coredata", tags=["coredata"])
 logger = logging.getLogger(__name__)
 ARTICLE_MAX_FILE_TYPE = "article_max"
 ARTICLE_MAX_PREFIXES = ("artikel_max", "article_max")
+CORE_DATA_PREVIEW_MAX_BYTES = 256 * 1024
+COMPILED_PRODUCTIVITY_LOG_BY_KEY = {spec.key: spec for spec in COMPILED_PRODUCTIVITY_LOG_SPECS}
 
 
 def _coredata_business_code(db: Session, user: User) -> str:
@@ -93,6 +101,70 @@ def _article_max_status(business_code: str) -> dict[str, Any]:
     )
     payload["kind"] = "compiled_data"
     return payload
+
+
+def _persistent_data_preview_path(file_key: str, business_code: str, db: Session | None = None) -> tuple[Path, dict[str, Any]]:
+    if file_key == ARTICLE_MAX_FILE_TYPE:
+        path = _article_max_path(business_code)
+        return path, {
+            "key": ARTICLE_MAX_FILE_TYPE,
+            "label": "artikel_max.csv",
+            "kind": "compiled_data",
+        }
+
+    productivity_spec = COMPILED_PRODUCTIVITY_LOG_BY_KEY.get(file_key)
+    if productivity_spec is not None:
+        path = productivity_compiled_log_path(productivity_spec.source_key, business_code=business_code)
+        return path, {
+            "key": productivity_spec.key,
+            "label": productivity_spec.label,
+            "kind": "compiled_data",
+        }
+
+    spec = CORE_DATA_SPEC_BY_KEY.get(file_key)
+    if spec is None:
+        raise CoreDataError("Okänd filtyp")
+    return find_coredata_file(file_key, business_code=business_code, db=db), {
+        "key": spec.key,
+        "label": spec.label,
+        "kind": "coredata",
+    }
+
+
+def _read_preview_bytes(path: Path, max_bytes: int = CORE_DATA_PREVIEW_MAX_BYTES) -> tuple[bytes, bool]:
+    opener = gzip.open if path.name.lower().endswith(".gz") else open
+    with opener(path, "rb") as handle:
+        data = handle.read(max_bytes + 1)
+    return data[:max_bytes], len(data) > max_bytes
+
+
+def _decode_preview_text(data: bytes) -> tuple[str, str]:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return data.decode(encoding), encoding
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace"), "utf-8-replace"
+
+
+def _persistent_data_preview_payload(file_key: str, business_code: str, db: Session | None = None) -> dict[str, Any]:
+    path, meta = _persistent_data_preview_path(file_key, business_code, db)
+    if not path.is_file():
+        raise CoreDataError("Filen hittades inte")
+    stat = path.stat()
+    preview_bytes, truncated = _read_preview_bytes(path)
+    text, encoding = _decode_preview_text(preview_bytes)
+    return {
+        **meta,
+        "name": path.name,
+        "size": stat.st_size,
+        "size_label": _format_size(stat.st_size),
+        "encoding": encoding,
+        "text": text,
+        "truncated": truncated,
+        "compressed": path.name.lower().endswith(".gz"),
+        "max_bytes": CORE_DATA_PREVIEW_MAX_BYTES,
+    }
 
 
 def _coredata_status(business_code: str, db: Session | None = None) -> dict[str, Any]:
@@ -197,6 +269,19 @@ def get_coredata_files(
 ) -> dict:
     business_code = _coredata_business_code(db, user)
     return _coredata_status(business_code, db)
+
+
+@router.get("/files/{file_key}/preview")
+def preview_coredata_file(
+    file_key: str,
+    user: User = Depends(require_view_access("allocationUploads", "view")),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    business_code = _coredata_business_code(db, user)
+    try:
+        return _persistent_data_preview_payload(file_key, business_code, db)
+    except CoreDataError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Filen hittades inte.") from exc
 
 
 @router.post("/files/raw")

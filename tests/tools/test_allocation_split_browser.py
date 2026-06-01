@@ -531,3 +531,97 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         assert "Freja Test" in captured["post_data"]
     finally:
         context.close()
+
+
+def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    captured = {}
+    base_layout = {
+        "version": 1,
+        "can_edit": True,
+        "locations": [
+            {"location": "UTL205", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 2},
+        ],
+        "defaults": [
+            {"location": "UTL205", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 2},
+        ],
+        "available_locations": [
+            {"location": "UTL205", "maxPall": 2},
+            {"location": "UTL206", "maxPall": 3},
+            {"location": "UTL207", "maxPall": 3},
+            {"location": "UTL208", "maxPall": 3},
+            {"location": "UTL209", "maxPall": 3},
+        ],
+    }
+    try:
+        login_admin(page, local_allocation_server)
+
+        def handle_map_layout(route):
+            if route.request.method == "PUT":
+                captured["payload"] = json.loads(route.request.post_data or "{}")
+                response_locations = captured["payload"].get("locations") or []
+            else:
+                response_locations = base_layout["locations"]
+            route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(
+                    {
+                        **base_layout,
+                        "locations": response_locations,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+        page.route("**/api/allokering/ytgenerering-map-layout**", handle_map_layout)
+        page.goto(f"{local_allocation_server}/installningar.html", wait_until="networkidle")
+        page.wait_for_selector(".allocation-map-settings-page-panel", timeout=15000)
+
+        expect(page.locator(".allocation-map-settings-list")).to_contain_text("UTL206")
+        expect(page.locator(".allocation-map-settings-list")).not_to_contain_text("UTL205")
+        page.click("[data-map-zoom-in]")
+        page.click("[data-map-zoom-out]")
+        page.fill("[data-map-series-start]", "206")
+        page.fill("[data-map-series-end]", "207")
+        page.fill("[data-map-series-max]", "3")
+        page.click("[data-map-add-series]")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL207")
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
+        expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
+        original_y = float(page.locator('[data-map-setting-rect="UTL206"]').get_attribute("y"))
+        page.click("[data-map-zoom-in]")
+        page.keyboard.press("ArrowDown")
+        moved_y = float(page.locator('[data-map-setting-rect="UTL206"]').get_attribute("y"))
+        assert moved_y > original_y
+        page.keyboard.press("Alt+ArrowUp")
+        fine_y = float(page.locator('[data-map-setting-rect="UTL206"]').get_attribute("y"))
+        assert fine_y == moved_y - 1
+        page.keyboard.press("Control+Z")
+        expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("y", str(int(moved_y)))
+        page.keyboard.press("Control+Z")
+        expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("y", str(int(original_y)))
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
+        page.keyboard.press("Control+C")
+        page.keyboard.press("Control+V")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL209")
+        page.keyboard.press("Control+Z")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL209")
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
+        page.keyboard.press("Delete")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL207")
+        page.keyboard.press("Control+Z")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL207")
+        page.click("[data-map-save]")
+
+        expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("sparade", timeout=15000)
+        locations = captured["payload"]["locations"]
+        assert [row["location"] for row in locations] == ["UTL205", "UTL206", "UTL207"]
+        assert locations[1]["maxPall"] == 3
+        assert locations[2]["x"] > locations[1]["x"]
+    finally:
+        context.close()

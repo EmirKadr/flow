@@ -43,6 +43,7 @@ _CATALOG_MODULE: ModuleType | None = None
 _DETECT_MODULE: ModuleType | None = None
 _NATIVE_FLOWS_MODULE: ModuleType | None = None
 _NATIVE_TABLES_MODULE: ModuleType | None = None
+_YTGENERERING_MAP_MODULE: ModuleType | None = None
 _LOAD_ERROR: str | None = None
 SESSIONS: dict[str, dict] = {}
 UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
@@ -166,6 +167,34 @@ def _native_flows() -> ModuleType:
 
 def _native_tables() -> ModuleType:
     return _load_light_module("warehouse_tools.native_tables", "_NATIVE_TABLES_MODULE")
+
+
+def _ytgenerering_map() -> ModuleType:
+    return _load_light_module("warehouse_tools.ytgenerering_map", "_YTGENERERING_MAP_MODULE")
+
+
+def ytgenerering_map_layout_payload(locations: object | None = None) -> dict[str, object]:
+    return _ytgenerering_map().map_layout_payload(locations)
+
+
+def normalize_ytgenerering_map_location_rows(value: object) -> list[dict[str, object]]:
+    return _ytgenerering_map().normalize_map_location_rows(value)
+
+
+def ytgenerering_location_option_rows(location_path: str | Path) -> list[dict[str, object]]:
+    flows_module = _flows()
+    locations = flows_module._read_prepared_locations(Path(location_path))
+    rows: list[dict[str, object]] = []
+    for row in locations.to_dict("records"):
+        location = str(row.get("Lagerplats") or "").strip().upper()
+        if not location:
+            continue
+        try:
+            max_pall = float(row.get("Max pall") or 0)
+        except (TypeError, ValueError):
+            max_pall = 0.0
+        rows.append({"location": location, "maxPall": round(max_pall, 2)})
+    return rows
 
 
 def _load_modules() -> tuple[ModuleType, ModuleType]:

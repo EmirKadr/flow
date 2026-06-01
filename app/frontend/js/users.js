@@ -32,6 +32,7 @@ const VIEW_ACCESS_OPTIONS = [
   { id: "allocationUploads", label: "Uppladdningar" },
   { id: "allocationProcess", label: "Bearbeta" },
   { id: "allocationProcessMatrix", label: "Bearbeta-matris" },
+  { id: "allocationSettings", label: "Inställningar" },
   { id: "allocationSplit", label: "Dela" },
   { id: "persons", label: "Personer" },
   { id: "personSortOrder", label: "Personsortering" },

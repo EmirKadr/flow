@@ -514,9 +514,12 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "id=\"theme-toggle\"" in common
     assert 'id="app-zoom-control"' in common
     assert 'id="app-zoom-out"' in common
-    assert 'id="app-zoom-reset"' in common
     assert 'id="app-zoom-in"' in common
+    assert 'id="app-zoom-reset"' not in common
+    assert 'cx="10.5"' in common
+    assert 'cy="10.5"' in common
     assert "Ctrl++" in common
+    assert 'key === "0"' in common
     assert 'window.addEventListener("wheel"' in common
     assert 'id="sidebar-edit"' in common
     assert "SIDEBAR_MOVE_UP_ICON" in common
@@ -645,6 +648,22 @@ def test_frontend_theme_toggle_is_wired_globally():
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
         assert 'src="/js/common.js?v=20260601-coredata-types"' in html
+
+
+def test_uploads_preview_is_available_for_local_and_persistent_files():
+    frontend = ROOT / "app" / "frontend"
+    allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+    coredata_router = (ROOT / "app" / "backend" / "routers" / "coredata.py").read_text(encoding="utf-8")
+
+    assert "data-preview-file-key" in allocation_tools
+    assert "openAllocationLocalFilePreview" in allocation_tools
+    assert "openAllocationPersistentFilePreview" in allocation_tools
+    assert "/api/coredata/files/${encodeURIComponent(key)}/preview" in allocation_tools
+    assert "Filförhandsvisning" in allocation_tools
+    assert "allocation-file-preview-modal" in styles
+    assert '@router.get("/files/{file_key}/preview")' in coredata_router
+    assert "_persistent_data_preview_payload" in coredata_router
 
 
 def test_data_fetch_plan_columns_are_user_editable():
@@ -779,6 +798,23 @@ def test_bearbeta_area_focus_filter_contract():
     assert 'canEditPage?.(allocationState.user, "allocationProcessMatrix")' in allocation
     assert 'id="allocation-process-matrix">Matris</button>' in allocation
     assert "openAllocationProcessMatrixModal" in allocation
+    assert '"settings") return "allocationSettings"' in allocation
+    assert "renderAllocationMapSettingsView" in allocation
+    assert "ytgenerering-map-layout" in allocation
+    assert "availableLocations" in allocation
+    assert "allocationMapLayoutSeriesRows" in allocation
+    assert "data-map-add-series" in allocation
+    assert "data-map-add-location" in allocation
+    assert "data-map-zoom-in" in allocation
+    assert "data-map-zoom-out" in allocation
+    assert "data-map-fit" in allocation
+    assert "data-map-settings-fullscreen" in allocation
+    assert "data-map-selection-count" in allocation
+    assert "handleMapSettingsKeydown" in allocation
+    assert "selectedLocations" in allocation
+    assert "allocation-map-settings-svg" in allocation
+    assert ".allocation-map-settings-page-panel" in styles
+    assert ".allocation-map-settings-fullscreen-button" in styles
     assert "allocation-process-matrix-table" in allocation
     assert "Ytgenerering UTL" in allocation
     assert "ytgenereringUtlMin" in allocation
@@ -788,8 +824,28 @@ def test_bearbeta_area_focus_filter_contract():
     assert "setupAllocationWarehouseMap" in allocation
     assert "data-map-export-ask" in allocation
     assert "requestFullscreen" in allocation
+    assert "minmax(340px, 440px)" in styles
+    assert "max-width: 260px" in styles
+    assert "allocation-map-fullscreen-button" in allocation
+    assert ".allocation-map-fullscreen-button" in styles
+    assert "data-map-unused-stripes" in allocation
+    assert "allocation-map-unused" in allocation
+    assert ".allocation-map-unused" in styles
+    assert "allocationMapShortLocation" in allocation
+    assert "allocationMapLabelLines" in allocation
+    assert 'document.createElementNS(ALLOCATION_MAP_NS, "tspan")' in allocation
+    assert "allocation-map-label-edge" in allocation
+    assert ".allocation-map-label-edge" in styles
+    assert "paint-order: stroke" not in styles
+    assert "stroke: rgba(255, 255, 255" not in styles
+    assert 'elements.metaText.textContent = "";' in allocation
+    assert '${assignment.placedPallets}/${assignment.maxPall || "?"} pall' not in allocation
+    assert 'patternTransform="rotate(45)"' in allocation
+    assert 'width="8" height="18" fill="#ffffff" opacity="0.78"' in allocation
+    assert "M-5 18L18 -5" not in allocation
     assert "Återställ vy" in allocation
     assert "Fullskärm" in allocation
+    assert ">Fullskärm</button>" not in allocation
     assert "Sök UTL, sändning eller transportör" in allocation
     assert "Över kapacitet" in allocation
     assert "Sändningsnr" in allocation
@@ -816,16 +872,18 @@ def test_bearbeta_area_focus_filter_contract():
         assert advanced_header in allocation
     assert 'type="color" class="adv-color"' in allocation
     assert "ALLOCATION_CLUSTER_DEFAULT_TIMES" in allocation
-    # Kundnamn på ytor + klusterfärger med nyanser.
+    # Kundnamn på ytor + klusterfärger med nyanser per transportör.
+    assert "assignment.customer || assignment.carrier" in allocation
     assert "function allocationClusterColorMap" in allocation
     assert "function allocationHslToHex" in allocation
-    assert "assignment.customer || assignment.carrier" in allocation
     # Saknade kunder-panelen byggd från ej placerade sändningar.
     assert "Saknade kunder" in allocation
     assert "data-map-missing-panel" in allocation
     assert "function renderMissingPanel" in allocation
     assert ".allocation-map-missing-panel" in styles
-    assert "paint-order: stroke" in styles
+    assert "function copyMapOverviewShipment" in allocation
+    assert "writeClipboardText(assignment.shipment)" in allocation
+    assert "Sändningsnummer kopierat" in allocation
     assert "function allocationFlowsForCurrentView" in allocation
     assert 'window.addEventListener("flow:areaFocusChanged", handleAllocationAreaFocusChanged)' in allocation
 
@@ -1262,6 +1320,7 @@ def test_allocation_pages_are_wired_to_shared_tool_shell():
     allocation_pages = {
         "uppladdningar.html": "uploads",
         "bearbeta.html": "process",
+        "installningar.html": "settings",
         "dela.html": "split",
     }
 

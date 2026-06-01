@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-jinja2>=3.1.5
-aiofiles
-pandas
-openpyxl
-python-multipart

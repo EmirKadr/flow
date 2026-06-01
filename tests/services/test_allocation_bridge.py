@@ -1,6 +1,7 @@
 import os
 import asyncio
 import io
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -629,11 +630,12 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(
-        allocation_router,
-        "get_json_setting",
-        lambda *args, **kwargs: {"MG": {"ytgenereringUtlMin": 310, "ytgenereringUtlMax": 330}},
-    )
+    def fake_get_json_setting(_db, key, **kwargs):
+        if key == allocation_router.ALLOCATION_PROCESS_MATRIX_KEY:
+            return {"MG": {"ytgenereringUtlMin": 310, "ytgenereringUtlMax": 330}}
+        return kwargs.get("default")
+
+    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
     monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -644,6 +646,96 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
     assert captured["params"][bridge.PROCESS_AREA_FOCUS_PARAM] == "MG"
     assert captured["params"][bridge.YTGENERERING_UTL_MIN_PARAM] == "310"
     assert captured["params"][bridge.YTGENERERING_UTL_MAX_PARAM] == "330"
+    assert captured["params"]["__ytgenerering_map_locations_json"] == "[]"
+
+
+def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL205\tU\t1\n", encoding="utf-8")
+    captured = {}
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="STIGAMO")
+
+        def query(self, model):
+            return FakeQuery(None)
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {"location": location_path}, {}, []
+
+    def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
+        captured["flow_id"] = flow_id
+        captured["params"] = dict(params)
+        return {"flow_id": flow_id, "tables": [], "summary": {}, "log": []}
+
+    saved_layout = {
+        "locations": [
+            {"location": "UTL207", "x": 0, "y": -40, "w": 240, "h": 80, "maxPall": 1.5},
+        ]
+    }
+
+    def fake_get_json_setting(_db, key, **kwargs):
+        if key == allocation_router.ALLOCATION_PROCESS_MATRIX_KEY:
+            return {}
+        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+            return saved_layout
+        return kwargs.get("default")
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
+    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
+
+    assert result["flow_id"] == "ytgenerering"
+    assert json.loads(captured["params"]["__ytgenerering_map_locations_json"]) == saved_layout["locations"]
+
+
+def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL300\tU\t2\nPL1\tP\t1\n", encoding="utf-8")
+    captured = {}
+    saved_layout = {
+        "locations": [
+            {"location": "UTL205", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 2},
+        ]
+    }
+
+    def fake_get_json_setting(_db, key, **kwargs):
+        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+            return saved_layout
+        return kwargs.get("default")
+
+    def fake_allocation_business_code(_db, _user, *, area_focus=None):
+        captured["area_focus"] = area_focus
+        return "STIGAMO"
+
+    def fake_find_coredata_file(coredata_type, *, business_code=None, db=None):
+        captured["coredata_type"] = coredata_type
+        captured["business_code"] = business_code
+        return location_path
+
+    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_router, "_allocation_business_code", fake_allocation_business_code)
+    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+
+    response = allocation_router.get_ytgenerering_map_layout(area_focus="MG", db=object(), user=user)
+
+    assert response["can_edit"] is True
+    assert response["locations"] == saved_layout["locations"]
+    assert response["available_locations"] == [{"location": "UTL300", "maxPall": 2.0}]
+    assert captured == {"area_focus": "MG", "coredata_type": "location", "business_code": "STIGAMO"}
 
 
 def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
@@ -1021,6 +1113,24 @@ def test_allocation_bridge_imports_warehouse_tools_when_started_from_app_root():
 
     assert result.returncode == 0, result.stderr
     assert "12.1.5" in result.stdout
+
+
+def test_backend_main_imports_when_started_from_app_root():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import backend.main; print('ok')",
+        ],
+        cwd=ROOT / "app",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
 
 
 def test_allocation_catalog_loads_without_pandas_when_started_from_app_root():

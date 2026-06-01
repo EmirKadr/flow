@@ -33,6 +33,7 @@ ROLE_VIEW_IDS = {
     "allocationUploads",
     "allocationProcess",
     "allocationProcessMatrix",
+    "allocationSettings",
     "allocationSplit",
     "persons",
     "personSortOrder",
@@ -79,6 +80,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "users": "edit",
         "appSettings": "edit",
         "allocationProcessMatrix": "edit",
+        "allocationSettings": "edit",
     },
     DEMO_ROLE: {
         "schedule": "edit",
@@ -92,6 +94,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "users": "edit",
         "appSettings": "edit",
         "allocationProcessMatrix": "edit",
+        "allocationSettings": "edit",
     },
     WAREHOUSE_CLERK_ROLE: {
         "allocationUploads": "edit",
@@ -233,7 +236,7 @@ def can_access_view(user: User, access: dict | None, view_id: str, min_level: st
 def can_use_allocation_tools(user: User, access: dict | None = None) -> bool:
     return any(
         can_access_view(user, access, view_id)
-        for view_id in ("allocationUploads", "allocationSplit", "allocationProcess")
+        for view_id in ("allocationUploads", "allocationSplit", "allocationProcess", "allocationSettings")
     )
 
 

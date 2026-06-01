@@ -78,6 +78,7 @@ Om anvandaren bara har `view`:
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
 - Bearbeta saknas eller nekas: rollen saknar `allocationProcess=edit` i vyatkomst. Lagerroller har som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
 - Matris-knappen i Bearbeta saknas: rollen saknar `allocationProcessMatrix=view`. Knappen visas lasande med `view` och kan spara forst med `allocationProcessMatrix=edit`; admin har `edit` som standard och Super User har alltid full atkomst.
+- Installningar saknas eller Ytgenereringens ytkarta inte kan sparas: rollen saknar `allocationSettings=view` eller `allocationSettings=edit`. Admin har `edit` som standard och Super User har alltid full atkomst.
 
 ## Kallor
 

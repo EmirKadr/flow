@@ -7,6 +7,12 @@ const ALLOCATION_WORK_STATE_PREFIX = "flow-allocation-work-state-v1:";
 const ALLOCATION_FILE_METADATA_CACHE_KEY = "flow-allocation-file-metadata-v1";
 const ALLOCATION_BOOT_CACHE_KEY = "flow-allocation-boot-cache-v1";
 const ALLOCATION_BOOT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const ALLOCATION_FILE_PREVIEW_MAX_BYTES = 256 * 1024;
+const ALLOCATION_FILE_PREVIEW_MAX_ROWS = 120;
+const ALLOCATION_FILE_PREVIEW_MAX_COLUMNS = 40;
+const ALLOCATION_FILE_PREVIEW_BINARY_EXTENSIONS = new Set([
+  ".xls", ".xlsx", ".xlsm", ".zip", ".parquet", ".pdf",
+]);
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus";
 const ALLOCATION_YTGENERERING_UTL_MIN = 1;
@@ -241,6 +247,7 @@ const ALLOCATION_AUTO_COPY_COLUMN_RULES = {
 };
 const ALLOCATION_PERSISTENT_DATA_FILES = {
   max_csv: {
+    key: "article_max",
     name: "artikel_max.csv",
     badge: ALLOCATION_COMPILED_DATA_LABEL,
     sizeLabel: ALLOCATION_COMPILED_DATA_LABEL,
@@ -300,6 +307,170 @@ function allocationEscape(value) {
   );
 }
 
+function allocationFileExtension(name) {
+  const lower = String(name || "").toLowerCase();
+  if (lower.endsWith(".csv.gz")) return ".csv.gz";
+  const dot = lower.lastIndexOf(".");
+  return dot >= 0 ? lower.slice(dot) : "";
+}
+
+function allocationFileLooksBinaryByName(name, type = "") {
+  const lowerType = String(type || "").toLowerCase();
+  if (lowerType.startsWith("text/") || lowerType.includes("csv") || lowerType.includes("json")) return false;
+  return ALLOCATION_FILE_PREVIEW_BINARY_EXTENSIONS.has(allocationFileExtension(name));
+}
+
+function allocationBytesLookBinary(bytes) {
+  const sampleLength = Math.min(bytes?.length || 0, 2048);
+  if (!sampleLength) return false;
+  let suspicious = 0;
+  for (let index = 0; index < sampleLength; index += 1) {
+    const value = bytes[index];
+    if (value === 0) return true;
+    if (value < 8 || (value > 13 && value < 32)) suspicious += 1;
+  }
+  return suspicious / sampleLength > 0.15;
+}
+
+function allocationDecodePreviewBytes(bytes) {
+  try {
+    return {
+      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      encoding: "utf-8",
+    };
+  } catch (_error) {
+    return {
+      text: new TextDecoder("windows-1252").decode(bytes),
+      encoding: "windows-1252",
+    };
+  }
+}
+
+function allocationParseDelimitedLine(line, delimiter) {
+  const cells = [];
+  let cell = "";
+  let quoted = false;
+  const text = String(line ?? "");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (quoted && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === delimiter && !quoted) {
+      cells.push(cell);
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+function allocationPreviewDelimiter(text) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(0, 20);
+  if (!lines.length) return "";
+  let bestDelimiter = "";
+  let bestScore = 0;
+  for (const delimiter of ["\t", ";", ","]) {
+    const score = lines.reduce((sum, line) => sum + Math.max(0, allocationParseDelimitedLine(line, delimiter).length - 1), 0);
+    if (score > bestScore) {
+      bestDelimiter = delimiter;
+      bestScore = score;
+    }
+  }
+  return bestScore >= Math.max(1, Math.floor(lines.length / 2)) ? bestDelimiter : "";
+}
+
+function allocationPreviewContentHtml(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized) return `<p class="allocation-file-preview-message">Filen är tom.</p>`;
+  const lines = normalized.split("\n").slice(0, ALLOCATION_FILE_PREVIEW_MAX_ROWS);
+  const delimiter = allocationPreviewDelimiter(normalized);
+  if (!delimiter) {
+    return `<pre class="allocation-file-preview-pre">${allocationEscape(lines.join("\n"))}</pre>`;
+  }
+  const rows = lines
+    .map((line) => allocationParseDelimitedLine(line, delimiter).slice(0, ALLOCATION_FILE_PREVIEW_MAX_COLUMNS))
+    .filter((row) => row.some((cell) => String(cell || "").trim()));
+  if (!rows.length || rows.every((row) => row.length <= 1)) {
+    return `<pre class="allocation-file-preview-pre">${allocationEscape(lines.join("\n"))}</pre>`;
+  }
+  const header = rows[0];
+  const bodyRows = rows.slice(1);
+  return `
+    <table class="allocation-file-preview-table">
+      <thead>
+        <tr>${header.map((cell, index) => `<th>${allocationEscape(cell || `Kolumn ${index + 1}`)}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${bodyRows.map((row) => `
+          <tr>${header.map((_cell, index) => `<td>${allocationEscape(row[index] ?? "")}</td>`).join("")}</tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function openAllocationFilePreviewModal(preview) {
+  document.querySelector("[data-allocation-preview-modal]")?.remove();
+  const objectUrl = preview.objectUrl || "";
+  const meta = [
+    preview.sizeLabel || allocationFileSize(preview.size),
+    preview.kind === "compiled_data" ? ALLOCATION_COMPILED_DATA_LABEL : preview.kind === "coredata" ? ALLOCATION_CORE_DATA_LABEL : "Vanlig fil",
+    preview.encoding ? `Text: ${preview.encoding}` : "",
+  ].filter(Boolean);
+  const content = preview.unsupported
+    ? `<p class="allocation-file-preview-message">Filen kan inte förhandsvisas direkt i appen. Öppna originalet för att se hela filen.</p>`
+    : allocationPreviewContentHtml(preview.text || "");
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.dataset.allocationPreviewModal = "true";
+  backdrop.innerHTML = `
+    <div class="modal wide allocation-file-preview-modal" role="dialog" aria-modal="true" aria-labelledby="allocationFilePreviewTitle">
+      <h2 id="allocationFilePreviewTitle">${allocationEscape(preview.title || preview.name || "Fil")}</h2>
+      <div class="allocation-file-preview-meta">
+        <strong>${allocationEscape(preview.name || preview.title || "Fil")}</strong>
+        ${meta.length ? `<span>${allocationEscape(meta.join(" · "))}</span>` : ""}
+      </div>
+      ${preview.truncated ? `<p class="allocation-status">Visar första delen av filen.</p>` : ""}
+      <div class="modal-table-scroll allocation-file-preview-scroll">
+        ${content}
+      </div>
+      <div class="actions">
+        ${objectUrl ? `<button type="button" data-open-preview-original>Öppna original</button>` : ""}
+        <button type="button" class="primary" data-close-preview>Stäng</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeyDown);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    backdrop.remove();
+  };
+  function onKeyDown(event) {
+    if (event.key === "Escape") close();
+  }
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+  backdrop.querySelectorAll("[data-close-preview]").forEach((button) => button.addEventListener("click", close));
+  backdrop.querySelector("[data-open-preview-original]")?.addEventListener("click", () => {
+    window.open(objectUrl, "_blank", "noopener");
+  });
+  document.addEventListener("keydown", onKeyDown);
+}
+
 function allocationLogicalKey(key) {
   return ALLOCATION_KEY_OVERRIDES[key] || key;
 }
@@ -320,6 +491,7 @@ function allocationPersistentStatusFile(key) {
   const kind = allocationDataKindForKey(fileType, entry);
   const badge = allocationDataBadge(kind);
   return {
+    key: fileType,
     name: entry.name || `${entry.prefix || fileType}.csv`,
     badge,
     sizeLabel: badge,
@@ -436,6 +608,7 @@ function allocationRequiredSessionId(flow) {
 function allocationPrimaryTitle(page) {
   if (page === "uploads") return "Uppladdningar";
   if (page === "process") return "Bearbeta";
+  if (page === "settings") return "Inställningar";
   if (page === "split") return "Dela";
   return "Allokering";
 }
@@ -443,6 +616,7 @@ function allocationPrimaryTitle(page) {
 function allocationPageActiveName(page) {
   if (page === "uploads") return "allocationUploads";
   if (page === "process") return "allocationProcess";
+  if (page === "settings") return "allocationSettings";
   if (page === "split") return "allocationSplit";
   return "allocationUploads";
 }
@@ -834,6 +1008,35 @@ async function loadStoredAllocationFiles() {
   });
 }
 
+async function loadStoredAllocationFileEntry(key) {
+  const db = await allocationDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(ALLOCATION_STORE, "readonly");
+    const request = tx.objectStore(ALLOCATION_STORE).get(key);
+    request.onsuccess = () => {
+      const item = request.result;
+      const blob = item?.blob;
+      db.close();
+      if (!item || !blob) {
+        resolve(null);
+        return;
+      }
+      resolve({
+        key: item.key,
+        name: item.name,
+        size: item.size || blob.size || 0,
+        type: item.type || blob.type || "",
+        lastModified: item.lastModified || Date.now(),
+        blob,
+      });
+    };
+    request.onerror = () => {
+      db.close();
+      reject(request.error);
+    };
+  });
+}
+
 async function saveAllocationFile(key, file) {
   const entry = {
     key,
@@ -862,6 +1065,88 @@ async function deleteAllocationFile(key) {
 function allocationFileForForm(entry) {
   if (!entry) return null;
   return entry.blob || entry.file || null;
+}
+
+async function readAllocationLocalFilePreview(entry) {
+  const file = allocationFileForForm(entry);
+  if (!file) throw new Error("Filen hittades inte lokalt.");
+  let unsupported = allocationFileLooksBinaryByName(entry.name, entry.type);
+  let text = "";
+  let encoding = "";
+  let truncated = false;
+  if (!unsupported) {
+    const buffer = await file.slice(0, ALLOCATION_FILE_PREVIEW_MAX_BYTES + 1).arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    truncated = bytes.length > ALLOCATION_FILE_PREVIEW_MAX_BYTES || Number(file.size || 0) > ALLOCATION_FILE_PREVIEW_MAX_BYTES;
+    const previewBytes = bytes.slice(0, ALLOCATION_FILE_PREVIEW_MAX_BYTES);
+    unsupported = allocationBytesLookBinary(previewBytes);
+    if (!unsupported) {
+      const decoded = allocationDecodePreviewBytes(previewBytes);
+      text = decoded.text;
+      encoding = decoded.encoding;
+    }
+  }
+  return {
+    name: entry.name,
+    title: allocationSlotLabel(entry.key),
+    size: entry.size || file.size || 0,
+    sizeLabel: allocationFileSize(entry.size || file.size || 0),
+    kind: "local",
+    text,
+    encoding,
+    truncated,
+    unsupported,
+    objectUrl: URL.createObjectURL(file),
+  };
+}
+
+async function openAllocationLocalFilePreview(slotKey) {
+  const key = allocationLogicalKey(slotKey);
+  let entry = allocationState.files[key];
+  if (!entry || !allocationFileForForm(entry)) {
+    entry = await loadStoredAllocationFileEntry(key);
+    if (entry) allocationState.files[key] = entry;
+  }
+  if (!entry) throw new Error("Filen hittades inte lokalt.");
+  openAllocationFilePreviewModal(await readAllocationLocalFilePreview(entry));
+}
+
+async function openAllocationPersistentFilePreview(fileKey) {
+  const key = String(fileKey || "").trim();
+  if (!key) return;
+  const preview = await allocationJson(`/api/coredata/files/${encodeURIComponent(key)}/preview`, {
+    skipCache: true,
+    logGetUserEvent: true,
+    logLabel: "Filförhandsvisning",
+  });
+  openAllocationFilePreviewModal({
+    title: preview.label || preview.name || key,
+    name: preview.name || key,
+    size: Number(preview.size || 0),
+    sizeLabel: preview.size_label || "",
+    kind: preview.kind || "coredata",
+    text: preview.text || "",
+    encoding: preview.encoding || "",
+    truncated: Boolean(preview.truncated),
+  });
+}
+
+async function handleAllocationPreviewClick(button) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Öppnar...";
+  try {
+    if (button.dataset.previewFileSource === "persistent") {
+      await openAllocationPersistentFilePreview(button.dataset.previewFileKey);
+    } else {
+      await openAllocationLocalFilePreview(button.dataset.previewFileKey);
+    }
+  } catch (error) {
+    showToast(error.message || "Kunde inte öppna filen.", "error", 7000);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 function allocationFileSize(size) {
@@ -940,7 +1225,9 @@ async function allocationJson(path, options = {}) {
         ? "Excel öppnad"
         : String(path).includes("/process-matrix")
           ? "Bearbeta-matris sparad"
-          : "Bearbeta-anrop klart";
+          : String(path).includes("/ytgenerering-map-layout")
+            ? "Ytkarta sparad"
+            : "Bearbeta-anrop klart";
     const rows = Array.isArray(body?.tables) ? ` (${body.tables.length} tabeller)` : "";
     window.flowLog?.success(`${label}${rows}`, "Klart");
   }
@@ -1284,6 +1571,9 @@ function allocationFileRows(slots) {
     const entry = allocationState.files[slot.key];
     const persistentEntry = entry ? null : allocationPersistentDataFile(slot.key);
     const displayEntry = entry || persistentEntry;
+    const previewKey = entry ? slot.key : persistentEntry?.key || allocationLogicalKey(slot.key);
+    const previewSource = entry ? "local" : "persistent";
+    const canPreview = allocationState.page === "uploads";
     const sizeLabel = allocationDisplaySizeLabel(entry, persistentEntry);
     const inputId = `allocation-file-${slot.key}`;
     return `
@@ -1294,6 +1584,7 @@ function allocationFileRows(slots) {
         </div>
         <div class="allocation-file-actions">
           <span class="allocation-file-badge">${entry ? "Inlagd" : persistentEntry ? persistentEntry.badge : "Ej fil"}</span>
+          ${displayEntry && canPreview ? `<button type="button" data-preview-file-key="${allocationEscape(previewKey)}" data-preview-file-source="${allocationEscape(previewSource)}">Visa</button>` : ""}
           <label class="button-like" for="${inputId}">Välj</label>
           <input id="${inputId}" type="file" hidden data-slot="${allocationEscape(slot.key)}" />
           <button type="button" class="ghost danger" data-clear-slot="${allocationEscape(slot.key)}" ${entry ? "" : "disabled"}>×</button>
@@ -1340,6 +1631,9 @@ function bindAllocationCommonEvents(root) {
       await deleteAllocationFile(button.dataset.clearSlot);
       renderAllocationPage();
     });
+  });
+  root.querySelectorAll("[data-preview-file-key]").forEach((button) => {
+    button.addEventListener("click", () => handleAllocationPreviewClick(button));
   });
   const dropTargets = root.querySelectorAll("[data-allocation-drop]");
   dropTargets.forEach((target) => {
@@ -1417,6 +1711,7 @@ function renderPersistentDataGroup(title, items) {
             </div>
             <div class="allocation-file-actions">
               <span class="allocation-file-badge">${item.uploaded ? allocationEscape(item.badge) : "Saknas"}</span>
+              ${item.uploaded ? `<button type="button" data-preview-file-key="${allocationEscape(item.key)}" data-preview-file-source="persistent">Visa</button>` : ""}
             </div>
           </div>
         `).join("")}
@@ -1746,25 +2041,41 @@ function renderResultMap(entry, index) {
           <button type="button" data-map-rotate>Rotera</button>
           <button type="button" data-map-export-csv>Ladda ner karta CSV</button>
           <button type="button" data-map-export-ask>Ladda ner justerad ASK</button>
-          <button type="button" data-map-fullscreen>Fullskärm</button>
         </div>
       </div>
       <div class="allocation-warehouse-map">
-        <button type="button" class="allocation-map-missing-toggle${missingCount ? " has-missing" : ""}" data-map-missing aria-pressed="false">
-          Saknade kunder${missingCount ? ` (${missingCount})` : ""}
-        </button>
-        <div class="allocation-map-missing-panel" data-map-missing-panel hidden></div>
-        <svg class="allocation-warehouse-map-svg" data-map-svg aria-label="${allocationEscape(entry?.label || "Ytkarta")}">
-          <defs>
-            <pattern data-map-grid id="allocation-map-grid-${index}" width="80" height="80" patternUnits="userSpaceOnUse">
-              <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#d8dee8" stroke-width="0.8"></path>
-            </pattern>
-          </defs>
-          <g data-map-rotate-group>
-            <rect width="100%" height="100%" fill="url(#allocation-map-grid-${index})"></rect>
-            <g data-map-canvas></g>
-          </g>
-        </svg>
+        <div class="allocation-map-stage">
+          <button type="button" class="allocation-map-missing-toggle${missingCount ? " has-missing" : ""}" data-map-missing aria-pressed="false">
+            Saknade kunder${missingCount ? ` (${missingCount})` : ""}
+          </button>
+          <button type="button" class="allocation-map-fullscreen-button" data-map-fullscreen title="Fullskärm" aria-label="Fullskärm">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 4H4v4"></path>
+              <path d="M4 4l6 6"></path>
+              <path d="M16 4h4v4"></path>
+              <path d="M20 4l-6 6"></path>
+              <path d="M4 16v4h4"></path>
+              <path d="M4 20l6-6"></path>
+              <path d="M20 16v4h-4"></path>
+              <path d="M20 20l-6-6"></path>
+            </svg>
+          </button>
+          <div class="allocation-map-missing-panel" data-map-missing-panel hidden></div>
+          <svg class="allocation-warehouse-map-svg" data-map-svg aria-label="${allocationEscape(entry?.label || "Ytkarta")}">
+            <defs>
+              <pattern data-map-grid id="allocation-map-grid-${index}" width="80" height="80" patternUnits="userSpaceOnUse">
+                <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#d8dee8" stroke-width="0.8"></path>
+              </pattern>
+              <pattern data-map-unused-stripes id="allocation-map-unused-stripes-${index}" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect x="0" y="0" width="8" height="18" fill="#ffffff" opacity="0.78"></rect>
+              </pattern>
+            </defs>
+            <g data-map-rotate-group>
+              <rect width="100%" height="100%" fill="url(#allocation-map-grid-${index})"></rect>
+              <g data-map-canvas></g>
+            </g>
+          </svg>
+        </div>
         <aside class="allocation-map-side">
           <div class="allocation-map-metrics" data-map-metrics></div>
           <input class="allocation-map-search" type="search" data-map-search placeholder="Sök UTL, sändning eller transportör" />
@@ -1820,6 +2131,37 @@ function allocationMapRound(value) {
   return Math.round(allocationMapNumber(value) * 100) / 100;
 }
 
+function allocationMapClamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function allocationMapShortLocation(value) {
+  return String(value || "").trim().replace(/^UTL/i, "") || String(value || "").trim();
+}
+
+function allocationMapEstimatedTextWidth(text, fontSize) {
+  return String(text || "").length * fontSize * 0.56;
+}
+
+function allocationMapLabelLines(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return [""];
+  const words = text.split(" ");
+  if (words.length < 2) return [text];
+  let best = [text];
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < words.length; index += 1) {
+    const left = words.slice(0, index).join(" ");
+    const right = words.slice(index).join(" ");
+    const score = Math.max(left.length, right.length) * 2 + Math.abs(left.length - right.length);
+    if (score < bestScore) {
+      best = [left, right];
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 function allocationMapLocationSortValue(value) {
   const match = String(value || "").match(/^UTL(\d+)(.*)$/i);
   if (!match) return [Number.MAX_SAFE_INTEGER, String(value || "")];
@@ -1868,6 +2210,8 @@ function setupAllocationWarehouseMap(host, entry) {
   const missingToggle = host.querySelector("[data-map-missing]");
   const missingPanel = host.querySelector("[data-map-missing-panel]");
   if (!svg || !canvas || !entry) return;
+  const unusedPattern = svg.querySelector("[data-map-unused-stripes]");
+  const unusedStripeFill = unusedPattern?.id ? `url(#${unusedPattern.id})` : "";
 
   const locations = (Array.isArray(entry.locations) ? entry.locations : [])
     .map((loc) => ({
@@ -2008,33 +2352,92 @@ function setupAllocationWarehouseMap(host, entry) {
   }
 
   function assignmentLabel(assignment) {
-    return assignment?.shipment || assignment?.carrier || assignment?.cluster || "placering";
+    return assignment?.customer || assignment?.shipment || assignment?.carrier || assignment?.cluster || "placering";
   }
 
-  function setMapText(textEl, loc, assignment) {
+  function setMapText(elements, loc, assignment) {
     const center = locationCenter(loc);
-    textEl.innerHTML = "";
-    textEl.setAttribute("x", center.x);
-    textEl.setAttribute("y", assignment ? center.y - 18 : center.y);
-    textEl.removeAttribute("transform");
-    const lines = assignment
-      ? [
-          { text: loc.location, cls: "allocation-map-label-sub" },
-          { text: assignment.customer || assignment.carrier || assignment.cluster || assignment.shipment, cls: "allocation-map-label-main" },
-          { text: `${assignment.placedPallets}/${assignment.maxPall || "?"} pall`, cls: "allocation-map-label-sub" },
-        ]
-      : [{ text: loc.location, cls: "allocation-map-label" }];
-    lines.forEach((line, index) => {
-      const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
-      span.setAttribute("x", center.x);
-      span.setAttribute("dy", index === 0 ? "0" : "18");
-      span.setAttribute("class", line.cls);
-      span.textContent = line.text;
-      textEl.appendChild(span);
-    });
-    if (loc.h > loc.w) {
-      textEl.setAttribute("transform", `rotate(-90, ${center.x}, ${center.y})`);
+    const horizontal = loc.w >= loc.h;
+    const shortSide = Math.max(1, Math.min(loc.w, loc.h));
+    const edgeBand = allocationMapClamp(shortSide * 0.55, 22, 44);
+    const shortLocation = allocationMapShortLocation(loc.location);
+    const label = assignment
+      ? (assignment.customer || assignment.carrier || assignment.cluster || assignment.shipment)
+      : shortLocation;
+    const labelLines = assignment ? allocationMapLabelLines(label) : [label];
+    const contentX = horizontal ? loc.x + edgeBand + Math.max(1, loc.w - edgeBand) / 2 : center.x;
+    const contentY = horizontal ? center.y : loc.y + edgeBand + Math.max(1, loc.h - edgeBand) / 2;
+    const contentWidth = Math.max(18, horizontal ? loc.w - edgeBand - 10 : loc.w - 10);
+    const contentHeight = Math.max(18, horizontal ? loc.h - 10 : loc.h - edgeBand - 10);
+    const mainFont = assignment
+      ? allocationMapClamp(contentHeight / (labelLines.length > 1 ? 2.45 : 1.85), 13, 22)
+      : allocationMapClamp(shortSide * 0.24, 11, 15);
+    const lineHeight = mainFont * 1.1;
+    const firstLineY = assignment ? contentY - ((labelLines.length - 1) * lineHeight) / 2 : center.y;
+
+    elements.edgeText.textContent = shortLocation;
+    elements.edgeText.style.display = assignment ? "" : "none";
+    elements.edgeText.style.fontSize = `${allocationMapClamp(shortSide * 0.34, 11, 22)}px`;
+    elements.edgeText.removeAttribute("transform");
+    elements.edgeText.removeAttribute("textLength");
+    elements.edgeText.removeAttribute("lengthAdjust");
+    const edgeFont = Number.parseFloat(elements.edgeText.style.fontSize) || 14;
+    if (allocationMapEstimatedTextWidth(shortLocation, edgeFont) > shortSide - 6) {
+      elements.edgeText.setAttribute("textLength", String(Math.max(8, Math.round(shortSide - 6))));
+      elements.edgeText.setAttribute("lengthAdjust", "spacingAndGlyphs");
     }
+    if (assignment) {
+      if (horizontal) {
+        const edgeX = loc.x + edgeBand / 2;
+        elements.edgeText.setAttribute("x", edgeX);
+        elements.edgeText.setAttribute("y", center.y);
+        elements.edgeText.setAttribute("transform", `rotate(-90, ${edgeX}, ${center.y})`);
+      } else {
+        elements.edgeText.setAttribute("x", center.x);
+        elements.edgeText.setAttribute("y", loc.y + edgeBand / 2);
+      }
+    }
+
+    elements.mainText.textContent = "";
+    elements.mainText.setAttribute("x", assignment ? contentX : center.x);
+    elements.mainText.setAttribute("y", firstLineY);
+    elements.mainText.setAttribute("class", assignment ? "allocation-map-label-main" : "allocation-map-label");
+    elements.mainText.style.fontSize = `${mainFont}px`;
+    elements.mainText.removeAttribute("textLength");
+    elements.mainText.removeAttribute("lengthAdjust");
+    labelLines.forEach((line, index) => {
+      const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
+      span.setAttribute("x", assignment ? contentX : center.x);
+      span.setAttribute("y", assignment ? firstLineY + index * lineHeight : center.y);
+      if (assignment && allocationMapEstimatedTextWidth(line, mainFont) > contentWidth) {
+        span.setAttribute("textLength", String(Math.round(contentWidth)));
+        span.setAttribute("lengthAdjust", "spacingAndGlyphs");
+      }
+      span.textContent = line;
+      elements.mainText.appendChild(span);
+    });
+
+    elements.metaText.textContent = "";
+    elements.metaText.style.display = "none";
+    elements.metaText.setAttribute("x", contentX);
+    elements.metaText.setAttribute("y", contentY);
+  }
+
+  function setUnusedCapacityStripe(unusedEl, loc, assignment) {
+    unusedEl.style.display = "none";
+    if (!assignment || !unusedStripeFill) return;
+    const capacity = allocationMapNumber(assignment.maxPall || loc.maxPall);
+    const placed = allocationMapNumber(assignment.placedPallets);
+    if (capacity <= 0 || placed >= capacity) return;
+    const fraction = allocationMapClamp((capacity - Math.max(0, placed)) / capacity, 0, 1);
+    if (fraction < 0.01) return;
+    const horizontal = loc.w >= loc.h;
+    unusedEl.setAttribute("x", loc.x);
+    unusedEl.setAttribute("y", loc.y);
+    unusedEl.setAttribute("width", horizontal ? loc.w * fraction : loc.w);
+    unusedEl.setAttribute("height", horizontal ? loc.h : loc.h * fraction);
+    unusedEl.setAttribute("fill", unusedStripeFill);
+    unusedEl.style.display = "";
   }
 
   function updateLocationVisual(location) {
@@ -2047,7 +2450,8 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.rect.classList.toggle("is-clipboard-source", state.clipboard?.source === location);
     elements.rect.classList.toggle("is-over-capacity", Boolean(assignment && assignment.unusedCapacity < -0.001));
     elements.rect.style.fill = assignment ? (colorMap.get(assignment.carrier) || "") : "";
-    setMapText(elements.text, loc, assignment);
+    setUnusedCapacityStripe(elements.unused, loc, assignment);
+    setMapText(elements, loc, assignment);
   }
 
   function renderMetrics() {
@@ -2135,6 +2539,17 @@ function setupAllocationWarehouseMap(host, entry) {
       state.transform.x = rect.width / 2 - centerPoint.x * state.transform.scale;
       state.transform.y = rect.height / 2 - centerPoint.y * state.transform.scale;
       applyTransform();
+    }
+  }
+
+  async function copyMapOverviewShipment(location) {
+    const assignment = assignmentByLocation.get(location);
+    if (!assignment?.shipment) return;
+    try {
+      await writeClipboardText(assignment.shipment);
+      showToast(`Sändningsnummer kopierat: ${assignment.shipment}`, "success", 1800);
+    } catch (error) {
+      showToast(error.message || "Kunde inte kopiera sändningsnumret.", "error", 5000);
     }
   }
 
@@ -2294,12 +2709,21 @@ function setupAllocationWarehouseMap(host, entry) {
       rect.setAttribute("height", loc.h);
       rect.setAttribute("class", "allocation-map-loc");
       rect.dataset.mapLocation = loc.location;
-      const text = document.createElementNS(ALLOCATION_MAP_NS, "text");
-      text.setAttribute("class", "allocation-map-text");
+      const unused = document.createElementNS(ALLOCATION_MAP_NS, "rect");
+      unused.setAttribute("class", "allocation-map-unused");
+      const edgeText = document.createElementNS(ALLOCATION_MAP_NS, "text");
+      edgeText.setAttribute("class", "allocation-map-label-edge");
+      const mainText = document.createElementNS(ALLOCATION_MAP_NS, "text");
+      mainText.setAttribute("class", "allocation-map-label-main");
+      const metaText = document.createElementNS(ALLOCATION_MAP_NS, "text");
+      metaText.setAttribute("class", "allocation-map-label-sub");
       group.appendChild(rect);
-      group.appendChild(text);
+      group.appendChild(unused);
+      group.appendChild(edgeText);
+      group.appendChild(mainText);
+      group.appendChild(metaText);
       canvas.appendChild(group);
-      state.locElements.set(loc.location, { group, rect, text });
+      state.locElements.set(loc.location, { group, rect, unused, edgeText, mainText, metaText });
     });
     refreshMap();
   }
@@ -2446,8 +2870,10 @@ function setupAllocationWarehouseMap(host, entry) {
   overview?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-map-overview-location]");
     if (!row) return;
+    const location = row.dataset.mapOverviewLocation;
     host.focus?.({ preventScroll: true });
-    selectLocation(row.dataset.mapOverviewLocation, true);
+    selectLocation(location, true);
+    void copyMapOverviewShipment(location);
   });
   search?.addEventListener("input", renderOverview);
   host.addEventListener("keydown", handleMapShortcut);
@@ -2798,6 +3224,846 @@ function canEditAllocationProcessMatrix() {
   return Boolean(window.canEditPage?.(allocationState.user, "allocationProcessMatrix") || allocationState.user?.is_super_user);
 }
 
+function canViewAllocationMapSettings() {
+  return Boolean(window.canViewPage?.(allocationState.user, "allocationSettings") || allocationState.user?.is_super_user);
+}
+
+function canEditAllocationMapSettings() {
+  return Boolean(window.canEditPage?.(allocationState.user, "allocationSettings") || allocationState.user?.is_super_user);
+}
+
+function normalizeAllocationMapLayout(payload) {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.locations)
+      ? payload.locations
+      : Array.isArray(payload?.rows)
+        ? payload.rows
+        : [];
+  const normalized = rows.map((row) => {
+    const location = String(row?.location || row?.lagerplats || row?.name || "").trim().toUpperCase();
+    const x = Math.round(allocationMapNumber(row?.x));
+    const y = Math.round(allocationMapNumber(row?.y));
+    const w = Math.max(1, Math.round(allocationMapNumber(row?.w ?? row?.width, 240)));
+    const h = Math.max(1, Math.round(allocationMapNumber(row?.h ?? row?.height, 80)));
+    const maxPall = allocationMapRound(row?.maxPall ?? row?.max_pall ?? 2);
+    if (!/^UTL\d+[A-ZÅÄÖ]?$/.test(location)) return null;
+    return { location, x, y, w, h, maxPall: maxPall > 0 ? maxPall : 2 };
+  }).filter(Boolean);
+  const byLocation = new Map();
+  normalized.forEach((row) => byLocation.set(row.location, row));
+  const locations = [...byLocation.values()].sort((a, b) => allocationMapCompareLocation(a.location, b.location));
+  const defaults = payload && !Array.isArray(payload) ? normalizeAllocationMapLayout(payload.defaults).locations : [];
+  const rawAvailable = payload && !Array.isArray(payload)
+    ? (payload.availableLocations || payload.available_locations || [])
+    : [];
+  const availableLocations = Array.isArray(rawAvailable)
+    ? rawAvailable.map((row) => {
+        const location = String(row?.location || row?.lagerplats || row?.name || "").trim().toUpperCase();
+        if (!/^UTL\d+[A-ZÅÄÖ]?$/.test(location)) return null;
+        const maxPall = allocationMapRound(row?.maxPall ?? row?.max_pall ?? 2);
+        return { location, maxPall: maxPall > 0 ? maxPall : 2 };
+      }).filter(Boolean).sort((a, b) => allocationMapCompareLocation(a.location, b.location))
+    : [];
+  return { version: 1, locations, defaults, availableLocations, canEdit: Boolean(payload?.can_edit) };
+}
+
+async function loadAllocationMapLayout() {
+  const focus = allocationProcessAreaCode();
+  const query = focus ? `?area_focus=${encodeURIComponent(focus)}` : "";
+  return normalizeAllocationMapLayout(await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`));
+}
+
+function allocationMapLayoutBounds(rows) {
+  if (!rows.length) return { minX: 0, minY: 0, maxX: 1200, maxY: 800, width: 1200, height: 800 };
+  const minX = Math.min(...rows.map((row) => row.x));
+  const minY = Math.min(...rows.map((row) => row.y));
+  const maxX = Math.max(...rows.map((row) => row.x + row.w));
+  const maxY = Math.max(...rows.map((row) => row.y + row.h));
+  const pad = 220;
+  return {
+    minX: minX - pad,
+    minY: minY - pad,
+    maxX: maxX + pad,
+    maxY: maxY + pad,
+    width: Math.max(800, maxX - minX + pad * 2),
+    height: Math.max(600, maxY - minY + pad * 2),
+  };
+}
+
+function allocationMapLayoutNextNumber(rows) {
+  const numbers = rows
+    .map((row) => String(row.location || "").match(/^UTL(\d+)/i))
+    .filter(Boolean)
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite);
+  return numbers.length ? Math.max(...numbers) + 1 : 1;
+}
+
+function allocationMapLayoutStep(row, direction, gap) {
+  if (direction === "left") return { dx: -(row.w + gap), dy: 0 };
+  if (direction === "up") return { dx: 0, dy: -(row.h + gap) };
+  if (direction === "down") return { dx: 0, dy: row.h + gap };
+  return { dx: row.w + gap, dy: 0 };
+}
+
+function allocationMapLayoutRectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function allocationMapLayoutAvoidCollision(rows, rect, direction, gap) {
+  const step = allocationMapLayoutStep(rect, direction, gap);
+  const placed = { ...rect };
+  let guard = 0;
+  while (rows.some((row) => allocationMapLayoutRectsOverlap(placed, row)) && guard < 300) {
+    placed.x += step.dx === 0 && step.dy === 0 ? rect.w + gap : step.dx;
+    placed.y += step.dy;
+    guard += 1;
+  }
+  placed.x = Math.round(placed.x / 10) * 10;
+  placed.y = Math.round(placed.y / 10) * 10;
+  return placed;
+}
+
+function allocationMapLayoutSelectedRow(rows, selectedLocation) {
+  return rows.find((row) => row.location === selectedLocation) || rows[rows.length - 1] || {
+    location: "UTL0",
+    x: 0,
+    y: 0,
+    w: 240,
+    h: 80,
+    maxPall: 2,
+  };
+}
+
+function allocationMapLayoutSeriesRows(rows, options) {
+  const start = Math.max(1, Number.parseInt(options.start, 10) || allocationMapLayoutNextNumber(rows));
+  const end = Math.max(1, Number.parseInt(options.end, 10) || start);
+  const direction = options.direction || "right";
+  const gap = Math.max(0, Number.parseInt(options.gap, 10) || 20);
+  const base = allocationMapLayoutSelectedRow(rows, options.selectedLocation);
+  const step = allocationMapLayoutStep(base, direction, gap);
+  const existing = new Set(rows.map((row) => row.location));
+  const availableByLocation = new Map((options.availableLocations || []).map((row) => [row.location, row]));
+  const useAvailableFilter = availableByLocation.size > 0;
+  const additions = [];
+  const count = Math.abs(end - start) + 1;
+  let cursor = { ...base, x: base.x + step.dx, y: base.y + step.dy };
+  for (let index = 0; index < count; index += 1) {
+    const number = start <= end ? start + index : start - index;
+    const location = `UTL${number}`;
+    if (existing.has(location)) {
+      const existingRow = rows.find((row) => row.location === location);
+      if (existingRow) cursor = { ...existingRow, x: existingRow.x + step.dx, y: existingRow.y + step.dy };
+      continue;
+    }
+    const available = availableByLocation.get(location);
+    if (useAvailableFilter && !available) continue;
+    const draft = {
+      location,
+      x: cursor.x,
+      y: cursor.y,
+      w: Math.max(1, Math.round(allocationMapNumber(options.w, base.w))),
+      h: Math.max(1, Math.round(allocationMapNumber(options.h, base.h))),
+      maxPall: allocationMapRound(options.maxPall || available?.maxPall || base.maxPall || 2),
+    };
+    const placed = allocationMapLayoutAvoidCollision([...rows, ...additions], draft, direction, gap);
+    additions.push(placed);
+    existing.add(location);
+    cursor = { ...placed, x: placed.x + step.dx, y: placed.y + step.dy };
+  }
+  return additions;
+}
+
+function renderAllocationMapSettingsView() {
+  renderAllocationShell(`
+    <section class="allocation-map-settings-page-panel">
+      <div id="allocation-map-settings-editor"><p class="allocation-muted">Laddar ytkarta...</p></div>
+    </section>
+  `);
+  void mountAllocationMapSettingsPage(document.getElementById("allocation-map-settings-editor"));
+}
+
+async function mountAllocationMapSettingsPage(editor) {
+  if (!editor) return;
+  const canEdit = canEditAllocationMapSettings();
+  let layout;
+  let rows = [];
+  let availableLocations = [];
+  let selectedLocation = "";
+  let selectedLocations = new Set();
+  let clipboardRows = [];
+  const undoStack = [];
+  let drag = null;
+  let pan = null;
+  let viewBox = null;
+  let statusText = "";
+  let ignoreNextMapClick = false;
+
+  try {
+    layout = await loadAllocationMapLayout();
+    rows = [...(layout.locations || [])];
+    availableLocations = [...(layout.availableLocations || [])];
+    selectedLocation = rows[0]?.location || "";
+    selectedLocations = selectedLocation ? new Set([selectedLocation]) : new Set();
+  } catch (error) {
+    editor.innerHTML = `<p class="allocation-status error">${allocationEscape(error.message || "Kunde inte läsa ytkartan.")}</p>`;
+    return;
+  }
+
+  function selectedRow() {
+    return rows.find((row) => row.location === selectedLocation) || null;
+  }
+
+  function cloneMapRows(sourceRows = rows) {
+    return sourceRows.map((row) => ({ ...row }));
+  }
+
+  function sortedMapRows(sourceRows = rows) {
+    return [...sourceRows].sort((a, b) => allocationMapCompareLocation(a.location, b.location));
+  }
+
+  function pushUndoSnapshot() {
+    if (!canEdit) return;
+    undoStack.push(cloneMapRows());
+    if (undoStack.length > 80) undoStack.shift();
+  }
+
+  function pruneSelection() {
+    const existing = new Set(rows.map((row) => row.location));
+    selectedLocations = new Set([...selectedLocations].filter((location) => existing.has(location)));
+    if (selectedLocation && !existing.has(selectedLocation)) selectedLocation = "";
+    if (!selectedLocation && selectedLocations.size) selectedLocation = [...selectedLocations][0];
+    if (!selectedLocations.size && rows.length) {
+      selectedLocation = rows[0].location;
+      selectedLocations = new Set([selectedLocation]);
+    }
+  }
+
+  function selectedRows() {
+    return rows.filter((row) => selectedLocations.has(row.location));
+  }
+
+  function setSelection(location, event = null, options = {}) {
+    if (!location || !rows.some((row) => row.location === location)) return;
+    const sorted = sortedMapRows();
+    if (event?.shiftKey && selectedLocation) {
+      const start = sorted.findIndex((row) => row.location === selectedLocation);
+      const end = sorted.findIndex((row) => row.location === location);
+      if (start >= 0 && end >= 0) {
+        const [from, to] = start < end ? [start, end] : [end, start];
+        selectedLocations = new Set(sorted.slice(from, to + 1).map((row) => row.location));
+      }
+    } else if (event?.ctrlKey || event?.metaKey) {
+      selectedLocations = new Set(selectedLocations);
+      if (selectedLocations.has(location) && selectedLocations.size > 1) selectedLocations.delete(location);
+      else selectedLocations.add(location);
+    } else if (!(options.keepExisting && selectedLocations.has(location))) {
+      selectedLocations = new Set([location]);
+    }
+    selectedLocation = location;
+  }
+
+  function syncSelectionVisuals() {
+    editor.querySelectorAll("[data-map-setting-rect]").forEach((item) => {
+      item.classList.toggle("is-selected", selectedLocations.has(item.dataset.mapSettingRect || ""));
+    });
+  }
+
+  function restoreMapRows(snapshot) {
+    rows = sortedMapRows(cloneMapRows(snapshot));
+    pruneSelection();
+    renderEditor();
+  }
+
+  function currentBounds() {
+    const sourceRows = rows.length ? rows : (layout.defaults || []);
+    return allocationMapLayoutBounds(sourceRows);
+  }
+
+  function ensureViewBox() {
+    if (!viewBox) {
+      const bounds = currentBounds();
+      viewBox = { x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height };
+    }
+    return viewBox;
+  }
+
+  function setSvgViewBox() {
+    const svg = editor.querySelector("[data-map-settings-svg]");
+    if (!svg || !viewBox) return;
+    svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+  }
+
+  function fitView() {
+    const bounds = currentBounds();
+    viewBox = { x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height };
+  }
+
+  function zoomView(factor, event) {
+    const svg = editor.querySelector("[data-map-settings-svg]");
+    const box = svg?.getBoundingClientRect();
+    const current = ensureViewBox();
+    const nextWidth = Math.max(260, Math.min(12000, current.width * factor));
+    const nextHeight = Math.max(180, Math.min(9000, current.height * factor));
+    let anchorX = current.x + current.width / 2;
+    let anchorY = current.y + current.height / 2;
+    if (box && event) {
+      anchorX = current.x + ((event.clientX - box.left) / Math.max(1, box.width)) * current.width;
+      anchorY = current.y + ((event.clientY - box.top) / Math.max(1, box.height)) * current.height;
+    }
+    const rx = (anchorX - current.x) / current.width;
+    const ry = (anchorY - current.y) / current.height;
+    viewBox = {
+      x: anchorX - nextWidth * rx,
+      y: anchorY - nextHeight * ry,
+      width: nextWidth,
+      height: nextHeight,
+    };
+    setSvgViewBox();
+  }
+
+  function availableNotMapped(options = {}) {
+    const placed = new Set(rows.map((row) => row.location));
+    const search = options.ignoreSearch
+      ? ""
+      : String(editor.querySelector("[data-map-location-search]")?.value || "").trim().toUpperCase();
+    return availableLocations
+      .filter((row) => !placed.has(row.location))
+      .filter((row) => !search || row.location.includes(search))
+      .sort((a, b) => allocationMapCompareLocation(a.location, b.location));
+  }
+
+  function updateSelectedFromInputs() {
+    const row = selectedRow();
+    if (!row || !canEdit) return;
+    pushUndoSnapshot();
+    const previousLocation = row.location;
+    const nextLocation = String(editor.querySelector("[data-map-setting-location]")?.value || row.location).trim().toUpperCase();
+    if (/^UTL\d+[A-ZÅÄÖ]?$/.test(nextLocation) && nextLocation !== row.location && !rows.some((item) => item.location === nextLocation)) {
+      row.location = nextLocation;
+      selectedLocation = nextLocation;
+      if (selectedLocations.has(previousLocation)) {
+        selectedLocations.delete(previousLocation);
+        selectedLocations.add(nextLocation);
+      }
+    }
+    row.x = Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-x]")?.value, row.x));
+    row.y = Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-y]")?.value, row.y));
+    row.w = Math.max(1, Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-w]")?.value, row.w)));
+    row.h = Math.max(1, Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-h]")?.value, row.h)));
+    row.maxPall = Math.max(0.1, allocationMapRound(editor.querySelector("[data-map-setting-max]")?.value || row.maxPall));
+    rows = sortedMapRows(rows);
+    renderEditor();
+  }
+
+  function baseRowForPlacement() {
+    return selectedRow() || rows[rows.length - 1] || layout.defaults?.[0] || {
+      location: "UTL0",
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 80,
+      maxPall: 2,
+    };
+  }
+
+  function addLocationRow(locationRow) {
+    if (!canEdit || !locationRow || rows.some((row) => row.location === locationRow.location)) return;
+    pushUndoSnapshot();
+    const base = baseRowForPlacement();
+    const direction = editor.querySelector("[data-map-series-direction]")?.value || "right";
+    const gap = Math.max(0, Number.parseInt(editor.querySelector("[data-map-series-gap]")?.value, 10) || 20);
+    const step = allocationMapLayoutStep(base, direction, gap);
+    const draft = {
+      location: locationRow.location,
+      x: base.x + step.dx,
+      y: base.y + step.dy,
+      w: base.w,
+      h: base.h,
+      maxPall: allocationMapRound(locationRow.maxPall || base.maxPall || 2),
+    };
+    const placed = allocationMapLayoutAvoidCollision(rows, draft, direction, gap);
+    rows = sortedMapRows([...rows, placed]);
+    selectedLocation = placed.location;
+    selectedLocations = new Set([placed.location]);
+    statusText = `${placed.location} tillagd.`;
+    renderEditor();
+  }
+
+  async function saveMapSettings(button) {
+    if (!canEdit) return;
+    button.disabled = true;
+    try {
+      const focus = allocationProcessAreaCode();
+      const query = focus ? `?area_focus=${encodeURIComponent(focus)}` : "";
+      const response = await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locations: rows }),
+      });
+      layout = normalizeAllocationMapLayout(response);
+      rows = [...layout.locations];
+      availableLocations = [...(layout.availableLocations || [])];
+      statusText = "Ytkartsinställningar sparade.";
+      showToast(statusText, "success", 2500);
+      renderEditor();
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || "Kunde inte spara ytkartan.", "error", 7000);
+    }
+  }
+
+  function selectedLocationText() {
+    return selectedRows().map((row) => row.location).join("\n");
+  }
+
+  function copySelection(mode = "copy") {
+    const picked = selectedRows();
+    if (!picked.length) return;
+    clipboardRows = cloneMapRows(picked);
+    void writeClipboardText(selectedLocationText()).catch(() => {});
+    statusText = mode === "cut"
+      ? `${picked.length} ytor klippta.`
+      : `${picked.length} ytor kopierade.`;
+    if (mode === "cut" && canEdit) {
+      pushUndoSnapshot();
+      const cutLocations = new Set(picked.map((row) => row.location));
+      rows = rows.filter((row) => !cutLocations.has(row.location));
+      selectedLocations = new Set();
+      selectedLocation = rows[0]?.location || "";
+      if (selectedLocation) selectedLocations.add(selectedLocation);
+    }
+    renderEditor();
+  }
+
+  function pasteSelection() {
+    if (!canEdit || !clipboardRows.length) return;
+    const free = availableNotMapped({ ignoreSearch: true });
+    const existing = new Set(rows.map((row) => row.location));
+    const minX = Math.min(...clipboardRows.map((row) => row.x));
+    const minY = Math.min(...clipboardRows.map((row) => row.y));
+    const base = selectedRow() || rows[rows.length - 1] || clipboardRows[0];
+    const additions = [];
+    let freeIndex = 0;
+    for (const source of clipboardRows) {
+      let nextLocation = source.location;
+      let nextMaxPall = source.maxPall;
+      if (existing.has(nextLocation)) {
+        const option = free[freeIndex];
+        if (!option) continue;
+        freeIndex += 1;
+        nextLocation = option.location;
+        nextMaxPall = option.maxPall || nextMaxPall;
+      }
+      const draft = {
+        ...source,
+        location: nextLocation,
+        x: base.x + 40 + (source.x - minX),
+        y: base.y + 40 + (source.y - minY),
+        maxPall: nextMaxPall,
+      };
+      const placed = allocationMapLayoutAvoidCollision([...rows, ...additions], draft, "right", 20);
+      additions.push(placed);
+      existing.add(placed.location);
+    }
+    if (!additions.length) {
+      statusText = "Inga lediga U-platser att klistra in på.";
+      renderEditor();
+      return;
+    }
+    pushUndoSnapshot();
+    rows = sortedMapRows([...rows, ...additions]);
+    selectedLocations = new Set(additions.map((row) => row.location));
+    selectedLocation = additions[additions.length - 1].location;
+    statusText = `${additions.length} ytor inklistrade.`;
+    renderEditor();
+  }
+
+  function deleteSelection() {
+    if (!canEdit || !selectedLocations.size) return;
+    pushUndoSnapshot();
+    const deletedCount = selectedLocations.size;
+    rows = rows.filter((row) => !selectedLocations.has(row.location));
+    selectedLocations = new Set();
+    selectedLocation = rows[0]?.location || "";
+    if (selectedLocation) selectedLocations.add(selectedLocation);
+    statusText = `${deletedCount} ytor borttagna.`;
+    renderEditor();
+  }
+
+  function undoMapSettings() {
+    const snapshot = undoStack.pop();
+    if (!snapshot) {
+      statusText = "Inget att ångra.";
+      renderEditor();
+      return;
+    }
+    statusText = "Ångrat.";
+    restoreMapRows(snapshot);
+  }
+
+  function moveSelectedRows(dx, dy) {
+    if (!canEdit || !selectedLocations.size) return;
+    pushUndoSnapshot();
+    rows.forEach((row) => {
+      if (!selectedLocations.has(row.location)) return;
+      row.x = Math.round(row.x + dx);
+      row.y = Math.round(row.y + dy);
+    });
+    statusText = `${selectedLocations.size} ytor flyttade.`;
+    renderEditor();
+  }
+
+  function selectAllRows() {
+    selectedLocations = new Set(rows.map((row) => row.location));
+    selectedLocation = rows[rows.length - 1]?.location || "";
+    renderEditor();
+  }
+
+  function isTextEditingTarget(target) {
+    const element = target instanceof Element ? target : null;
+    if (!element) return false;
+    return Boolean(element.closest("input, textarea, select, [contenteditable='true']"));
+  }
+
+  function handleMapSettingsKeydown(event) {
+    if (isTextEditingTarget(event.target)) return;
+    if (event.allocationMapSettingsHandled) return;
+    event.allocationMapSettingsHandled = true;
+    const key = String(event.key || "").toLowerCase();
+    const shortcut = event.ctrlKey || event.metaKey;
+    if (shortcut && key === "c") {
+      event.preventDefault();
+      copySelection("copy");
+      return;
+    }
+    if (shortcut && key === "x") {
+      event.preventDefault();
+      copySelection("cut");
+      return;
+    }
+    if (shortcut && key === "v") {
+      event.preventDefault();
+      pasteSelection();
+      return;
+    }
+    if (shortcut && key === "z") {
+      event.preventDefault();
+      undoMapSettings();
+      return;
+    }
+    if (shortcut && key === "a") {
+      event.preventDefault();
+      selectAllRows();
+      return;
+    }
+    if (key === "delete" || key === "backspace") {
+      event.preventDefault();
+      deleteSelection();
+      return;
+    }
+    const arrowSteps = {
+      arrowleft: [-1, 0],
+      arrowright: [1, 0],
+      arrowup: [0, -1],
+      arrowdown: [0, 1],
+    };
+    const arrow = arrowSteps[key];
+    if (arrow) {
+      event.preventDefault();
+      const step = event.altKey ? 1 : event.shiftKey ? 50 : 10;
+      moveSelectedRows(arrow[0] * step, arrow[1] * step);
+    }
+  }
+
+  function focusMapSettingsWorkspace() {
+    editor.querySelector("[data-map-settings-workspace]")?.focus({ preventScroll: true });
+  }
+
+  async function toggleMapSettingsFullscreen() {
+    const workspace = editor.querySelector("[data-map-settings-workspace]");
+    if (!workspace) return;
+    try {
+      if (document.fullscreenElement === workspace) {
+        await document.exitFullscreen?.();
+      } else {
+        await workspace.requestFullscreen?.();
+      }
+      focusMapSettingsWorkspace();
+    } catch (error) {
+      showToast("Kunde inte öppna fullskärm.", "error", 4000);
+    }
+  }
+
+  const documentKeydownHandler = (event) => {
+    if (!editor.isConnected) {
+      document.removeEventListener("keydown", documentKeydownHandler, true);
+      return;
+    }
+    handleMapSettingsKeydown(event);
+  };
+  document.addEventListener("keydown", documentKeydownHandler, true);
+
+  function renderEditor() {
+    const shouldRestoreWorkspaceFocus = editor.contains(document.activeElement) && !isTextEditingTarget(document.activeElement);
+    pruneSelection();
+    const row = selectedRow();
+    const pickedCount = selectedLocations.size;
+    const nextNumber = allocationMapLayoutNextNumber(rows);
+    const current = ensureViewBox();
+    const freeLocations = availableNotMapped();
+    editor.innerHTML = `
+      <div class="allocation-map-settings-workspace" data-map-settings-workspace tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Control+C Control+X Control+V Control+Z Delete">
+        <div class="allocation-map-settings-toolbar">
+          <label><span>Från</span><input type="number" min="1" max="652" step="1" data-map-series-start value="${nextNumber}" ${canEdit ? "" : "disabled"} /></label>
+          <label><span>Till</span><input type="number" min="1" max="652" step="1" data-map-series-end value="${nextNumber}" ${canEdit ? "" : "disabled"} /></label>
+          <label><span>Riktning</span>
+            <select data-map-series-direction ${canEdit ? "" : "disabled"}>
+              <option value="right">Höger</option>
+              <option value="left">Vänster</option>
+              <option value="up">Upp</option>
+              <option value="down">Ner</option>
+            </select>
+          </label>
+          <label><span>Gap</span><input type="number" min="0" step="10" data-map-series-gap value="20" ${canEdit ? "" : "disabled"} /></label>
+          <label><span>Max pall</span><input type="number" min="0.1" step="0.5" data-map-series-max value="${allocationEscape(row?.maxPall || 2)}" ${canEdit ? "" : "disabled"} /></label>
+          <button type="button" data-map-add-series ${canEdit ? "" : "disabled"}>Lägg till serie</button>
+          <button type="button" data-map-duplicate ${canEdit && row ? "" : "disabled"}>Lägg till nästa</button>
+          <button type="button" data-map-delete ${canEdit && pickedCount ? "" : "disabled"}>Ta bort vald</button>
+          <button type="button" data-map-reset-defaults ${canEdit ? "" : "disabled"}>Återställ standard</button>
+          <span class="allocation-map-settings-selection" data-map-selection-count>${pickedCount || 0} valda</span>
+          <span class="allocation-map-settings-toolbar-spacer"></span>
+          <button type="button" data-map-zoom-out>−</button>
+          <button type="button" data-map-fit>0</button>
+          <button type="button" data-map-zoom-in>+</button>
+          ${canEdit ? `<button type="button" class="primary" data-map-save>Spara</button>` : ""}
+        </div>
+        ${statusText ? `<p class="allocation-status">${allocationEscape(statusText)}</p>` : ""}
+        <div class="allocation-map-settings-canvas-grid">
+          <div class="allocation-map-settings-canvas">
+            <svg class="allocation-map-settings-svg" data-map-settings-svg viewBox="${current.x} ${current.y} ${current.width} ${current.height}" aria-label="Ytkartsinställningar">
+              <defs>
+                <pattern id="allocation-map-settings-grid" width="80" height="80" patternUnits="userSpaceOnUse">
+                  <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#d8dee8" stroke-width="0.8"></path>
+                </pattern>
+              </defs>
+              <rect data-map-pan-surface x="-100000" y="-100000" width="200000" height="200000" fill="url(#allocation-map-settings-grid)"></rect>
+              ${rows.map((item) => `
+                <g data-map-setting-node="${allocationEscape(item.location)}">
+                  <rect class="allocation-map-setting-loc${selectedLocations.has(item.location) ? " is-selected" : ""}" data-map-setting-rect="${allocationEscape(item.location)}" x="${item.x}" y="${item.y}" width="${item.w}" height="${item.h}"></rect>
+                  <text class="allocation-map-setting-label" x="${item.x + item.w / 2}" y="${item.y + item.h / 2}">${allocationEscape(item.location)}</text>
+                </g>
+              `).join("")}
+            </svg>
+            <button type="button" class="allocation-map-settings-fullscreen-button" data-map-settings-fullscreen title="Fullskärm" aria-label="Fullskärm">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 9V4h5"></path>
+                <path d="M20 9V4h-5"></path>
+                <path d="M4 15v5h5"></path>
+                <path d="M20 15v5h-5"></path>
+                <path d="M9 4 4 9"></path>
+                <path d="m15 4 5 5"></path>
+                <path d="m4 15 5 5"></path>
+                <path d="m20 15-5 5"></path>
+              </svg>
+            </button>
+          </div>
+          <aside class="allocation-map-settings-side">
+            ${row ? `
+              <div class="allocation-map-settings-fields">
+                <label><span>Yta</span><input data-map-setting-location value="${allocationEscape(row.location)}" ${canEdit ? "" : "disabled"} /></label>
+                <label><span>X</span><input type="number" step="10" data-map-setting-x value="${row.x}" ${canEdit ? "" : "disabled"} /></label>
+                <label><span>Y</span><input type="number" step="10" data-map-setting-y value="${row.y}" ${canEdit ? "" : "disabled"} /></label>
+                <label><span>Bredd</span><input type="number" min="1" step="10" data-map-setting-w value="${row.w}" ${canEdit ? "" : "disabled"} /></label>
+                <label><span>Höjd</span><input type="number" min="1" step="10" data-map-setting-h value="${row.h}" ${canEdit ? "" : "disabled"} /></label>
+                <label><span>Max pall</span><input type="number" min="0.1" step="0.5" data-map-setting-max value="${row.maxPall}" ${canEdit ? "" : "disabled"} /></label>
+              </div>
+            ` : `<p class="allocation-muted">Ingen yta vald.</p>`}
+            <div class="allocation-map-settings-list-head">
+              <strong>Lediga U-platser</strong>
+              <span>${freeLocations.length}/${availableLocations.length}</span>
+            </div>
+            <input data-map-location-search class="allocation-map-location-search" placeholder="Sök UTL" value="${allocationEscape(editor.querySelector("[data-map-location-search]")?.value || "")}" />
+            <div class="allocation-map-settings-list">
+              ${freeLocations.map((item) => `
+                <button type="button" data-map-add-location="${allocationEscape(item.location)}" ${canEdit ? "" : "disabled"}>
+                  <span>${allocationEscape(item.location)}</span><small>${allocationEscape(item.maxPall)} pall</small>
+                </button>
+              `).join("") || `<p class="allocation-muted">Inga lediga U-platser.</p>`}
+            </div>
+          </aside>
+        </div>
+      </div>
+    `;
+    bindEditor();
+    if (shouldRestoreWorkspaceFocus) {
+      editor.querySelector("[data-map-settings-workspace]")?.focus({ preventScroll: true });
+    }
+  }
+
+  function bindEditor() {
+    const workspace = editor.querySelector("[data-map-settings-workspace]");
+    workspace?.addEventListener("keydown", handleMapSettingsKeydown);
+    workspace?.addEventListener("pointerdown", () => workspace.focus());
+    editor.querySelectorAll("[data-map-setting-rect]").forEach((item) => {
+      item.addEventListener("click", (event) => {
+        if (ignoreNextMapClick) {
+          ignoreNextMapClick = false;
+          return;
+        }
+        setSelection(item.dataset.mapSettingRect || "", event);
+        renderEditor();
+        focusMapSettingsWorkspace();
+      });
+    });
+    editor.querySelectorAll("[data-map-setting-location], [data-map-setting-x], [data-map-setting-y], [data-map-setting-w], [data-map-setting-h], [data-map-setting-max]").forEach((input) => {
+      input.addEventListener("change", updateSelectedFromInputs);
+    });
+    editor.querySelector("[data-map-location-search]")?.addEventListener("input", renderEditor);
+    editor.querySelectorAll("[data-map-add-location]").forEach((button) => {
+      button.addEventListener("click", () => addLocationRow(availableLocations.find((row) => row.location === button.dataset.mapAddLocation)));
+    });
+    editor.querySelector("[data-map-add-series]")?.addEventListener("click", () => {
+      const base = baseRowForPlacement();
+      const additions = allocationMapLayoutSeriesRows(rows, {
+        selectedLocation,
+        start: editor.querySelector("[data-map-series-start]")?.value,
+        end: editor.querySelector("[data-map-series-end]")?.value,
+        direction: editor.querySelector("[data-map-series-direction]")?.value,
+        gap: editor.querySelector("[data-map-series-gap]")?.value,
+        maxPall: editor.querySelector("[data-map-series-max]")?.value,
+        w: base.w,
+        h: base.h,
+        availableLocations,
+      });
+      if (additions.length) {
+        pushUndoSnapshot();
+        rows = sortedMapRows([...rows, ...additions]);
+        selectedLocations = new Set(additions.map((row) => row.location));
+        selectedLocation = additions[additions.length - 1].location;
+      }
+      statusText = additions.length ? `${additions.length} ytor tillagda.` : "Inga lediga U-platser i intervallet.";
+      renderEditor();
+    });
+    editor.querySelector("[data-map-duplicate]")?.addEventListener("click", () => {
+      const firstFree = availableNotMapped()[0];
+      if (firstFree) addLocationRow(firstFree);
+    });
+    editor.querySelector("[data-map-delete]")?.addEventListener("click", deleteSelection);
+    editor.querySelector("[data-map-reset-defaults]")?.addEventListener("click", () => {
+      pushUndoSnapshot();
+      rows = [...(layout.defaults || [])];
+      selectedLocation = rows[0]?.location || "";
+      selectedLocations = selectedLocation ? new Set([selectedLocation]) : new Set();
+      fitView();
+      statusText = "Standardytor återställda.";
+      renderEditor();
+    });
+    editor.querySelector("[data-map-save]")?.addEventListener("click", (event) => saveMapSettings(event.currentTarget));
+    editor.querySelector("[data-map-zoom-in]")?.addEventListener("click", () => zoomView(0.78));
+    editor.querySelector("[data-map-zoom-out]")?.addEventListener("click", () => zoomView(1.28));
+    editor.querySelector("[data-map-settings-fullscreen]")?.addEventListener("click", toggleMapSettingsFullscreen);
+    editor.querySelector("[data-map-fit]")?.addEventListener("click", () => {
+      fitView();
+      renderEditor();
+    });
+
+    const svg = editor.querySelector("[data-map-settings-svg]");
+    svg?.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      zoomView(event.deltaY < 0 ? 0.88 : 1.12, event);
+    }, { passive: false });
+    svg?.addEventListener("pointerdown", (event) => {
+      const rect = event.target.closest("[data-map-setting-rect]");
+      if (rect && canEdit) {
+        const row = rows.find((item) => item.location === rect.dataset.mapSettingRect);
+        if (!row) return;
+        setSelection(row.location, event, { keepExisting: true });
+        syncSelectionVisuals();
+        const picked = selectedRows();
+        const rects = [...editor.querySelectorAll("[data-map-setting-rect]")];
+        drag = {
+          items: picked.map((pickedRow) => {
+            const pickedRect = rects.find((item) => item.dataset.mapSettingRect === pickedRow.location);
+            return {
+              row: pickedRow,
+              rect: pickedRect,
+              label: pickedRect?.closest("[data-map-setting-node]")?.querySelector(".allocation-map-setting-label"),
+              originalX: pickedRow.x,
+              originalY: pickedRow.y,
+            };
+          }),
+          startX: event.clientX,
+          startY: event.clientY,
+          box: svg.getBoundingClientRect(),
+          viewBox: { ...ensureViewBox() },
+          snapshot: cloneMapRows(),
+          moved: false,
+        };
+      } else {
+        pan = {
+          startX: event.clientX,
+          startY: event.clientY,
+          box: svg.getBoundingClientRect(),
+          viewBox: { ...ensureViewBox() },
+        };
+      }
+      svg.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+    svg?.addEventListener("pointermove", (event) => {
+      if (drag) {
+        const scaleX = drag.viewBox.width / Math.max(1, drag.box.width);
+        const scaleY = drag.viewBox.height / Math.max(1, drag.box.height);
+        const dx = (event.clientX - drag.startX) * scaleX;
+        const dy = (event.clientY - drag.startY) * scaleY;
+        if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 2) drag.moved = true;
+        drag.items.forEach((item) => {
+          item.row.x = Math.round((item.originalX + dx) / 10) * 10;
+          item.row.y = Math.round((item.originalY + dy) / 10) * 10;
+          item.rect?.setAttribute("x", item.row.x);
+          item.rect?.setAttribute("y", item.row.y);
+          item.label?.setAttribute("x", item.row.x + item.row.w / 2);
+          item.label?.setAttribute("y", item.row.y + item.row.h / 2);
+        });
+        return;
+      }
+      if (pan) {
+        const scaleX = pan.viewBox.width / Math.max(1, pan.box.width);
+        const scaleY = pan.viewBox.height / Math.max(1, pan.box.height);
+        viewBox = {
+          ...pan.viewBox,
+          x: pan.viewBox.x - (event.clientX - pan.startX) * scaleX,
+          y: pan.viewBox.y - (event.clientY - pan.startY) * scaleY,
+        };
+        setSvgViewBox();
+      }
+    });
+    svg?.addEventListener("pointerup", (event) => {
+      svg.releasePointerCapture?.(event.pointerId);
+      const hadDrag = drag;
+      drag = null;
+      pan = null;
+      if (hadDrag?.moved) {
+        undoStack.push(hadDrag.snapshot);
+        if (undoStack.length > 80) undoStack.shift();
+        ignoreNextMapClick = true;
+        statusText = `${hadDrag.items.length} ytor flyttade.`;
+        renderEditor();
+      }
+    });
+    svg?.addEventListener("pointercancel", () => {
+      drag = null;
+      pan = null;
+      renderEditor();
+    });
+  }
+
+  fitView();
+  renderEditor();
+}
+
 function allocationProcessMatrixAreas() {
   return allocationProcessMatrixData().areas || ALLOCATION_PROCESS_AREA_OPTIONS;
 }
@@ -3110,6 +4376,7 @@ function bindRunButtons() {
 function renderAllocationPage() {
   if (allocationState.page === "uploads") renderUploadsView();
   else if (allocationState.page === "process") renderCombinedView();
+  else if (allocationState.page === "settings") renderAllocationMapSettingsView();
   else if (allocationState.page === "split") renderSoloFlowView("split-values");
 }
 
@@ -3124,7 +4391,12 @@ function renderAllocationUnavailable(message) {
 
 function handleAllocationAreaFocusChanged() {
   const root = document.getElementById("allocationRoot");
-  if (!root || !allocationState.user || allocationState.page !== "process" || allocationState.busyId) return;
+  if (!root || !allocationState.user || allocationState.busyId) return;
+  if (allocationState.page === "settings") {
+    renderAllocationPage();
+    return;
+  }
+  if (allocationState.page !== "process") return;
   allocationState.values = {};
   allocationState.status = "";
   allocationState.result = null;

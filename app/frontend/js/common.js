@@ -170,6 +170,7 @@ const SIDEBAR_DEFAULT_LAYOUT = [
   { id: "productivity" },
   { id: "dataFetch" },
   { id: "allocationProcess" },
+  { id: "allocationSettings" },
   { id: "allocationSplit" },
   { id: "persons" },
   { id: "activities" },
@@ -192,6 +193,7 @@ const ROLE_VIEW_IDS = [
   "allocationUploads",
   "allocationProcess",
   "allocationProcessMatrix",
+  "allocationSettings",
   "allocationSplit",
   "persons",
   "personSortOrder",
@@ -251,6 +253,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     users: "edit",
     appSettings: "edit",
     allocationProcessMatrix: "edit",
+    allocationSettings: "edit",
   },
   demo: {
     schedule: "edit",
@@ -264,6 +267,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     users: "edit",
     appSettings: "edit",
     allocationProcessMatrix: "edit",
+    allocationSettings: "edit",
   },
   warehouse_clerk: {
     allocationUploads: "edit",
@@ -342,17 +346,11 @@ function updateAppZoomControls(percent = readAppZoom()) {
   });
 
   const out = document.getElementById("app-zoom-out");
-  const reset = document.getElementById("app-zoom-reset");
   const input = document.getElementById("app-zoom-in");
   if (out) {
     out.disabled = normalized <= APP_ZOOM_MIN;
     out.title = `Zooma ut (Ctrl+-), nu ${normalized}%`;
     out.setAttribute("aria-label", out.title);
-  }
-  if (reset) {
-    reset.disabled = normalized === APP_ZOOM_DEFAULT;
-    reset.title = `Återställ zoom (Ctrl+0), nu ${normalized}%`;
-    reset.setAttribute("aria-label", reset.title);
   }
   if (input) {
     input.disabled = normalized >= APP_ZOOM_MAX;
@@ -384,9 +382,21 @@ function resetAppZoom() {
 function renderAppZoomControls() {
   return `
       <div class="app-zoom-control" id="app-zoom-control" role="group" aria-label="Appzoom">
-        <button type="button" id="app-zoom-out">−</button>
-        <button type="button" id="app-zoom-reset">0</button>
-        <button type="button" id="app-zoom-in">+</button>
+        <button type="button" id="app-zoom-out">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5"></circle>
+            <path d="M15.5 15.5 21 21"></path>
+            <path d="M7.5 10.5h6"></path>
+          </svg>
+        </button>
+        <button type="button" id="app-zoom-in">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5"></circle>
+            <path d="M15.5 15.5 21 21"></path>
+            <path d="M7.5 10.5h6"></path>
+            <path d="M10.5 7.5v6"></path>
+          </svg>
+        </button>
       </div>
   `;
 }
@@ -394,7 +404,6 @@ function renderAppZoomControls() {
 function initAppZoomControls() {
   applyAppZoom(readAppZoom(), { persist: false });
   document.getElementById("app-zoom-out")?.addEventListener("click", () => changeAppZoom(-1));
-  document.getElementById("app-zoom-reset")?.addEventListener("click", resetAppZoom);
   document.getElementById("app-zoom-in")?.addEventListener("click", () => changeAppZoom(1));
   updateAppZoomControls();
 }
@@ -1426,6 +1435,7 @@ function canUseAllocationTools(user) {
     canViewPage(user, "allocationUploads")
     || canViewPage(user, "allocationSplit")
     || canViewPage(user, "allocationProcess")
+    || canViewPage(user, "allocationSettings")
   );
 }
 
@@ -1482,6 +1492,14 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "🧮",
       visible: canViewPage(user, "allocationProcess"),
       active: activePage === "allocationProcess",
+    },
+    {
+      id: "allocationSettings",
+      label: "Inställningar",
+      href: "/installningar.html",
+      icon: "⚙",
+      visible: canViewPage(user, "allocationSettings"),
+      active: activePage === "allocationSettings",
     },
     {
       id: "allocationSplit",
@@ -3190,10 +3208,13 @@ function enqueueVisiblePagePrefetches(user, activePage) {
     enqueueBackgroundPrefetch("/api/productivity/files", 20 * 1000);
     enqueueBackgroundPrefetch("/api/productivity/targets", 60 * 1000);
   }
-  if (canViewPage(user, "allocationUploads") || canViewPage(user, "allocationProcess") || canViewPage(user, "allocationSplit")) {
+  if (canViewPage(user, "allocationUploads") || canViewPage(user, "allocationProcess") || canViewPage(user, "allocationSettings") || canViewPage(user, "allocationSplit")) {
     enqueueBackgroundPrefetch("/api/allokering/flows", 60 * 1000);
     enqueueBackgroundPrefetch("/api/coredata/files", 20 * 1000);
     enqueueBackgroundWork("allocation-upload-metadata", warmSharedAllocationMetadataCache);
+  }
+  if (canViewPage(user, "allocationSettings")) {
+    enqueueBackgroundPrefetch("/api/allokering/ytgenerering-map-layout", 30 * 1000);
   }
   if (canViewPage(user, "allocationProcessMatrix")) {
     enqueueBackgroundPrefetch("/api/allokering/process-matrix", 30 * 1000);

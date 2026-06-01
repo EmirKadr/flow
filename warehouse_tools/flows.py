@@ -30,7 +30,7 @@ import pandas as pd
 from .carrier_clusters import normalize_carrier_cluster_payload, read_carrier_clusters
 from .engine import engine as E
 from .surface_generation import generate_surface_plan, prepare_locations
-from .ytgenerering_map import build_ytgenerering_map_payload
+from .ytgenerering_map import build_ytgenerering_map_payload, extend_locations_with_map_layout, normalize_map_location_rows
 
 ORDER_SET_AREA_IMPORT_KEY = "order_set_area_import"
 ORDER_SET_AREA_IMPORT_LABEL = "ASK-import order/yta"
@@ -1003,10 +1003,12 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         columns = payload.get("columns") or None
         forecast_df = pd.DataFrame(rows, columns=columns)
     locations_df = _read_prepared_locations(Path(files["location"]))
+    map_locations = normalize_map_location_rows(params.get("__ytgenerering_map_locations_json"))
+    locations_df, added_map_locations = extend_locations_with_map_layout(locations_df, map_locations)
     locations_df, area_log = _filter_ytgenerering_locations(locations_df, params)
     carrier_clusters = normalize_carrier_cluster_payload(params.get("__carrier_clusters_json"))
     result = generate_surface_plan(forecast_df, locations_df, carrier_clusters=carrier_clusters)
-    map_payload = build_ytgenerering_map_payload(result.assignments, result.unplaced, locations_df, forecast_df)
+    map_payload = build_ytgenerering_map_payload(result.assignments, result.unplaced, locations_df, forecast_df, map_locations)
 
     tables = [
         ("ytgenerering", "Ytgenerering", result.assignments),
@@ -1021,6 +1023,8 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
     ]
     if area_log:
         log.insert(1, area_log)
+    if added_map_locations:
+        log.append(f"Ytkartsinställningar lade till {added_map_locations} ytor som saknades i location-underlaget.")
     if carrier_clusters and carrier_clusters.get("rows"):
         log.append(f"Transportörskluster använda: {len(carrier_clusters['rows'])} rader.")
     download_files: dict[str, dict[str, str]] = {}

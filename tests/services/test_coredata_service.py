@@ -1,3 +1,4 @@
+import gzip
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -190,6 +191,28 @@ def test_coredata_postgres_row_becomes_source_of_truth(tmp_path):
     assert row.uploaded_by == 7
 
 
+def test_coredata_preview_reads_postgres_core_file(tmp_path):
+    db = sqlite_session()
+    source = tmp_path / "upload" / "item_option-20260601101010.csv"
+    write(source, "Artikel\tPack Klass\nA\tDB\n")
+    save_coredata_file(
+        source_path=source,
+        filename=source.name,
+        file_type="item_option",
+        reference_dir=tmp_path,
+        business_code="STIGAMO",
+        db=db,
+    )
+    db.commit()
+
+    preview = coredata_router._persistent_data_preview_payload("item_option", "STIGAMO", db)
+
+    assert preview["kind"] == "coredata"
+    assert preview["name"] == source.name
+    assert "A\tDB" in preview["text"]
+    assert preview["truncated"] is False
+
+
 def test_coredata_postgres_replaces_same_type_only_for_business(tmp_path):
     db = sqlite_session()
     stigamo_old = tmp_path / "upload" / "item_option-20260101000000.csv"
@@ -261,6 +284,24 @@ def test_coredata_router_status_includes_business_article_max(monkeypatch, tmp_p
     assert status["files"]["article_max"]["kind"] == "compiled_data"
     assert status["files"]["productivity_pick_observations"]["uploaded"] is True
     assert status["files"]["productivity_pick_observations"]["kind"] == "compiled_data"
+
+
+def test_coredata_preview_reads_compiled_gzip(monkeypatch, tmp_path):
+    compiled = tmp_path / "v_ask_pick_log_full_observations.csv.gz"
+    with gzip.open(compiled, "wt", encoding="utf-8") as handle:
+        handle.write("Radid;Anvandare\n1;Emir\n")
+    monkeypatch.setattr(
+        coredata_router,
+        "productivity_compiled_log_path",
+        lambda source_key, business_code=None: compiled,
+    )
+
+    preview = coredata_router._persistent_data_preview_payload("productivity_pick_observations", "R3")
+
+    assert preview["kind"] == "compiled_data"
+    assert preview["name"] == compiled.name
+    assert preview["compressed"] is True
+    assert "1;Emir" in preview["text"]
 
 
 def test_coredata_router_saves_article_max_to_business_path(monkeypatch, tmp_path):

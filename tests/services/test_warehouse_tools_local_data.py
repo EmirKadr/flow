@@ -852,6 +852,24 @@ def test_forecast_inference_ignores_overview_status_11_orders(monkeypatch, tmp_p
             {
                 "Bolag": "MG",
                 "Kund nr": "50000",
+                "Ordernr": "O-STOP",
+                "Ordertyp": "",
+                "Sändningsnr": "S-STOP",
+                "Multi": "",
+                "Transportör": "Schenker - 10:00 - Parti",
+                "Volym": "1",
+                "Vikt": "1",
+                "Antal": "12",
+                "Rader": "1",
+                "Status": "11",
+            },
+        ]
+    ).to_csv(fore_dir / "v_ask_order_overview-20260601000000.csv", index=False, sep="\t", encoding="utf-8-sig")
+    pd.DataFrame(
+        [
+            {
+                "Bolag": "MG",
+                "Kund nr": "50000",
                 "Ordernr": "O-OK",
                 "Ordertyp": "",
                 "Sändningsnr": "S-OK",
@@ -875,10 +893,10 @@ def test_forecast_inference_ignores_overview_status_11_orders(monkeypatch, tmp_p
                 "Vikt": "1",
                 "Antal": "12",
                 "Rader": "1",
-                "Status": "11",
+                "Status": "30",
             },
         ]
-    ).to_csv(fore_dir / "v_ask_order_overview-20260601000000.csv", index=False, sep="\t", encoding="utf-8-sig")
+    ).to_csv(fore_dir / "v_ask_order_overview-20260601000100.csv", index=False, sep="\t", encoding="utf-8-sig")
 
     monkeypatch.setattr(
         mg_forecast,
@@ -1028,6 +1046,41 @@ def test_ytgenerering_uses_configured_utl_range(monkeypatch, tmp_path):
     assert [assignment["location"] for assignment in map_payload["assignments"]] == ["UTL205", "UTL206"]
     assert result["summary"]["Ej placerade pallplatser"] == 0
     assert any("UTL205-UTL652" in line for line in result["log"])
+
+
+def test_ytgenerering_map_layout_adds_missing_location_capacity(monkeypatch, tmp_path):
+    forecast_df = pd.DataFrame(
+        [
+            {"SÃ¤ndningsnr": "S-1", "TransportÃ¶r": "Akeri A", "Predikterade pallplatser": 2.0},
+        ]
+    )
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL205", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+    layout = {
+        "locations": [
+            {"location": "UTL206", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 1},
+        ]
+    }
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_df": forecast_df, "__ytgenerering_map_locations_json": json.dumps(layout, ensure_ascii=False)},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL205", "UTL206"]
+    assert [loc["location"] for loc in result["maps"][0]["locations"]] == ["UTL205", "UTL206"]
+    assert result["maps"][0]["locations"][1]["maxPall"] == 1
+    assert any("Ytkartsinställningar lade till 1 ytor" in line for line in result["log"])
 
 
 def test_ytgenerering_flow_uses_transport_cluster_json(monkeypatch, tmp_path):

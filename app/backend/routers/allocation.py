@@ -17,7 +17,7 @@ from ..coredata_service import CoreDataError, find_coredata_file
 from ..deps import get_db, require_allocation_tools_user, require_view_access
 from ..models import Area, Business, User
 from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
-from ..user_access import can_use_allocation_process, is_super_user
+from ..user_access import can_access_view, can_use_allocation_process, is_super_user
 
 
 router = APIRouter(
@@ -46,10 +46,15 @@ PROCESS_MATRIX_HIDDEN_FLOW_IDS = {"observations-update", "observations-sync", "u
 logger = logging.getLogger(__name__)
 ALLOCATION_FLOW_ERROR_CODE = "allocation_flow_failed"
 ALLOCATION_FLOW_PATH_PREFIX = "/api/allokering/flow"
+YTGENERERING_MAP_LAYOUT_KEY = "ytgenerering_map_layout"
 
 
 class AllocationProcessMatrixUpdate(BaseModel):
     matrix: dict[str, dict] = Field(default_factory=dict)
+
+
+class YtgenereringMapLayoutUpdate(BaseModel):
+    locations: list[dict] = Field(default_factory=list)
 
 
 def _role_access_for_user(db: Session | object, user: User) -> dict | None:
@@ -243,6 +248,47 @@ def _process_matrix_response(db: Session, user: User) -> dict:
     flows = _allocation_process_matrix_flows()
     matrix = _stored_process_matrix(db, flows=flows)
     return bridge.process_matrix_public_payload(matrix, flows=flows, area_codes=_active_area_codes_for_user(db, user))
+
+
+def _stored_ytgenerering_map_layout(db: Session) -> dict[str, object]:
+    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None)
+    return bridge.ytgenerering_map_layout_payload(stored)
+
+
+def _stored_ytgenerering_map_rows(db: Session) -> list[dict[str, object]]:
+    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None)
+    return bridge.normalize_ytgenerering_map_location_rows(stored)
+
+
+def _ytgenerering_map_layout_response(db: Session, user: User) -> dict[str, object]:
+    payload = _stored_ytgenerering_map_layout(db)
+    access = _role_access_for_user(db, user)
+    return {
+        **payload,
+        "can_edit": can_access_view(user, access, "allocationSettings", "edit"),
+    }
+
+
+def _ytgenerering_location_options(db: Session, user: User, *, area_focus: str | None = None) -> list[dict[str, object]]:
+    try:
+        business_code = _allocation_business_code(db, user, area_focus=area_focus)
+        location_path = find_coredata_file("location", business_code=business_code, db=db)
+        return bridge.ytgenerering_location_option_rows(location_path)
+    except Exception:
+        logger.warning("Could not load ytgenerering location options.", exc_info=True)
+        return []
+
+
+def _ytgenerering_map_layout_with_options(
+    db: Session,
+    user: User,
+    *,
+    area_focus: str | None = None,
+) -> dict[str, object]:
+    return {
+        **_ytgenerering_map_layout_response(db, user),
+        "available_locations": _ytgenerering_location_options(db, user, area_focus=area_focus),
+    }
 
 
 def _session_owner_payload(user: User) -> dict:
@@ -451,6 +497,48 @@ def update_process_matrix(
     return _process_matrix_response(db, admin)
 
 
+@router.get("/ytgenerering-map-layout")
+def get_ytgenerering_map_layout(
+    area_focus: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("allocationSettings", "view")),
+) -> dict:
+    return _ytgenerering_map_layout_with_options(db, user, area_focus=bridge.normalize_process_area_focus(area_focus or ""))
+
+
+@router.put("/ytgenerering-map-layout")
+def update_ytgenerering_map_layout(
+    payload: YtgenereringMapLayoutUpdate,
+    area_focus: str | None = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_view_access("allocationSettings", "edit")),
+) -> dict:
+    before = _stored_ytgenerering_map_layout(db)
+    rows = bridge.normalize_ytgenerering_map_location_rows(payload.locations)
+    if not rows:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ytkartan behöver minst en giltig UTL-yta.")
+    set_json_setting(
+        db,
+        YTGENERERING_MAP_LAYOUT_KEY,
+        {"version": 1, "locations": rows},
+        user_id=getattr(admin, "id", None),
+    )
+    after = _stored_ytgenerering_map_layout(db)
+    if before.get("locations") != after.get("locations"):
+        audit.log(
+            db,
+            entity_type="app_setting",
+            entity_id=0,
+            action="update_ytgenerering_map_layout",
+            old_value={"key": YTGENERERING_MAP_LAYOUT_KEY, "count": len(before.get("locations") or [])},
+            new_value={"key": YTGENERERING_MAP_LAYOUT_KEY, "count": len(after.get("locations") or [])},
+            user_id=getattr(admin, "id", None),
+            business_id=None,
+        )
+    db.commit()
+    return _ytgenerering_map_layout_with_options(db, admin, area_focus=bridge.normalize_process_area_focus(area_focus or ""))
+
+
 @router.post("/detect")
 async def detect(
     file: UploadFile = File(...),
@@ -621,6 +709,10 @@ async def run_flow(
                 params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
             params[bridge.YTGENERERING_UTL_MIN_PARAM] = str(utl_min)
             params[bridge.YTGENERERING_UTL_MAX_PARAM] = str(utl_max)
+            params["__ytgenerering_map_locations_json"] = json.dumps(
+                _stored_ytgenerering_map_rows(db),
+                ensure_ascii=False,
+            )
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
             default_max_csv_path = bridge.business_allocation_data_paths(business_code)["article_max_path"]
         if default_max_csv_path is not None:

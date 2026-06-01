@@ -101,9 +101,9 @@ def test_sidebar_zoom_controls_and_shortcuts(local_sidebar_server, chromium_brow
         page.wait_for_selector("#app-zoom-control", timeout=15000)
 
         expect(page.locator("#app-zoom-control")).to_be_visible()
-        expect(page.locator("#app-zoom-out")).to_have_text("−")
-        expect(page.locator("#app-zoom-reset")).to_have_text("0")
-        expect(page.locator("#app-zoom-in")).to_have_text("+")
+        expect(page.locator("#app-zoom-out svg")).to_be_visible()
+        expect(page.locator("#app-zoom-in svg")).to_be_visible()
+        expect(page.locator("#app-zoom-reset")).to_have_count(0)
         expect(page.locator("html")).to_have_attribute("data-app-zoom", "100")
 
         page.click("#app-zoom-in")

@@ -275,38 +275,39 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
 }
 .app-zoom-control {
   justify-self: center;
-  display: grid;
-  grid-template-columns: repeat(3, 28px);
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .app-zoom-control button {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-muted);
   box-shadow: none;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1;
+  display: grid;
+  place-items: center;
 }
 .app-zoom-control button:hover:not(:disabled) {
-  background: var(--surface);
+  background: var(--bg-2);
   color: var(--text);
 }
 .app-zoom-control button:disabled {
   opacity: .42;
   cursor: default;
 }
-.app-zoom-control #app-zoom-reset {
-  font-size: 12px;
+.app-zoom-control svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ===== Collapsed state ===== */
@@ -3771,6 +3772,70 @@ tr.filter-row input {
 .allocation-file-tag.optional {
   background: color-mix(in srgb, #64748b 12%, var(--surface));
 }
+.allocation-file-preview-modal {
+  max-width: min(980px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.allocation-file-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.allocation-file-preview-meta strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.allocation-file-preview-scroll {
+  max-height: min(62vh, 640px);
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.allocation-file-preview-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  box-shadow: none;
+  border: 0;
+}
+.allocation-file-preview-table th,
+.allocation-file-preview-table td {
+  max-width: 280px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.allocation-file-preview-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-2);
+  color: var(--text-muted);
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.allocation-file-preview-pre {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  white-space: pre;
+}
+.allocation-file-preview-message {
+  margin: 0;
+  padding: 14px;
+  color: var(--text-muted);
+}
 .allocation-flow-files {
   display: grid;
   gap: 6px;
@@ -4023,13 +4088,49 @@ tr.filter-row input {
 .allocation-warehouse-map {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
   height: min(72vh, 720px);
   min-height: 560px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
+}
+.allocation-map-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.allocation-map-fullscreen-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .12);
+}
+.allocation-map-fullscreen-button:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.allocation-map-fullscreen-button svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .allocation-map-missing-toggle {
   position: absolute;
@@ -4136,10 +4237,14 @@ tr.filter-row input {
   stroke: #ef4444;
   stroke-width: 3;
 }
+.allocation-map-unused {
+  pointer-events: none;
+}
 .allocation-map-text,
 .allocation-map-label,
 .allocation-map-label-main,
-.allocation-map-label-sub {
+.allocation-map-label-sub,
+.allocation-map-label-edge {
   dominant-baseline: middle;
   font-family: inherit;
   pointer-events: none;
@@ -4150,24 +4255,21 @@ tr.filter-row input {
   fill: var(--text-muted);
   font-size: 14px;
 }
-.allocation-map-label-main,
-.allocation-map-label-sub {
-  paint-order: stroke;
-  stroke: #ffffff;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 .allocation-map-label-main {
-  fill: #0f172a;
-  font-size: 15px;
-  font-weight: 800;
-  stroke-width: 3.5px;
+  fill: var(--text);
+  font-size: 20px;
+  font-weight: 500;
 }
 .allocation-map-label-sub {
-  fill: #334155;
-  font-size: 11.5px;
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.allocation-map-label-edge {
+  fill: var(--text);
+  font-size: 18px;
   font-weight: 700;
-  stroke-width: 2.5px;
+  letter-spacing: 0;
 }
 .allocation-map-side {
   display: grid;
@@ -4231,7 +4333,7 @@ tr.filter-row input {
 }
 .allocation-map-detail dd {
   margin: 0;
-  max-width: 190px;
+  max-width: 260px;
   overflow: hidden;
   text-align: right;
   text-overflow: ellipsis;
@@ -4276,6 +4378,253 @@ tr.filter-row input {
   pointer-events: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.allocation-map-settings-modal {
+  width: min(1480px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#allocation-map-settings-editor {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+.allocation-map-settings-modal .actions {
+  flex-shrink: 0;
+}
+.allocation-map-settings-page-panel {
+  padding: 12px;
+  width: min(100%, 1520px);
+}
+.allocation-map-settings-page-panel #allocation-map-settings-editor {
+  padding-right: 0;
+  overflow: visible;
+}
+.allocation-map-settings-workspace {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  width: min(100%, 1500px);
+  min-height: calc(100vh - 146px);
+}
+.allocation-map-settings-workspace:fullscreen {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  min-height: 0;
+  padding: 12px;
+  background: var(--bg);
+}
+.allocation-map-settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+.allocation-map-settings-toolbar label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.allocation-map-settings-toolbar input,
+.allocation-map-settings-toolbar select {
+  width: 92px;
+}
+.allocation-map-settings-toolbar-spacer {
+  flex: 1 1 auto;
+}
+.allocation-map-settings-selection {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.allocation-map-settings-canvas-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1120px) 340px;
+  gap: 12px;
+  width: 100%;
+  height: min(74vh, 780px);
+  min-height: 0;
+}
+.allocation-map-settings-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.allocation-map-settings-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.allocation-map-settings-tools label,
+.allocation-map-settings-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.allocation-map-settings-tools input,
+.allocation-map-settings-tools select {
+  width: 92px;
+}
+.allocation-map-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+  min-height: min(68vh, 720px);
+}
+.allocation-map-settings-svg {
+  width: 100%;
+  height: min(68vh, 720px);
+  min-height: 540px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  touch-action: none;
+  user-select: none;
+}
+.allocation-map-settings-page-panel .allocation-map-settings-svg {
+  height: 100%;
+  min-height: 0;
+  cursor: grab;
+}
+.allocation-map-settings-workspace:fullscreen .allocation-map-settings-canvas-grid {
+  grid-template-columns: minmax(0, 1fr) 380px;
+  height: auto;
+  min-height: 0;
+}
+.allocation-map-settings-workspace:fullscreen .allocation-map-settings-svg {
+  height: 100%;
+  min-height: 0;
+}
+.allocation-map-settings-fullscreen-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  min-width: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.allocation-map-settings-fullscreen-button:hover {
+  background: var(--bg-2);
+}
+.allocation-map-settings-fullscreen-button svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.allocation-map-settings-page-panel .allocation-map-setting-loc {
+  cursor: move;
+}
+.allocation-map-setting-loc {
+  fill: var(--surface);
+  stroke: #94a3b8;
+  stroke-width: 1.2;
+  cursor: move;
+}
+.allocation-map-setting-loc:hover {
+  filter: brightness(.96);
+  stroke: #475569;
+}
+.allocation-map-setting-loc.is-selected {
+  fill: #eef2ff;
+  stroke: var(--accent);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+.allocation-map-setting-label {
+  dominant-baseline: middle;
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  pointer-events: none;
+  text-anchor: middle;
+  user-select: none;
+}
+.allocation-map-settings-side {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.allocation-map-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.allocation-map-settings-fields label:first-child {
+  grid-column: 1 / -1;
+}
+.allocation-map-settings-fields input {
+  width: 100%;
+}
+.allocation-map-settings-list {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.allocation-map-settings-list-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.allocation-map-settings-list-head strong {
+  color: var(--text);
+}
+.allocation-map-location-search {
+  width: 100%;
+}
+.allocation-map-settings-list button {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  box-shadow: none;
+}
+.allocation-map-settings-list button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.allocation-map-settings-list small {
+  color: var(--text-muted);
+  font-weight: 800;
 }
 .allocation-table-head h3 span {
   color: var(--text-muted);
@@ -4382,6 +4731,21 @@ tr.filter-row input {
   font-size: 12px;
 }
 
+@media (max-width: 1500px) {
+  .allocation-map-settings-canvas-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(520px, 70vh) minmax(320px, 42vh);
+    height: auto;
+  }
+  .allocation-map-settings-canvas {
+    min-height: 520px;
+  }
+  .allocation-map-settings-side {
+    min-height: 0;
+    height: min(42vh, 520px);
+  }
+}
+
 @media (max-width: 700px) {
   .allocation-panel,
   .allocation-upload-prompt {
@@ -4412,6 +4776,31 @@ tr.filter-row input {
   .allocation-map-side {
     border-top: 1px solid var(--border);
     border-left: 0;
+  }
+  .allocation-map-settings-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+  .allocation-map-settings-grid {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .allocation-map-settings-workspace {
+    min-height: 0;
+  }
+  .allocation-map-settings-canvas-grid {
+    grid-template-columns: 1fr;
+  }
+  .allocation-map-settings-page-panel .allocation-map-settings-svg {
+    height: min(58vh, 540px);
+    min-height: 360px;
+  }
+  .allocation-map-settings-svg {
+    height: min(58vh, 540px);
+    min-height: 360px;
+  }
+  .allocation-map-settings-side {
+    min-height: 280px;
   }
   .allocation-file-slot {
     grid-template-columns: 1fr;

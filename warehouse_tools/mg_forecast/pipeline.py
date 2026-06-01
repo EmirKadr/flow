@@ -84,6 +84,12 @@ def _clean_transportor(s: pd.Series) -> pd.Series:
     return s.astype(str).str.split(" - ").str[0].str.strip()
 
 
+def _is_status_11(series: pd.Series) -> pd.Series:
+    raw = series.fillna("").astype(str).str.strip()
+    numeric = pd.to_numeric(raw.str.replace(",", ".", regex=False), errors="coerce")
+    return raw.eq("11") | numeric.eq(11)
+
+
 def load_orders() -> pd.DataFrame:
     """Ladda 24 dags-snapshots av orderdetaljer och dedupe på (Order nr, Rad).
 
@@ -131,7 +137,8 @@ def load_order_overview() -> pd.DataFrame:
 
     Detta finns vid förprognos-tid (orderhuvudet skapas före plock) → ingen leakage.
     Filtrerar Bolag=MG, exkl 40002/90002, och Ordertyp=HIB.
-    Dedupar på Ordernr (senaste snapshot vinner).
+    Ignorerar hela Ordernr om någon orderhuvudrad har status 11. Dedupar därefter på
+    Ordernr (senaste snapshot vinner).
     """
     files = sorted(DATA_FORE.glob("v_ask_order_overview-*.csv"))
     if not files:
@@ -146,6 +153,17 @@ def load_order_overview() -> pd.DataFrame:
     df = df[~df["Kund nr"].astype(str).str.strip().isin(EXCLUDE_CUSTOMERS)]
     # Ordertyp-filter: HIB exkluderas (intern hanteringstyp - inte vanliga kundorder)
     df = df[df["Ordertyp"].astype(str).str.strip().str.upper() != "HIB"]
+    if "Status" in df.columns:
+        blocked_order_numbers = set(
+            df.loc[_is_status_11(df["Status"]), "Ordernr"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+        blocked_order_numbers.discard("")
+        if blocked_order_numbers:
+            order_keys = df["Ordernr"].fillna("").astype(str).str.strip()
+            df = df[~order_keys.isin(blocked_order_numbers)].copy()
     df = df.sort_values(["Ordernr", "__src"]).drop_duplicates("Ordernr", keep="last")
     sandningsnr = df["Sändningsnr"].fillna("").astype(str).str.strip()
     multi_raw = df["Multi"].fillna("").astype(str).str.strip()

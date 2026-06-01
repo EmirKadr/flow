@@ -7,6 +7,26 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-01] polish | Ytkartan prioriterar kundnamn
+
+Ytgenereringens ytkarta visar nu kort ytkod utan `UTL` i ytans kortsida,
+kundnamn i mitten som kan brytas pa tva rader utan halo, ingen pallrad inne pa
+ytan och transparenta vita rander for outnyttjad kapacitet proportionellt mot
+ledig andel.
+
+## [2026-06-01] feature | Ytkarta far egen Installningar-vy
+
+Ytgenereringens ytkarta redigeras nu i sidebar-vyn `Installningar` i stallet
+for via en knapp i Bearbeta. Vyn kraver `allocationSettings`, har fast
+arbetsbredd med fullskarmsknapp, kan panorera och zooma i samma kartcanvas,
+och visar lediga `Typ=U`-lagerplatser fran aktiv
+verksamhets `location` som inte redan finns pa kartan. Nar anvandaren lagger
+till en yta raknas koordinaterna fram fran vald yta, riktning och gap, och
+sparas globalt i `ytgenerering_map_layout`. Kartan stoder ocksa multiurval med
+Ctrl/Shift, gruppdrag, piltangentsflytt, Delete och Ctrl+C/X/V/Z/A sa flera
+ytor kan flyttas, kopieras, klippas, klistras in och angra som en samlad
+redigering.
+
 ## [2026-05-29] fix | Verksamhetskoder skapas automatiskt
 
 Verksamheter-vyn kräver inte längre att användaren fyller i kod när en ny
@@ -504,7 +524,7 @@ Sidebarens omradesmeny kan nu scrollas utan att stangas. `common.js` ignorerar s
 
 ## [2026-06-01] feature | Appzoom i sidebar
 
-Sidebaren har fatt en global zoomkontroll med symbolerna `- 0 +` mellan hamburgaren och menyredigering. Zoomnivån sparas lokalt i `flow-app-zoom`, styr hela appytan i både webb och Windows-app och kan även ändras med `Ctrl+-`, `Ctrl++`, `Ctrl+0` och `Ctrl+scroll`. Alla skyddade HTML-sidor har ny cache-bust för `common.js`.
+Sidebaren har fatt en global zoomkontroll mellan hamburgaren och menyredigering. Kontrollen visas nu som tva forstoringsglas med minus/plus utan siffra i mitten. Zoomnivan sparas lokalt i `flow-app-zoom`, styr hela appytan i bade webb och Windows-app och kan aven andras med `Ctrl+-`, `Ctrl++`, `Ctrl+0` och `Ctrl+scroll`. Alla skyddade HTML-sidor har ny cache-bust for `common.js`.
 
 ## [2026-06-01] polish | Loggikon visar nya loggrader
 
@@ -556,7 +576,7 @@ Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster o
 
 ## [2026-06-01] fix | Forecast ignorerar orderstatus 11
 
-Forecast filtrerar nu orderoversikten efter senaste orderhuvud per `Ordernr` och ignorerar ordrar med `Status=11`. Det gor att matchande rader i Detalj Kundorder ocksa faller bort nar Forecast inner-joinar orderdetaljer mot orderoversikten, sa stoppade/avvikande status-11-ordrar inte skapar sandningar eller pallplatsprognos.
+Forecast filtrerar nu orderoversikten sa hela ordernumret ignoreras om nagon orderhuvudrad for samma `Ordernr` har `Status=11`, oavsett om en annan rad/snapshot har annan status. Det gor att matchande rader i Detalj Kundorder ocksa faller bort nar Forecast inner-joinar orderdetaljer mot orderoversikten, sa stoppade/avvikande status-11-ordrar inte skapar sandningar eller pallplatsprognos.
 
 ## [2026-06-01] feature | Kortkommandon i Ytgenerering-kartan
 
@@ -581,3 +601,19 @@ Bemanningens områdesfilter visar nu en person i valt område om personen anting
 ## [2026-06-01] feature | Ytgenerering: kundnamn, klusterfärger och saknade kunder
 
 Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudtext på ytorna med en vit kontrast-halo för bättre läsbarhet. Forecast-tabellen får en `Kundnamn`-kolumn och kartans payload bär `customer`/`customerNum` per placering och i listan över ej placerade sändningar. Färgen baseras på transportör men ett kluster delar basnyans och varje transportör i klustret får en egen ljushet (`allocationClusterColorMap`). Kluster-editorn (`Redigera kluster`) är ombyggd som referensdemons *Advanced settings*-tabell med drag-sortering, ASN/Arrive/Depart, Group, Start/End seq och färgväljare; tiderna seedas med demons standardvärden och sparas i `carrier_clusters`. En `Saknade kunder`-panel listar ej placerade sändningar. `ytgeneringdemo/` är endast referens – ingen kod eller sökväg dit.
+
+## [2026-06-01] feature | Uppladdningar kan forhandsvisa filer
+
+Alla fyllda filrader i Uppladdningar har nu `Visa`. Lokala arbetsfiler lases fran IndexedDB och visas som tabell/text nar formatet ar textlikt, med originaloppning for binara filer. Serverlagrade karnfiler, `artikel_max.csv` och produktivitetens sammanstallda csv.gz-filer kan forhandsvisas via `GET /api/coredata/files/{file_key}/preview`, som returnerar en begransad textpreview utan att logga filinnehall.
+
+## [2026-06-01] feature | Installningar for Ytgenereringens ytkarta
+
+Bearbeta har nu knappen `Installningar` for roller med `allocationProcessMatrix=view`, med sparande for `allocationProcessMatrix=edit`. Dialogen visar Ytgenereringens UTL-karta som en redigerbar SVG: anvandaren kan dra ytor, andra koordinater/storlek/max pall och lagga till en hel UTL-serie som autoplaceras fran vald yta. Sparade ytor lagras globalt som `ytgenerering_map_layout`, anvands av Ytgenerering for koordinater och kapacitet, och kan komplettera saknade `Typ=U`-platser inom UTL1-UTL652. Om ingen ytkarta ar sparad anvands standardkoordinaterna bara for visualisering.
+
+## [2026-06-01] polish | Fullskarm ar kartikon
+
+Ytgenereringens fullskarmskontroll ar flyttad fran verktygsradens textknapp till en liten ikon i kartans ovre hogra horn. Export- och vyknapparna ligger kvar ovanfor kartan.
+
+## [2026-06-01] fix | Sidolista kopierar sandningsnummer
+
+Ytgenerering-kartans sidolista kopierar nu radens sandningsnummer till urklipp nar anvandaren klickar pa raden, aven nar listan visar kundnamn eller transportor i stallet for sifferstrangen.

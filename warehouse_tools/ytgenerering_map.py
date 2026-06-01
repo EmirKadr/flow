@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
+import math
 from pathlib import Path
 import re
 import unicodedata
@@ -10,6 +11,7 @@ import pandas as pd
 
 
 MAP_LOCATIONS_PATH = Path(__file__).with_name("ytgenerering_map_locations.json")
+DEFAULT_MAP_MAX_PALL = 2.0
 
 
 def _norm(value: object) -> str:
@@ -52,6 +54,77 @@ def _number(value: object) -> float:
         return 0.0
 
 
+def _optional_number(value: object) -> float | None:
+    text = _text(value).replace(" ", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _int_number(value: object, *, positive: bool = False) -> int | None:
+    number = _optional_number(value)
+    if number is None:
+        return None
+    if positive and number <= 0:
+        return None
+    return int(number)
+
+
+def _location_sort_key(value: object) -> tuple[int, str]:
+    text = _text(value).upper()
+    match = re.fullmatch(r"UTL(\d+)(.*)", text)
+    if not match:
+        return 10_000, text
+    return int(match.group(1)), match.group(2)
+
+
+def normalize_map_location_rows(value: object) -> list[dict[str, object]]:
+    if value is None:
+        return []
+    payload = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        payload = json.loads(text)
+    if isinstance(payload, dict):
+        raw_rows = payload.get("locations") or payload.get("rows") or []
+    else:
+        raw_rows = payload
+    if not isinstance(raw_rows, list):
+        return []
+
+    rows_by_location: dict[str, dict[str, object]] = {}
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            continue
+        location = _text(raw.get("location") or raw.get("lagerplats") or raw.get("name")).upper()
+        if not re.fullmatch(r"UTL\d+[A-ZÅÄÖ]?", location):
+            continue
+        x = _int_number(raw.get("x"))
+        y = _int_number(raw.get("y"))
+        w = _int_number(raw.get("w") if "w" in raw else raw.get("width"), positive=True)
+        h = _int_number(raw.get("h") if "h" in raw else raw.get("height"), positive=True)
+        if x is None or y is None or w is None or h is None:
+            continue
+        max_pall = _optional_number(raw.get("maxPall") if "maxPall" in raw else raw.get("max_pall")) or 0.0
+        if max_pall <= 0:
+            max_pall = DEFAULT_MAP_MAX_PALL
+        rows_by_location[location] = {
+            "location": location,
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "maxPall": round(max_pall, 2),
+        }
+    return sorted(rows_by_location.values(), key=lambda row: _location_sort_key(row["location"]))
+
+
 def _split_order_numbers(value: object) -> list[str]:
     text = _text(value)
     if not text:
@@ -60,9 +133,62 @@ def _split_order_numbers(value: object) -> list[str]:
 
 
 @lru_cache(maxsize=1)
-def _map_coordinates() -> dict[str, dict[str, object]]:
+def default_map_location_rows() -> list[dict[str, object]]:
     rows = json.loads(MAP_LOCATIONS_PATH.read_text(encoding="utf-8"))
+    return normalize_map_location_rows(rows)
+
+
+def map_layout_payload(locations: object | None = None) -> dict[str, object]:
+    rows = normalize_map_location_rows(locations)
+    return {
+        "version": 1,
+        "locations": rows if rows else default_map_location_rows(),
+        "defaults": default_map_location_rows(),
+    }
+
+
+def _map_coordinates(map_locations: object | None = None) -> dict[str, dict[str, object]]:
+    rows = default_map_location_rows()
+    custom_rows = normalize_map_location_rows(map_locations)
+    if custom_rows:
+        by_location = {str(row["location"]).upper(): row for row in rows}
+        by_location.update({str(row["location"]).upper(): row for row in custom_rows})
+        rows = sorted(by_location.values(), key=lambda row: _location_sort_key(row["location"]))
     return {str(row["location"]).strip().upper(): row for row in rows}
+
+
+def extend_locations_with_map_layout(locations: pd.DataFrame, map_locations: object | None) -> tuple[pd.DataFrame, int]:
+    rows = normalize_map_location_rows(map_locations)
+    if not rows:
+        return locations, 0
+    merged = locations.copy()
+    merged["Lagerplats"] = merged["Lagerplats"].astype(str).str.strip().str.upper()
+    existing = set(merged["Lagerplats"])
+    additions = []
+    for row in rows:
+        location = str(row["location"]).upper()
+        max_pall = _number(row.get("maxPall"))
+        if location in existing:
+            if max_pall > 0:
+                merged.loc[merged["Lagerplats"].eq(location), "Max pall"] = max_pall
+            continue
+        sort_number, suffix = _location_sort_key(location)
+        if sort_number < 1 or sort_number > 652:
+            continue
+        additions.append(
+            {
+                "Lagerplats": location,
+                "Typ": "U",
+                "Max pall": max_pall,
+                "_location_number": sort_number,
+                "_location_suffix": suffix,
+            }
+        )
+    if not additions:
+        return merged, 0
+    merged = pd.concat([merged, pd.DataFrame(additions)], ignore_index=True)
+    merged = merged.sort_values(["_location_number", "_location_suffix", "Lagerplats"]).reset_index(drop=True)
+    return merged, len(additions)
 
 
 def _forecast_order_numbers(forecast_df: pd.DataFrame) -> dict[str, list[str]]:
@@ -110,8 +236,9 @@ def build_ytgenerering_map_payload(
     unplaced_df: pd.DataFrame,
     locations_df: pd.DataFrame,
     forecast_df: pd.DataFrame,
+    map_locations: object | None = None,
 ) -> dict[str, object]:
-    coordinates = _map_coordinates()
+    coordinates = _map_coordinates(map_locations)
     assignment_location_col = _find_col(assignments_df, ("Lagerplats", "Location"), required=False)
     location_col = _find_col(locations_df, ("Lagerplats", "Location", "Plats"), required=False)
     capacity_col = _find_col(locations_df, ("Max pall", "Max pallplatser", "Maxpall", "Capacity"), required=False)
