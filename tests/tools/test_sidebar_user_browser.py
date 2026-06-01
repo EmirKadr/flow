@@ -119,6 +119,33 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         admin_page.locator(".area-focus-menu button", has_text="Mestergruppen").click()
         expect(admin_page.locator("#area-focus-toggle")).to_have_text("MG")
         assert str(admin_page.evaluate("() => localStorage.getItem('flow-area-focus')")).startswith("AREA:")
+
+        admin_page.evaluate(
+            """async () => {
+                const businessesResponse = await fetch('/api/businesses?include_inactive=true', { credentials: 'include' });
+                const businesses = await businessesResponse.json();
+                const r3 = businesses.find((business) => business.code === 'R3');
+                const areasResponse = await fetch(`/api/areas?include_inactive=true&business_id=${r3.id}`, { credentials: 'include' });
+                const areas = await areasResponse.json();
+                const marker = areas.find((area) => area.code === 'ANNAT');
+                const payload = { business_id: r3.id, code: 'ANNAT', name: 'Annat', sort_order: 99, is_active: true };
+                if (marker) {
+                    await fetch(`/api/areas/${marker.id}`, {
+                        method: 'PUT',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                } else {
+                    await fetch('/api/areas', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                }
+            }"""
+        )
     finally:
         admin_context.close()
 
@@ -130,7 +157,7 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         r3_page.fill("#password", visual_smoke.VISUAL_PASSWORD)
         r3_page.click("button.primary")
         r3_page.wait_for_url("**/index.html", timeout=15000)
-        expect(r3_page.locator("#area-focus-toggle")).to_have_text("R3")
+        expect(r3_page.locator("#area-focus-toggle")).to_have_attribute("data-value", "ALLT")
 
         r3_page.locator("#area-focus-toggle").click(button="right")
         expect(r3_page.locator(".area-focus-menu")).to_be_visible()
@@ -138,8 +165,10 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         r3_items = r3_page.locator(".area-focus-menu button").evaluate_all(
             """(nodes) => nodes.map((node) => ({ value: node.dataset.value, text: node.innerText }))"""
         )
-        assert len(r3_items) == 1
-        assert "R3" in r3_items[0]["text"]
-        assert r3_items[0]["value"].startswith("AREA:")
+        r3_text = "\n".join(item["text"] for item in r3_items)
+        assert "R3" in r3_text
+        assert "Alla" in r3_text
+        assert any(item["value"].startswith("AREA:") for item in r3_items)
+        assert any(item["value"] == "ALLT" for item in r3_items)
     finally:
         r3_context.close()

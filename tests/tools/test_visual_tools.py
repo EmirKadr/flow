@@ -630,6 +630,7 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
+        assert 'src="/js/common.js?v=20260601-area-focus"' in html
 
 
 def test_data_fetch_plan_columns_are_user_editable():
