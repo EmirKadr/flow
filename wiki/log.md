@@ -617,3 +617,7 @@ Ytgenereringens fullskarmskontroll ar flyttad fran verktygsradens textknapp till
 ## [2026-06-01] fix | Sidolista kopierar sandningsnummer
 
 Ytgenerering-kartans sidolista kopierar nu radens sandningsnummer till urklipp nar anvandaren klickar pa raden, aven nar listan visar kundnamn eller transportor i stallet for sifferstrangen.
+
+## [2026-06-01] fix | AllocationSettings ar separat behorighet
+
+`allocationSettings` raknas inte langre som generell lagerverktygsatkomst. Vanlig admin kan fortsatt ha settings-/matrisbehorighet via vyregler, men `require_allocation_tools_user` kraver fortfarande Lagerkontorist, Artikelplacerare eller Super User for de vanliga lagerverktygen.

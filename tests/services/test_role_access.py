@@ -8,7 +8,13 @@ from app.backend.deps import (
     require_planning_viewer,
 )
 from app.backend.models import User
-from app.backend.user_access import can_access_view, can_use_allocation_process, is_super_user, role_view_access_level
+from app.backend.user_access import (
+    can_access_view,
+    can_use_allocation_process,
+    can_use_allocation_tools,
+    is_super_user,
+    role_view_access_level,
+)
 
 
 def make_user(role: str, roles: list[str] | None = None) -> User:
@@ -58,6 +64,8 @@ def test_admin_without_lagerkontorist_cannot_open_allocation_tools():
         require_allocation_tools_user(make_user("admin"))
 
     assert exc_info.value.status_code == 403
+    assert not can_use_allocation_tools(make_user("admin"), {})
+    assert can_access_view(make_user("admin"), {}, "allocationSettings", "edit")
 
 
 def test_artikelplacerare_can_open_same_allocation_tools_as_lagerkontorist():

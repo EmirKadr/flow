@@ -1435,7 +1435,6 @@ function canUseAllocationTools(user) {
     canViewPage(user, "allocationUploads")
     || canViewPage(user, "allocationSplit")
     || canViewPage(user, "allocationProcess")
-    || canViewPage(user, "allocationSettings")
   );
 }
 

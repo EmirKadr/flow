@@ -23,7 +23,6 @@ from ..user_access import can_access_view, can_use_allocation_process, is_super_
 router = APIRouter(
     prefix="/api/allokering",
     tags=["allokering"],
-    dependencies=[Depends(require_allocation_tools_user)],
 )
 
 SELF_SERVICE_FLOW_IDS = {"split-values"}
