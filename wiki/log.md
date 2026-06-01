@@ -565,3 +565,7 @@ Forecast-resultatet bygger nu en redigerbar klusterlista fran Forecast-tabellens
 ## [2026-06-01] fix | Svenska tecken i Ytgenerering-kartan
 
 Ytgenerering-kartans knappar, sökfält, detaljrad, översikt, toastar och justerade karta-CSV använder nu svenska tecken i texter som `Återställ vy`, `Fullskärm`, `Sök UTL, sändning eller transportör`, `Över kapacitet`, `Sändningsnr` och `Transportör`.
+
+## [2026-06-01] fix | Kärnfiler blir serverns sanning
+
+Kärnfiluppladdningar känner nu igen `location-...`, `lagerplats-...` och `lagerplatser-...` som samma `location`-underlag. När en ny kärnfil sparas i databasen tas äldre lokala fallbackfiler för samma verksamhet och filtyp bort, och Uppladdningar läser kärnfilstatus från servern utan GET-cache så gamla lokala filer inte kan se ut som sanning.

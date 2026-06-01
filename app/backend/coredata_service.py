@@ -45,7 +45,7 @@ CORE_DATA_SPECS = (
     CoreDataFileSpec("item_option", "Item option", "item_option"),
     CoreDataFileSpec("item_security_info", "Artikel säkerhetsinformation", "item_security_info"),
     CoreDataFileSpec("kpi_target_rule", "KPI target rule", "kpi_target_rule"),
-    CoreDataFileSpec("location", "Location", "location"),
+    CoreDataFileSpec("location", "Location", "location", ("lagerplats", "lagerplatser")),
     CoreDataFileSpec("location_cost", "Location cost", "location_cost"),
     CoreDataFileSpec("pallet_type", "Pallet type", "pallet_type"),
     CoreDataFileSpec("trans_agency", "Transport agency", "trans_agency", ("transportorer", "transportor", "agency", "agencies")),
@@ -366,6 +366,8 @@ def save_coredata_file(
             row.uploaded_by = uploaded_by
             row.updated_at = now
         db.flush()
+        fallback_dir = business_coredata_dir(reference_dir, normalized_business)
+        remove_existing_coredata_files(fallback_dir, file_type)
         _materialize_coredata_row(row, reference_dir)
         return coredata_db_status_payload(spec, row)
 

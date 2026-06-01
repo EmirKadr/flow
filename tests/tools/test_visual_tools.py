@@ -1336,6 +1336,11 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "dispatch_template" in allocation
     assert "trans_agency" in allocation
     assert "transportorer" in allocation
+    assert '{ key: "location", prefix: "lagerplats" }' in allocation
+    assert '{ key: "location", prefix: "lagerplatser" }' in allocation
+    assert "const skipCache = options.skipCache !== false" in allocation
+    assert 'loadAllocationCoreDataStatus({ skipCache: true })' in allocation
+    assert 'window.api?.clearGetCache?.((key) => String(key || "").includes("/api/coredata/files"))' in allocation
     assert "Alternativ leveransadress" in allocation
     assert "Godsdeklaration" in catalog
     assert "Godsdeklaration" in flows

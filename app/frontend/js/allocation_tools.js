@@ -159,6 +159,8 @@ const ALLOCATION_PERSISTENT_DATA_UPLOAD_SPECS = [
   { key: "item_alias", prefix: "item_alias" },
   { key: "dimension", prefix: "dimension" },
   { key: "location", prefix: "location" },
+  { key: "location", prefix: "lagerplats" },
+  { key: "location", prefix: "lagerplatser" },
   { key: "custom", prefix: "custom" },
   { key: "item", prefix: "item" },
 ];
@@ -895,9 +897,13 @@ async function allocationPostForm(path, formData) {
   return allocationJson(path, { method: "POST", body: formData });
 }
 
-async function loadAllocationCoreDataStatus() {
+async function loadAllocationCoreDataStatus(options = {}) {
   try {
-    allocationState.coredata = await allocationJson("/api/coredata/files");
+    const skipCache = options.skipCache !== false;
+    if (skipCache) {
+      window.api?.clearGetCache?.((key) => String(key || "").includes("/api/coredata/files"));
+    }
+    allocationState.coredata = await allocationJson("/api/coredata/files", skipCache ? { skipCache: true } : {});
     cacheAllocationBootData();
   } catch (error) {
     console.warn("Kunde inte läsa kärnfiler.", error);
@@ -3056,7 +3062,7 @@ window.addEventListener("flow:uploadsCleared", async () => {
   if (!root || !allocationState.user) return;
   allocationState.files = await loadStoredAllocationFiles();
   cacheAllocationFileMetadata();
-  await loadAllocationCoreDataStatus();
+  await loadAllocationCoreDataStatus({ skipCache: true });
   allocationState.status = "Vanliga filval rensade. Kärnfiler och sammanställd data ligger kvar.";
   allocationState.autoStatus = "";
   allocationState.lastBufferSignature = "";

@@ -35,6 +35,8 @@ def test_coredata_classification_prefers_longest_prefix():
     assert classify_coredata_file("item-20260525120000.csv") == "item"
     assert classify_coredata_file("location_cost-20260525120000.csv") == "location_cost"
     assert classify_coredata_file("location-20260525120000.csv") == "location"
+    assert classify_coredata_file("lagerplats-20260601132425.csv") == "location"
+    assert classify_coredata_file("lagerplatser-20260601132425.csv") == "location"
     assert classify_coredata_file("trans_agency-20260601140839.csv") == "trans_agency"
     assert classify_coredata_file("transportörer-20260601140839.csv") == "trans_agency"
     assert classify_coredata_file("agency.csv") == "trans_agency"
@@ -154,8 +156,10 @@ def test_coredata_status_is_business_scoped_and_uses_existing_directory_case(tmp
 def test_coredata_postgres_row_becomes_source_of_truth(tmp_path):
     db = sqlite_session()
     old_file = tmp_path / "coredata" / "Stigamo" / "item_option-20260101000000.csv"
+    r3_file = tmp_path / "coredata" / "R3" / "item_option-20260101000000.csv"
     source = tmp_path / "upload" / "item_option-20260601101010.csv"
     write(old_file, "Artikel\tPack Klass\nA\tOLD\n")
+    write(r3_file, "Artikel\tPack Klass\nA\tR3\n")
     write(source, "Artikel\tPack Klass\nA\tDB\n")
 
     saved = save_coredata_file(
@@ -175,7 +179,8 @@ def test_coredata_postgres_row_becomes_source_of_truth(tmp_path):
     assert saved["storage"] == "postgres"
     assert saved["name"] == source.name
     assert resolved.read_text(encoding="utf-8").endswith("DB\n")
-    assert old_file.read_text(encoding="utf-8").endswith("OLD\n")
+    assert not old_file.exists()
+    assert r3_file.exists()
     assert status["files"]["item_option"]["uploaded"] is True
     assert status["files"]["item_option"]["storage"] == "postgres"
     assert status["files"]["item_option"]["name"] == source.name
