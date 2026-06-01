@@ -63,6 +63,9 @@ GOTLAND_POSTCODE_ROWS = [
 
 
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
+PROCESS_AREA_FOCUS_PARAM = "__process_area_focus"
+YTGENERERING_MG_MIN_LOCATION = 205
+YTGENERERING_MG_MAX_LOCATION = 652
 FileVersion = tuple[str, int, int]
 
 
@@ -106,6 +109,21 @@ def clear_prepared_location_cache() -> None:
 
 def warm_prepared_locations(path: str | Path) -> None:
     _read_prepared_locations(Path(path))
+
+
+def _ytgenerering_area_focus(params: dict) -> str:
+    return str(params.get(PROCESS_AREA_FOCUS_PARAM) or "").strip().upper()
+
+
+def _filter_ytgenerering_locations(locations: pd.DataFrame, area_focus: str) -> tuple[pd.DataFrame, str | None]:
+    if area_focus != "MG":
+        return locations, None
+    filtered = locations[
+        locations["_location_number"].between(YTGENERERING_MG_MIN_LOCATION, YTGENERERING_MG_MAX_LOCATION)
+    ].copy()
+    if filtered.empty:
+        raise ValueError("MG-ytgenerering saknar giltiga ytor i UTL205-UTL652.")
+    return filtered, "MG-toggle: Ytgenerering använder endast UTL205-UTL652."
 
 
 @lru_cache(maxsize=32)
@@ -959,6 +977,7 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         columns = payload.get("columns") or None
         forecast_df = pd.DataFrame(rows, columns=columns)
     locations_df = _read_prepared_locations(Path(files["location"]))
+    locations_df, area_log = _filter_ytgenerering_locations(locations_df, _ytgenerering_area_focus(params))
     result = generate_surface_plan(forecast_df, locations_df)
 
     tables = [
@@ -972,6 +991,8 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
         "Sändningar placerade en och en. Transportör används för sortering och översikt.",
     ]
+    if area_log:
+        log.insert(1, area_log)
     download_files: dict[str, dict[str, str]] = {}
     auto_downloads: list[dict[str, str]] = []
     if result.unplaced.empty:

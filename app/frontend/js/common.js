@@ -1,11 +1,13 @@
 // Delade hjälpare: navbar, toast, auth-check.
 
 const THEME_STORAGE_KEY = "flow-theme";
+const APP_ZOOM_STORAGE_KEY = "flow-app-zoom";
 const SIDEBAR_USER_CACHE_KEY = "flow-sidebar-user";
 const SIDEBAR_LAYOUT_CACHE_KEY = "flow-sidebar-layout";
 const ROLE_VIEW_ACCESS_CACHE_KEY = "flow-role-view-access";
 const ALLOCATION_UPLOAD_NOTICE_KEY = "flow-allocation-upload-notice";
 const APP_LOG_STORAGE_KEY = "flow-app-log-v1";
+const APP_LOG_UNREAD_STORAGE_KEY = "flow-app-log-unread-v1";
 const APP_LOG_MAX_ENTRIES = 200;
 const COMMON_WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
 const WAIT_METRIC_FLUSH_MS = 10000;
@@ -13,6 +15,10 @@ const WAIT_METRIC_MAX_QUEUE = 100;
 const FLOW_PAGE_STARTED_AT = typeof performance !== "undefined" && performance.now
   ? performance.now()
   : Date.now();
+const APP_ZOOM_DEFAULT = 100;
+const APP_ZOOM_MIN = 70;
+const APP_ZOOM_MAX = 140;
+const APP_ZOOM_STEP = 10;
 const ALLOCATION_PROTECTED_UPLOAD_KEYS = [
   "article_max",
   "custom",
@@ -37,6 +43,7 @@ const SHARED_ALLOCATION_API = "/api/allokering";
 const SHARED_ALLOCATION_DB_NAME = "flow-allokering-files";
 const SHARED_ALLOCATION_STORE = "files";
 let sharedAllocationMetadataGeneration = 0;
+let uploadClearGeneration = 0;
 const SHARED_ALLOCATION_FILE_TYPE_KEYS = {
   orders: ["orders"],
   buffer: ["buffer"],
@@ -90,6 +97,7 @@ const AREA_FOCUS_FALLBACK_NAMES = {
 let dynamicAreaFocusOptions = null;
 let areaFocusAreasRequest = null;
 const appLogEntries = readStoredAppLogEntries();
+let appLogUnreadCount = readStoredAppLogUnreadCount();
 let waitMetricQueue = [];
 let waitMetricFlushTimer = null;
 let waitMetricInFlight = false;
@@ -307,6 +315,112 @@ function initThemeToggle() {
 }
 
 applyTheme(readTheme(), { persist: false });
+
+function normalizeAppZoom(value) {
+  if (value === null || value === undefined || value === "") return APP_ZOOM_DEFAULT;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return APP_ZOOM_DEFAULT;
+  const stepped = Math.round(numeric / APP_ZOOM_STEP) * APP_ZOOM_STEP;
+  return Math.min(APP_ZOOM_MAX, Math.max(APP_ZOOM_MIN, stepped));
+}
+
+function readAppZoom() {
+  try {
+    return normalizeAppZoom(localStorage.getItem(APP_ZOOM_STORAGE_KEY));
+  } catch (e) {
+    return APP_ZOOM_DEFAULT;
+  }
+}
+
+function updateAppZoomControls(percent = readAppZoom()) {
+  const normalized = normalizeAppZoom(percent);
+  document.documentElement.dataset.appZoom = String(normalized);
+  document.querySelectorAll("[data-app-zoom-value]").forEach((node) => {
+    node.textContent = `${normalized}%`;
+  });
+
+  const out = document.getElementById("app-zoom-out");
+  const reset = document.getElementById("app-zoom-reset");
+  const input = document.getElementById("app-zoom-in");
+  if (out) {
+    out.disabled = normalized <= APP_ZOOM_MIN;
+    out.title = `Zooma ut (Ctrl+-), nu ${normalized}%`;
+    out.setAttribute("aria-label", out.title);
+  }
+  if (reset) {
+    reset.disabled = normalized === APP_ZOOM_DEFAULT;
+    reset.title = `Återställ zoom (Ctrl+0), nu ${normalized}%`;
+    reset.setAttribute("aria-label", reset.title);
+  }
+  if (input) {
+    input.disabled = normalized >= APP_ZOOM_MAX;
+    input.title = `Zooma in (Ctrl++), nu ${normalized}%`;
+    input.setAttribute("aria-label", input.title);
+  }
+}
+
+function applyAppZoom(percent, { persist = true } = {}) {
+  const normalized = normalizeAppZoom(percent);
+  const target = document.body || document.documentElement;
+  target.style.zoom = String(normalized / 100);
+  document.documentElement.dataset.appZoom = String(normalized);
+  if (persist) {
+    try { localStorage.setItem(APP_ZOOM_STORAGE_KEY, String(normalized)); } catch (e) {}
+  }
+  updateAppZoomControls(normalized);
+  return normalized;
+}
+
+function changeAppZoom(deltaSteps) {
+  applyAppZoom(readAppZoom() + (deltaSteps * APP_ZOOM_STEP));
+}
+
+function resetAppZoom() {
+  applyAppZoom(APP_ZOOM_DEFAULT);
+}
+
+function renderAppZoomControls() {
+  return `
+      <div class="app-zoom-control" id="app-zoom-control" role="group" aria-label="Appzoom">
+        <button type="button" id="app-zoom-out">−</button>
+        <button type="button" id="app-zoom-reset">0</button>
+        <button type="button" id="app-zoom-in">+</button>
+      </div>
+  `;
+}
+
+function initAppZoomControls() {
+  applyAppZoom(readAppZoom(), { persist: false });
+  document.getElementById("app-zoom-out")?.addEventListener("click", () => changeAppZoom(-1));
+  document.getElementById("app-zoom-reset")?.addEventListener("click", resetAppZoom);
+  document.getElementById("app-zoom-in")?.addEventListener("click", () => changeAppZoom(1));
+  updateAppZoomControls();
+}
+
+function initAppZoomShortcuts() {
+  document.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = String(event.key || "").toLowerCase();
+    if (key === "+" || key === "=") {
+      event.preventDefault();
+      changeAppZoom(1);
+    } else if (key === "-" || key === "_") {
+      event.preventDefault();
+      changeAppZoom(-1);
+    } else if (key === "0") {
+      event.preventDefault();
+      resetAppZoom();
+    }
+  });
+  window.addEventListener("wheel", (event) => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    changeAppZoom(event.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+}
+
+applyAppZoom(readAppZoom(), { persist: false });
+initAppZoomShortcuts();
 
 function areaFocusOptions() {
   return Array.isArray(dynamicAreaFocusOptions) && dynamicAreaFocusOptions.length
@@ -954,6 +1068,15 @@ function readStoredAppLogEntries() {
   }
 }
 
+function readStoredAppLogUnreadCount() {
+  try {
+    const count = Number(sessionStorage.getItem(APP_LOG_UNREAD_STORAGE_KEY) || 0);
+    return Number.isFinite(count) && count > 0 ? Math.min(99, Math.floor(count)) : 0;
+  } catch (_error) {
+    return 0;
+  }
+}
+
 function persistAppLogEntries() {
   try {
     sessionStorage.setItem(APP_LOG_STORAGE_KEY, JSON.stringify({
@@ -961,6 +1084,44 @@ function persistAppLogEntries() {
       entries: appLogEntries.slice(0, APP_LOG_MAX_ENTRIES),
     }));
   } catch (_error) {}
+}
+
+function persistAppLogUnreadCount() {
+  try {
+    if (appLogUnreadCount > 0) {
+      sessionStorage.setItem(APP_LOG_UNREAD_STORAGE_KEY, String(Math.min(99, appLogUnreadCount)));
+    } else {
+      sessionStorage.removeItem(APP_LOG_UNREAD_STORAGE_KEY);
+    }
+  } catch (_error) {}
+}
+
+function updateAppLogNotice() {
+  const notice = document.getElementById("log-notice");
+  const toggle = document.getElementById("log-toggle");
+  if (!notice) return;
+  const count = Math.min(99, Math.max(0, appLogUnreadCount));
+  notice.hidden = count <= 0;
+  notice.textContent = count > 99 ? "99+" : String(count);
+  toggle?.classList.toggle("has-log-notice", count > 0);
+  toggle?.setAttribute("aria-label", count > 0 ? `Öppna logg, ${count} nya händelser` : "Öppna logg");
+}
+
+function clearAppLogNotice() {
+  appLogUnreadCount = 0;
+  persistAppLogUnreadCount();
+  updateAppLogNotice();
+}
+
+function incrementAppLogNotice() {
+  const panel = document.getElementById("log-sidebar");
+  if (panel && !panel.hidden) {
+    clearAppLogNotice();
+    return;
+  }
+  appLogUnreadCount = Math.min(99, appLogUnreadCount + 1);
+  persistAppLogUnreadCount();
+  updateAppLogNotice();
 }
 
 function appendAppLog(message, kind = "info", title = "System") {
@@ -975,6 +1136,7 @@ function appendAppLog(message, kind = "info", title = "System") {
   if (appLogEntries.length > APP_LOG_MAX_ENTRIES) appLogEntries.length = APP_LOG_MAX_ENTRIES;
   persistAppLogEntries();
   renderAppLogEntries();
+  incrementAppLogNotice();
   console.info(`[${title}] ${entry.message}`);
 }
 
@@ -982,6 +1144,7 @@ function clearAppLog() {
   appLogEntries.length = 0;
   persistAppLogEntries();
   renderAppLogEntries();
+  clearAppLogNotice();
 }
 
 function waitMetricNow() {
@@ -1566,6 +1729,7 @@ function renderLogUtility() {
   return `
         <button class="log-toggle" id="log-toggle" type="button" title="Logg" aria-label="Öppna logg" aria-controls="log-sidebar" aria-expanded="false">
           ${LOG_ICON}
+          <span class="log-notice" id="log-notice" hidden></span>
         </button>
   `;
 }
@@ -1578,6 +1742,7 @@ function setLogSidebarOpen(open) {
   panel.classList.toggle("is-open", open);
   toggle?.classList.toggle("active", open);
   toggle?.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) clearAppLogNotice();
 }
 
 function ensureLogSidebar(app) {
@@ -1606,6 +1771,7 @@ function ensureLogSidebar(app) {
   panel.querySelector("#log-sidebar-clear").addEventListener("click", clearAppLog);
   panel.querySelector("#log-sidebar-close").addEventListener("click", () => setLogSidebarOpen(false));
   renderAppLogEntries();
+  updateAppLogNotice();
 }
 
 function initLogSidebarToggle() {
@@ -1615,6 +1781,7 @@ function initLogSidebarToggle() {
     const panel = document.getElementById("log-sidebar");
     setLogSidebarOpen(panel?.hidden);
   });
+  updateAppLogNotice();
 }
 
 function renderAssistantUtility() {
@@ -2331,15 +2498,27 @@ function sharedAllocationKeysForType(fileType) {
   return expandSharedAllocationKeys(SHARED_ALLOCATION_FILE_TYPE_KEYS[fileType] || []);
 }
 
-async function saveSharedAllocationFiles(files) {
+function sharedAllocationClearGeneration() {
+  return uploadClearGeneration;
+}
+
+function sharedAllocationSaveIsStale(expectedClearGeneration) {
+  return Number.isInteger(expectedClearGeneration) && expectedClearGeneration !== uploadClearGeneration;
+}
+
+async function saveSharedAllocationFiles(files, options = {}) {
+  const expectedClearGeneration = Number.isInteger(options?.clearGeneration) ? options.clearGeneration : null;
   const incoming = Array.from(files || []);
   if (incoming.length) sharedAllocationMetadataGeneration += 1;
   const saved = [];
   const recognized = [];
   const unknown = [];
   let mappings = 0;
+  const staleResult = () => ({ saved, recognized, unknown, mappings, stale: true });
   for (const file of incoming) {
+    if (sharedAllocationSaveIsStale(expectedClearGeneration)) return staleResult();
     const fileType = await detectSharedAllocationFile(file);
+    if (sharedAllocationSaveIsStale(expectedClearGeneration)) return staleResult();
     const targetKeys = sharedAllocationKeysForType(fileType);
     const keys = targetKeys.length ? targetKeys : expandSharedAllocationKeys(hintedSharedAllocationKeys(file));
     if (!keys.length) {
@@ -2348,6 +2527,7 @@ async function saveSharedAllocationFiles(files) {
     }
     recognized.push(file.name || keys[0]);
     for (const key of keys) {
+      if (sharedAllocationSaveIsStale(expectedClearGeneration)) return staleResult();
       await storeSharedAllocationFile(key, file);
       mappings += 1;
     }
@@ -2363,8 +2543,9 @@ async function saveSharedAllocationFiles(files) {
 }
 
 async function clearAllUploadedFiles({ confirmUser = true } = {}) {
-  sharedAllocationMetadataGeneration += 1;
   if (confirmUser && !confirm("Rensa alla vanliga filval i Uppladdningar? Kärnfiler och sammanställd data ligger kvar.")) return false;
+  uploadClearGeneration += 1;
+  sharedAllocationMetadataGeneration += 1;
   const results = await Promise.all(
     UPLOAD_FILE_STORES.map((item) => clearUploadIndexedDbStore(
       item.dbName,
@@ -2493,6 +2674,7 @@ function renderSidebar(user, activePage) {
   const uploadUtility = renderAllocationUploadUtility(user, activePage);
   const logUtility = renderLogUtility();
   const assistantUtility = renderAssistantUtility();
+  const zoomControls = renderAppZoomControls();
   const userName = user?.display_name || user?.username || "";
   const roleLabel = sidebarRoleLabel(user);
 
@@ -2503,6 +2685,7 @@ function renderSidebar(user, activePage) {
           <path d="M4 6h14M4 11h14M4 16h14"/>
         </svg>
       </button>
+      ${zoomControls}
       ${editButton}
     </div>
     <nav>
@@ -2527,6 +2710,7 @@ function renderSidebar(user, activePage) {
     </div>
   `;
 
+  initAppZoomControls();
   initAreaFocusToggle(user);
   initThemeToggle();
   ensureLogSidebar(app);
@@ -3423,6 +3607,7 @@ window.flowLog = {
 window.clearAllUploadedFiles = clearAllUploadedFiles;
 window.sharedAllocationUploads = {
   saveFiles: saveSharedAllocationFiles,
+  clearGeneration: sharedAllocationClearGeneration,
 };
 window.flowBackgroundPrefetch = {
   status: backgroundPrefetchStatus,

@@ -1,7 +1,7 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-01
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
@@ -25,7 +25,7 @@ Kort svar: Lagerverktygen ar tre vyer ovanpa `warehouse_tools`: Uppladdningar fo
 | Drag-drop | Drar filer till panel/slot/flode | Samma som Välj filer, med fallback till slot | `routeAllocationFiles` | Om flera filer okanda visas toast "Kunde inte sortera". |
 | Välj per slot | Valjer fil for en specifik slot | Forsoker detektera men fallbackar till sloten | `fallbackSlotKey` | Bra nar automatisk identifiering missar. |
 | X per slot | Rensar slot | Tar bort lokal IndexedDB-post | `deleteAllocationFile` | Sammanstalld data som `artikel_max.csv` kan visas utan att vara uppladdad. |
-| Rensa alla | Rensar vanliga lokala filval | Tar bort icke-skyddade filer ur allokerings- och produktivitetsstores men bevarar karnfiler, sammanstalld data som `artikel_max.csv` och KPI-mal | `clearAllUploadedFiles` | Bekraftelse sager att karnfiler och sammanstalld data ligger kvar. |
+| Rensa alla | Rensar vanliga lokala filval | Tar bort icke-skyddade filer ur allokerings- och produktivitetsstores, stoppar gammal produktivitetssynk fran att skriva tillbaka rensade loggar, men bevarar karnfiler, sammanstalld data som `artikel_max.csv` och KPI-mal | `clearAllUploadedFiles`, `syncAllocationUploadsFromStore` | Bekraftelse sager att karnfiler och sammanstalld data ligger kvar. |
 | Uppladdningsbadge | Visar antal nya filer | Lagrar notice i sessionStorage | `allocationUploadActivity` | Badge rensas nar Uppladdningar oppnas. |
 
 ## Karnfiler och sammanstalld data
@@ -40,7 +40,7 @@ Godsdeklaration anvander verksamhetens `item_security_info` som artikelns farlig
 
 Nar en slot redan har verksamhetens karnfil eller sammanstallda data, till exempel `item_option` eller `artikel_max.csv`, visas den i respektive permanent lista i stallet for att dubbelvisas i Filer. Om anvandaren laddar upp en lokal override i sessionen visas sloten i Filer igen.
 
-`Rensa alla` i Uppladdningar tar bara bort vanliga lokala filval. Permanenta karnfiler, sammanstalld data och skyddade poster ligger kvar, sa anvandaren kan rensa order-/buffert-/loggfiler utan att tappa verksamhetens standardunderlag.
+`Rensa alla` i Uppladdningar tar bara bort vanliga lokala filval. Permanenta karnfiler, sammanstalld data och skyddade poster ligger kvar, sa anvandaren kan rensa order-/buffert-/loggfiler utan att tappa verksamhetens standardunderlag. Om en bakgrundssynk fran Produktivitet redan ar igang ignoreras dess gamla filkopior efter rensningen, sa till exempel Palllastningslogg inte dyker upp igen.
 
 Produktivitetens sammanstallda loggar skapas nar Plocklogg, Translogg eller Palllastningslogg laddas upp i Produktivitet. Plocklogg tar bara in nya `Radid` (kolumn-id `rowid`) och Translogg tar bara in nya `Rowid`; Palllastningslogg tar bara in rader nyare an senaste `Ändrad`/`timestamp` i den befintliga csv.gz-filen. Filerna ar verksamhetsscopeade pa samma katalogprincip som coredata.
 
@@ -73,13 +73,13 @@ Reglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix`
 | Vecka 27-kontroll | Detalj Kundorder | Avvikelser/text |
 | Prognosrapport | Prognos eller kampanj, samt Saldo; valfritt Buffert | Prognos vs Autoplock |
 | Forecast | Detalj Kundorder, Orderoversikt, Buffertpallar och karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` | Forecast per `Sandningsnr`, Excel/CSV-tabell och sessiondata for Ytgenerering |
-| Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser, UTL1-UTL652, minst 6 tecken och `Max pall > 0` |
+| Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser, normalt UTL1-UTL652 men MG-toggle anvander endast UTL205-UTL652, minst 6 tecken och `Max pall > 0` |
 
 Godsdeklaration kopplar orderrader via `Detalj Kundorder.Order nr` till `Orderoversikt.Ordernr`. `Orderoversikt.Alt adress` ar adressnumret som matchas mot `Alternativ leveransadress.Adr num` tillsammans med kundnumret. Flodet filtrerar forst bort artiklar som saknar `DG` eller `LQ` i `item_security_info.Farligt gods nivå`. DG-rader ar alltid klara. LQ-rader ar bara klara nar den alternativa leveransadressens `Post nr` ligger i Gotlandsintervallet 62000-62499. Resultatet visar `Klara ordernummer`, `Klara rader`, `LQ ej klara` och en liten referenstabell for Gotlands postnummerintervall.
 
-Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet och laddar en paketerad kalibreringsartefakt (`calibration.pkl`) sa Render/prod inte behover lokal raw historik for att prediktera. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil. Om orderoversikten saknar transportor pa en sandning anvander Forecast default-transportoren `Schenker` internt for modellens transportorsignal, men resultatet och Ytgenerering far transportoren `Okand` sa fallbacken inte styr ytregler. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion. Nar en ny `location`-karnfil laddas upp rensas den gamla location-cachen och den nya ytlistan forvarms direkt, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
+Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet och laddar en paketerad kalibreringsartefakt (`calibration.pkl`) sa Render/prod inte behover lokal raw historik for att prediktera. Prediktionen gar direkt via LightGBM-/XGBoost-boosterobjekten i artefakten, sa sklearn-wrapperns `get_params`-vag inte kan stoppa Forecast i miljoer dar wrappern och sklearn skiljer sig. Forecast-resultatet sparas som tabell i serversessionen, och Ytgenerering anvander den DataFrame-tabellen direkt for snabbaste mojliga kedja. En temporar JSON-artifact finns kvar som fallback/metadata, men anvandaren behover aldrig ladda upp en mellanfil. Om orderoversikten saknar transportor pa en sandning anvander Forecast default-transportoren `Schenker` internt for modellens transportorsignal, men resultatet och Ytgenerering far transportoren `Okand` sa fallbacken inte styr ytregler. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion. Nar en ny `location`-karnfil laddas upp rensas den gamla location-cachen och den nya ytlistan forvarms direkt, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
 
-Ytgenerering sorterar transportorer efter total pallplatsbehov for att ge ett stabilt flode och en transportorsoversikt. Placeringen sker fortfarande per sandning: en lagerplats delas aldrig mellan flera sandningar, och en sandning kan spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har. Nar alla sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer` skapas ocksa `ASK-import order/yta` och laddas ner automatiskt som `v_ask_order_overview_order_set_area_execute_command.csv`. Importfilen ar tabbseparerad med kolumnerna `area_num`, `company`, `order_num`, `pick_zone`; `area_num` innehaller sandningens UTL-ytor kommaseparerade, `company` ar `MG` och `pick_zone` ar `A`.
+Ytgenerering sorterar transportorer efter total pallplatsbehov for att ge ett stabilt flode och en transportorsoversikt. Placeringen sker fortfarande per sandning: en lagerplats delas aldrig mellan flera sandningar, och en sandning kan spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har. Nar vald Bearbeta-toggle ar MG far flodet bara anvanda UTL205-UTL652; andra toggles anvander den generella UTL1-UTL652-regeln. Nar alla sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer` skapas ocksa `ASK-import order/yta` och laddas ner automatiskt som `v_ask_order_overview_order_set_area_execute_command.csv`. Importfilen ar tabbseparerad med kolumnerna `area_num`, `company`, `order_num`, `pick_zone`; `area_num` innehaller sandningens UTL-ytor kommaseparerade, `company` ar `MG` och `pick_zone` ar `A`.
 
 Dolda/tekniska floden finns for observations-update, observations-sync och update-check. Observations kan aven triggas automatiskt nar ny buffertfil laggs in. Observations och den framraknade sammanstallda datan `artikel_max.csv` ar verksamhetsseparerade: Stigamo anvander legacy-filerna i `lowfreqdata/buffertpall/`, medan R3 anvander egna filer under `lowfreqdata/buffertpall/r3/`. En R3-uppladdning ska darfor inte andra Stigamos observations- eller artikel_max-underlag, och tvartom.
 
@@ -112,6 +112,7 @@ Bearbeta och Dela sparar samtidigt arbetslaget klient-side i `sessionStorage` pe
 | --- | --- |
 | Flodesknapp | Disabled tills kravda filer/falt finns. Visar "Kor..." medan API jobbar. |
 | Info `i` | Visar flodesbeskrivning och kravda filer i popover. |
+| Foljdknapp efter Forecast | Nar Forecast ar klart visas `Kor Ytgenerering` direkt i resultatpanelen om Ytgenerering finns i Bearbeta. Knappen ar disabled tills Forecast-sessionen och verksamhetens `location` finns, och skickar samma `forecast_session_id` som den vanliga Ytgenerering-knappen. |
 | Kopiera text | Fritextrutor, till exempel Vecka 27-rapporten, har en kopieringsikon uppe till hoger som kopierar hela rutans text och visar toasten "Text kopierad". |
 | Resultattabell | Visar kolumnnamn i headern och en kopieringsikon per kolumn. Orderoversiktkontroll behaller `Avvikelsetyp` for samma Excel-/CSV-kontrakt som Allokera. |
 | Oppna i Excel | Skickar session_id och tabellnyckel till `/api/allokering/open-excel`. Vid lyckad OS-start visas toasten "Excel oppnas"; om Windows/Excel inte kan oppna filen visas feltoast. |

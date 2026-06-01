@@ -95,6 +95,7 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "window.reportApiError?.(path" in allocation
     assert "appendAppLog(message" in common
     assert "APP_LOG_STORAGE_KEY" in common
+    assert "APP_LOG_UNREAD_STORAGE_KEY" in common
     assert "function recordWaitMetric" in common
     assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
     assert "client_long_task" in common
@@ -495,6 +496,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     uploads_html = (frontend / "uppladdningar.html").read_text(encoding="utf-8")
 
     assert "flow-theme" in common
+    assert "flow-app-zoom" in common
     assert "flow-sidebar-user" in common
     assert "flow-sidebar-layout" in common
     assert "flow-role-view-access" in common
@@ -510,6 +512,12 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "readCachedSidebarUser" in common
     assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
+    assert 'id="app-zoom-control"' in common
+    assert 'id="app-zoom-out"' in common
+    assert 'id="app-zoom-reset"' in common
+    assert 'id="app-zoom-in"' in common
+    assert "Ctrl++" in common
+    assert 'window.addEventListener("wheel"' in common
     assert 'id="sidebar-edit"' in common
     assert "SIDEBAR_MOVE_UP_ICON" in common
     assert "SIDEBAR_MOVE_DOWN_ICON" in common
@@ -526,6 +534,9 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "renderAllocationUploadUtility" in common
     assert "renderLogUtility" in common
     assert 'id="log-toggle"' in common
+    assert 'id="log-notice"' in common
+    assert "updateAppLogNotice" in common
+    assert "clearAppLogNotice" in common
     assert 'panel.id = "log-sidebar"' in common
     assert 'id="log-sidebar-close"' in common
     assert "ensureLogSidebar" in common
@@ -544,8 +555,11 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "THEME_ICONS" in common
     assert ':root[data-theme="dark"]' in styles
     assert ".theme-toggle" in styles
+    assert ".app-zoom-control" in styles
+    assert ".sidebar.collapsed .app-zoom-control" in styles
     assert "[hidden] { display: none !important; }" in styles
     assert ".log-toggle" in styles
+    assert ".log-toggle .log-notice" in styles
     assert ".log-sidebar" in styles
     assert ".log-sidebar[hidden]" in styles
     assert ".log-sidebar-close" in styles
@@ -630,7 +644,7 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
-        assert 'src="/js/common.js?v=20260601-area-focus"' in html
+        assert 'src="/js/common.js?v=20260601-zoom"' in html
 
 
 def test_data_fetch_plan_columns_are_user_editable():
@@ -1313,6 +1327,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "syncAllocationUploads" in productivity_uploads
     assert "syncAllocationUploadsFromStore" in productivity_uploads
     assert "lastAllocationSyncSignature" in productivity_uploads
+    assert "clearGeneration" in common
+    assert "stale: true" in productivity_uploads
     assert "window.sharedAllocationUploads?.saveFiles" in productivity_uploads
     assert "window.allocationUploadActivity?.start()" in productivity_uploads
     assert "window.allocationUploadActivity?.finish(activityCount)" in productivity_uploads

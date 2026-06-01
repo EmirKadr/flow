@@ -578,6 +578,45 @@ def test_allocation_run_flow_filters_uploaded_files_from_area_focus(monkeypatch,
     ]
 
 
+def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL205\tU\t1\n", encoding="utf-8")
+    captured = {}
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="STIGAMO")
+
+        def query(self, model):
+            return FakeQuery(None)
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {"location": location_path}, {bridge.PROCESS_AREA_FOCUS_PARAM: "MG"}, []
+
+    def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
+        captured["flow_id"] = flow_id
+        captured["files"] = dict(files)
+        captured["params"] = dict(params)
+        return {"flow_id": flow_id, "tables": [], "summary": {}, "log": []}
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
+
+    assert result["flow_id"] == "ytgenerering"
+    assert captured["files"]["location"] == location_path
+    assert captured["params"][bridge.PROCESS_AREA_FOCUS_PARAM] == "MG"
+
+
 def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
     pd = pytest.importorskip("pandas")
     user = business_user(7, 20)

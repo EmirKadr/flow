@@ -602,6 +602,8 @@ async def run_flow(
             files = {**coredata_files, **files}
         files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
         temp_paths.extend(filter_temp_paths)
+        if flow_id == "ytgenerering" and area_focus:
+            params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
             default_max_csv_path = bridge.business_allocation_data_paths(business_code)["article_max_path"]
         if default_max_csv_path is not None:

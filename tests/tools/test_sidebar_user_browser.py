@@ -69,16 +69,61 @@ def test_sidebar_log_persists_across_view_navigation(local_sidebar_server, chrom
         page.wait_for_url("**/index.html", timeout=15000)
         page.wait_for_selector("#log-toggle", timeout=15000)
 
+        page.evaluate("() => window.clearAppLog()")
         page.evaluate("() => window.flowLog.success('Testlogg sparad över vybyte', 'Test')")
+        expect(page.locator("#log-notice")).to_be_visible()
+        expect(page.locator("#log-notice")).to_have_text("1")
         page.goto(f"{local_sidebar_server}/personer.html", wait_until="networkidle")
         page.wait_for_selector("#persons-body tr", timeout=15000)
+        expect(page.locator("#log-notice")).to_be_visible()
+        assert int(page.locator("#log-notice").inner_text()) >= 1
         page.click("#log-toggle")
 
         expect(page.locator("#log-sidebar")).to_be_visible()
+        expect(page.locator("#log-notice")).to_be_hidden()
         expect(page.locator("#log-sidebar")).to_contain_text("Testlogg sparad över vybyte")
         expect(page.locator("#log-sidebar")).not_to_contain_text("Öppnade vy")
         page.click("#log-sidebar-clear")
         expect(page.locator("#log-sidebar")).to_contain_text("Ingen logg")
+    finally:
+        context.close()
+
+
+def test_sidebar_zoom_controls_and_shortcuts(local_sidebar_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        page.goto(f"{local_sidebar_server}/login.html", wait_until="networkidle")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+        page.wait_for_selector("#app-zoom-control", timeout=15000)
+
+        expect(page.locator("#app-zoom-control")).to_be_visible()
+        expect(page.locator("#app-zoom-out")).to_have_text("−")
+        expect(page.locator("#app-zoom-reset")).to_have_text("0")
+        expect(page.locator("#app-zoom-in")).to_have_text("+")
+        expect(page.locator("html")).to_have_attribute("data-app-zoom", "100")
+
+        page.click("#app-zoom-in")
+        expect(page.locator("html")).to_have_attribute("data-app-zoom", "110")
+        assert page.evaluate("() => localStorage.getItem('flow-app-zoom')") == "110"
+
+        page.keyboard.down("Control")
+        page.keyboard.press("-")
+        page.keyboard.up("Control")
+        expect(page.locator("html")).to_have_attribute("data-app-zoom", "100")
+
+        page.keyboard.down("Control")
+        page.keyboard.press("=")
+        page.keyboard.up("Control")
+        expect(page.locator("html")).to_have_attribute("data-app-zoom", "110")
+
+        page.keyboard.down("Control")
+        page.keyboard.press("0")
+        page.keyboard.up("Control")
+        expect(page.locator("html")).to_have_attribute("data-app-zoom", "100")
     finally:
         context.close()
 

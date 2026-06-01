@@ -364,14 +364,18 @@
 
   async function syncAllocationUploadsFromStore(files = null) {
     if (!window.sharedAllocationUploads?.saveFiles) return { saved: [], recognized: [], unknown: [], mappings: 0 };
+    const clearGeneration = window.sharedAllocationUploads.clearGeneration?.();
     const stored = files || await loadFiles();
+    if (Number.isInteger(clearGeneration) && clearGeneration !== window.sharedAllocationUploads.clearGeneration?.()) {
+      return { saved: [], recognized: [], unknown: [], mappings: 0, stale: true };
+    }
     const signature = storedFilesSignature(stored);
     if (!signature || signature === lastAllocationSyncSignature) {
       return { saved: [], recognized: [], unknown: [], mappings: 0 };
     }
     const fileList = Object.values(stored).map((entry) => entry?.file).filter(Boolean);
-    const result = await window.sharedAllocationUploads.saveFiles(fileList);
-    lastAllocationSyncSignature = signature;
+    const result = await window.sharedAllocationUploads.saveFiles(fileList, { clearGeneration });
+    if (!result?.stale) lastAllocationSyncSignature = signature;
     return result;
   }
 
@@ -524,7 +528,10 @@
     await refreshPanel(panel);
   }
 
-  window.addEventListener("flow:uploadsCleared", refreshPanels);
+  window.addEventListener("flow:uploadsCleared", () => {
+    lastAllocationSyncSignature = "";
+    void refreshPanels();
+  });
 
   window.addEventListener("dragend", clearDropHighlights);
 

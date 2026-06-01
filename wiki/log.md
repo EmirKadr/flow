@@ -501,3 +501,27 @@ Meta-analysen har fått `shipment_number`/sändningsnummer i `meta_shipment_obse
 ## [2026-06-01] fix | Scrollbar omradestoggle
 
 Sidebarens omradesmeny kan nu scrollas utan att stangas. `common.js` ignorerar scroll-event som kommer fran sjalva `.area-focus-menu`, stoppar klick/scroll inne i menyn fran att trigga dokumentets utanfor-klick och behaller stangning vid sidscroll, resize, Escape eller klick utanfor.
+
+## [2026-06-01] feature | Appzoom i sidebar
+
+Sidebaren har fatt en global zoomkontroll med symbolerna `- 0 +` mellan hamburgaren och menyredigering. Zoomnivån sparas lokalt i `flow-app-zoom`, styr hela appytan i både webb och Windows-app och kan även ändras med `Ctrl+-`, `Ctrl++`, `Ctrl+0` och `Ctrl+scroll`. Alla skyddade HTML-sidor har ny cache-bust för `common.js`.
+
+## [2026-06-01] polish | Loggikon visar nya loggrader
+
+Dokument-/loggikonen i sidebaren visar nu en badge med antal nya loggrader i aktuell session, på samma sätt som uppladdningsikonen visar antal uppladdningar. Räknaren sparas i `sessionStorage`, följer med vid sidbyte och nollas när användaren öppnar eller rensar loggpanelen.
+
+## [2026-06-01] fix | Rensa alla stoppar gammal produktivitetssynk
+
+Uppladdningars `Rensa alla` markerar nu en ny rensningsgeneration. Produktivitetens bakgrundssynk skickar med den generationen när loggfiler speglas till Uppladdningar, och en gammal synk som startade före rensningen får inte skriva tillbaka exempelvis `Palllastningslogg` efter att användaren rensat filerna.
+
+## [2026-06-01] fix | Forecast undviker sklearn get_params-fel
+
+Forecastens paketerade LightGBM-/XGBoost-artefakt predikterar nu via underliggande boosterobjekt i stallet for sklearn-wrapperns `predict`. Det gor att Bearbeta/Forecast inte faller pa miljoer dar wrapperns `get_params` ger felet `'super' object has no attribute 'get_params'`.
+
+## [2026-06-01] feature | Forecast visar Ytgenerering som nasta steg
+
+Forecast-resultatet i Bearbeta visar nu en foljdknapp `Kor Ytgenerering` direkt i resultatpanelen. Knappen anvander samma readiness-regler som den vanliga Ytgenerering-knappen, skickar vidare `forecast_session_id` och gor kedjan Forecast -> Ytgenerering tydligare utan att anvandaren maste leta i flodeskartan.
+
+## [2026-06-01] feature | MG begransar Ytgenerering till UTL205-UTL652
+
+Ytgenereringens Bearbeta-korning far nu vald omradestoggle vidare till flodeshandlern. Nar togglen ar MG filtreras lagerplatsunderlaget efter den vanliga Typ U/Max pall-regeln och darefter till UTL205-UTL652, medan andra toggles fortsatt kan anvanda UTL1-UTL652.

@@ -1248,6 +1248,47 @@ function missingForFlow(flow) {
   return missing;
 }
 
+function allocationMissingRequirementLabel(item) {
+  if (item.type === "session") return item.label || "Körning körd";
+  if (item.type === "coredata") return item.label || ALLOCATION_PERSISTENT_DATA_LABELS[item.key] || item.key;
+  if (item.type === "file") return allocationSlotLabel(allocationFileInputKey(item));
+  return item.label || item.key || "Krav";
+}
+
+function allocationMissingRequirementText(missing) {
+  const labels = (missing || []).map(allocationMissingRequirementLabel).filter(Boolean);
+  return labels.length ? `Saknas: ${labels.join(", ")}` : "";
+}
+
+function allocationFollowUpFlows(flowId) {
+  if (!flowId) return [];
+  return allocationState.visibleFlows.filter((flow) => flow?.requiresSessionFlow?.flowId === flowId);
+}
+
+function renderResultFollowUpActions(data) {
+  const followUps = allocationFollowUpFlows(data?.flow_id);
+  if (!followUps.length) return "";
+  return `
+    <div class="allocation-result-actions">
+      ${followUps.map((flow) => {
+        const missing = missingForFlow(flow);
+        const ready = missing.length === 0 && !allocationState.busyId;
+        const missingText = allocationMissingRequirementText(missing);
+        return `
+          <button
+            type="button"
+            class="primary"
+            data-follow-up-flow="${allocationEscape(flow.id)}"
+            ${ready ? "" : "disabled"}
+            ${missingText ? `title="${allocationEscape(missingText)}"` : ""}
+          >Kör ${allocationEscape(flow.label)}</button>
+          ${missingText ? `<span class="allocation-follow-up-note">${allocationEscape(missingText)}</span>` : ""}
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 function renderFlowFileList(flow) {
   const fileInputs = (flow?.inputs || []).filter((input) => input.type === "file");
   const coreInputs = flow?.coredata || [];
@@ -1445,10 +1486,12 @@ function renderResultPanel(result) {
   const data = result.data;
   const summaryEntries = allocationResultSummaryEntries(data);
   const tables = allocationResultTables(data);
+  const followUpActions = renderResultFollowUpActions(data);
   return `
     <section class="allocation-panel allocation-result">
       <div class="allocation-panel-head">
         <h2>Resultat - ${allocationEscape(result.label)}</h2>
+        ${followUpActions}
       </div>
       ${summaryEntries.length ? `
         <div class="allocation-summary">
@@ -1519,6 +1562,11 @@ async function writeClipboardText(text) {
 }
 
 function bindResultActions(root) {
+  root.querySelectorAll("[data-follow-up-flow]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await runAllocationFlow(flowById(button.dataset.followUpFlow));
+    });
+  });
   root.querySelectorAll("[data-copy-text-result]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {

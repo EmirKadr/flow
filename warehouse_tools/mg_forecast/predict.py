@@ -312,6 +312,21 @@ def _load_calibration() -> dict:
 _CALIBRATION = _load_calibration()
 
 
+def _predict_lgb(model, X: pd.DataFrame) -> np.ndarray:
+    booster = getattr(model, "booster_", None)
+    if booster is not None:
+        return np.asarray(booster.predict(X))
+    return np.asarray(model.predict(X))
+
+
+def _predict_xgb(model, X: pd.DataFrame) -> np.ndarray:
+    booster = model.get_booster() if hasattr(model, "get_booster") else getattr(model, "_Booster", None)
+    if booster is not None:
+        matrix = xgb.DMatrix(X, feature_names=list(X.columns))
+        return np.asarray(booster.predict(matrix))
+    return np.asarray(model.predict(X))
+
+
 def predict(features: pd.DataFrame) -> pd.Series:
     """Predict pallet spaces using fixed 0.5 blend XGB+LGB ensemble with carrier bias."""
     features = _build_features(features)
@@ -319,8 +334,8 @@ def predict(features: pd.DataFrame) -> pd.Series:
     available_cols = _CALIBRATION["feature_cols"]
     X = features[available_cols].fillna(0).clip(lower=0)
 
-    residual_lgb = _CALIBRATION["lgb"].predict(X)
-    residual_xgb = _CALIBRATION["xgb"].predict(X)
+    residual_lgb = _predict_lgb(_CALIBRATION["lgb"], X)
+    residual_xgb = _predict_xgb(_CALIBRATION["xgb"], X)
     blend = _CALIBRATION["blend_weight"]
     residual_pred = blend * residual_lgb + (1 - blend) * residual_xgb
 

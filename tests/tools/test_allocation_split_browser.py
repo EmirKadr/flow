@@ -208,6 +208,7 @@ def test_clear_all_uploads_keeps_core_file_entries(local_allocation_server, chro
             [
                 {"key": "orders", "name": "orders.csv"},
                 {"key": "buffer", "name": "buffer.csv"},
+                {"key": "productivity_pallet", "name": "v_ask_palletloading_log.csv"},
                 {"key": "max_csv", "name": "artikel_max.csv"},
                 {"key": "item_option", "name": "item_option.csv"},
             ],
@@ -217,6 +218,7 @@ def test_clear_all_uploads_keeps_core_file_entries(local_allocation_server, chro
             "flow-productivity-files",
             [
                 {"key": "pick", "name": "v_ask_pick_log_full.csv"},
+                {"key": "pallet", "name": "v_ask_palletloading_log.csv"},
                 {"key": "kpi", "name": "v_ask_kpi_target.csv"},
             ],
         )
@@ -226,6 +228,60 @@ def test_clear_all_uploads_keeps_core_file_entries(local_allocation_server, chro
         assert upload_store_keys(page, "flow-allokering-files") == ["item_option", "max_csv"]
         assert upload_store_keys(page, "flow-productivity-files") == ["kpi"]
         expect(page.locator(".toast.success").last).to_contain_text("Kärnfiler och sammanställd data ligger kvar")
+    finally:
+        context.close()
+
+
+def test_clear_all_uploads_blocks_stale_productivity_sync(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        login_admin(page, local_allocation_server)
+        page.goto(f"{local_allocation_server}/uppladdningar.html", wait_until="networkidle")
+        page.wait_for_selector("#allocation-clear-all-files", timeout=15000)
+        seed_upload_store(
+            page,
+            "flow-productivity-files",
+            [{"key": "pallet", "name": "v_ask_palletloading_log-race.csv"}],
+        )
+
+        result = page.evaluate(
+            """async () => {
+              const originalSaveFiles = window.sharedAllocationUploads.saveFiles;
+              let releaseSync;
+              let saveEntered;
+              const releasePromise = new Promise((resolve) => { releaseSync = resolve; });
+              const saveEnteredPromise = new Promise((resolve) => { saveEntered = resolve; });
+              window.sharedAllocationUploads.saveFiles = async (files, options = {}) => {
+                saveEntered({
+                  fileCount: Array.from(files || []).length,
+                  clearGeneration: options.clearGeneration,
+                });
+                await releasePromise;
+                return originalSaveFiles(files, options);
+              };
+
+              try {
+                const syncPromise = window.productivityUploads.syncAllocationUploads();
+                const entered = await Promise.race([
+                  saveEnteredPromise,
+                  new Promise((_, reject) => setTimeout(() => reject(new Error("Synk startade inte.")), 2000)),
+                ]);
+                const clearResult = await window.clearAllUploadedFiles({ confirmUser: false });
+                releaseSync();
+                const syncResult = await syncPromise;
+                return { entered, clearResult, syncResult };
+              } finally {
+                releaseSync?.();
+                window.sharedAllocationUploads.saveFiles = originalSaveFiles;
+              }
+            }"""
+        )
+
+        assert result["clearResult"] is True
+        assert result["syncResult"].get("stale") is True
+        assert upload_store_keys(page, "flow-allokering-files") == []
+        assert upload_store_keys(page, "flow-productivity-files") == []
     finally:
         context.close()
 
@@ -452,9 +508,11 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Forecast")
         expect(page.locator(".allocation-result")).to_contain_text("S-1")
         expect(ytgenerering_button).to_be_enabled(timeout=15000)
+        follow_up_button = page.locator('button[data-follow-up-flow="ytgenerering"]')
+        expect(follow_up_button).to_be_enabled(timeout=15000)
 
         with page.expect_response("**/api/allokering/download/ytgenerering-session-1/order_set_area_import") as download_response:
-            ytgenerering_button.click()
+            follow_up_button.click()
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Ytgenerering")
         expect(page.locator(".allocation-result")).to_contain_text("UTL100")

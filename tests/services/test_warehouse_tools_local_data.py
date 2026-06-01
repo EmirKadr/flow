@@ -591,6 +591,46 @@ def test_forecast_has_packaged_calibration_artifact():
     assert predict._CALIBRATION["feature_cols"]
 
 
+def test_forecast_prediction_uses_boosters_without_sklearn_get_params(monkeypatch):
+    from warehouse_tools.mg_forecast import predict
+
+    def broken_wrapper(*_args, **_kwargs):
+        raise AttributeError("'super' object has no attribute 'get_params'")
+
+    calibration = predict._CALIBRATION
+    monkeypatch.setattr(calibration["lgb"], "predict", broken_wrapper)
+    monkeypatch.setattr(calibration["lgb"], "get_params", broken_wrapper)
+    monkeypatch.setattr(calibration["xgb"], "predict", broken_wrapper)
+    monkeypatch.setattr(calibration["xgb"], "get_params", broken_wrapper)
+
+    row = {column: 0 for column in calibration["feature_cols"]}
+    row.update(
+        {
+            "sum_vikt_brutto": 0,
+            "sum_bestallt": 1,
+            "n_rader": 1,
+            "n_artiklar": 1,
+            "order_vikt_huvud": 0,
+            "order_antal_huvud": 0,
+            "n_multi_huvud": 0,
+            "n_ordrar": 1,
+            "kund_max_hojd": 280,
+            "n_skrymmande_rader": 0,
+            "n_zoner": 1,
+            "pall_estimate": 1.0,
+            "sum_bestallt_robot": 0,
+            "n_robot_rader": 0,
+            "transportor": "Schenker",
+            "orderdatum": pd.Timestamp("2026-06-01"),
+        }
+    )
+
+    result = predict.predict(pd.DataFrame([row]))
+
+    assert len(result) == 1
+    assert result.iloc[0] >= 0
+
+
 def test_forecast_inference_uses_default_transportor_when_overview_value_missing(monkeypatch, tmp_path):
     from warehouse_tools.mg_forecast import forecast as mg_forecast
 
@@ -762,6 +802,37 @@ def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypa
     assert "order_set_area_import" not in tables
     assert result["auto_downloads"] == []
     assert any("Forecast saknar kolumnen Ordernummer" in line for line in result["log"])
+
+
+def test_ytgenerering_mg_area_focus_uses_only_utl205_and_up(monkeypatch, tmp_path):
+    forecast_df = pd.DataFrame(
+        [
+            {"SÃ¤ndningsnr": "S-1", "TransportÃ¶r": "Akeri A", "Predikterade pallplatser": 2.0},
+        ]
+    )
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL204", "Typ": "U", "Max pall": 10},
+                {"Lagerplats": "UTL205", "Typ": "U", "Max pall": 1},
+                {"Lagerplats": "UTL206", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_df": forecast_df, "__process_area_focus": "MG"},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL205", "UTL206"]
+    assert result["summary"]["Ej placerade pallplatser"] == 0
+    assert any("UTL205-UTL652" in line for line in result["log"])
 
 
 def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface(monkeypatch, tmp_path):

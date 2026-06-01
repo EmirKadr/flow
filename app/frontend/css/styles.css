@@ -232,9 +232,9 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
 
 /* ===== Sidebar toggle (hamburger) ===== */
 .sidebar-top-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 38px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 .sidebar-toggle {
@@ -273,6 +273,41 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   width: 21px;
   height: 21px;
 }
+.app-zoom-control {
+  justify-self: center;
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+}
+.app-zoom-control button {
+  width: 28px;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+.app-zoom-control button:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.app-zoom-control button:disabled {
+  opacity: .42;
+  cursor: default;
+}
+.app-zoom-control #app-zoom-reset {
+  font-size: 12px;
+}
 
 /* ===== Collapsed state ===== */
 .sidebar.collapsed {
@@ -289,9 +324,11 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   pointer-events: none;
 }
 .sidebar.collapsed .sidebar-top-row {
+  display: flex;
   justify-content: center;
 }
 .sidebar.collapsed .sidebar-edit,
+.sidebar.collapsed .app-zoom-control,
 .sidebar.collapsed .sidebar-heading,
 .sidebar.collapsed .sidebar-subviews {
   display: none;
@@ -528,6 +565,25 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   z-index: 1;
 }
 .database-toggle .upload-notice[hidden] { display: none; }
+.log-toggle .log-notice {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 5px 14px rgba(79, 70, 229, .28);
+  border: 2px solid var(--surface);
+  z-index: 1;
+}
+.log-toggle .log-notice[hidden] { display: none; }
 .database-toggle .upload-arrow {
   position: absolute;
   bottom: 4px;
@@ -3823,6 +3879,13 @@ tr.filter-row input {
   color: var(--text-muted);
   font-size: 13px;
 }
+.allocation-result-actions {
+  justify-content: flex-end;
+}
+.allocation-follow-up-note {
+  color: var(--text-muted);
+  font-size: 12px;
+}
 .allocation-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -3969,6 +4032,9 @@ tr.filter-row input {
   .allocation-panel-head > div,
   .allocation-table-head > div {
     width: 100%;
+  }
+  .allocation-result-actions {
+    justify-content: flex-start;
   }
   .allocation-file-slot {
     grid-template-columns: 1fr;
