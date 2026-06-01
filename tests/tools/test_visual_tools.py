@@ -884,6 +884,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert 'data-${scope}-sort="${key}"' in businesses
     assert 'data-business-sort="code"' in businesses_html
     assert 'data-business-sort="name"' in businesses_html
+    assert '/js/businesses.js?v=20260601-inline-edit' in businesses_html
     assert 'data-new-area="${business.id}"' in businesses
     assert 'api.post("/api/areas", payload)' in businesses
     assert 'api.put(`/api/areas/${record.id}`, payload)' in businesses
