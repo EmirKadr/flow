@@ -3,13 +3,19 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import hashlib
+import tempfile
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
+from .models import CoreDataFile
 
 
 class CoreDataError(RuntimeError):
@@ -21,11 +27,18 @@ class CoreDataFileSpec:
     key: str
     label: str
     prefix: str
+    aliases: tuple[str, ...] = ()
+
+
+def _normalize_coredata_prefix(value: str | None) -> str:
+    text = (value or "").replace("\ufeff", "").strip().lower()
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 CORE_DATA_SPECS = (
     CoreDataFileSpec("custom", "Custom", "custom"),
     CoreDataFileSpec("dimension", "Dimension", "dimension"),
+    CoreDataFileSpec("dispatch_template", "Dispatch template", "dispatch_template"),
     CoreDataFileSpec("item", "Item", "item"),
     CoreDataFileSpec("item_alias", "Item alias", "item_alias"),
     CoreDataFileSpec("item_attribute", "Item attribute", "item_attribute"),
@@ -35,11 +48,22 @@ CORE_DATA_SPECS = (
     CoreDataFileSpec("location", "Location", "location"),
     CoreDataFileSpec("location_cost", "Location cost", "location_cost"),
     CoreDataFileSpec("pallet_type", "Pallet type", "pallet_type"),
+    CoreDataFileSpec("trans_agency", "Transport agency", "trans_agency", ("transportorer", "transportor", "agency", "agencies")),
     CoreDataFileSpec("kpi", "KPI-Mal", "v_ask_kpi_target"),
 )
 
 CORE_DATA_SPEC_BY_KEY = {spec.key: spec for spec in CORE_DATA_SPECS}
-CORE_DATA_SPECS_BY_PREFIX = tuple(sorted(CORE_DATA_SPECS, key=lambda spec: len(spec.prefix), reverse=True))
+CORE_DATA_PREFIXES = tuple(
+    sorted(
+        (
+            (spec, _normalize_coredata_prefix(prefix))
+            for spec in CORE_DATA_SPECS
+            for prefix in (spec.prefix, *spec.aliases)
+        ),
+        key=lambda item: len(item[1]),
+        reverse=True,
+    )
+)
 
 
 def _repo_root() -> Path:
@@ -88,6 +112,67 @@ def coredata_business_segment(value: str | None) -> str:
         return ""
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", code).strip("._-").lower()
     return safe or "business"
+
+
+def _normalized_business_code(value: str | None) -> str:
+    return normalize_business_code(value) or DEFAULT_BUSINESS_CODE
+
+
+def _coredata_db_row(
+    db: Session | None,
+    file_type: str,
+    business_code: str | None,
+) -> CoreDataFile | None:
+    if db is None:
+        return None
+    return (
+        db.query(CoreDataFile)
+        .filter(CoreDataFile.business_code == _normalized_business_code(business_code))
+        .filter(CoreDataFile.file_type == file_type)
+        .one_or_none()
+    )
+
+
+def _coredata_db_rows_by_type(
+    db: Session | None,
+    business_code: str | None,
+) -> dict[str, CoreDataFile]:
+    if db is None:
+        return {}
+    rows = (
+        db.query(CoreDataFile)
+        .filter(CoreDataFile.business_code == _normalized_business_code(business_code))
+        .all()
+    )
+    return {row.file_type: row for row in rows}
+
+
+def _db_materialized_dir(
+    reference_dir: Path | str | None = None,
+    business_code: str | None = None,
+) -> Path:
+    if reference_dir is not None:
+        return business_coredata_dir(reference_dir, business_code)
+    return Path(tempfile.gettempdir()) / "flow-coredata" / coredata_business_segment(business_code)
+
+
+def _materialize_coredata_row(
+    row: CoreDataFile,
+    reference_dir: Path | str | None = None,
+) -> Path:
+    target_dir = _db_materialized_dir(reference_dir, row.business_code)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / _safe_upload_name(row.filename, CORE_DATA_SPEC_BY_KEY[row.file_type])
+    if target_path.is_file():
+        try:
+            if hashlib.sha256(target_path.read_bytes()).hexdigest() == row.content_hash:
+                return target_path
+        except OSError:
+            pass
+    tmp_path = target_path.with_name(f".{target_path.name}.{os.getpid()}.tmp")
+    tmp_path.write_bytes(row.data)
+    tmp_path.replace(target_path)
+    return target_path
 
 
 def _same_business_segment(path: Path, segment: str) -> bool:
@@ -157,11 +242,11 @@ def _stem_matches_prefix(stem: str, prefix: str) -> bool:
 
 
 def classify_coredata_file(filename: str | None) -> str | None:
-    stem = Path(filename or "").stem.lower().replace("\ufeff", "").strip()
+    stem = _normalize_coredata_prefix(Path(filename or "").stem)
     if not stem:
         return None
-    for spec in CORE_DATA_SPECS_BY_PREFIX:
-        if _stem_matches_prefix(stem, spec.prefix.lower()):
+    for spec, prefix in CORE_DATA_PREFIXES:
+        if _stem_matches_prefix(stem, prefix):
             return spec.key
     return None
 
@@ -183,10 +268,15 @@ def find_coredata_file(
     business_code: str | None = None,
     *,
     allow_legacy_stigamo_root: bool = True,
+    db: Session | None = None,
 ) -> Path:
     spec = CORE_DATA_SPEC_BY_KEY.get(file_type)
     if spec is None:
-        raise CoreDataError("Okand karnfil")
+        raise CoreDataError("Okänd kärnfil")
+
+    db_row = _coredata_db_row(db, file_type, business_code)
+    if db_row is not None:
+        return _materialize_coredata_row(db_row, reference_dir)
 
     for directory in coredata_read_dirs(reference_dir, business_code):
         if not directory.exists():
@@ -206,7 +296,7 @@ def find_coredata_file(
                 pass
 
     first_dir = coredata_read_dirs(reference_dir, business_code)[0]
-    raise CoreDataError(f"Saknar karnfil med prefix {spec.prefix} i {first_dir}")
+    raise CoreDataError(f"Saknar kärnfil med prefix {spec.prefix} i {first_dir}")
 
 
 def _safe_upload_name(filename: str | None, spec: CoreDataFileSpec) -> str:
@@ -224,7 +314,7 @@ def _safe_upload_name(filename: str | None, spec: CoreDataFileSpec) -> str:
 def remove_existing_coredata_files(reference_dir: Path, file_type: str) -> None:
     spec = CORE_DATA_SPEC_BY_KEY.get(file_type)
     if spec is None:
-        raise CoreDataError("Okand karnfil")
+        raise CoreDataError("Okänd kärnfil")
     if not reference_dir.exists():
         return
     for path in reference_dir.glob("*.csv"):
@@ -239,10 +329,46 @@ def save_coredata_file(
     file_type: str,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    db: Session | None = None,
+    uploaded_by: int | None = None,
 ) -> dict[str, Any]:
     spec = CORE_DATA_SPEC_BY_KEY.get(file_type)
     if spec is None:
-        raise CoreDataError("Okand karnfil")
+        raise CoreDataError("Okänd kärnfil")
+    if db is not None:
+        data = source_path.read_bytes()
+        normalized_business = _normalized_business_code(business_code)
+        safe_name = _safe_upload_name(filename, spec)
+        now = datetime.now(timezone.utc)
+        row = _coredata_db_row(db, file_type, normalized_business)
+        if row is None:
+            row = CoreDataFile(
+                business_code=normalized_business,
+                file_type=file_type,
+                filename=safe_name,
+                content_type="text/csv",
+                size_bytes=len(data),
+                content_hash=hashlib.sha256(data).hexdigest(),
+                data=data,
+                source="upload",
+                uploaded_by=uploaded_by,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(row)
+        else:
+            row.filename = safe_name
+            row.content_type = "text/csv"
+            row.size_bytes = len(data)
+            row.content_hash = hashlib.sha256(data).hexdigest()
+            row.data = data
+            row.source = "upload"
+            row.uploaded_by = uploaded_by
+            row.updated_at = now
+        db.flush()
+        _materialize_coredata_row(row, reference_dir)
+        return coredata_db_status_payload(spec, row)
+
     target_dir = business_coredata_dir(reference_dir, business_code)
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / _safe_upload_name(filename, spec)
@@ -257,7 +383,12 @@ def clear_coredata_file(
     file_type: str,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    db: Session | None = None,
 ) -> None:
+    db_row = _coredata_db_row(db, file_type, business_code)
+    if db_row is not None and db is not None:
+        db.delete(db_row)
+        db.flush()
     target_dir = business_coredata_dir(reference_dir, business_code)
     remove_existing_coredata_files(target_dir, file_type)
 
@@ -297,13 +428,44 @@ def coredata_file_status_payload(spec: CoreDataFileSpec, path: Path | None) -> d
     return payload
 
 
+def coredata_db_status_payload(spec: CoreDataFileSpec, row: CoreDataFile | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "key": spec.key,
+        "label": spec.label,
+        "prefix": spec.prefix,
+        "kind": "coredata",
+        "uploaded": row is not None,
+        "name": None,
+        "modified_at": None,
+        "size": None,
+        "size_label": None,
+        "hash": None,
+        "storage": "postgres" if row is not None else None,
+    }
+    if row is None:
+        return payload
+    modified = row.updated_at or row.created_at
+    payload.update(
+        {
+            "name": row.filename,
+            "modified_at": modified.astimezone().isoformat(timespec="seconds") if modified else None,
+            "size": row.size_bytes,
+            "size_label": _format_size(int(row.size_bytes or 0)),
+            "hash": row.content_hash,
+        }
+    )
+    return payload
+
+
 def try_find_coredata_file(
     file_type: str,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> Path | None:
     try:
-        return find_coredata_file(file_type, reference_dir, business_code)
+        return find_coredata_file(file_type, reference_dir, business_code, db=db)
     except CoreDataError:
         return None
 
@@ -311,16 +473,23 @@ def try_find_coredata_file(
 def build_coredata_status(
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> dict[str, Any]:
+    db_rows = _coredata_db_rows_by_type(db, business_code)
     files = {
-        spec.key: coredata_file_status_payload(
-            spec,
-            try_find_coredata_file(spec.key, reference_dir, business_code),
+        spec.key: (
+            coredata_db_status_payload(spec, db_rows[spec.key])
+            if spec.key in db_rows
+            else coredata_file_status_payload(
+                spec,
+                try_find_coredata_file(spec.key, reference_dir, business_code),
+            )
         )
         for spec in CORE_DATA_SPECS
     }
     return {
-        "business_code": normalize_business_code(business_code) or DEFAULT_BUSINESS_CODE,
+        "business_code": _normalized_business_code(business_code),
         "root": str(coredata_root(reference_dir)),
         "files": files,
     }

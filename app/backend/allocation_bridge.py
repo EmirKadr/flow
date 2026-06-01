@@ -62,6 +62,10 @@ def _active_upload_cache_dir() -> Path:
     return UPLOAD_CACHE_DIR
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
 PROCESS_AREA_FOCUS_PARAM = "__process_area_focus"
+YTGENERERING_UTL_MIN_PARAM = "__ytgenerering_utl_min"
+YTGENERERING_UTL_MAX_PARAM = "__ytgenerering_utl_max"
+YTGENERERING_UTL_DEFAULT_MIN = 1
+YTGENERERING_UTL_DEFAULT_MAX = 652
 PROCESS_MATRIX_AREA_OPTIONS: tuple[dict[str, str], ...] = (
     {"code": "GG", "label": "GG"},
     {"code": "MG", "label": "MG"},
@@ -76,12 +80,16 @@ PROCESS_AREA_RULES: dict[str, dict] = {
         "exclude_customers": {"6005"},
         "label": "Bolag=GG, Kundnr!=6005",
         "visible_flow_ids": None,
+        "ytgenerering_utl_min": YTGENERERING_UTL_DEFAULT_MIN,
+        "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
     },
     "MG": {
         "company": "MG",
         "exclude_customers": {"40002", "90002"},
         "label": "Bolag=MG, Kundnr!=40002/90002",
         "visible_flow_ids": None,
+        "ytgenerering_utl_min": 205,
+        "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
     },
 }
 PROCESS_DEFAULT_AREA_RULE: dict[str, object] = {
@@ -89,6 +97,8 @@ PROCESS_DEFAULT_AREA_RULE: dict[str, object] = {
     "exclude_customers": set(),
     "label": "",
     "visible_flow_ids": None,
+    "ytgenerering_utl_min": YTGENERERING_UTL_DEFAULT_MIN,
+    "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
 }
 PROCESS_COMPANY_COLUMN_KEYS = {
     "bolag",
@@ -285,6 +295,43 @@ def _process_visible_flow_ids(value: object, allowed_flow_ids: set[str] | None =
     return ids
 
 
+def _process_utl_number(value: object, fallback: int) -> int:
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        number = fallback
+    return max(YTGENERERING_UTL_DEFAULT_MIN, min(YTGENERERING_UTL_DEFAULT_MAX, number))
+
+
+def _process_utl_range(raw: dict, defaults: dict | None = None) -> tuple[int, int]:
+    defaults = defaults or PROCESS_DEFAULT_AREA_RULE
+    default_min = _process_utl_number(defaults.get("ytgenerering_utl_min"), YTGENERERING_UTL_DEFAULT_MIN)
+    default_max = _process_utl_number(defaults.get("ytgenerering_utl_max"), YTGENERERING_UTL_DEFAULT_MAX)
+    raw_min = _process_rule_values(
+        raw,
+        "ytgenerering_utl_min",
+        "ytgenereringUtlMin",
+        "ytgenereringUtlFrom",
+        "utl_min",
+        "utlMin",
+        "utlFrom",
+    )
+    raw_max = _process_rule_values(
+        raw,
+        "ytgenerering_utl_max",
+        "ytgenereringUtlMax",
+        "ytgenereringUtlTo",
+        "utl_max",
+        "utlMax",
+        "utlTo",
+    )
+    min_number = _process_utl_number(raw_min, default_min)
+    max_number = _process_utl_number(raw_max, default_max)
+    if min_number > max_number:
+        min_number, max_number = max_number, min_number
+    return min_number, max_number
+
+
 def _process_rule_label(rule: dict) -> str:
     company = str(rule.get("company") or "").strip().upper()
     excluded = sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value))
@@ -307,8 +354,13 @@ def _process_rule_filter_notice(rule: dict) -> str:
     return f"Filter: {', '.join(parts)}" if parts else ""
 
 
-def _normalize_process_area_rule(raw: dict | None, allowed_flow_ids: set[str] | None = None) -> dict:
+def _normalize_process_area_rule(
+    raw: dict | None,
+    allowed_flow_ids: set[str] | None = None,
+    defaults: dict | None = None,
+) -> dict:
     raw = raw if isinstance(raw, dict) else {}
+    utl_min, utl_max = _process_utl_range(raw, defaults)
     company = str(_process_rule_values(raw, "company", "bolag") or "").strip().upper()
     excluded = _process_customer_values(
         _process_rule_values(raw, "exclude_customers", "excludeCustomers", "excluded_customers", "excludedCustomers")
@@ -321,6 +373,8 @@ def _normalize_process_area_rule(raw: dict | None, allowed_flow_ids: set[str] | 
         "company": company,
         "exclude_customers": excluded,
         "visible_flow_ids": visible_flow_ids,
+        "ytgenerering_utl_min": utl_min,
+        "ytgenerering_utl_max": utl_max,
     }
     rule["label"] = _process_rule_label(rule)
     return rule
@@ -352,7 +406,11 @@ def normalize_process_matrix(value: object = None, *, flows: list[dict] | None =
             continue
         if code not in known_area_codes and not isinstance(raw_rule, dict):
             continue
-        matrix[code] = _normalize_process_area_rule(raw_rule, allowed_flow_ids=allowed_flow_ids)
+        matrix[code] = _normalize_process_area_rule(
+            raw_rule,
+            allowed_flow_ids=allowed_flow_ids,
+            defaults=matrix.get(code) or matrix.get("DEFAULT"),
+        )
     return matrix
 
 
@@ -370,6 +428,11 @@ def process_flow_visible(flow_id: str, area_focus: object, matrix: dict[str, dic
     return visible_flow_ids is None or flow_id in visible_flow_ids
 
 
+def process_ytgenerering_utl_range(area_focus: object, matrix: dict[str, dict] | None = None) -> tuple[int, int]:
+    rule = process_area_rule(area_focus, matrix=matrix) or PROCESS_DEFAULT_AREA_RULE
+    return _process_utl_range({}, rule)
+
+
 def process_rule_has_filters(rule: dict | None) -> bool:
     return bool(rule and (rule.get("company") or rule.get("exclude_customers")))
 
@@ -385,6 +448,8 @@ def process_matrix_storage_payload(matrix: dict[str, dict] | None = None) -> dic
             "company": str(rule.get("company") or ""),
             "excludeCustomers": sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value)),
             "visibleFlowIds": None if visible_flow_ids is None else sorted(str(value) for value in visible_flow_ids),
+            "ytgenereringUtlMin": int(rule.get("ytgenerering_utl_min") or YTGENERERING_UTL_DEFAULT_MIN),
+            "ytgenereringUtlMax": int(rule.get("ytgenerering_utl_max") or YTGENERERING_UTL_DEFAULT_MAX),
         }
     return payload
 
@@ -417,6 +482,8 @@ def process_matrix_public_payload(
             "company": str(rule.get("company") or ""),
             "excludeCustomers": sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value)),
             "visibleFlowIds": None if visible_flow_ids is None else sorted(str(value) for value in visible_flow_ids),
+            "ytgenereringUtlMin": int(rule.get("ytgenerering_utl_min") or YTGENERERING_UTL_DEFAULT_MIN),
+            "ytgenereringUtlMax": int(rule.get("ytgenerering_utl_max") or YTGENERERING_UTL_DEFAULT_MAX),
             "label": str(rule.get("label") or ""),
             "filterLabel": _process_rule_filter_notice(rule),
         }
@@ -982,6 +1049,8 @@ def run_flow_handler(
             for key, label, df in tables
         ],
         "text": result.get("text"),
+        "maps": result.get("maps") or [],
+        "carrier_clusters": result.get("carrier_clusters"),
         "log": result.get("log", []),
         "artifact_keys": sorted(artifacts),
         "auto_downloads": result.get("auto_downloads") or [],

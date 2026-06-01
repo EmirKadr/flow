@@ -11,9 +11,12 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from sqlalchemy.orm import Session
+
 from .config import settings
 from .coredata_service import (
     business_coredata_dir,
+    clear_coredata_file,
     coredata_business_segment,
     coredata_read_dirs,
     find_coredata_file,
@@ -140,7 +143,7 @@ def productivity_compiled_log_path(
 ) -> Path:
     spec = COMPILED_PRODUCTIVITY_LOG_BY_SOURCE.get(file_type)
     if spec is None:
-        raise ProductivitySourceError("Okand produktivitetslogg")
+        raise ProductivitySourceError("Okänd produktivitetslogg")
     return business_coredata_dir(reference_dir, business_code) / spec.filename
 
 
@@ -268,10 +271,15 @@ def find_source_files(
     }
 
 
-def find_kpi_file(reference_dir: Path | str | None = None, business_code: str | None = None) -> Path:
+def find_kpi_file(
+    reference_dir: Path | str | None = None,
+    business_code: str | None = None,
+    *,
+    db: Session | None = None,
+) -> Path:
     if business_code is not None:
         try:
-            return find_coredata_file("kpi", reference_dir, business_code)
+            return find_coredata_file("kpi", reference_dir, business_code, db=db)
         except Exception as exc:
             raise ProductivitySourceError(str(exc)) from exc
     return _latest_business_file(reference_dir, SOURCE_SPEC_BY_KEY["kpi"].prefix, business_code)
@@ -534,6 +542,8 @@ def save_productivity_file(
     file_type: str,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    db: Session | None = None,
+    uploaded_by: int | None = None,
 ) -> dict[str, Any]:
     spec = SOURCE_SPEC_BY_KEY[file_type]
     if file_type == "kpi" and business_code is not None:
@@ -543,6 +553,8 @@ def save_productivity_file(
             file_type="kpi",
             reference_dir=reference_dir,
             business_code=business_code,
+            db=db,
+            uploaded_by=uploaded_by,
         )
         clear_productivity_cache()
         result = _file_status_payload(spec, None)
@@ -571,10 +583,15 @@ def clear_productivity_file(
     file_type: str,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    db: Session | None = None,
 ) -> None:
     spec = SOURCE_SPEC_BY_KEY.get(file_type)
     if spec is None or not spec.visible:
         raise ProductivitySourceError("Okänd produktivitetsfil")
+    if file_type == "kpi" and business_code is not None:
+        clear_coredata_file("kpi", reference_dir, business_code, db=db)
+        clear_productivity_cache()
+        return
     target_dir = business_reference_dir(reference_dir, business_code)
     _remove_existing_files(target_dir, spec)
     clear_productivity_cache()
@@ -619,9 +636,11 @@ def _try_find_business_file(
     reference_dir: Path | str | None,
     prefix: str,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> Path | None:
     if prefix == SOURCE_SPEC_BY_KEY["kpi"].prefix and business_code is not None:
-        return try_find_coredata_file("kpi", reference_dir, business_code)
+        return try_find_coredata_file("kpi", reference_dir, business_code, db=db)
     try:
         return _latest_business_file(reference_dir, prefix, business_code)
     except ProductivitySourceError:
@@ -631,11 +650,13 @@ def _try_find_business_file(
 def build_productivity_file_status(
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     files = {
         spec.key: _file_status_payload(
             spec,
-            _try_find_business_file(reference_dir, spec.prefix, business_code),
+            _try_find_business_file(reference_dir, spec.prefix, business_code, db=db),
         )
         for spec in SOURCE_SPECS
     }
@@ -657,6 +678,8 @@ def build_productivity_session_file_status(
     log_files: dict[str, Path],
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     files = {
         spec.key: _file_status_payload(
@@ -672,7 +695,7 @@ def build_productivity_session_file_status(
     ]
     kpi_path: Path | None = None
     try:
-        kpi_path = find_kpi_file(reference_dir, business_code)
+        kpi_path = find_kpi_file(reference_dir, business_code, db=db)
     except ProductivitySourceError:
         kpi_path = None
     return {
@@ -687,6 +710,8 @@ def source_files_from_session_logs(
     log_files: dict[str, Path],
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> dict[str, Path]:
     missing = [
         spec.label
@@ -696,15 +721,17 @@ def source_files_from_session_logs(
     if missing:
         raise ProductivitySourceError(f"Saknar produktivitetsunderlag: {', '.join(missing)}")
     files = {key: Path(path) for key, path in log_files.items() if key in SOURCE_SPEC_BY_KEY}
-    files["kpi"] = find_kpi_file(reference_dir, business_code)
+    files["kpi"] = find_kpi_file(reference_dir, business_code, db=db)
     return files
 
 
 def read_productivity_targets(
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> dict[str, Any]:
-    path = find_kpi_file(reference_dir, business_code)
+    path = find_kpi_file(reference_dir, business_code, db=db)
     rows = _read_csv(path)
     targets = _parse_kpi_rows(rows)
     return {

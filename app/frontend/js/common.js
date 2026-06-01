@@ -23,6 +23,7 @@ const ALLOCATION_PROTECTED_UPLOAD_KEYS = [
   "article_max",
   "custom",
   "dimension",
+  "dispatch_template",
   "item",
   "item_alias",
   "item_attribute",
@@ -34,6 +35,7 @@ const ALLOCATION_PROTECTED_UPLOAD_KEYS = [
   "location_cost",
   "max_csv",
   "pallet_type",
+  "trans_agency",
 ];
 const UPLOAD_FILE_STORES = [
   { dbName: "flow-allokering-files", storeName: "files", protectedKeys: ALLOCATION_PROTECTED_UPLOAD_KEYS },

@@ -360,8 +360,29 @@ def test_process_matrix_public_payload_exposes_editable_rules():
         "company": "GG",
         "excludeCustomers": ["6005"],
         "visibleFlowIds": ["allocate"],
+        "ytgenereringUtlMin": 1,
+        "ytgenereringUtlMax": 652,
         "label": "Bolag=GG, Kundnr!=6005",
         "filterLabel": "Filter: Bolag GG, exkl. kundnr 6005",
+    }
+
+
+def test_process_matrix_controls_ytgenerering_utl_range():
+    matrix = bridge.normalize_process_matrix(
+        {
+            "MG": {"company": "MG"},
+            "AS": {"ytgenereringUtlMin": "310", "ytgenereringUtlMax": "220"},
+        }
+    )
+
+    assert bridge.process_ytgenerering_utl_range("MG", matrix) == (205, 652)
+    assert bridge.process_ytgenerering_utl_range("AS", matrix) == (220, 310)
+    assert bridge.process_matrix_storage_payload(matrix)["AS"] == {
+        "company": "",
+        "excludeCustomers": [],
+        "visibleFlowIds": None,
+        "ytgenereringUtlMin": 220,
+        "ytgenereringUtlMax": 310,
     }
 
 
@@ -607,6 +628,11 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(
+        allocation_router,
+        "get_json_setting",
+        lambda *args, **kwargs: {"MG": {"ytgenereringUtlMin": 310, "ytgenereringUtlMax": 330}},
+    )
     monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -615,6 +641,8 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
     assert result["flow_id"] == "ytgenerering"
     assert captured["files"]["location"] == location_path
     assert captured["params"][bridge.PROCESS_AREA_FOCUS_PARAM] == "MG"
+    assert captured["params"][bridge.YTGENERERING_UTL_MIN_PARAM] == "310"
+    assert captured["params"][bridge.YTGENERERING_UTL_MAX_PARAM] == "330"
 
 
 def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
@@ -751,7 +779,10 @@ def test_ytgenerering_attaches_forecast_dataframe_fast_path():
     bridge.SESSIONS["forecast-session"] = {
         "flow_id": "forecast",
         "tables": {"forecast": table},
-        "artifacts": {"forecast_json": {"rows": [{"Sändningsnr": "S1"}]}},
+        "artifacts": {
+            "forecast_json": {"rows": [{"Sändningsnr": "S1"}]},
+            "carrier_clusters": {"rows": [{"alias": "Schenker", "clusterGroup": "Schenker"}]},
+        },
         "owner": allocation_router._session_owner_payload(user),
     }
     params = {"forecast_session_id": "forecast-session"}
@@ -760,6 +791,7 @@ def test_ytgenerering_attaches_forecast_dataframe_fast_path():
 
     assert params["__forecast_df"] is table
     assert "__forecast_json" not in params
+    assert '"Schenker"' in params["__carrier_clusters_json"]
 
 
 def test_ytgenerering_falls_back_to_forecast_json_artifact():
@@ -774,6 +806,31 @@ def test_ytgenerering_falls_back_to_forecast_json_artifact():
     allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
 
     assert '"S1"' in params["__forecast_json"]
+
+
+def test_ytgenerering_uses_submitted_transport_clusters_over_session_artifact():
+    pd = pytest.importorskip("pandas")
+    user = business_user(1, 10)
+    table = pd.DataFrame([{"Sändningsnr": "S1"}])
+    bridge.SESSIONS["forecast-session"] = {
+        "flow_id": "forecast",
+        "tables": {"forecast": table},
+        "artifacts": {
+            "forecast_json": {"rows": [{"Sändningsnr": "S1"}]},
+            "carrier_clusters": {"rows": [{"alias": "Schenker", "clusterGroup": "Original"}]},
+        },
+        "owner": allocation_router._session_owner_payload(user),
+    }
+    params = {
+        "forecast_session_id": "forecast-session",
+        "carrier_clusters_json": '{"rows":[{"alias":"Schenker","clusterGroup":"Redigerad"}]}',
+    }
+
+    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+
+    assert params["__forecast_df"] is table
+    assert "Redigerad" in params["__carrier_clusters_json"]
+    assert "Original" not in params["__carrier_clusters_json"]
 
 
 def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeypatch, tmp_path):
@@ -798,6 +855,7 @@ def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeyp
         "dimension",
         "pallet_type",
         "item_option",
+        "trans_agency",
     }
     assert set(ytgenerering_defaults) == {"location"}
     assert set(goods_declaration_defaults) == {"item_security_info"}
@@ -1200,6 +1258,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
                     "display_summary": {"Visad": "2 rader"},
                     "tables": [("main", "Demoresultat", df)],
                     "text": "klart",
+                    "maps": [{"key": "demo-map", "locations": [], "assignments": []}],
                     "log": ["rad 1"],
                 }
             }
@@ -1214,6 +1273,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
     assert result["summary"] == {"files": ["orders"], "limit": "10"}
     assert result["display_summary"] == {"Visad": "2 rader"}
     assert result["text"] == "klart"
+    assert result["maps"] == [{"key": "demo-map", "locations": [], "assignments": []}]
     assert result["log"] == ["rad 1"]
     assert result["tables"][0]["key"] == "main"
     assert result["tables"][0]["label"] == "Demoresultat"

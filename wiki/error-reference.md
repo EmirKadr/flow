@@ -1,7 +1,7 @@
 ---
 title: Felkoder och felmeddelanden
 status: aktiv
-updated: 2026-05-25
+updated: 2026-06-01
 tags: [felkoder, http, support, api, chat]
 ---
 
@@ -39,6 +39,14 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | "Unauthorized" | `api.js` | 401 pa skyddad API-vag | Logga in igen. |
 | "password_setup_required" | `api.js` | API kraver forsta losenord | Skapa losenord. |
 | "HTTP NNN" | `api.js`/lager | Server svarade utan tydligt detail | Be anvandaren ange Network-status och vy. |
+
+## Meta-uppladdning
+
+| Status | Text | Orsak | Atgard |
+| --- | --- | --- | --- |
+| 400 | "Bara bilder och videor..." eller "Inga filer skickades" | Publika uppladdningen fick fel filtyp eller saknade filer | Valj bilder/videor igen. |
+| 413 | "Uppladdningen ar storre..." | En fil eller hela batchen ar for stor | Dela upp uppladdningen eller minska filerna. |
+| 500 | "Uppladdningen misslyckades pa servern..." | Backend tog emot requesten men kunde inte spara/analysera uppladdningen. Tidigare kunde en stor multipart-batch ge for tung request; publika klienten skickar nu filerna en och en. | Sok `meta_media_upload/upload_failed` i Historik > Felkoder. Om raden saknas kan felet ha stoppats innan backend tog emot requesten. |
 
 ## Auth och behorighet
 

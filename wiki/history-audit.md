@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-01
 tags: [historik, audit, ui]
 ---
 
@@ -32,6 +32,7 @@ Kort svar: Historik har fem lagen: anvandarhistorik, analys, felkoder, vantetide
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, serverhanterade produktivitetsfiler och korda lagerverktygsfloden.
 - Misslyckade filuppladdningar som hinner na backend loggas som `productivity_file/upload_failed`, `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
+- Misslyckade publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar dem som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
 - API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Det galler aven Bearbetas egna fetch-wrapper. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.
 - Sidoppningar rapporteras tyst som `view/open` via `/api/audit/client-event`. De syns i Historik, men ska inte fylla dokumentloggen.
@@ -62,7 +63,7 @@ Kort svar: Historik har fem lagen: anvandarhistorik, analys, felkoder, vantetide
 | "Varfor syns inte min andring?" | Kontrollera periodfilter och att flodet gar via backend. Lokala IndexedDB-handlingar som aldrig skickas till servern kan fortfarande sakna auditrad. |
 | "Vad betyder Typ/Atgard?" | Typ ar databasenheten, atgard ar backendens audit-action. |
 | "Varfor saknas anvandarnamn?" | Auditloggar kan ha `user_id=null` for system/seed eller gammal data. |
-| "Varfor syns inte ett fel i Felkoder?" | Felkodsvyn visar klientrapporter och auditrader med fel-liknande action. Gamla fel innan klientrapporteringen fanns kan saknas om flodet inte skrev `*_failed`. |
+| "Varfor syns inte ett fel i Felkoder?" | Felkodsvyn visar klientrapporter och auditrader med fel-liknande action. Gamla fel innan klientrapporteringen fanns kan saknas om flodet inte skrev `*_failed`. Om felet stoppas av proxy/natverk innan backend tar emot requesten kan servern inte skriva auditrad. |
 
 ## Kallor
 

@@ -23,6 +23,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
 | `user_wait_metrics` | `UserWaitMetric` | Tyst vantetids- och klientprestanda for Historik/Halsa | `business_id`, `user_id`, `event_type`, `view_id`, `target`, `duration_ms`, `status`, `detail`, `created_at` |
 | `app_settings` | `AppSetting` | Verksamhetsspecifika settings JSON/text | `business_id`, `key`, `value`, `updated_by` |
+| `coredata_files` | `CoreDataFile` | Central sanning for uppladdade coredata-karnfiler | `business_code`, `file_type`, `filename`, `content_hash`, `data`, `uploaded_by`, `updated_at` |
 | `meta_media_uploads` | `MetaMediaUpload` | Publikt uppladdade bilder/videor for senare LLM-analys | `batch_id`, `original_filename`, `stored_filename`, `content_type`, `media_type`, `size_bytes`, `duration_seconds`, `content_hash`, `data`, `status`, `analysis`, `source`, `created_at` |
 | `meta_shipment_observations` | `MetaShipmentObservation` | Sändningsrader extraherade från Meta-videor | `media_upload_id`, `label_image_upload_id`, `video_hash`, `label_image_hash`, `record_hash`, `order_number`, `shipment_number`, `username`, `customer_name`, `pallet_id`, `deviations`, `analysis_status` |
 
@@ -65,6 +66,14 @@ Viktiga settings:
 - sidebar-layout: menyordning/rubrik/undervyer per verksamhet.
 - role-view-access: matris per verksamhet for rollernas vyatkomst (`none`, `view`, `edit`).
 
+## Coredata
+
+- `coredata_files` lagrar nya coredata-karnfiler som blobbar i Postgres. Nyckeln ar `business_code + file_type`, sa en ny uppladdning ersatter bara samma karnfilstyp i samma verksamhet.
+- Kanda filtyper omfattar bland annat `dispatch_template` for dispatchmallar och `trans_agency` for transportors-/agency-underlag.
+- `content_hash` ar SHA-256 av filens bytes och anvands for sparbar koppling/spårbarhet. `data` innehaller filen; list-endpointen visar bara metadata.
+- Lagerverktygen och Produktivitet behöver fortfarande filvagar internt. Backend materialiserar darfor DB-raden till en temporar serverfil nar ett flode ska lasa den. Den temporara filen ar cache; Postgres-raden ar sanningen.
+- Gamla filbaserade coredata-underlag under `data/coredata/` kan fortfarande lasas som fallback tills respektive karnfil laddas upp igen och finns i `coredata_files`.
+
 ## Meta-media
 
 - `meta_media_uploads` ar inte verksamhetsscopead i forsta versionen. Den publika uppladdningssidan saknar login och sparar alla media i samma meta-tabell.
@@ -81,7 +90,9 @@ Viktiga settings:
 
 - `../app/backend/models.py`
 - `../app/backend/business_scope.py`
+- `../app/backend/coredata_service.py`
 - `../app/backend/template_service.py`
 - `../app/backend/schedule_locks.py`
 - `../app/backend/settings_service.py`
 - `../app/alembic/versions/0027_meta_shipment_number.py`
+- `../app/alembic/versions/0028_coredata_files.py`

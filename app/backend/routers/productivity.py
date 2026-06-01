@@ -137,6 +137,8 @@ def _save_classified_productivity_file(
     filename: str | None,
     sample: bytes,
     business_code: str,
+    db: Session | None = None,
+    uploaded_by: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     file_type = classify_productivity_file(filename, sample)
     if file_type is None:
@@ -164,6 +166,8 @@ def _save_classified_productivity_file(
             filename=filename,
             file_type=file_type,
             business_code=business_code,
+            db=db,
+            uploaded_by=uploaded_by,
         )
     ], []
 
@@ -220,7 +224,7 @@ def get_productivity_files(
     db: Session = Depends(get_db),
 ) -> dict:
     business_code = _productivity_business_code(db, user)
-    return build_productivity_session_file_status(_session_log_files(request), business_code=business_code)
+    return build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db)
 
 
 @router.get("/targets")
@@ -230,7 +234,7 @@ def get_productivity_targets(
 ) -> dict:
     try:
         business_code = _productivity_business_code(db, user)
-        return read_productivity_targets(business_code=business_code)
+        return read_productivity_targets(business_code=business_code, db=db)
     except ProductivitySourceError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -274,6 +278,8 @@ async def upload_productivity_files(
                     filename=upload.filename,
                     sample=sample,
                     business_code=business_code,
+                    db=db,
+                    uploaded_by=getattr(user, "id", None),
                 )
                 saved.extend(saved_items)
                 unknown.extend(unknown_items)
@@ -296,7 +302,7 @@ async def upload_productivity_files(
     return {
         "saved": saved,
         "unknown": unknown,
-        "status": build_productivity_session_file_status(_session_log_files(request), business_code=business_code),
+        "status": build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db),
     }
 
 
@@ -317,6 +323,8 @@ async def upload_productivity_file_raw(
                 filename=filename,
                 sample=sample,
                 business_code=business_code,
+                db=db,
+                uploaded_by=getattr(user, "id", None),
             )
         finally:
             temp_path.unlink(missing_ok=True)
@@ -335,7 +343,7 @@ async def upload_productivity_file_raw(
     return {
         "saved": saved,
         "unknown": unknown,
-        "status": build_productivity_session_file_status(_session_log_files(request), business_code=business_code),
+        "status": build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db),
     }
 
 
@@ -349,11 +357,11 @@ def delete_productivity_file(
     business_code = _productivity_business_code(db, user)
     if file_type not in LOCAL_FILE_TYPES:
         try:
-            clear_productivity_file(file_type, business_code=business_code)
+            clear_productivity_file(file_type, business_code=business_code, db=db)
         except ProductivitySourceError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         _audit_productivity_files(db, user, action="delete", file_type=file_type, scope="server")
-        return build_productivity_session_file_status(_session_log_files(request), business_code=business_code)
+        return build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db)
     existing = request.session.get("productivity_files") or {}
     old_path = existing.pop(file_type, None)
     if old_path:
@@ -361,7 +369,7 @@ def delete_productivity_file(
     request.session["productivity_files"] = existing
     clear_productivity_cache()
     _audit_productivity_files(db, user, action="delete", file_type=file_type, scope="session")
-    return build_productivity_session_file_status(_session_log_files(request), business_code=business_code)
+    return build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db)
 
 
 @router.get("")
@@ -373,7 +381,7 @@ def get_productivity(
 ) -> dict:
     try:
         business_code = _productivity_business_code(db, user)
-        files = source_files_from_session_logs(_session_log_files(request), business_code=business_code)
+        files = source_files_from_session_logs(_session_log_files(request), business_code=business_code, db=db)
         return build_productivity_report_from_files(files, report_date=date_filter)
     except ProductivitySourceError as exc:
         raise HTTPException(

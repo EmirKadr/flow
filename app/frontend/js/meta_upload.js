@@ -9,7 +9,9 @@ const progressBar = document.getElementById("metaProgressBar");
 const progressRemaining = document.getElementById("metaProgressRemaining");
 const statusBox = document.getElementById("metaStatus");
 
+const META_UPLOAD_FILES_PER_REQUEST = 1;
 let selectedFiles = [];
+let fileUploadStates = [];
 let uploading = false;
 const selectedVideoDurations = new WeakMap();
 let durationProbeGeneration = 0;
@@ -76,9 +78,10 @@ function renderFiles() {
     item.appendChild(size);
 
     const state = document.createElement("div");
-    state.className = "meta-file-state";
+    const uploadState = fileUploadStates[index] || {};
+    state.className = `meta-file-state${uploadState.type ? ` ${uploadState.type}` : ""}`;
     state.dataset.fileState = String(index);
-    state.textContent = uploading ? "Väntar" : "Vald";
+    state.textContent = uploadState.label || (uploading ? "Väntar" : "Vald");
     item.appendChild(state);
 
     const track = document.createElement("div");
@@ -90,6 +93,14 @@ function renderFiles() {
   });
 }
 
+function setFileUploadState(index, label, type = "") {
+  fileUploadStates[index] = { label, type };
+  const node = fileList.querySelector(`[data-file-state="${index}"]`);
+  if (!node) return;
+  node.textContent = label;
+  node.className = `meta-file-state${type ? ` ${type}` : ""}`;
+}
+
 function updateFileDurationLabel(index, file) {
   const node = fileList.querySelector(`[data-file-duration-label="${index}"]`);
   if (!node) return;
@@ -97,30 +108,47 @@ function updateFileDurationLabel(index, file) {
   node.textContent = duration ? `${formatBytes(file.size || 0)} - ${duration}` : formatBytes(file.size || 0);
 }
 
-function loadSelectedVideoDurations() {
-  const generation = ++durationProbeGeneration;
-  selectedFiles.forEach((file, index) => {
-    if (!isVideoFile(file) || selectedVideoDurations.has(file)) return;
+function readSelectedVideoDuration(file) {
+  return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.preload = "metadata";
     video.muted = true;
     video.playsInline = true;
+    let settled = false;
     const cleanup = () => {
       URL.revokeObjectURL(url);
       video.removeAttribute("src");
       video.load();
     };
-    video.addEventListener("loadedmetadata", () => {
-      if (generation === durationProbeGeneration && selectedFiles[index] === file) {
-        selectedVideoDurations.set(file, video.duration);
-        updateFileDurationLabel(index, file);
-      }
+    const finish = (duration = null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
       cleanup();
+      resolve(duration);
+    };
+    const timeout = window.setTimeout(() => finish(null), 8000);
+    video.addEventListener("loadedmetadata", () => {
+      finish(video.duration);
     }, { once: true });
-    video.addEventListener("error", cleanup, { once: true });
+    video.addEventListener("error", () => finish(null), { once: true });
     video.src = url;
   });
+}
+
+async function loadSelectedVideoDurations() {
+  const generation = ++durationProbeGeneration;
+  for (let index = 0; index < selectedFiles.length; index += 1) {
+    const file = selectedFiles[index];
+    if (generation !== durationProbeGeneration) return;
+    if (!isVideoFile(file) || selectedVideoDurations.has(file)) continue;
+    const duration = await readSelectedVideoDuration(file);
+    if (generation === durationProbeGeneration && selectedFiles[index] === file && duration != null) {
+      selectedVideoDurations.set(file, duration);
+      updateFileDurationLabel(index, file);
+    }
+  }
 }
 
 function setUploadControlsLocked(locked) {
@@ -166,6 +194,12 @@ function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
     const state = fileList.querySelector(`[data-file-state="${index}"]`);
     if (bar) bar.style.width = `${filePercent}%`;
     if (state) {
+      const uploadState = fileUploadStates[index] || {};
+      if (uploadState.type === "success" || uploadState.type === "error") {
+        state.textContent = uploadState.label;
+        state.className = `meta-file-state ${uploadState.type}`;
+        return;
+      }
       state.textContent = filePercent >= 100
         ? "Klar"
         : index === activeIndex ? `${filePercent}%` : "Väntar";
@@ -176,9 +210,10 @@ function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
 function setFiles(files) {
   if (uploading) return;
   selectedFiles = Array.from(files || []).filter(Boolean);
+  fileUploadStates = selectedFiles.map(() => ({ label: "Vald", type: "" }));
   resetProgress();
   renderFiles();
-  loadSelectedVideoDurations();
+  void loadSelectedVideoDurations();
   setStatus(selectedFiles.length ? `${selectedFiles.length} filer valda. Startar uppladdning...` : "");
   if (selectedFiles.length) void startUpload();
 }
@@ -206,27 +241,64 @@ dropzone.addEventListener("drop", (event) => {
 async function startUpload() {
   if (!selectedFiles.length || uploading) return;
 
-  const body = new FormData();
-  selectedFiles.forEach((file) => body.append("files", file, file.name));
-
   setUploadControlsLocked(true);
+  fileUploadStates = selectedFiles.map(() => ({ label: "Väntar", type: "" }));
   renderFiles();
   updateProgress(0);
   setStatus("Laddar upp...");
+  const totalBytes = totalSelectedBytes();
+  let uploadedBeforeBytes = 0;
+  let savedTotal = 0;
+  let skippedTotal = 0;
+  const failed = [];
   try {
-    const payload = await uploadWithProgress(body);
-    updateProgress(totalSelectedBytes(), totalSelectedBytes());
+    for (let start = 0; start < selectedFiles.length; start += META_UPLOAD_FILES_PER_REQUEST) {
+      const batch = selectedFiles.slice(start, start + META_UPLOAD_FILES_PER_REQUEST);
+      const batchBytes = batch.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+      batch.forEach((_file, offset) => setFileUploadState(start + offset, "Laddar upp", ""));
+      try {
+        const payload = await uploadWithProgress(batch, (loadedBytes, eventTotalBytes) => {
+          const loadedInBatch = Math.min(Math.max(Number(loadedBytes) || 0, 0), eventTotalBytes || batchBytes || 1);
+          updateProgress(uploadedBeforeBytes + loadedInBatch, totalBytes);
+        });
+        const savedCount = Number(payload.saved_count || 0);
+        const skippedCount = Number(payload.skipped_count || 0);
+        savedTotal += savedCount;
+        skippedTotal += skippedCount;
+        batch.forEach((_file, offset) => {
+          const index = start + offset;
+          setFileUploadState(index, skippedCount ? "Dubblett" : "Klar", "success");
+        });
+      } catch (error) {
+        const message = error.message || "Uppladdningen misslyckades.";
+        failed.push({ index: start, message });
+        batch.forEach((_file, offset) => setFileUploadState(start + offset, "Fel", "error"));
+      }
+      uploadedBeforeBytes += batchBytes;
+      updateProgress(uploadedBeforeBytes, totalBytes);
+    }
     input.value = "";
-    selectedFiles = [];
-    renderFiles();
-    const savedCount = Number(payload.saved_count || 0);
-    const skippedCount = Number(payload.skipped_count || 0);
-    if (skippedCount && savedCount) {
-      setStatus(`${savedCount} filer uppladdade. ${skippedCount} dubbletter hoppades över.`, "success");
-    } else if (skippedCount) {
-      setStatus(`Inga nya filer sparades. ${skippedCount} dubbletter fanns redan.`, "success");
+    if (failed.length) {
+      const completedParts = [];
+      if (savedTotal) completedParts.push(`${savedTotal} filer uppladdade`);
+      if (skippedTotal) completedParts.push(`${skippedTotal} dubbletter hoppades över`);
+      const successText = completedParts.length ? `${completedParts.join(". ")}. ` : "";
+      setStatus(`${successText}${failed.length} filer misslyckades. Försök igen med de filerna.`, "error");
+    } else if (skippedTotal && savedTotal) {
+      setStatus(`${savedTotal} filer uppladdade. ${skippedTotal} dubbletter hoppades över.`, "success");
+      selectedFiles = [];
+      fileUploadStates = [];
+      renderFiles();
+    } else if (skippedTotal) {
+      setStatus(`Inga nya filer sparades. ${skippedTotal} dubbletter fanns redan.`, "success");
+      selectedFiles = [];
+      fileUploadStates = [];
+      renderFiles();
     } else {
-      setStatus(`${savedCount} filer uppladdade.`, "success");
+      setStatus(`${savedTotal} filer uppladdade.`, "success");
+      selectedFiles = [];
+      fileUploadStates = [];
+      renderFiles();
     }
   } catch (error) {
     setUploadControlsLocked(false);
@@ -243,15 +315,18 @@ form.addEventListener("submit", (event) => {
   void startUpload();
 });
 
-function uploadWithProgress(body) {
+function uploadWithProgress(files, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file, file.name));
+    const batchBytes = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/meta/uploads");
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) {
-        updateProgress(event.loaded, event.total);
+        onProgress(event.loaded, event.total);
       } else {
-        updateProgress(event.loaded, totalSelectedBytes());
+        onProgress(event.loaded, batchBytes);
       }
     });
     xhr.addEventListener("load", () => {
@@ -262,13 +337,18 @@ function uploadWithProgress(body) {
         payload = {};
       }
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(payload.detail || `HTTP ${xhr.status}`));
+        const detail = typeof payload.detail === "string"
+          ? payload.detail
+          : typeof payload.message === "string"
+            ? payload.message
+            : "";
+        reject(new Error(detail || `HTTP ${xhr.status}`));
         return;
       }
       resolve(payload);
     });
     xhr.addEventListener("error", () => reject(new Error("Kunde inte ansluta till servern.")));
     xhr.addEventListener("abort", () => reject(new Error("Uppladdningen avbröts.")));
-    xhr.send(body);
+    xhr.send(formData);
   });
 }

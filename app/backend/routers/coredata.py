@@ -95,8 +95,8 @@ def _article_max_status(business_code: str) -> dict[str, Any]:
     return payload
 
 
-def _coredata_status(business_code: str) -> dict[str, Any]:
-    payload = build_coredata_status(business_code=business_code)
+def _coredata_status(business_code: str, db: Session | None = None) -> dict[str, Any]:
+    payload = build_coredata_status(business_code=business_code, db=db)
     payload["files"] = {
         ARTICLE_MAX_FILE_TYPE: _article_max_status(business_code),
         **build_productivity_compiled_data_status(business_code=business_code),
@@ -132,7 +132,7 @@ def _save_article_max_file(*, source_path: Path, filename: str | None, business_
     return payload
 
 
-def _warm_coredata_caches(file_type: str, business_code: str) -> None:
+def _warm_coredata_caches(file_type: str, business_code: str, db: Session | None = None) -> None:
     if file_type != "location":
         return
     try:
@@ -140,7 +140,7 @@ def _warm_coredata_caches(file_type: str, business_code: str) -> None:
         clear_cache = getattr(flows_module, "clear_prepared_location_cache", None)
         if callable(clear_cache):
             clear_cache()
-        location_path = find_coredata_file("location", business_code=business_code)
+        location_path = find_coredata_file("location", business_code=business_code, db=db)
         warm_cache = getattr(flows_module, "warm_prepared_locations", None)
         if callable(warm_cache):
             warm_cache(location_path)
@@ -196,7 +196,7 @@ def get_coredata_files(
     db: Session = Depends(get_db),
 ) -> dict:
     business_code = _coredata_business_code(db, user)
-    return _coredata_status(business_code)
+    return _coredata_status(business_code, db)
 
 
 @router.post("/files/raw")
@@ -217,7 +217,7 @@ async def upload_coredata_file_raw(
             error_type="unknown_file_type",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Okand karnfil eller sammanstalld datafil")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Okänd kärnfil eller sammanställd datafil")
     if file_type == "kpi":
         _audit_coredata_file(
             db,
@@ -245,6 +245,8 @@ async def upload_coredata_file_raw(
                     filename=filename,
                     file_type=file_type,
                     business_code=business_code,
+                    db=db,
+                    uploaded_by=getattr(user, "id", None),
                 )
         finally:
             temp_path.unlink(missing_ok=True)
@@ -271,10 +273,10 @@ async def upload_coredata_file_raw(
         )
         raise
 
-    _warm_coredata_caches(file_type, business_code)
+    _warm_coredata_caches(file_type, business_code, db)
     _audit_coredata_file(db, user, action="upload", business_code=business_code, file_type=file_type)
     return {
         "saved": [saved],
         "unknown": [],
-        "status": _coredata_status(business_code),
+        "status": _coredata_status(business_code, db),
     }

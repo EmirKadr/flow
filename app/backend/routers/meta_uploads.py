@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -15,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from ..audit import log as audit_log
+from ..audit import log as audit_log, log_and_commit as audit_log_and_commit
 from ..config import settings
 from ..deps import get_db, require_super_user
 from ..meta_analysis_service import (
@@ -35,6 +36,9 @@ MAX_META_UPLOAD_FILES = 25
 MAX_META_UPLOAD_FILE_BYTES = 256 * 1024 * 1024
 MAX_META_UPLOAD_BATCH_BYTES = 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+PUBLIC_UPLOAD_FAILURE_DETAIL = (
+    "Uppladdningen misslyckades på servern. Försök igen eller dela upp videorna i färre filer."
+)
 
 IMAGE_EXTENSIONS = {
     ".avif",
@@ -102,6 +106,59 @@ def _format_duration(seconds: float | int | None) -> str | None:
     if hours:
         return f"{hours}:{minutes:02d}:{sec:02d}"
     return f"{minutes}:{sec:02d}"
+
+
+def _public_upload_error_message(status_code: int) -> str:
+    if status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+        return "Meta-uppladdningen var för stor."
+    if status_code == status.HTTP_409_CONFLICT:
+        return "Meta-uppladdningen stoppades av en dubblettkonflikt."
+    if status_code == status.HTTP_400_BAD_REQUEST:
+        return "Meta-uppladdningen kunde inte valideras."
+    return "Meta-uppladdningen misslyckades på servern."
+
+
+def _write_public_upload_failure_audit(
+    db: Session,
+    *,
+    status_code: int,
+    error_code: str,
+    error_type: str,
+    attempted_count: int,
+    accepted_count: int,
+    skipped_count: int,
+    uploaded_bytes: int,
+) -> None:
+    payload: dict[str, Any] = {
+        "path": "/api/meta/uploads",
+        "method": "POST",
+        "status_code": status_code,
+        "error_code": error_code,
+        "error_type": error_type,
+        "message": _public_upload_error_message(status_code),
+        "attempted_count": max(0, int(attempted_count or 0)),
+        "accepted_count": max(0, int(accepted_count or 0)),
+        "skipped_count": max(0, int(skipped_count or 0)),
+        "uploaded_bytes": max(0, int(uploaded_bytes or 0)),
+        "uploaded_size_label": _format_size(max(0, int(uploaded_bytes or 0))),
+        "source": "public_upload",
+    }
+    try:
+        db.rollback()
+    except Exception:
+        pass
+    audit_log_and_commit(
+        db,
+        entity_type="meta_media_upload",
+        entity_id=0,
+        action="upload_failed",
+        old_value=None,
+        new_value=payload,
+        user_id=None,
+        business_id=None,
+        logger=logger,
+        context="public meta upload failure audit event",
+    )
 
 
 def _probe_video_duration_seconds(data: bytes, original_filename: str) -> float | None:
@@ -256,14 +313,7 @@ async def upload_meta_media(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ) -> dict:
-    if not files:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades.")
-    if len(files) > MAX_META_UPLOAD_FILES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail=f"Du kan ladda upp max {MAX_META_UPLOAD_FILES} filer åt gången.",
-        )
-
+    attempted_count = len(files or [])
     batch_id = uuid4().hex
     batch_total = 0
     rows: list[MetaMediaUpload] = []
@@ -271,94 +321,134 @@ async def upload_meta_media(
     skipped: list[dict] = []
     pending_hashes: dict[str, str] = {}
 
-    for index, upload in enumerate(files, start=1):
-        filename = _clean_filename(upload.filename)
-        content_type = str(upload.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
-        media_type = _media_type(filename, content_type)
-        data, size = await _read_upload_data(upload, batch_total=batch_total)
-        batch_total += size
-        content_hash = hashlib.sha256(data).hexdigest()
-        pending_duplicate = pending_hashes.get(content_hash)
-        if pending_duplicate:
-            skipped.append(
-                _duplicate_item(
-                    filename=filename,
-                    content_type=content_type or "application/octet-stream",
-                    media_type=media_type,
-                    size=size,
-                    duplicate_of_id=None,
-                    duplicate_of_filename=pending_duplicate,
-                )
+    try:
+        if not files:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades.")
+        if len(files) > MAX_META_UPLOAD_FILES:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Du kan ladda upp max {MAX_META_UPLOAD_FILES} filer åt gången.",
             )
-            continue
-        existing = db.query(MetaMediaUpload).filter(MetaMediaUpload.content_hash == content_hash).first()
-        if existing is not None:
-            skipped.append(
-                _duplicate_item(
-                    filename=filename,
-                    content_type=content_type or "application/octet-stream",
-                    media_type=media_type,
-                    size=size,
-                    duplicate_of_id=existing.id,
-                    duplicate_of_filename=existing.stored_filename or existing.original_filename,
-                )
-            )
-            continue
-        uploaded_at = datetime.now(timezone.utc)
-        stored_filename = _stored_filename(uploaded_at, index, filename, media_type)
-        pending_hashes[content_hash] = stored_filename
-        row = MetaMediaUpload(
-            batch_id=batch_id,
-            original_filename=filename,
-            stored_filename=stored_filename,
-            content_type=content_type or "application/octet-stream",
-            media_type=media_type,
-            size_bytes=size,
-            duration_seconds=_probe_video_duration_seconds(data, filename) if media_type == "video" else None,
-            content_hash=content_hash,
-            data=data,
-            status="pending_analysis",
-            source="public_upload",
-            created_at=uploaded_at,
-        )
-        rows.append(row)
-        saved.append(
-            {
-                "filename": stored_filename,
-                "stored_filename": stored_filename,
-                "original_filename": filename,
-                "content_type": row.content_type,
-                "media_type": media_type,
-                "size_bytes": size,
-                "size_label": _format_size(size),
-                "duration_seconds": row.duration_seconds,
-                "duration_label": _format_duration(row.duration_seconds),
-            }
-        )
 
-    if rows:
-        try:
+        for index, upload in enumerate(files, start=1):
+            filename = _clean_filename(upload.filename)
+            content_type = str(upload.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
+            media_type = _media_type(filename, content_type)
+            data, size = await _read_upload_data(upload, batch_total=batch_total)
+            batch_total += size
+            content_hash = hashlib.sha256(data).hexdigest()
+            pending_duplicate = pending_hashes.get(content_hash)
+            if pending_duplicate:
+                skipped.append(
+                    _duplicate_item(
+                        filename=filename,
+                        content_type=content_type or "application/octet-stream",
+                        media_type=media_type,
+                        size=size,
+                        duplicate_of_id=None,
+                        duplicate_of_filename=pending_duplicate,
+                    )
+                )
+                continue
+            existing = db.query(MetaMediaUpload).filter(MetaMediaUpload.content_hash == content_hash).first()
+            if existing is not None:
+                skipped.append(
+                    _duplicate_item(
+                        filename=filename,
+                        content_type=content_type or "application/octet-stream",
+                        media_type=media_type,
+                        size=size,
+                        duplicate_of_id=existing.id,
+                        duplicate_of_filename=existing.stored_filename or existing.original_filename,
+                    )
+                )
+                continue
+            uploaded_at = datetime.now(timezone.utc)
+            stored_filename = _stored_filename(uploaded_at, index, filename, media_type)
+            pending_hashes[content_hash] = stored_filename
+            row = MetaMediaUpload(
+                batch_id=batch_id,
+                original_filename=filename,
+                stored_filename=stored_filename,
+                content_type=content_type or "application/octet-stream",
+                media_type=media_type,
+                size_bytes=size,
+                duration_seconds=_probe_video_duration_seconds(data, filename) if media_type == "video" else None,
+                content_hash=content_hash,
+                data=data,
+                status="pending_analysis",
+                source="public_upload",
+                created_at=uploaded_at,
+            )
+            rows.append(row)
+            saved.append(
+                {
+                    "filename": stored_filename,
+                    "stored_filename": stored_filename,
+                    "original_filename": filename,
+                    "content_type": row.content_type,
+                    "media_type": media_type,
+                    "size_bytes": size,
+                    "size_label": _format_size(size),
+                    "duration_seconds": row.duration_seconds,
+                    "duration_label": _format_duration(row.duration_seconds),
+                }
+            )
+
+        if rows:
             db.add_all(rows)
             db.commit()
-        except IntegrityError:
-            db.rollback()
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail="En eller flera filer fanns redan och sparades inte dubbelt. Försök ladda upp igen om andra filer saknas.",
-            )
-        except Exception:
-            db.rollback()
-            raise
 
-        for row, item in zip(rows, saved):
-            db.refresh(row)
-            item["id"] = row.id
-        shipment_rows = ensure_shipment_observations(db, rows)
-        db.commit()
-        if shipment_rows and meta_analysis_configured() and settings.META_ANALYSIS_AUTO_START:
-            background_tasks.add_task(run_meta_analysis_background, [row.media_upload_id for row in shipment_rows])
-    else:
-        shipment_rows = []
+            for row, item in zip(rows, saved):
+                db.refresh(row)
+                item["id"] = row.id
+            shipment_rows = ensure_shipment_observations(db, rows)
+            db.commit()
+            if shipment_rows and meta_analysis_configured() and settings.META_ANALYSIS_AUTO_START:
+                background_tasks.add_task(run_meta_analysis_background, [row.media_upload_id for row in shipment_rows])
+        else:
+            shipment_rows = []
+    except HTTPException as exc:
+        status_code = int(exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR)
+        _write_public_upload_failure_audit(
+            db,
+            status_code=status_code,
+            error_code=f"HTTP {status_code}",
+            error_type="HTTPException",
+            attempted_count=attempted_count,
+            accepted_count=len(saved),
+            skipped_count=len(skipped),
+            uploaded_bytes=batch_total,
+        )
+        raise
+    except IntegrityError as exc:
+        _write_public_upload_failure_audit(
+            db,
+            status_code=status.HTTP_409_CONFLICT,
+            error_code="HTTP 409",
+            error_type=exc.__class__.__name__,
+            attempted_count=attempted_count,
+            accepted_count=len(saved),
+            skipped_count=len(skipped),
+            uploaded_bytes=batch_total,
+        )
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="En eller flera filer fanns redan och sparades inte dubbelt. Försök ladda upp igen om andra filer saknas.",
+        ) from exc
+    except Exception as exc:
+        _write_public_upload_failure_audit(
+            db,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code="HTTP 500",
+            error_type=exc.__class__.__name__,
+            attempted_count=attempted_count,
+            accepted_count=len(saved),
+            skipped_count=len(skipped),
+            uploaded_bytes=batch_total,
+        )
+        logger.exception("Public meta upload failed")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=PUBLIC_UPLOAD_FAILURE_DETAIL) from exc
 
     return {
         "batch_id": batch_id,

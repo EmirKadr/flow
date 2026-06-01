@@ -27,8 +27,10 @@ from typing import Callable, Optional
 
 import pandas as pd
 
+from .carrier_clusters import normalize_carrier_cluster_payload, read_carrier_clusters
 from .engine import engine as E
 from .surface_generation import generate_surface_plan, prepare_locations
+from .ytgenerering_map import build_ytgenerering_map_payload
 
 ORDER_SET_AREA_IMPORT_KEY = "order_set_area_import"
 ORDER_SET_AREA_IMPORT_LABEL = "ASK-import order/yta"
@@ -64,8 +66,10 @@ GOTLAND_POSTCODE_ROWS = [
 
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
 PROCESS_AREA_FOCUS_PARAM = "__process_area_focus"
-YTGENERERING_MG_MIN_LOCATION = 205
-YTGENERERING_MG_MAX_LOCATION = 652
+YTGENERERING_UTL_MIN_PARAM = "__ytgenerering_utl_min"
+YTGENERERING_UTL_MAX_PARAM = "__ytgenerering_utl_max"
+YTGENERERING_UTL_DEFAULT_MIN = 1
+YTGENERERING_UTL_DEFAULT_MAX = 652
 FileVersion = tuple[str, int, int]
 
 
@@ -111,19 +115,30 @@ def warm_prepared_locations(path: str | Path) -> None:
     _read_prepared_locations(Path(path))
 
 
-def _ytgenerering_area_focus(params: dict) -> str:
-    return str(params.get(PROCESS_AREA_FOCUS_PARAM) or "").strip().upper()
+def _ytgenerering_utl_number(value: object, fallback: int) -> int:
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        number = fallback
+    return max(YTGENERERING_UTL_DEFAULT_MIN, min(YTGENERERING_UTL_DEFAULT_MAX, number))
 
 
-def _filter_ytgenerering_locations(locations: pd.DataFrame, area_focus: str) -> tuple[pd.DataFrame, str | None]:
-    if area_focus != "MG":
-        return locations, None
+def _ytgenerering_utl_range(params: dict) -> tuple[int, int]:
+    min_number = _ytgenerering_utl_number(params.get(YTGENERERING_UTL_MIN_PARAM), YTGENERERING_UTL_DEFAULT_MIN)
+    max_number = _ytgenerering_utl_number(params.get(YTGENERERING_UTL_MAX_PARAM), YTGENERERING_UTL_DEFAULT_MAX)
+    if min_number > max_number:
+        min_number, max_number = max_number, min_number
+    return min_number, max_number
+
+
+def _filter_ytgenerering_locations(locations: pd.DataFrame, params: dict) -> tuple[pd.DataFrame, str]:
+    min_number, max_number = _ytgenerering_utl_range(params)
     filtered = locations[
-        locations["_location_number"].between(YTGENERERING_MG_MIN_LOCATION, YTGENERERING_MG_MAX_LOCATION)
+        locations["_location_number"].between(min_number, max_number)
     ].copy()
     if filtered.empty:
-        raise ValueError("MG-ytgenerering saknar giltiga ytor i UTL205-UTL652.")
-    return filtered, "MG-toggle: Ytgenerering använder endast UTL205-UTL652."
+        raise ValueError(f"Ytgenerering saknar giltiga ytor i UTL{min_number}-UTL{max_number}.")
+    return filtered, f"Ytgenerering använder UTL{min_number}-UTL{max_number}."
 
 
 @lru_cache(maxsize=32)
@@ -891,6 +906,7 @@ FORECAST_FILE_LABELS = {
     "dimension": "dimension",
     "pallet_type": "pallet_type",
     "item_option": "item_option",
+    "trans_agency": "transportorer",
 }
 
 
@@ -948,14 +964,24 @@ def flow_forecast(files: dict, params: dict) -> dict:
         "rows": forecast_df.to_dict("records"),
         "summary": summary,
     }
+    artifacts = {"forecast_json": artifact}
+    carrier_clusters = None
+    log = [
+        "Forecast körd fristående i Flow.",
+        "Forecast sparad som session-artifact för Ytgenerering.",
+    ]
+    if "trans_agency" in files:
+        carrier_clusters = read_carrier_clusters(Path(files["trans_agency"]))
+        artifacts["carrier_clusters"] = carrier_clusters
+        log.append(
+            f"Transportörskluster inlästa från kärnfil: {len(carrier_clusters.get('rows') or [])} transportörsrader."
+        )
     return {
         "summary": summary,
         "tables": [("forecast", "Forecast", forecast_df)],
-        "artifacts": {"forecast_json": artifact},
-        "log": [
-            "Forecast körd fristående i Flow.",
-            "Forecast sparad som session-artifact för Ytgenerering.",
-        ],
+        "artifacts": artifacts,
+        "carrier_clusters": carrier_clusters,
+        "log": log,
     }
 
 
@@ -977,8 +1003,10 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         columns = payload.get("columns") or None
         forecast_df = pd.DataFrame(rows, columns=columns)
     locations_df = _read_prepared_locations(Path(files["location"]))
-    locations_df, area_log = _filter_ytgenerering_locations(locations_df, _ytgenerering_area_focus(params))
-    result = generate_surface_plan(forecast_df, locations_df)
+    locations_df, area_log = _filter_ytgenerering_locations(locations_df, params)
+    carrier_clusters = normalize_carrier_cluster_payload(params.get("__carrier_clusters_json"))
+    result = generate_surface_plan(forecast_df, locations_df, carrier_clusters=carrier_clusters)
+    map_payload = build_ytgenerering_map_payload(result.assignments, result.unplaced, locations_df, forecast_df)
 
     tables = [
         ("ytgenerering", "Ytgenerering", result.assignments),
@@ -989,10 +1017,12 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
 
     log = [
         "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
-        "Sändningar placerade en och en. Transportör används för sortering och översikt.",
+        "Sändningar placerade en och en. Transportörskluster styr sortering och UTL-område när kluster finns.",
     ]
     if area_log:
         log.insert(1, area_log)
+    if carrier_clusters and carrier_clusters.get("rows"):
+        log.append(f"Transportörskluster använda: {len(carrier_clusters['rows'])} rader.")
     download_files: dict[str, dict[str, str]] = {}
     auto_downloads: list[dict[str, str]] = []
     if result.unplaced.empty:
@@ -1025,6 +1055,7 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
     return {
         "summary": summary,
         "tables": tables,
+        "maps": [map_payload],
         "download_files": download_files,
         "auto_downloads": auto_downloads,
         "log": log,
@@ -1065,6 +1096,7 @@ FLOWS: list[dict] = [
             {"key": "dimension", "label": "dimension", "required": True},
             {"key": "pallet_type", "label": "pallet_type", "required": True},
             {"key": "item_option", "label": "item_option", "required": True},
+            {"key": "trans_agency", "label": "Transportörer", "required": False},
         ],
     },
     {

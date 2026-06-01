@@ -38,6 +38,7 @@ BUSINESS_COREDATA_FLOW_DEFAULTS = {
         "dimension": "dimension",
         "pallet_type": "pallet_type",
         "item_option": "item_option",
+        "trans_agency": "trans_agency",
     },
     "ytgenerering": {"location": "location"},
 }
@@ -313,13 +314,18 @@ def _allocation_business_code(db: Session, user: User, area_focus: str | None = 
         return DEFAULT_BUSINESS_CODE
 
 
-def _business_coredata_default_files(flow_id: str, files: dict, business_code: str) -> dict:
+def _business_coredata_default_files(
+    flow_id: str,
+    files: dict,
+    business_code: str,
+    db: Session | None = None,
+) -> dict:
     defaults: dict = {}
     for file_key, coredata_type in BUSINESS_COREDATA_FLOW_DEFAULTS.get(flow_id, {}).items():
         if file_key in files:
             continue
         try:
-            defaults[file_key] = find_coredata_file(coredata_type, business_code=business_code)
+            defaults[file_key] = find_coredata_file(coredata_type, business_code=business_code, db=db)
         except CoreDataError:
             continue
     return defaults
@@ -354,11 +360,17 @@ def _attach_required_session_artifacts(flow_id: str, params: dict, user: User) -
     session = bridge.SESSIONS.get(forecast_session_id)
     if session is None or session.get("flow_id") != "forecast":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Forecast-sessionen hittades inte.")
+    submitted_clusters = str(params.get("carrier_clusters_json") or "").strip()
+    artifacts = session.get("artifacts") or {}
+    if submitted_clusters:
+        params["__carrier_clusters_json"] = submitted_clusters
+    elif artifacts.get("carrier_clusters"):
+        params["__carrier_clusters_json"] = json.dumps(artifacts["carrier_clusters"], ensure_ascii=False)
     forecast_df = (session.get("tables") or {}).get("forecast")
     if forecast_df is not None:
         params["__forecast_df"] = forecast_df
         return
-    artifact = (session.get("artifacts") or {}).get("forecast_json")
+    artifact = artifacts.get("forecast_json")
     if not artifact:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Forecast-resultatet saknar data för Ytgenerering.")
     params["__forecast_json"] = json.dumps(artifact, ensure_ascii=False)
@@ -597,13 +609,18 @@ async def run_flow(
         _attach_required_session_artifacts(flow_id, params, user)
         default_max_csv_path = None
         business_code = _allocation_business_code(db, user, area_focus=area_focus)
-        coredata_files = _business_coredata_default_files(flow_id, files, business_code)
+        coredata_files = _business_coredata_default_files(flow_id, files, business_code, db)
         if coredata_files:
             files = {**coredata_files, **files}
         files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
         temp_paths.extend(filter_temp_paths)
-        if flow_id == "ytgenerering" and area_focus:
-            params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
+        if flow_id == "ytgenerering":
+            ytgenerering_focus = area_focus or "ALLT"
+            utl_min, utl_max = bridge.process_ytgenerering_utl_range(ytgenerering_focus, process_matrix)
+            if area_focus:
+                params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
+            params[bridge.YTGENERERING_UTL_MIN_PARAM] = str(utl_min)
+            params[bridge.YTGENERERING_UTL_MAX_PARAM] = str(utl_max)
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
             default_max_csv_path = bridge.business_allocation_data_paths(business_code)["article_max_path"]
         if default_max_csv_path is not None:

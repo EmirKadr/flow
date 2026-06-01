@@ -184,6 +184,7 @@ def mock_forecast_coredata(page) -> None:
             "dimension",
             "pallet_type",
             "item_option",
+            "trans_agency",
             "location",
         )
     }
@@ -441,7 +442,20 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                             }
                         ],
                         "log": [],
-                        "artifact_keys": ["forecast_json"],
+                        "artifact_keys": ["carrier_clusters", "forecast_json"],
+                        "carrier_clusters": {
+                            "rows": [
+                                {
+                                    "carrierNum": "42",
+                                    "description": "Akeri A - Parti",
+                                    "alias": "Akeri A",
+                                    "clusterGroup": "Freja",
+                                    "assignmentOrder": 9,
+                                    "startSeq": 600,
+                                    "endSeq": 652,
+                                }
+                            ]
+                        },
                         "auto_downloads": [],
                     },
                     ensure_ascii=False,
@@ -510,6 +524,13 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         expect(ytgenerering_button).to_be_enabled(timeout=15000)
         follow_up_button = page.locator('button[data-follow-up-flow="ytgenerering"]')
         expect(follow_up_button).to_be_enabled(timeout=15000)
+        cluster_button = page.locator('button[data-edit-carrier-clusters]')
+        expect(cluster_button).to_be_enabled(timeout=15000)
+        cluster_button.click()
+        page.wait_for_selector(".allocation-carrier-cluster-modal", timeout=15000)
+        page.fill('[data-carrier-cluster-row="0"] [data-carrier-cluster-field="clusterGroup"]', "Freja Test")
+        page.click("#allocation-carrier-cluster-save")
+        expect(page.locator(".allocation-carrier-cluster-modal")).to_have_count(0)
 
         with page.expect_response("**/api/allokering/download/ytgenerering-session-1/order_set_area_import") as download_response:
             follow_up_button.click()
@@ -519,5 +540,7 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         assert download_response.value.status == 200
         assert "forecast-session-1" in captured["post_data"]
         assert 'name="forecast_session_id"' in captured["post_data"]
+        assert 'name="carrier_clusters_json"' in captured["post_data"]
+        assert "Freja Test" in captured["post_data"]
     finally:
         context.close()

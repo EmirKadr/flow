@@ -644,7 +644,7 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
-        assert 'src="/js/common.js?v=20260601-zoom"' in html
+        assert 'src="/js/common.js?v=20260601-coredata-types"' in html
 
 
 def test_data_fetch_plan_columns_are_user_editable():
@@ -764,6 +764,7 @@ def test_area_focus_toggle_is_wired_to_views():
 
 def test_bearbeta_area_focus_filter_contract():
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    styles = (ROOT / "app" / "frontend" / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert "ALLOCATION_PROCESS_MATRIX" in allocation
     assert 'GG: {' in allocation
@@ -779,6 +780,33 @@ def test_bearbeta_area_focus_filter_contract():
     assert 'id="allocation-process-matrix">Matris</button>' in allocation
     assert "openAllocationProcessMatrixModal" in allocation
     assert "allocation-process-matrix-table" in allocation
+    assert "Ytgenerering UTL" in allocation
+    assert "ytgenereringUtlMin" in allocation
+    assert "data-matrix-utl-min" in allocation
+    assert "data-matrix-utl-max" in allocation
+    assert "allocationResultMaps" in allocation
+    assert "setupAllocationWarehouseMap" in allocation
+    assert "data-map-export-ask" in allocation
+    assert "requestFullscreen" in allocation
+    assert "Återställ vy" in allocation
+    assert "Fullskärm" in allocation
+    assert "Sök UTL, sändning eller transportör" in allocation
+    assert "Över kapacitet" in allocation
+    assert "Sändningsnr" in allocation
+    assert "Transportör" in allocation
+    assert "Okänd" in allocation
+    for missing_swedish in ("Aterstall vy", "Fullskarm", "Sok UTL", "Over kapacitet", "Sandningsnr", "Transportor"):
+        assert missing_swedish not in allocation
+    assert 'aria-keyshortcuts="Control+C Control+X Control+V Control+Z"' in allocation
+    assert "function copySelectedAssignment" in allocation
+    assert "function pasteMapClipboard" in allocation
+    assert "function undoMapMutation" in allocation
+    assert 'host.addEventListener("keydown", handleMapShortcut)' in allocation
+    assert ".allocation-map-block:focus-visible .allocation-warehouse-map" in styles
+    assert ".allocation-map-loc.is-clipboard-source" in styles
+    assert "Redigera kluster" in allocation
+    assert "carrier_clusters_json" in allocation
+    assert "openAllocationCarrierClusterModal" in allocation
     assert "function allocationFlowsForCurrentView" in allocation
     assert 'window.addEventListener("flow:areaFocusChanged", handleAllocationAreaFocusChanged)' in allocation
 
@@ -1136,12 +1164,21 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert "metaUploadButton" not in html
     assert 'id="metaProgress"' in html
     assert 'XMLHttpRequest' in js
+    assert "META_UPLOAD_FILES_PER_REQUEST = 1" in js
+    assert "start += META_UPLOAD_FILES_PER_REQUEST" in js
+    assert "uploadWithProgress(batch" in js
     assert 'xhr.upload.addEventListener("progress"' in js
     assert 'xhr.open("POST", "/api/meta/uploads")' in js
     assert "FormData" in js
+    assert "files.forEach((file) => formData.append" in js
     assert "selectedFiles.forEach" in js
     assert "updateProgress" in js
     assert "loadSelectedVideoDurations" in js
+    assert "readSelectedVideoDuration" in js
+    assert "await readSelectedVideoDuration" in js
+    assert "failed.length" in js
+    assert "typeof payload.detail" in js
+    assert "typeof payload.message" in js
     assert "startUpload" in js
     assert "void startUpload()" in js
     assert "metaUploadButton" not in js
@@ -1151,6 +1188,8 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert "min-height: 100dvh" in css
     assert ".meta-progress-panel" in css
     assert ".meta-file-progress-bar" in css
+    assert ".meta-file-state.success" in css
+    assert ".meta-file-state.error" in css
     assert ".meta-upload-button" not in css
     assert "@media (max-width: 520px)" in css
 
@@ -1292,6 +1331,9 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "clear_orders" in allocation
     assert "custom_adr" in allocation
     assert "item_security_info" in allocation
+    assert "dispatch_template" in allocation
+    assert "trans_agency" in allocation
+    assert "transportorer" in allocation
     assert "Alternativ leveransadress" in allocation
     assert "Godsdeklaration" in catalog
     assert "Godsdeklaration" in flows
@@ -1313,6 +1355,8 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "cursor.delete()" in common
     assert "Kärnfiler och sammanställd data ligger kvar" in common
     assert "item_security_info" in common
+    assert "dispatch_template" in common
+    assert "trans_agency" in common
     assert "custom_adr" in common
     assert 'new CustomEvent("flow:allocationFilesChanged"' in common
     assert "window.sharedAllocationUploads" in common

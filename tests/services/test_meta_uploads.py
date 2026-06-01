@@ -184,6 +184,67 @@ def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypat
         engine.dispose()
 
 
+def test_public_meta_upload_server_failure_is_visible_in_error_audit(monkeypatch):
+    engine, session = make_session()
+    original_commit = session.commit
+    commit_calls = 0
+
+    def flaky_commit():
+        nonlocal commit_calls
+        commit_calls += 1
+        if commit_calls == 1:
+            raise RuntimeError("database write failed")
+        return original_commit()
+
+    monkeypatch.setattr(session, "commit", flaky_commit)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/meta/uploads",
+            files=[("files", ("film.mp4", b"video-bytes", "video/mp4"))],
+        )
+
+        assert response.status_code == 500
+        assert "Uppladdningen misslyckades" in response.json()["detail"]
+        assert session.query(MetaMediaUpload).count() == 0
+
+        audit = session.query(AuditLog).filter_by(entity_type="meta_media_upload", action="upload_failed").one()
+        assert audit.user_id is None
+        assert audit.new_value["status_code"] == 500
+        assert audit.new_value["error_code"] == "HTTP 500"
+        assert audit.new_value["error_type"] == "RuntimeError"
+        assert audit.new_value["path"] == "/api/meta/uploads"
+        assert audit.new_value["attempted_count"] == 1
+        assert audit.new_value["accepted_count"] == 1
+        assert audit.new_value["uploaded_bytes"] == len(b"video-bytes")
+        assert "film.mp4" not in str(audit.new_value)
+        assert "database write failed" not in str(audit.new_value)
+
+        errors = client.get("/api/audit/errors")
+        assert errors.status_code == 200
+        event = errors.json()["recent"][0]
+        assert event["entity_type"] == "meta_media_upload"
+        assert event["action"] == "upload_failed"
+        assert event["status_code"] == 500
+        assert event["path"] == "/api/meta/uploads"
+        assert event["username"] is None
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_meta_upload_skips_duplicate_media_bytes():
     engine, session = make_session()
 

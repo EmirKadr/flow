@@ -525,3 +525,39 @@ Forecast-resultatet i Bearbeta visar nu en foljdknapp `Kor Ytgenerering` direkt 
 ## [2026-06-01] feature | MG begransar Ytgenerering till UTL205-UTL652
 
 Ytgenereringens Bearbeta-korning far nu vald omradestoggle vidare till flodeshandlern. Nar togglen ar MG filtreras lagerplatsunderlaget efter den vanliga Typ U/Max pall-regeln och darefter till UTL205-UTL652, medan andra toggles fortsatt kan anvanda UTL1-UTL652.
+
+## [2026-06-01] feature | Bearbeta-matris styr UTL for Ytgenerering
+
+Bearbeta-matrisen har nu ett globalt `Ytgenerering UTL`-intervall per toggle. Intervallet sparas i `allocation_process_matrix`, visas som `Fran`/`Till` i matrisdialogen och skickas till Ytgenerering vid korning sa varje toggle kan styra vilka UTL-ytor som raknas. Standard ar MG UTL205-UTL652 och ovriga toggles UTL1-UTL652.
+
+## [2026-06-01] feature | Ytgenerering visar interaktiv ytkarta
+
+Ytgenerering-resultatet skickar nu med en kartpayload byggd fran Flow-placeringarna och koordinater kopierade fran referensappen `ytgeneringdemo` utan att demo-mappen andras. Bearbeta visar kartan som ett stort resultatblock med pan/zoom/rotation/fullskarm, drag for att flytta eller byta UTL-placeringar, kapacitetsvarningar samt lokala nedladdningar for justerad karta-CSV och justerad ASK-import.
+
+## [2026-06-01] feature | Coredata sparas i Postgres
+
+Nya coredata-karnfiler sparas nu i Postgres-tabellen `coredata_files` med unik rad per verksamhet och filtyp. Backend later DB-raden vinna over gamla filer, men kan fortfarande lasa `data/coredata/` som fallback tills en filtyp laddats upp igen. Bearbeta och Produktivitet materialiserar DB-raden till en temporar backendfil nar berakningsmotorerna behover en CSV-sokvag, sa webb och Windows-app delar samma centrala sanning.
+
+## [2026-06-01] feature | Nya karnfilstyper for dispatch och transportor
+
+Uppladdningar kanner nu igen `dispatch_template-*.csv` som karnfilstypen `dispatch_template` och `trans_agency-*.csv` som karnfilstypen `trans_agency`. Bada visas bland permanenta karnfiler, skyddas vid `Rensa alla` och sparas i Postgres per verksamhet pa samma satt som ovrig coredata.
+
+## [2026-06-01] fix | Publika Meta-fel syns i Felkoder
+
+Publika Meta-uppladdningar loggar nu misslyckade backend-forsok som `meta_media_upload/upload_failed`, aven utan inloggad anvandare. Auditpayloaden ar sanerad till metod, path, HTTP-status, feltyp, antal valda/accepterade/overhoppade filer och total uppladdad storlek, utan filnamn eller filinnehall. Den publika XHR-klienten visar dessutom backendens feltext nar den finns i svaret.
+
+## [2026-06-01] fix | Meta laddar upp manga filer stegvis
+
+Den publika Meta-uppladdningen later anvandaren valja manga bilder/videor pa en gang men skickar dem nu en och en till `/api/meta/uploads`. Total progress och per-filstatus finns kvar, dubbletter summeras fortsatt, videolangd lases sekventiellt, och om en fil misslyckas markeras den som `Fel` medan klienten fortsatter med nasta fil.
+
+## [2026-06-01] feature | Transportorskluster styr Ytgenerering
+
+Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster och skickar klustren som `carrier_clusters` i Forecast-sessionen. Forecast-resultatet visar `Redigera kluster`, dar anvandaren kan andra kluster, UTL-fran/till och ordning innan `Kor Ytgenerering`. Ytgenerering tar emot den redigerade `carrier_clusters_json`, grupperar transportorer med samma `cluster_group` och placerar sandningar inom respektive klusters UTL-intervall innan kartan visas.
+
+## [2026-06-01] feature | Kortkommandon i Ytgenerering-kartan
+
+Ytgenerering-kartan i Bearbeta kan nu fa fokus och hanterar `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa vald placering, klistra in den pa vald UTL-yta och angra senaste kartandringen. Kortkommandona anvander samma flytt-/byteslogik som drag i kartan och visar toastar nar anvandaren kopierar, klipper, klistrar in eller angrar.
+
+## [2026-06-01] fix | Svenska tecken i Ytgenerering-kartan
+
+Ytgenerering-kartans knappar, sökfält, detaljrad, översikt, toastar och justerade karta-CSV använder nu svenska tecken i texter som `Återställ vy`, `Fullskärm`, `Sök UTL, sändning eller transportör`, `Över kapacitet`, `Sändningsnr` och `Transportör`.

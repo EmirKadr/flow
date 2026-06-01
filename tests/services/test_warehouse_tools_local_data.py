@@ -457,6 +457,7 @@ def test_warehouse_registry_is_loaded_from_flow_package():
         "dimension",
         "pallet_type",
         "item_option",
+        "trans_agency",
     }
     ytgenerering = next(flow for flow in public_registry if flow["id"] == "ytgenerering")
     assert ytgenerering["requiresSessionFlow"]["flowId"] == "forecast"
@@ -499,6 +500,38 @@ def test_ytgenerering_places_shipments_separately_and_sorts_by_carrier():
     assert list(result.assignments["Placerade pallplatser"]) == [1.0, 1.5, 1.0, 2.0]
 
 
+def test_ytgenerering_places_shipments_by_transport_cluster_ranges():
+    forecast = pd.DataFrame(
+        [
+            {"Sändningsnr": "F-1", "Transportör": "Freja Stockholm", "Predikterade pallplatser": 1.0},
+            {"Sändningsnr": "S-1", "Transportör": "Schenker", "Predikterade pallplatser": 1.0},
+        ]
+    )
+    locations = pd.DataFrame(
+        [
+            {"Lagerplats": "UTL205", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL206", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL600", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL601", "Typ": "U", "Max pall": 1},
+        ]
+    )
+    clusters = {
+        "rows": [
+            {"alias": "Schenker", "clusterGroup": "Schenker", "assignmentOrder": 0, "startSeq": 205, "endSeq": 356},
+            {"alias": "Freja Stockholm", "clusterGroup": "Freja", "assignmentOrder": 9, "startSeq": 600, "endSeq": 652},
+        ]
+    }
+
+    result = generate_surface_plan(forecast, locations, carrier_clusters=clusters)
+
+    placement_by_shipment = dict(zip(result.assignments["Sändningsnr"], result.assignments["Lagerplats"]))
+    assert placement_by_shipment == {"S-1": "UTL205", "F-1": "UTL600"}
+    assert dict(zip(result.assignments["Sändningsnr"], result.assignments["Kluster"])) == {
+        "S-1": "Schenker",
+        "F-1": "Freja",
+    }
+
+
 def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
     from warehouse_tools.mg_forecast import forecast as mg_forecast
 
@@ -514,10 +547,16 @@ def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
             "dimension",
             "pallet_type",
             "item_option",
+            "trans_agency",
         )
     }
     for path in required.values():
         path.write_text("x\n", encoding="utf-8")
+    required["trans_agency"].write_text(
+        "agency_num,agency_desc,agency_alias,cluster_group,assignment_order,start_seq,end_seq\n"
+        "79,Schenker - 11:00 - Parti,Schenker,Schenker,0,205,356\n",
+        encoding="utf-8",
+    )
 
     captured = {}
 
@@ -559,6 +598,8 @@ def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
     }
     assert result["tables"][0][0:2] == ("forecast", "Forecast")
     assert result["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S-1"
+    assert result["artifacts"]["carrier_clusters"]["rows"][0]["clusterGroup"] == "Schenker"
+    assert result["carrier_clusters"]["source"]["name"] == "trans_agency.csv"
     assert captured["file_map"]["buffert"] == required["buffer"]
     assert captured["orders_path"] == required["orders"]
 
@@ -804,7 +845,7 @@ def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypa
     assert any("Forecast saknar kolumnen Ordernummer" in line for line in result["log"])
 
 
-def test_ytgenerering_mg_area_focus_uses_only_utl205_and_up(monkeypatch, tmp_path):
+def test_ytgenerering_uses_configured_utl_range(monkeypatch, tmp_path):
     forecast_df = pd.DataFrame(
         [
             {"SÃ¤ndningsnr": "S-1", "TransportÃ¶r": "Akeri A", "Predikterade pallplatser": 2.0},
@@ -826,13 +867,56 @@ def test_ytgenerering_mg_area_focus_uses_only_utl205_and_up(monkeypatch, tmp_pat
 
     result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
         {"location": location_path},
-        {"__forecast_df": forecast_df, "__process_area_focus": "MG"},
+        {"__forecast_df": forecast_df, "__ytgenerering_utl_min": "205", "__ytgenerering_utl_max": "652"},
     )
 
     tables = {key: table for key, _label, table in result["tables"]}
+    map_payload = result["maps"][0]
     assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL205", "UTL206"]
+    assert [loc["location"] for loc in map_payload["locations"]] == ["UTL205", "UTL206"]
+    assert [assignment["location"] for assignment in map_payload["assignments"]] == ["UTL205", "UTL206"]
     assert result["summary"]["Ej placerade pallplatser"] == 0
     assert any("UTL205-UTL652" in line for line in result["log"])
+
+
+def test_ytgenerering_flow_uses_transport_cluster_json(monkeypatch, tmp_path):
+    forecast_df = pd.DataFrame(
+        [
+            {"Sändningsnr": "F-1", "Transportör": "Freja Stockholm", "Predikterade pallplatser": 1.0},
+            {"Sändningsnr": "S-1", "Transportör": "Schenker", "Predikterade pallplatser": 1.0},
+        ]
+    )
+    clusters = {
+        "rows": [
+            {"alias": "Schenker", "clusterGroup": "Schenker", "assignmentOrder": 0, "startSeq": 205, "endSeq": 356},
+            {"alias": "Freja Stockholm", "clusterGroup": "Freja", "assignmentOrder": 9, "startSeq": 600, "endSeq": 652},
+        ]
+    }
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL205", "Typ": "U", "Max pall": 1},
+                {"Lagerplats": "UTL600", "Typ": "U", "Max pall": 1},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"location": location_path},
+        {"__forecast_df": forecast_df, "__carrier_clusters_json": json.dumps(clusters, ensure_ascii=False)},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert dict(zip(tables["ytgenerering"]["Sändningsnr"], tables["ytgenerering"]["Lagerplats"])) == {
+        "S-1": "UTL205",
+        "F-1": "UTL600",
+    }
+    assert result["maps"][0]["assignments"][0]["cluster"] == "Schenker"
+    assert any("Transportörskluster använda" in line for line in result["log"])
 
 
 def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface(monkeypatch, tmp_path):
@@ -867,6 +951,7 @@ def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface
 
     tables = {key: table for key, _label, table in result["tables"]}
     import_table = tables["order_set_area_import"]
+    assert result["maps"][0]["assignments"][0]["orderNumbers"] == ["1001", "1002"]
     assert import_table.to_dict("records") == [
         {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1001", "pick_zone": "A"},
         {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1002", "pick_zone": "A"},

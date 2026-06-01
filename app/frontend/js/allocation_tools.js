@@ -9,6 +9,8 @@ const ALLOCATION_BOOT_CACHE_KEY = "flow-allocation-boot-cache-v1";
 const ALLOCATION_BOOT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus";
+const ALLOCATION_YTGENERERING_UTL_MIN = 1;
+const ALLOCATION_YTGENERERING_UTL_MAX = 652;
 const ALLOCATION_PROCESS_AREA_OPTIONS = [
   { code: "GG", label: "GG" },
   { code: "MG", label: "MG" },
@@ -23,42 +25,56 @@ const ALLOCATION_PROCESS_MATRIX = {
     excludeCustomers: ["6005"],
     filterLabel: "Filter: Bolag GG, exkl. kundnr 6005",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
   MG: {
     company: "MG",
     excludeCustomers: ["40002", "90002"],
     filterLabel: "Filter: Bolag MG, exkl. kundnr 40002 och 90002",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 205,
+    ytgenereringUtlMax: 652,
   },
   AS: {
     company: "",
     excludeCustomers: [],
     filterLabel: "",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
   EH: {
     company: "",
     excludeCustomers: [],
     filterLabel: "",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
   R3: {
     company: "",
     excludeCustomers: [],
     filterLabel: "",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
   ALLT: {
     company: "",
     excludeCustomers: [],
     filterLabel: "",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
   DEFAULT: {
     company: "",
     excludeCustomers: [],
     filterLabel: "",
     visibleFlowIds: null,
+    ytgenereringUtlMin: 1,
+    ytgenereringUtlMax: 652,
   },
 };
 const ALLOCATION_KEY_OVERRIDES = { details: "orders", wms_buffert: "buffer" };
@@ -128,12 +144,18 @@ const ALLOCATION_PRODUCTIVITY_KEYS = {
 const ALLOCATION_PERSISTENT_DATA_UPLOAD_SPECS = [
   { key: "article_max", prefix: "artikel_max" },
   { key: "article_max", prefix: "article_max" },
+  { key: "dispatch_template", prefix: "dispatch_template" },
   { key: "item_attribute", prefix: "item_attribute" },
   { key: "kpi_target_rule", prefix: "kpi_target_rule" },
   { key: "location_cost", prefix: "location_cost" },
   { key: "item_security_info", prefix: "item_security_info" },
   { key: "item_option", prefix: "item_option" },
   { key: "pallet_type", prefix: "pallet_type" },
+  { key: "trans_agency", prefix: "trans_agency" },
+  { key: "trans_agency", prefix: "transportorer" },
+  { key: "trans_agency", prefix: "transportor" },
+  { key: "trans_agency", prefix: "agency" },
+  { key: "trans_agency", prefix: "agencies" },
   { key: "item_alias", prefix: "item_alias" },
   { key: "dimension", prefix: "dimension" },
   { key: "location", prefix: "location" },
@@ -160,6 +182,7 @@ const ALLOCATION_PERSISTENT_DATA_DISPLAY_ORDER = [
   "productivity_pallet_observations",
   "custom",
   "dimension",
+  "dispatch_template",
   "item",
   "item_alias",
   "item_attribute",
@@ -169,6 +192,7 @@ const ALLOCATION_PERSISTENT_DATA_DISPLAY_ORDER = [
   "location",
   "location_cost",
   "pallet_type",
+  "trans_agency",
   "kpi",
 ];
 const ALLOCATION_PERSISTENT_DATA_LABELS = {
@@ -178,6 +202,7 @@ const ALLOCATION_PERSISTENT_DATA_LABELS = {
   productivity_pallet_observations: "Palllastningslogg sammanställd data",
   custom: "Custom",
   dimension: "Dimension",
+  dispatch_template: "Dispatch template",
   item: "Item",
   item_alias: "Item alias",
   item_attribute: "Item attribute",
@@ -187,6 +212,7 @@ const ALLOCATION_PERSISTENT_DATA_LABELS = {
   location: "Location",
   location_cost: "Location cost",
   pallet_type: "Pallet type",
+  trans_agency: "Transportörer",
   kpi: "KPI-Mål",
 };
 const ALLOCATION_COMPILED_DATA_KEYS = new Set([
@@ -257,6 +283,7 @@ const allocationState = {
   status: "",
   autoStatus: "",
   result: null,
+  carrierClusters: null,
   lastBufferSignature: "",
   lastForecastSessionId: "",
   lastForecastLabel: "",
@@ -434,6 +461,19 @@ function appendAllocationAreaFocus(formData) {
   if (focusCode) formData.append(ALLOCATION_PROCESS_AREA_PARAM, focusCode);
 }
 
+function normalizeYtgenereringUtlNumber(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  const number = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.max(ALLOCATION_YTGENERERING_UTL_MIN, Math.min(ALLOCATION_YTGENERERING_UTL_MAX, number));
+}
+
+function normalizeYtgenereringUtlRange(rule = {}) {
+  let min = normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMin ?? rule.ytgenerering_utl_min, ALLOCATION_YTGENERERING_UTL_MIN);
+  let max = normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMax ?? rule.ytgenerering_utl_max, ALLOCATION_YTGENERERING_UTL_MAX);
+  if (min > max) [min, max] = [max, min];
+  return { min, max };
+}
+
 function normalizeAllocationProcessRule(rule = {}) {
   const company = String(rule.company || "").trim().toUpperCase();
   const rawExcluded = Array.isArray(rule.excludeCustomers)
@@ -448,11 +488,14 @@ function normalizeAllocationProcessRule(rule = {}) {
       ? rule.visible_flow_ids.map((value) => String(value || "").trim()).filter(Boolean)
       : null;
   const filterLabel = typeof rule.filterLabel === "string" ? rule.filterLabel : "";
+  const utlRange = normalizeYtgenereringUtlRange(rule);
   return {
     company,
     excludeCustomers,
     filterLabel,
     visibleFlowIds,
+    ytgenereringUtlMin: utlRange.min,
+    ytgenereringUtlMax: utlRange.max,
   };
 }
 
@@ -475,7 +518,7 @@ function normalizeAllocationProcessMatrix(data = null) {
   for (const [code, rule] of Object.entries(incoming)) {
     const areaCode = String(code || "").trim().toUpperCase();
     if (!areaCode) continue;
-    matrix[areaCode] = normalizeAllocationProcessRule(rule);
+    matrix[areaCode] = normalizeAllocationProcessRule({ ...(matrix[areaCode] || matrix.DEFAULT || {}), ...rule });
   }
   const areas = Array.isArray(data?.areas) && data.areas.length
     ? data.areas.map((area) => ({
@@ -491,6 +534,64 @@ function normalizeAllocationProcessMatrix(data = null) {
       })).filter((flow) => flow.id)
     : [];
   return { areas, flows, matrix };
+}
+
+function allocationCarrierClusterText(value) {
+  const text = String(value ?? "").trim();
+  return ["nan", "nat", "none", "null"].includes(text.toLowerCase()) ? "" : text;
+}
+
+function allocationCarrierClusterNumber(value) {
+  const text = allocationCarrierClusterText(value).replace(",", ".");
+  if (!text) return "";
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? String(parsed) : "";
+}
+
+function normalizeAllocationCarrierClusters(payload) {
+  if (!payload) return null;
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.rows)
+      ? payload.rows
+      : [];
+  const normalizedRows = rows.map((row, index) => {
+    const carrierNum = allocationCarrierClusterText(row.carrierNum ?? row.carrier_num ?? row.agencyNum ?? row.agency_num ?? row.AGENCY_NUM);
+    const description = allocationCarrierClusterText(row.description ?? row.agencyDesc ?? row.agency_desc ?? row.AGENCY_DESC ?? row.carrier ?? row.transportor);
+    const alias = allocationCarrierClusterText(row.alias ?? row.agencyAlias ?? row.agency_alias ?? row.AGENCY_ALIAS);
+    const label = alias || description || carrierNum;
+    if (!label) return null;
+    return {
+      id: allocationCarrierClusterText(row.id) || carrierNum || `row-${index + 1}`,
+      carrierNum,
+      description,
+      alias,
+      clusterGroup: allocationCarrierClusterText(row.clusterGroup ?? row.cluster_group ?? row.CLUSTER_GROUP ?? row.cluster),
+      assignmentOrder: allocationCarrierClusterNumber(row.assignmentOrder ?? row.assignment_order ?? row.ASSIGNMENT_ORDER ?? row.order),
+      startSeq: allocationCarrierClusterNumber(row.startSeq ?? row.start_seq ?? row.START_SEQ ?? row.from ?? row.utlFrom),
+      endSeq: allocationCarrierClusterNumber(row.endSeq ?? row.end_seq ?? row.END_SEQ ?? row.to ?? row.utlTo),
+      color: allocationCarrierClusterText(row.color ?? row.colour),
+    };
+  }).filter(Boolean);
+  normalizedRows.sort((a, b) => {
+    const orderA = a.assignmentOrder === "" ? 10000 : Number(a.assignmentOrder);
+    const orderB = b.assignmentOrder === "" ? 10000 : Number(b.assignmentOrder);
+    return orderA - orderB || String(a.alias || a.description || a.carrierNum).localeCompare(String(b.alias || b.description || b.carrierNum), "sv");
+  });
+  const source = payload && !Array.isArray(payload) && typeof payload.source === "object"
+    ? payload.source
+    : { name: "Transportörer", rowCount: normalizedRows.length };
+  return { version: 1, source, rows: normalizedRows };
+}
+
+function allocationCarrierClustersForResult(data = allocationState.result?.data) {
+  const fromData = normalizeAllocationCarrierClusters(data?.carrier_clusters);
+  if (fromData?.rows?.length) return fromData;
+  return normalizeAllocationCarrierClusters(allocationState.carrierClusters);
+}
+
+function allocationHasCarrierClusters(data = allocationState.result?.data) {
+  return Boolean(allocationCarrierClustersForResult(data)?.rows?.length);
 }
 
 function allocationProcessMatrixData() {
@@ -535,6 +636,7 @@ function persistAllocationWorkState(overrides = {}) {
     values: serializableAllocationValues(allocationState.values),
     status: allocationState.busyId ? "" : String(allocationState.status || ""),
     result: allocationState.busyId ? null : allocationState.result,
+    carrierClusters: normalizeAllocationCarrierClusters(allocationState.carrierClusters),
     lastForecastSessionId: allocationState.lastForecastSessionId || "",
     lastForecastLabel: allocationState.lastForecastLabel || "",
     ...overrides,
@@ -565,6 +667,7 @@ function restoreAllocationWorkState() {
     }
     allocationState.status = typeof snapshot.status === "string" ? snapshot.status : "";
     allocationState.result = snapshot.result && typeof snapshot.result === "object" ? snapshot.result : null;
+    allocationState.carrierClusters = normalizeAllocationCarrierClusters(snapshot.carrierClusters);
     allocationState.lastForecastSessionId = typeof snapshot.lastForecastSessionId === "string" ? snapshot.lastForecastSessionId : "";
     allocationState.lastForecastLabel = typeof snapshot.lastForecastLabel === "string" ? snapshot.lastForecastLabel : "";
   } catch (error) {
@@ -752,7 +855,7 @@ async function loadAllocationCoreDataStatus() {
     allocationState.coredata = await allocationJson("/api/coredata/files");
     cacheAllocationBootData();
   } catch (error) {
-    console.warn("Kunde inte lÃ¤sa kÃ¤rnfiler.", error);
+    console.warn("Kunde inte läsa kärnfiler.", error);
     allocationState.coredata = {};
   }
 }
@@ -862,7 +965,11 @@ function productivitySharedUploadCandidates(files) {
 }
 
 function classifyAllocationCoreDataFile(file) {
-  const stem = String(file?.name || "").toLowerCase().replace(/\.[^.]+$/, "");
+  const stem = String(file?.name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.[^.]+$/, "");
   if (!stem) return null;
   for (const spec of ALLOCATION_PERSISTENT_DATA_UPLOAD_SPECS) {
     if (
@@ -926,9 +1033,9 @@ async function routeAllocationFiles(files, slots, options = {}) {
           const result = await uploadAllocationCoreDataFile(file);
           if (result.status) allocationState.coredata = result.status;
           cacheAllocationBootData();
-          coredataSaved.push(file.name || "kÃ¤rnfil");
+          coredataSaved.push(file.name || "kärnfil");
         } catch (error) {
-          showToast(error.message || "Kunde inte uppdatera kÃ¤rnfil.", "error", 7000);
+          showToast(error.message || "Kunde inte uppdatera kärnfil.", "error", 7000);
         }
         continue;
       }
@@ -1267,9 +1374,13 @@ function allocationFollowUpFlows(flowId) {
 
 function renderResultFollowUpActions(data) {
   const followUps = allocationFollowUpFlows(data?.flow_id);
-  if (!followUps.length) return "";
+  const clusterAction = data?.flow_id === "forecast" && allocationHasCarrierClusters(data)
+    ? `<button type="button" data-edit-carrier-clusters>Redigera kluster</button>`
+    : "";
+  if (!followUps.length && !clusterAction) return "";
   return `
     <div class="allocation-result-actions">
+      ${clusterAction}
       ${followUps.map((flow) => {
         const missing = missingForFlow(flow);
         const ready = missing.length === 0 && !allocationState.busyId;
@@ -1393,6 +1504,9 @@ async function runAllocationFlow(flow) {
   if (flow.requiresSessionFlow?.flowId === "forecast") {
     fd.append("forecast_session_id", allocationState.lastForecastSessionId || "");
   }
+  if (flow.id === "ytgenerering" && allocationState.carrierClusters?.rows?.length) {
+    fd.append("carrier_clusters_json", JSON.stringify(allocationState.carrierClusters));
+  }
   for (const input of flow.inputs || []) {
     if (input.type === "file") {
       const entry = allocationState.files[allocationFileInputKey(input)];
@@ -1409,6 +1523,7 @@ async function runAllocationFlow(flow) {
     if ((data.flow_id || flow.id) === "forecast" && data.session_id) {
       allocationState.lastForecastSessionId = data.session_id;
       allocationState.lastForecastLabel = `${flow.label} ${new Date().toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}`;
+      allocationState.carrierClusters = normalizeAllocationCarrierClusters(data.carrier_clusters);
     }
     allocationState.status = `Klart: ${flow.label}`;
     await copyAutoFlowColumn(data);
@@ -1469,6 +1584,10 @@ function allocationResultTables(data) {
   return data.tables || [];
 }
 
+function allocationResultMaps(data) {
+  return Array.isArray(data?.maps) ? data.maps : [];
+}
+
 function renderTextResult(text) {
   if (!text) return "";
   return `
@@ -1485,6 +1604,7 @@ function renderResultPanel(result) {
   if (!result?.data) return "";
   const data = result.data;
   const summaryEntries = allocationResultSummaryEntries(data);
+  const maps = allocationResultMaps(data);
   const tables = allocationResultTables(data);
   const followUpActions = renderResultFollowUpActions(data);
   return `
@@ -1501,9 +1621,48 @@ function renderResultPanel(result) {
         </div>
       ` : ""}
       ${renderTextResult(data.text)}
+      ${maps.map((entry, index) => renderResultMap(entry, index)).join("")}
       ${tables.map((entry) => renderResultTable(data.session_id, entry)).join("")}
       ${data.log?.length ? `<pre class="allocation-log">${allocationEscape(data.log.join("\n"))}</pre>` : ""}
     </section>
+  `;
+}
+
+function renderResultMap(entry, index) {
+  const locationCount = Array.isArray(entry?.locations) ? entry.locations.length : 0;
+  const assignmentCount = Array.isArray(entry?.assignments) ? entry.assignments.length : 0;
+  return `
+    <div class="allocation-map-block" data-allocation-map data-map-index="${index}" tabindex="0" aria-keyshortcuts="Control+C Control+X Control+V Control+Z">
+      <div class="allocation-table-head allocation-map-head">
+        <h3>${allocationEscape(entry?.label || "Ytkarta")} <span>${assignmentCount} placeringar / ${locationCount} ytor</span></h3>
+        <div>
+          <button type="button" data-map-fit>Återställ vy</button>
+          <button type="button" data-map-rotate>Rotera</button>
+          <button type="button" data-map-export-csv>Ladda ner karta CSV</button>
+          <button type="button" data-map-export-ask>Ladda ner justerad ASK</button>
+          <button type="button" data-map-fullscreen>Fullskärm</button>
+        </div>
+      </div>
+      <div class="allocation-warehouse-map">
+        <svg class="allocation-warehouse-map-svg" data-map-svg aria-label="${allocationEscape(entry?.label || "Ytkarta")}">
+          <defs>
+            <pattern data-map-grid id="allocation-map-grid-${index}" width="80" height="80" patternUnits="userSpaceOnUse">
+              <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#d8dee8" stroke-width="0.8"></path>
+            </pattern>
+          </defs>
+          <g data-map-rotate-group>
+            <rect width="100%" height="100%" fill="url(#allocation-map-grid-${index})"></rect>
+            <g data-map-canvas></g>
+          </g>
+        </svg>
+        <aside class="allocation-map-side">
+          <div class="allocation-map-metrics" data-map-metrics></div>
+          <input class="allocation-map-search" type="search" data-map-search placeholder="Sök UTL, sändning eller transportör" />
+          <div class="allocation-map-detail" data-map-detail></div>
+          <div class="allocation-map-overview" data-map-overview></div>
+        </aside>
+      </div>
+    </div>
   `;
 }
 
@@ -1540,6 +1699,754 @@ function renderResultTable(sessionId, entry) {
   `;
 }
 
+const ALLOCATION_MAP_NS = "http://www.w3.org/2000/svg";
+const ALLOCATION_MAP_COLORS = [
+  "#fb7185", "#a78bfa", "#34d399", "#fbbf24", "#60a5fa", "#f472b6",
+  "#2dd4bf", "#c084fc", "#f97316", "#22c55e", "#38bdf8", "#e879f9",
+];
+
+function allocationMapNumber(value, fallback = 0) {
+  const parsed = Number.parseFloat(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function allocationMapRound(value) {
+  return Math.round(allocationMapNumber(value) * 100) / 100;
+}
+
+function allocationMapLocationSortValue(value) {
+  const match = String(value || "").match(/^UTL(\d+)(.*)$/i);
+  if (!match) return [Number.MAX_SAFE_INTEGER, String(value || "")];
+  return [Number.parseInt(match[1], 10), match[2] || ""];
+}
+
+function allocationMapCompareLocation(a, b) {
+  const left = allocationMapLocationSortValue(a);
+  const right = allocationMapLocationSortValue(b);
+  return left[0] - right[0] || left[1].localeCompare(right[1], "sv");
+}
+
+function allocationMapCarrierColor(carrier, colorMap) {
+  const key = String(carrier || "Okänd");
+  if (!colorMap.has(key)) colorMap.set(key, ALLOCATION_MAP_COLORS[colorMap.size % ALLOCATION_MAP_COLORS.length]);
+  return colorMap.get(key);
+}
+
+function allocationMapTsvCell(value) {
+  return String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+}
+
+function allocationDownloadText(filename, text, type = "text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function initializeAllocationResultMaps(root) {
+  const maps = allocationResultMaps(allocationState.result?.data);
+  root.querySelectorAll("[data-allocation-map]").forEach((host) => {
+    const index = Number.parseInt(host.dataset.mapIndex || "0", 10);
+    setupAllocationWarehouseMap(host, maps[index]);
+  });
+}
+
+function setupAllocationWarehouseMap(host, entry) {
+  const svg = host.querySelector("[data-map-svg]");
+  const canvas = host.querySelector("[data-map-canvas]");
+  const grid = host.querySelector("[data-map-grid]");
+  const rotateGroup = host.querySelector("[data-map-rotate-group]");
+  const metrics = host.querySelector("[data-map-metrics]");
+  const detail = host.querySelector("[data-map-detail]");
+  const overview = host.querySelector("[data-map-overview]");
+  const search = host.querySelector("[data-map-search]");
+  if (!svg || !canvas || !entry) return;
+
+  const locations = (Array.isArray(entry.locations) ? entry.locations : [])
+    .map((loc) => ({
+      location: String(loc.location || "").trim().toUpperCase(),
+      x: allocationMapNumber(loc.x),
+      y: allocationMapNumber(loc.y),
+      w: allocationMapNumber(loc.w, 1),
+      h: allocationMapNumber(loc.h, 1),
+      maxPall: allocationMapRound(loc.maxPall),
+    }))
+    .filter((loc) => loc.location);
+  locations.sort((a, b) => allocationMapCompareLocation(a.location, b.location));
+  const locationByName = new Map(locations.map((loc) => [loc.location, loc]));
+  const colorMap = new Map();
+  const assignments = (Array.isArray(entry.assignments) ? entry.assignments : [])
+    .map((assignment, index) => ({
+      id: String(assignment.id || `assignment-${index}`),
+      shipment: String(assignment.shipment || ""),
+      carrier: String(assignment.carrier || "Okänd"),
+      cluster: String(assignment.cluster || ""),
+      location: String(assignment.location || "").trim().toUpperCase(),
+      placedPallets: allocationMapRound(assignment.placedPallets),
+      shipmentPallets: allocationMapRound(assignment.shipmentPallets),
+      maxPall: allocationMapRound(assignment.maxPall),
+      unusedCapacity: allocationMapRound(assignment.unusedCapacity),
+      placementNo: allocationMapNumber(assignment.placementNo, index + 1),
+      orderNumbers: Array.isArray(assignment.orderNumbers) ? assignment.orderNumbers.map((value) => String(value)) : [],
+    }))
+    .filter((assignment) => assignment.location);
+  const assignmentByLocation = new Map();
+  assignments.forEach((assignment) => {
+    assignmentByLocation.set(assignment.location, assignment);
+  });
+
+  const state = {
+    transform: { x: 0, y: 0, scale: 1 },
+    rotation: 0,
+    selectedLocation: "",
+    clipboard: null,
+    history: [],
+    pan: null,
+    drag: null,
+    locElements: new Map(),
+  };
+
+  function locationCenter(loc) {
+    return { x: loc.x + loc.w / 2, y: loc.y + loc.h / 2 };
+  }
+
+  function applyTransform() {
+    const transform = `translate(${state.transform.x}, ${state.transform.y}) scale(${state.transform.scale})`;
+    canvas.setAttribute("transform", transform);
+    grid?.setAttribute("patternTransform", transform);
+  }
+
+  function applyRotation() {
+    const rect = svg.getBoundingClientRect();
+    rotateGroup.style.transformOrigin = `${rect.width / 2}px ${rect.height / 2}px`;
+    rotateGroup.style.transform = state.rotation ? `rotate(${state.rotation}deg)` : "";
+  }
+
+  function fitMap() {
+    if (!locations.length) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      requestAnimationFrame(fitMap);
+      return;
+    }
+    const bounds = entry.bounds && Object.keys(entry.bounds).length
+      ? entry.bounds
+      : {
+          minX: Math.min(...locations.map((loc) => loc.x)),
+          minY: Math.min(...locations.map((loc) => loc.y)),
+          maxX: Math.max(...locations.map((loc) => loc.x + loc.w)),
+          maxY: Math.max(...locations.map((loc) => loc.y + loc.h)),
+        };
+    const width = Math.max(1, allocationMapNumber(bounds.maxX) - allocationMapNumber(bounds.minX));
+    const height = Math.max(1, allocationMapNumber(bounds.maxY) - allocationMapNumber(bounds.minY));
+    const padding = 70;
+    state.transform.scale = Math.min((rect.width - padding * 2) / width, (rect.height - padding * 2) / height);
+    state.transform.scale = Math.max(0.05, Math.min(3, state.transform.scale));
+    state.transform.x = (rect.width - width * state.transform.scale) / 2 - allocationMapNumber(bounds.minX) * state.transform.scale;
+    state.transform.y = (rect.height - height * state.transform.scale) / 2 - allocationMapNumber(bounds.minY) * state.transform.scale;
+    applyTransform();
+  }
+
+  function updateAssignmentCapacity(assignment) {
+    const loc = locationByName.get(assignment.location);
+    if (!loc) return;
+    assignment.maxPall = loc.maxPall || assignment.maxPall || 0;
+    assignment.unusedCapacity = allocationMapRound(assignment.maxPall - assignment.placedPallets);
+  }
+
+  function mapMutationSnapshot() {
+    return assignments.map((assignment) => ({
+      id: assignment.id,
+      location: assignment.location,
+      maxPall: assignment.maxPall,
+      unusedCapacity: assignment.unusedCapacity,
+    }));
+  }
+
+  function rememberMapMutation() {
+    state.history.push(mapMutationSnapshot());
+    if (state.history.length > 50) state.history.shift();
+  }
+
+  function restoreMapMutation(snapshot) {
+    const byId = new Map((snapshot || []).map((assignment) => [assignment.id, assignment]));
+    assignmentByLocation.clear();
+    assignments.forEach((assignment) => {
+      const previous = byId.get(assignment.id);
+      if (!previous) return;
+      assignment.location = previous.location;
+      assignment.maxPall = previous.maxPall;
+      assignment.unusedCapacity = previous.unusedCapacity;
+      if (assignment.location && locationByName.has(assignment.location)) {
+        updateAssignmentCapacity(assignment);
+        assignmentByLocation.set(assignment.location, assignment);
+      }
+    });
+    refreshMap();
+  }
+
+  function assignmentById(id) {
+    return assignments.find((assignment) => assignment.id === id) || null;
+  }
+
+  function assignmentLabel(assignment) {
+    return assignment?.shipment || assignment?.carrier || assignment?.cluster || "placering";
+  }
+
+  function setMapText(textEl, loc, assignment) {
+    const center = locationCenter(loc);
+    textEl.innerHTML = "";
+    textEl.setAttribute("x", center.x);
+    textEl.setAttribute("y", assignment ? center.y - 18 : center.y);
+    textEl.removeAttribute("transform");
+    const lines = assignment
+      ? [
+          { text: loc.location, cls: "allocation-map-label-sub" },
+          { text: assignment.carrier || assignment.cluster || assignment.shipment, cls: "allocation-map-label-main" },
+          { text: `${assignment.placedPallets}/${assignment.maxPall || "?"} pall`, cls: "allocation-map-label-sub" },
+        ]
+      : [{ text: loc.location, cls: "allocation-map-label" }];
+    lines.forEach((line, index) => {
+      const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
+      span.setAttribute("x", center.x);
+      span.setAttribute("dy", index === 0 ? "0" : "18");
+      span.setAttribute("class", line.cls);
+      span.textContent = line.text;
+      textEl.appendChild(span);
+    });
+    if (loc.h > loc.w) {
+      textEl.setAttribute("transform", `rotate(-90, ${center.x}, ${center.y})`);
+    }
+  }
+
+  function updateLocationVisual(location) {
+    const loc = locationByName.get(location);
+    const elements = state.locElements.get(location);
+    if (!loc || !elements) return;
+    const assignment = assignmentByLocation.get(location);
+    elements.rect.classList.toggle("is-assigned", Boolean(assignment));
+    elements.rect.classList.toggle("is-selected", state.selectedLocation === location);
+    elements.rect.classList.toggle("is-clipboard-source", state.clipboard?.source === location);
+    elements.rect.classList.toggle("is-over-capacity", Boolean(assignment && assignment.unusedCapacity < -0.001));
+    elements.rect.style.fill = assignment ? allocationMapCarrierColor(assignment.cluster || assignment.carrier, colorMap) : "";
+    setMapText(elements.text, loc, assignment);
+  }
+
+  function renderMetrics() {
+    if (!metrics) return;
+    const placed = allocationMapRound(assignments.reduce((sum, assignment) => sum + assignment.placedPallets, 0));
+    const capacity = allocationMapRound(locations.reduce((sum, loc) => sum + loc.maxPall, 0));
+    const over = assignments.filter((assignment) => assignment.unusedCapacity < -0.001).length;
+    const unplaced = Array.isArray(entry.unplaced) ? entry.unplaced.length : 0;
+    metrics.innerHTML = `
+      <div><span>Placeringar</span><strong>${assignments.length}</strong></div>
+      <div><span>Pallplatser</span><strong>${placed}</strong></div>
+      <div><span>Kapacitet</span><strong>${capacity}</strong></div>
+      <div class="${over ? "is-warning" : ""}"><span>Över kapacitet</span><strong>${over}</strong></div>
+      <div class="${unplaced ? "is-warning" : ""}"><span>Ej placerade</span><strong>${unplaced}</strong></div>
+    `;
+  }
+
+  function renderDetail() {
+    if (!detail) return;
+    const loc = locationByName.get(state.selectedLocation);
+    const assignment = assignmentByLocation.get(state.selectedLocation);
+    if (!loc) {
+      detail.innerHTML = `<p class="allocation-muted">Ingen yta vald.</p>`;
+      return;
+    }
+    detail.innerHTML = `
+      <h4>${allocationEscape(loc.location)}</h4>
+      <dl>
+        <div><dt>Max pall</dt><dd>${allocationEscape(loc.maxPall || "")}</dd></div>
+        ${assignment ? `
+          <div><dt>Sändning</dt><dd>${allocationEscape(assignment.shipment)}</dd></div>
+          <div><dt>Transportör</dt><dd>${allocationEscape(assignment.carrier)}</dd></div>
+          ${assignment.cluster ? `<div><dt>Kluster</dt><dd>${allocationEscape(assignment.cluster)}</dd></div>` : ""}
+          <div><dt>Placerade</dt><dd>${allocationEscape(assignment.placedPallets)}</dd></div>
+          <div><dt>Outnyttjat</dt><dd>${allocationEscape(assignment.unusedCapacity)}</dd></div>
+        ` : `<div><dt>Status</dt><dd>Ledig</dd></div>`}
+      </dl>
+    `;
+  }
+
+  function renderOverview() {
+    if (!overview) return;
+    const query = String(search?.value || "").trim().toLowerCase();
+    const rows = [...assignments]
+      .sort((a, b) => allocationMapCompareLocation(a.location, b.location))
+      .filter((assignment) => {
+        const haystack = `${assignment.location} ${assignment.shipment} ${assignment.carrier} ${assignment.cluster}`.toLowerCase();
+        return !query || haystack.includes(query);
+      });
+    overview.innerHTML = `
+      <table>
+        <thead><tr><th>UTL</th><th>Sändning</th><th>Pall</th></tr></thead>
+        <tbody>
+          ${rows.map((assignment) => `
+            <tr data-map-overview-location="${allocationEscape(assignment.location)}" class="${assignment.location === state.selectedLocation ? "is-selected" : ""}">
+              <td>${allocationEscape(assignment.location)}</td>
+              <td>${allocationEscape(assignment.shipment || assignment.carrier)}</td>
+              <td>${allocationEscape(assignment.placedPallets)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function refreshMap() {
+    locations.forEach((loc) => updateLocationVisual(loc.location));
+    renderMetrics();
+    renderDetail();
+    renderOverview();
+  }
+
+  function selectLocation(location, center = false) {
+    const previous = state.selectedLocation;
+    state.selectedLocation = locationByName.has(location) ? location : "";
+    if (previous) updateLocationVisual(previous);
+    if (state.selectedLocation) updateLocationVisual(state.selectedLocation);
+    renderDetail();
+    renderOverview();
+    if (center && state.selectedLocation) {
+      const loc = locationByName.get(state.selectedLocation);
+      const centerPoint = locationCenter(loc);
+      const rect = svg.getBoundingClientRect();
+      state.transform.x = rect.width / 2 - centerPoint.x * state.transform.scale;
+      state.transform.y = rect.height / 2 - centerPoint.y * state.transform.scale;
+      applyTransform();
+    }
+  }
+
+  function clearDragTarget() {
+    if (state.drag?.target) {
+      state.locElements.get(state.drag.target)?.rect.classList.remove("is-drop-target");
+    }
+    if (state.drag) state.drag.target = "";
+  }
+
+  function setDragTarget(location) {
+    if (!state.drag || state.drag.target === location) return;
+    clearDragTarget();
+    state.drag.target = location;
+    if (location) state.locElements.get(location)?.rect.classList.add("is-drop-target");
+  }
+
+  function placeAssignment(assignment, target, fallbackSource = "") {
+    if (!assignment || !locationByName.has(target)) return false;
+    const source = assignment.location;
+    if (source === target) return false;
+    const targetAssignment = assignmentByLocation.get(target);
+    if (source) assignmentByLocation.delete(source);
+    if (targetAssignment && targetAssignment !== assignment) {
+      const swapLocation = source || fallbackSource;
+      if (swapLocation && locationByName.has(swapLocation)) {
+        targetAssignment.location = swapLocation;
+        updateAssignmentCapacity(targetAssignment);
+        assignmentByLocation.set(swapLocation, targetAssignment);
+      } else {
+        targetAssignment.location = "";
+      }
+    }
+    assignment.location = target;
+    updateAssignmentCapacity(assignment);
+    assignmentByLocation.set(target, assignment);
+    selectLocation(target);
+    refreshMap();
+    return true;
+  }
+
+  function moveAssignment(source, target, options = {}) {
+    const sourceAssignment = assignmentByLocation.get(source);
+    if (!sourceAssignment || !locationByName.has(target) || source === target) return false;
+    if (options.recordHistory !== false) rememberMapMutation();
+    const moved = placeAssignment(sourceAssignment, target, source);
+    if (moved && options.announce) {
+      showToast(`Flyttade ${assignmentLabel(sourceAssignment)} till ${target}.`, "success", 2500);
+    }
+    return moved;
+  }
+
+  function copySelectedAssignment(mode) {
+    const source = state.selectedLocation;
+    const assignment = assignmentByLocation.get(source);
+    if (!source || !assignment) {
+      showToast("Välj en placerad yta först.", "error", 3500);
+      return;
+    }
+    state.clipboard = { assignmentId: assignment.id, source, mode };
+    refreshMap();
+    showToast(
+      `${mode === "cut" ? "Klippte ut" : "Kopierade"} ${assignmentLabel(assignment)} från ${source}. Välj målyta och klistra in.`,
+      "success",
+      3500,
+    );
+  }
+
+  function pasteMapClipboard() {
+    if (!state.clipboard) {
+      showToast("Inget karturklipp att klistra in.", "error", 3500);
+      return;
+    }
+    const target = state.selectedLocation;
+    if (!target || !locationByName.has(target)) {
+      showToast("Välj en målyta innan du klistrar in.", "error", 3500);
+      return;
+    }
+    const assignment = assignmentById(state.clipboard.assignmentId);
+    if (!assignment) {
+      state.clipboard = null;
+      showToast("Karturklippet finns inte kvar.", "error", 3500);
+      return;
+    }
+    if (assignment.location === target) {
+      showToast("Placeringen ligger redan på vald yta.", "error", 2500);
+      return;
+    }
+    const clipboardSource = state.clipboard.source;
+    const clipboardMode = state.clipboard.mode;
+    rememberMapMutation();
+    const pasted = placeAssignment(assignment, target, clipboardSource);
+    if (!pasted) {
+      state.history.pop();
+      showToast("Kunde inte klistra in placeringen.", "error", 3500);
+      return;
+    }
+    if (clipboardMode === "cut") state.clipboard = null;
+    else state.clipboard.source = assignment.location;
+    refreshMap();
+    showToast(`Klistrade in ${assignmentLabel(assignment)} på ${target}.`, "success", 2500);
+  }
+
+  function undoMapMutation() {
+    const snapshot = state.history.pop();
+    if (!snapshot) {
+      if (state.clipboard) {
+        state.clipboard = null;
+        refreshMap();
+        showToast("Tömde karturklippet.", "success", 2500);
+        return;
+      }
+      showToast("Det finns inget kartdrag att angra.", "error", 2500);
+      return;
+    }
+    restoreMapMutation(snapshot);
+    showToast("Ångrade senaste kartändringen.", "success", 2500);
+  }
+
+  function isMapShortcutTextTarget(target) {
+    const element = target instanceof Element ? target : null;
+    return Boolean(element?.closest("input, textarea, select, [contenteditable='true']"));
+  }
+
+  function handleMapShortcut(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || isMapShortcutTextTarget(event.target)) return;
+    const key = String(event.key || "").toLowerCase();
+    if (!["c", "x", "v", "z"].includes(key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (key === "c") copySelectedAssignment("copy");
+    if (key === "x") copySelectedAssignment("cut");
+    if (key === "v") pasteMapClipboard();
+    if (key === "z") undoMapMutation();
+  }
+
+  function createGhost(assignment, event) {
+    const ghost = document.createElement("div");
+    ghost.className = "allocation-map-drag-ghost";
+    ghost.textContent = assignment.shipment || assignment.carrier || assignment.location;
+    document.body.appendChild(ghost);
+    ghost.style.left = `${event.clientX + 14}px`;
+    ghost.style.top = `${event.clientY + 14}px`;
+    return ghost;
+  }
+
+  function renderLocations() {
+    canvas.innerHTML = "";
+    state.locElements.clear();
+    locations.forEach((loc) => {
+      const group = document.createElementNS(ALLOCATION_MAP_NS, "g");
+      group.setAttribute("data-map-location-group", loc.location);
+      const rect = document.createElementNS(ALLOCATION_MAP_NS, "rect");
+      rect.setAttribute("x", loc.x);
+      rect.setAttribute("y", loc.y);
+      rect.setAttribute("width", loc.w);
+      rect.setAttribute("height", loc.h);
+      rect.setAttribute("class", "allocation-map-loc");
+      rect.dataset.mapLocation = loc.location;
+      const text = document.createElementNS(ALLOCATION_MAP_NS, "text");
+      text.setAttribute("class", "allocation-map-text");
+      group.appendChild(rect);
+      group.appendChild(text);
+      canvas.appendChild(group);
+      state.locElements.set(loc.location, { group, rect, text });
+    });
+    refreshMap();
+  }
+
+  function exportMapCsv() {
+    const header = [
+      "Sändningsnr", "Transportör", "Kluster", "Lagerplats", "Max pall", "Placerade pallplatser",
+      "Sändningens pallplatser", "Outnyttjad kapacitet", "Placering nr",
+    ];
+    const rows = assignments.map((assignment) => [
+      assignment.shipment,
+      assignment.carrier,
+      assignment.cluster,
+      assignment.location,
+      assignment.maxPall,
+      assignment.placedPallets,
+      assignment.shipmentPallets,
+      assignment.unusedCapacity,
+      assignment.placementNo,
+    ]);
+    const text = [header, ...rows].map((row) => row.map(allocationMapTsvCell).join("\t")).join("\n");
+    allocationDownloadText("ytgenerering_justerad_karta.csv", `${text}\n`);
+  }
+
+  function exportAskCsv() {
+    const grouped = new Map();
+    assignments.forEach((assignment) => {
+      if (!assignment.shipment) return;
+      if (!grouped.has(assignment.shipment)) grouped.set(assignment.shipment, []);
+      grouped.get(assignment.shipment).push(assignment);
+    });
+    const rows = [];
+    grouped.forEach((group) => {
+      const orders = [...new Set(group.flatMap((assignment) => assignment.orderNumbers || []))];
+      if (!orders.length) return;
+      const areas = group
+        .slice()
+        .sort((a, b) => a.placementNo - b.placementNo || allocationMapCompareLocation(a.location, b.location))
+        .map((assignment) => assignment.location)
+        .join(", ");
+      orders.forEach((orderNumber) => rows.push([areas, "MG", orderNumber, "A"]));
+    });
+    if (!rows.length) {
+      showToast("Saknar ordernummer för justerad ASK-export.", "error", 5000);
+      return;
+    }
+    const text = [["area_num", "company", "order_num", "pick_zone"], ...rows]
+      .map((row) => row.map(allocationMapTsvCell).join("\t"))
+      .join("\n");
+    allocationDownloadText("v_ask_order_overview_order_set_area_execute_command_justerad.csv", `${text}\n`);
+  }
+
+  renderLocations();
+  fitMap();
+
+  svg.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const rect = svg.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    state.transform.x = mouseX - (mouseX - state.transform.x) * factor;
+    state.transform.y = mouseY - (mouseY - state.transform.y) * factor;
+    state.transform.scale = Math.max(0.05, Math.min(5, state.transform.scale * factor));
+    applyTransform();
+  }, { passive: false });
+
+  svg.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    host.focus?.({ preventScroll: true });
+    const rect = event.target.closest("[data-map-location]");
+    if (rect) {
+      const location = rect.dataset.mapLocation;
+      selectLocation(location);
+      const assignment = assignmentByLocation.get(location);
+      if (assignment) {
+        state.drag = {
+          source: location,
+          target: "",
+          assignment,
+          startX: event.clientX,
+          startY: event.clientY,
+          ghost: null,
+          moved: false,
+        };
+        svg.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      }
+      return;
+    }
+    state.pan = {
+      startX: event.clientX,
+      startY: event.clientY,
+      initX: state.transform.x,
+      initY: state.transform.y,
+    };
+    svg.classList.add("is-panning");
+    svg.setPointerCapture?.(event.pointerId);
+  });
+
+  svg.addEventListener("pointermove", (event) => {
+    if (state.drag) {
+      const dx = event.clientX - state.drag.startX;
+      const dy = event.clientY - state.drag.startY;
+      if (!state.drag.moved && Math.hypot(dx, dy) > 5) {
+        state.drag.moved = true;
+        state.drag.ghost = createGhost(state.drag.assignment, event);
+      }
+      if (state.drag.ghost) {
+        state.drag.ghost.style.left = `${event.clientX + 14}px`;
+        state.drag.ghost.style.top = `${event.clientY + 14}px`;
+        const targetEl = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-map-location]");
+        const target = targetEl?.dataset.mapLocation || "";
+        setDragTarget(target && target !== state.drag.source ? target : "");
+      }
+      return;
+    }
+    if (!state.pan) return;
+    const dx = event.clientX - state.pan.startX;
+    const dy = event.clientY - state.pan.startY;
+    state.transform.x = state.pan.initX + dx;
+    state.transform.y = state.pan.initY + dy;
+    applyTransform();
+  });
+
+  svg.addEventListener("pointerup", (event) => {
+    if (state.drag) {
+      const drag = state.drag;
+      const target = drag.target;
+      drag.ghost?.remove();
+      clearDragTarget();
+      state.drag = null;
+      svg.releasePointerCapture?.(event.pointerId);
+      if (drag.moved && target) moveAssignment(drag.source, target);
+      return;
+    }
+    if (state.pan) {
+      state.pan = null;
+      svg.classList.remove("is-panning");
+      svg.releasePointerCapture?.(event.pointerId);
+    }
+  });
+
+  overview?.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-map-overview-location]");
+    if (!row) return;
+    host.focus?.({ preventScroll: true });
+    selectLocation(row.dataset.mapOverviewLocation, true);
+  });
+  search?.addEventListener("input", renderOverview);
+  host.addEventListener("keydown", handleMapShortcut);
+  host.querySelector("[data-map-fit]")?.addEventListener("click", fitMap);
+  host.querySelector("[data-map-rotate]")?.addEventListener("click", () => {
+    state.rotation = state.rotation ? 0 : 90;
+    host.classList.toggle("is-rotated", Boolean(state.rotation));
+    applyRotation();
+  });
+  host.querySelector("[data-map-fullscreen]")?.addEventListener("click", async () => {
+    if (document.fullscreenElement === host) {
+      await document.exitFullscreen?.();
+    } else {
+      await host.requestFullscreen?.();
+      requestAnimationFrame(fitMap);
+    }
+  });
+  host.querySelector("[data-map-export-csv]")?.addEventListener("click", exportMapCsv);
+  host.querySelector("[data-map-export-ask]")?.addEventListener("click", exportAskCsv);
+}
+
+function renderAllocationCarrierClusterEditor(host, clusters) {
+  const rows = clusters?.rows || [];
+  host.innerHTML = `
+    <div class="modal-table-scroll allocation-carrier-cluster-scroll">
+      <table class="allocation-carrier-cluster-table">
+        <thead>
+          <tr>
+            <th>Transportör</th>
+            <th>Kluster</th>
+            <th>Från</th>
+            <th>Till</th>
+            <th>Ordning</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => {
+            const title = row.alias || row.description || row.carrierNum || `Rad ${index + 1}`;
+            const sub = [row.description && row.description !== title ? row.description : "", row.carrierNum ? `Nr ${row.carrierNum}` : ""].filter(Boolean).join(" - ");
+            return `
+              <tr data-carrier-cluster-row="${index}">
+                <th>
+                  <strong>${allocationEscape(title)}</strong>
+                  ${sub ? `<span>${allocationEscape(sub)}</span>` : ""}
+                </th>
+                <td><input type="text" data-carrier-cluster-field="clusterGroup" value="${allocationEscape(row.clusterGroup || "")}" /></td>
+                <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="startSeq" value="${allocationEscape(row.startSeq || "")}" /></td>
+                <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="endSeq" value="${allocationEscape(row.endSeq || "")}" /></td>
+                <td><input type="number" step="1" data-carrier-cluster-field="assignmentOrder" value="${allocationEscape(row.assignmentOrder || "")}" /></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function collectAllocationCarrierClusterDraft(host, clusters) {
+  const sourceRows = clusters?.rows || [];
+  const rows = [];
+  host.querySelectorAll("[data-carrier-cluster-row]").forEach((tr) => {
+    const index = Number.parseInt(tr.dataset.carrierClusterRow || "0", 10);
+    const source = sourceRows[index] || {};
+    const row = { ...source };
+    tr.querySelectorAll("[data-carrier-cluster-field]").forEach((input) => {
+      const key = input.dataset.carrierClusterField;
+      if (!key) return;
+      row[key] = key === "clusterGroup" ? allocationCarrierClusterText(input.value) : allocationCarrierClusterNumber(input.value);
+    });
+    rows.push(row);
+  });
+  return normalizeAllocationCarrierClusters({ ...clusters, rows });
+}
+
+function openAllocationCarrierClusterModal() {
+  const clusters = allocationCarrierClustersForResult();
+  if (!clusters?.rows?.length) {
+    showToast("Forecast-resultatet saknar transportörskluster.", "warn", 3500);
+    return;
+  }
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal wide allocation-carrier-cluster-modal">
+      <h2>Transportörskluster</h2>
+      <div id="allocation-carrier-cluster-editor"></div>
+      <div class="actions">
+        <button type="button" id="allocation-carrier-cluster-cancel">Avbryt</button>
+        <button type="button" class="primary" id="allocation-carrier-cluster-save">Spara</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const editor = backdrop.querySelector("#allocation-carrier-cluster-editor");
+  renderAllocationCarrierClusterEditor(editor, clusters);
+  backdrop.querySelector("#allocation-carrier-cluster-cancel")?.addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#allocation-carrier-cluster-save")?.addEventListener("click", () => {
+    const updated = collectAllocationCarrierClusterDraft(editor, clusters);
+    allocationState.carrierClusters = updated;
+    if (allocationState.result?.data?.flow_id === "forecast") {
+      allocationState.result.data.carrier_clusters = updated;
+    }
+    persistAllocationWorkState();
+    backdrop.remove();
+    renderAllocationPage();
+    showToast("Transportörskluster sparade för Ytgenerering.", "success", 2500);
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) backdrop.remove();
+  });
+}
+
 async function writeClipboardText(text) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -1562,6 +2469,10 @@ async function writeClipboardText(text) {
 }
 
 function bindResultActions(root) {
+  initializeAllocationResultMaps(root);
+  root.querySelector("[data-edit-carrier-clusters]")?.addEventListener("click", () => {
+    openAllocationCarrierClusterModal();
+  });
   root.querySelectorAll("[data-follow-up-flow]").forEach((button) => {
     button.addEventListener("click", async () => {
       await runAllocationFlow(flowById(button.dataset.followUpFlow));
@@ -1717,6 +2628,8 @@ function cloneAllocationProcessMatrixRules(rules) {
       excludeCustomers: [...(rule.excludeCustomers || [])],
       filterLabel: String(rule.filterLabel || ""),
       visibleFlowIds: Array.isArray(rule.visibleFlowIds) ? [...rule.visibleFlowIds] : null,
+      ytgenereringUtlMin: normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMin, ALLOCATION_YTGENERERING_UTL_MIN),
+      ytgenereringUtlMax: normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMax, ALLOCATION_YTGENERERING_UTL_MAX),
     };
   }
   return cloned;
@@ -1752,6 +2665,22 @@ function allocationProcessMatrixFlowChecks(code, rule, flows) {
   `;
 }
 
+function renderYtgenereringUtlInputs(code, rule, readonly = false) {
+  const range = normalizeYtgenereringUtlRange(rule);
+  return `
+    <div class="allocation-process-utl-range">
+      <label>
+        <span>Fr&aring;n</span>
+        <input type="number" min="1" max="652" step="1" data-matrix-utl-min="${allocationEscape(code)}" value="${range.min}" aria-label="Ytgenerering UTL fr&aring;n ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
+      </label>
+      <label>
+        <span>Till</span>
+        <input type="number" min="1" max="652" step="1" data-matrix-utl-max="${allocationEscape(code)}" value="${range.max}" aria-label="Ytgenerering UTL till ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
+      </label>
+    </div>
+  `;
+}
+
 function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
   const areas = allocationProcessMatrixAreas();
   const flows = allocationProcessMatrixFlows();
@@ -1763,6 +2692,7 @@ function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
             <th>Toggle</th>
             <th>Bolag</th>
             <th>Exkl. kundnr</th>
+            <th>Ytgenerering UTL</th>
             <th>Funktioner</th>
           </tr>
         </thead>
@@ -1779,6 +2709,7 @@ function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
                 <td>
                   <input type="text" data-matrix-exclude="${allocationEscape(code)}" value="${allocationEscape((rule.excludeCustomers || []).join(", "))}" aria-label="Exkludera kundnr ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
                 </td>
+                <td>${renderYtgenereringUtlInputs(code, rule, readonly)}</td>
                 <td>${allocationProcessMatrixFlowChecks(code, rule, flows)}</td>
               </tr>
             `;
@@ -1812,11 +2743,21 @@ function collectAllocationProcessMatrixDraft(host) {
       .split(/[,;\s]+/)
       .map((value) => value.trim())
       .filter(Boolean);
+    const utlRange = normalizeYtgenereringUtlRange({
+      ytgenereringUtlMin: row.querySelector("[data-matrix-utl-min]")?.value,
+      ytgenereringUtlMax: row.querySelector("[data-matrix-utl-max]")?.value,
+    });
     const allFlows = row.querySelector("[data-matrix-all-flows]")?.checked;
     const visibleFlowIds = allFlows
       ? null
       : [...row.querySelectorAll("[data-matrix-flow]:checked")].map((input) => input.value);
-    matrix[code] = { company, excludeCustomers, visibleFlowIds };
+    matrix[code] = {
+      company,
+      excludeCustomers,
+      visibleFlowIds,
+      ytgenereringUtlMin: utlRange.min,
+      ytgenereringUtlMax: utlRange.max,
+    };
   });
   return matrix;
 }

@@ -39,6 +39,7 @@ CATALOG_FLOWS: list[dict] = [
             {"key": "dimension", "label": "dimension", "required": True},
             {"key": "pallet_type", "label": "pallet_type", "required": True},
             {"key": "item_option", "label": "item_option", "required": True},
+            {"key": "trans_agency", "label": "Transportörer", "required": False},
         ],
     },
     {

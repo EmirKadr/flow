@@ -200,6 +200,31 @@ class UserWaitMetric(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CoreDataFile(Base):
+    __tablename__ = "coredata_files"
+    __table_args__ = (
+        UniqueConstraint("business_code", "file_type", name="uq_coredata_files_business_file_type"),
+        Index("ix_coredata_files_business_code", "business_code"),
+        Index("ix_coredata_files_file_type", "file_type"),
+        Index("ix_coredata_files_content_hash", "content_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False, default="text/csv")
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False, default="upload")
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class MetaMediaUpload(Base):
     __tablename__ = "meta_media_uploads"
     __table_args__ = (

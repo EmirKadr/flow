@@ -437,11 +437,11 @@ def get_schedule_presence(
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
-        area = scoped_get(db, Area, area_id, user, detail="OmrÃ¥de hittades inte")
+        area = scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         if area.is_active is not True:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="OmrÃ¥de hittades inte")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
         if scoped_business_id is not None and area.business_id != scoped_business_id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="OmrÃ¥de hittades inte")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
         persons_q = persons_q.where(Person.home_area_id == area_id)
     persons_q = persons_q.order_by(Person.sort_order, Person.name)
     persons = db.execute(persons_q).scalars().all()

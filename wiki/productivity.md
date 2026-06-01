@@ -32,7 +32,7 @@ Rollen behover minst `productivity=view` for att oppna sidan och lasa status/KPI
 | `pick` | Plocklogg | `v_ask_pick_log_full`, headers `Zon`, `Plockat`, `Anvandare`, `Andrad`, `Bolag` | IndexedDB lokalt + `productivity_pick_observations` |
 | `trans` | Translogg | `v_ask_trans_log`, headers `Pallid`, `Fran`, `Till`, `Antal`, `Timestamp` | IndexedDB lokalt + `productivity_trans_observations` |
 | `pallet` | Palllastningslogg | `v_ask_palletloading_log`, headers `Plockpallsnr.`, `Palltyp`, `Pallplacering`, `Transnr.`, `Vikt` | IndexedDB lokalt + `productivity_pallet_observations` |
-| `kpi` | KPI-mal | `v_ask_kpi_target`, headers `Flodesnamn`, `Processnamn`, `Beskrivning`, `Rader`, `Kollin` | Server/permanent verksamhetskatalog |
+| `kpi` | KPI-mal | `v_ask_kpi_target`, headers `Flodesnamn`, `Processnamn`, `Beskrivning`, `Rader`, `Kollin` | Postgres/permanent verksamhetsdata |
 
 ## Sammanstallda loggar
 
@@ -49,10 +49,10 @@ De tre sammanstallda filerna visas under `Sammanstalld data` i Uppladdningar och
 ## Karnfiler och verksamhet
 
 - KPI-mal ar permanent serverdata och fungerar som produktivitetens karnfil.
-- Backend laser och sparar KPI-mal via inloggad anvandares verksamhetskod.
-- Stigamo, R3 och nyare verksamheter far separata kataloger under `data/coredata/`, till exempel `data/coredata/stigamo/`, `data/coredata/r3/` och `data/coredata/<verksamhetskod>/`.
+- Backend laser och sparar nya KPI-mal via inloggad anvandares verksamhetskod i Postgres-tabellen `coredata_files`.
+- Stigamo, R3 och nyare verksamheter far separata DB-rader per verksamhet och filtyp. Backend materialiserar KPI-raden till en temporar CSV-fil nar produktivitetsmotorn behover lasa den.
 - En KPI-fil uppladdad for R3 ska aldrig anvandas for Stigamo, och tvartom.
-- Stigamo kan lasa den gamla root-filen i `data/` som bakatkompatibel fallback om ingen Stigamo-scopead KPI-fil finns. Nya uppladdningar sparas alltid verksamhetsscopeat i `data/coredata/`.
+- Stigamo kan lasa den gamla root-filen i `data/` som bakatkompatibel fallback om ingen Stigamo-scopead KPI-fil finns. Gamla `data/coredata/`-filer kan ocksa vara fallback tills en ny Postgres-rad finns.
 
 ## Berakningsgrupper
 
@@ -69,7 +69,7 @@ Vissa anvandare exkluderas hardkodat i frontend/backendlogik for specifika grupp
 
 1. `productivity_uploads.js` sparar synliga loggar lokalt i IndexedDB.
 2. Samma loggfil skickas ocksa till `/api/productivity/files/raw`; backend uppdaterar ratt sammanstalld csv.gz-fil om filtypen ar Plocklogg, Translogg eller Palllastningslogg.
-3. KPI-fil laddas upp via `/api/productivity/files/raw` och sparas server-side i anvandarens verksamhetskatalog.
+3. KPI-fil laddas upp via `/api/productivity/files/raw` och sparas som verksamhetens `kpi`-rad i Postgres.
 4. `productivity.js` laser lokala filer radvis i browsern, bygger dataset och hamtar verksamhetens KPI-mal via `/api/productivity/targets`.
 5. Rapport for vald dag byggs lokalt och cachas. Intilliggande datum kan forhamtas.
 6. Backend har motsvarande service for serverklassning/status, permanenta KPI-mal och sammanstallda produktivitetsloggar.

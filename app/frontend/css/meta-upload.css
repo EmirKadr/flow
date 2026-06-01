@@ -158,6 +158,14 @@ h1 {
   font-weight: 700;
 }
 
+.meta-file-state.success {
+  color: var(--accent-strong);
+}
+
+.meta-file-state.error {
+  color: var(--danger);
+}
+
 .meta-file-progress,
 .meta-progress-track {
   grid-column: 1 / -1;
