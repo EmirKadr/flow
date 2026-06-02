@@ -32,7 +32,7 @@ from .routers import (
     users,
 )
 
-app = FastAPI(title="flow", version="0.1.2")
+app = FastAPI(title="flow", version="0.1.3")
 
 app.add_middleware(
     SessionMiddleware,
