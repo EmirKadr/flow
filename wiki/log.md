@@ -1,11 +1,75 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-02] fix | Ytkarta sparas per verksamhet
+
+Ytgenereringens ytkartsinstallningar laser och sparar nu `ytgenerering_map_layout`
+i samma verksamhetsscope som vald Bearbeta-toggle. Sparsvaret returnerar samma
+scopade layout, sa lastningsriktning och andra andringar inte hoppar tillbaka
+direkt efter `Spara`. Frontend visar inte langre sparat om serversvaret saknar
+samma ytor, koordinater, kapacitet och lastningsriktningar som skickades.
+
+## [2026-06-02] polish | Lastningspil blir diskretare
+
+Installningar-vyn for Ytgenereringens ytkarta visar nu lastningsriktningen som
+en diskret fylld pilkil i ytans kant i stallet for en stor streckpil. Ytkoden
+ligger kvar centrerad i hela ytan nar riktningen byts.
+
+## [2026-06-02] fix | Lastningsriktning foljer langsta sidan
+
+Ytgenereringens ytkartsinstallningar vaxlar nu bara mellan tva
+lastningsriktningar per yta. Breda ytor kan bara ga hoger/vanster och smala ytor
+kan bara ga ned/upp, sa pilen, ytkoden och den randiga outnyttjade kapaciteten
+alltid ligger parallellt med ytans langsta sida.
+
+## [2026-06-02] feature | Lastningsriktning styr ytkarta
+
+Installningar-vyn for Ytgenereringens ytkarta visar nu en pil pa varje yta.
+Dubbelklick pa ytan byter lastningsriktning mellan hoger, ned, vanster och upp.
+Riktningen sparas i `ytgenerering_map_layout` och styr i Ytgenerering var
+ytkoden visas samt vilken sida som blir randig vid outnyttjad kapacitet.
+
+## [2026-06-02] polish | Ytkartan visar ledig total kapacitet
+
+Ytgenereringens ytkarta visar nu `Lediga pallplatser` och `Lediga ytor` i
+sidopanelens totalsiffror. Vardena raknas om efter manuella kartflyttar, klistra
+in och angra, sa anvandaren ser hur mycket kapacitet och hur manga fysiska ytor
+som fortfarande ar lediga.
+
+## [2026-06-02] polish | Installningar-kartan matchar ytkartans etiketter
+
+Installningar-vyn for Ytgenereringens ytkarta visar nu ytans korta kod utan
+`UTL` med samma fontstorlekslogik och riktning som Ytgenereringens ytkarta.
+Texten ligger parallellt med ytans langsta sida och ar inte fetstild, aven nar
+ytan flyttas med drag. Ytkoden anvander en storre storlekskurva an tidigare sa
+den utnyttjar tomma ytor battre i redigeringskartan.
+
+## [2026-06-02] feature | Lediga U-platser dras till ytkartan
+
+Installningar-vyn for Ytgenereringens ytkarta later nu anvandaren dra en ledig
+`Typ=U`-lagerplats fran sidolistan direkt till kartan. Droppunkten oversatts
+till kartkoordinater, ytan far kapacitet fran `location`-underlaget och sparas
+som vanlig global `ytgenerering_map_layout`.
+
+## [2026-06-02] fix | Transportorskluster fylls med standardvarden
+
+Transportorskluster-popupen i Forecast fyller nu tomma kluster-, start- och
+slutsekvensfalt med inbyggda standardvarden for kanda transportorsnummer.
+Rader med transportorsnummer 39 och 40 far till exempel `Freja`, 600-652,
+09:00/11:00/13:00 och standardfargen. Backendnormaliseringen anvander samma
+defaults sa Ytgenerering far reglerna aven om flodet kors via API.
+
+## [2026-06-02] polish | Ytkartans kundtext foljer langsidan
+
+Kundnamn i Ytgenereringens ytkarta roteras nu pa staende ytor, sa huvudtexten
+alltid ligger parallellt med ytans langsta sida. Textbredden beraknas mot
+langsidan, vilket ger smala staende ytor mer anvandbart textutrymme.
 
 ## [2026-06-01] polish | Ytkartan prioriterar kundnamn
 
@@ -552,7 +616,7 @@ Bearbeta-matrisen har nu ett globalt `Ytgenerering UTL`-intervall per toggle. In
 
 ## [2026-06-01] feature | Ytgenerering visar interaktiv ytkarta
 
-Ytgenerering-resultatet skickar nu med en kartpayload byggd fran Flow-placeringarna och koordinater kopierade fran referensappen `ytgeneringdemo` utan att demo-mappen andras. Bearbeta visar kartan som ett stort resultatblock med pan/zoom/rotation/fullskarm, drag for att flytta eller byta UTL-placeringar, kapacitetsvarningar samt lokala nedladdningar for justerad karta-CSV och justerad ASK-import.
+Ytgenerering-resultatet skickar nu med en kartpayload byggd fran Flow-placeringarna och sparade Flow-koordinater. Bearbeta visar kartan som ett stort resultatblock med pan/zoom/rotation/fullskarm, drag for att flytta eller byta UTL-placeringar, kapacitetsvarningar samt lokala nedladdningar for justerad karta-CSV och justerad ASK-import.
 
 ## [2026-06-01] feature | Coredata sparas i Postgres
 
@@ -600,7 +664,7 @@ Bemanningens områdesfilter visar nu en person i valt område om personen anting
 
 ## [2026-06-01] feature | Ytgenerering: kundnamn, klusterfärger och saknade kunder
 
-Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudtext på ytorna med en vit kontrast-halo för bättre läsbarhet. Forecast-tabellen får en `Kundnamn`-kolumn och kartans payload bär `customer`/`customerNum` per placering och i listan över ej placerade sändningar. Färgen baseras på transportör men ett kluster delar basnyans och varje transportör i klustret får en egen ljushet (`allocationClusterColorMap`). Kluster-editorn (`Redigera kluster`) är ombyggd som referensdemons *Advanced settings*-tabell med drag-sortering, ASN/Arrive/Depart, Group, Start/End seq och färgväljare; tiderna seedas med demons standardvärden och sparas i `carrier_clusters`. En `Saknade kunder`-panel listar ej placerade sändningar. `ytgeneringdemo/` är endast referens – ingen kod eller sökväg dit.
+Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudtext på ytorna med en vit kontrast-halo för bättre läsbarhet. Forecast-tabellen får en `Kundnamn`-kolumn och kartans payload bär `customer`/`customerNum` per placering och i listan över ej placerade sändningar. Färgen baseras på transportör men ett kluster delar basnyans och varje transportör i klustret får en egen ljushet (`allocationClusterColorMap`). Kluster-editorn (`Redigera kluster`) har drag-sortering, ASN/Arrive/Depart, Group, Start/End seq och färgväljare; tiderna seedas med standardvärden och sparas i `carrier_clusters`. En `Saknade kunder`-panel listar ej placerade sändningar.
 
 ## [2026-06-01] feature | Uppladdningar kan forhandsvisa filer
 

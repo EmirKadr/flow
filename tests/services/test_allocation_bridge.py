@@ -677,15 +677,16 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
 
     saved_layout = {
         "locations": [
-            {"location": "UTL207", "x": 0, "y": -40, "w": 240, "h": 80, "maxPall": 1.5},
+            {"location": "UTL207", "x": 0, "y": -40, "w": 240, "h": 80, "maxPall": 1.5, "loadDirection": "left"},
         ]
     }
 
     def fake_get_json_setting(_db, key, **kwargs):
+        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+            captured["map_business_id"] = kwargs.get("business_id")
+            return saved_layout
         if key == allocation_router.ALLOCATION_PROCESS_MATRIX_KEY:
             return {}
-        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
-            return saved_layout
         return kwargs.get("default")
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
@@ -699,6 +700,7 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
 
     assert result["flow_id"] == "ytgenerering"
     assert json.loads(captured["params"]["__ytgenerering_map_locations_json"]) == saved_layout["locations"]
+    assert captured["map_business_id"] == 20
 
 
 def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeypatch, tmp_path):
@@ -708,12 +710,13 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
     captured = {}
     saved_layout = {
         "locations": [
-            {"location": "UTL205", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 2},
+            {"location": "UTL205", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 2, "loadDirection": "right"},
         ]
     }
 
     def fake_get_json_setting(_db, key, **kwargs):
         if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+            captured["settings_business_id"] = kwargs.get("business_id")
             return saved_layout
         return kwargs.get("default")
 
@@ -735,7 +738,63 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
     assert response["can_edit"] is True
     assert response["locations"] == saved_layout["locations"]
     assert response["available_locations"] == [{"location": "UTL300", "maxPall": 2.0}]
-    assert captured == {"area_focus": "MG", "coredata_type": "location", "business_code": "STIGAMO"}
+    assert captured == {
+        "settings_business_id": 20,
+        "area_focus": "MG",
+        "coredata_type": "location",
+        "business_code": "STIGAMO",
+    }
+
+
+def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(monkeypatch):
+    user = business_user(7, 10)
+    captured = {}
+    saved_by_business = {
+        20: {
+            "locations": [
+                {"location": "UTL312", "x": -3320, "y": 220, "w": 240, "h": 80, "maxPall": 2, "loadDirection": "right"},
+            ],
+        },
+    }
+
+    class FakeDb:
+        def commit(self):
+            captured["committed"] = True
+
+    def fake_get_json_setting(_db, key, **kwargs):
+        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+            captured.setdefault("get_business_ids", []).append(kwargs.get("business_id"))
+            return saved_by_business.get(kwargs.get("business_id"), kwargs.get("default"))
+        return kwargs.get("default")
+
+    def fake_set_json_setting(_db, key, value, **kwargs):
+        captured["set_business_id"] = kwargs.get("business_id")
+        captured["set_user_id"] = kwargs.get("user_id")
+        saved_by_business[kwargs.get("business_id")] = value
+
+    monkeypatch.setattr(allocation_router, "_business_id_from_area_focus", lambda _db, _user, area_focus: 20 if area_focus == "MG" else None)
+    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_router, "set_json_setting", fake_set_json_setting)
+    monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: captured.setdefault("audit_business_id", kwargs.get("business_id")))
+    monkeypatch.setattr(allocation_router, "_ytgenerering_location_options", lambda *args, **kwargs: [])
+
+    response = allocation_router.update_ytgenerering_map_layout(
+        allocation_router.YtgenereringMapLayoutUpdate(
+            locations=[
+                {"location": "UTL312", "x": -3320, "y": 220, "w": 240, "h": 80, "maxPall": 2, "loadDirection": "left"},
+            ],
+        ),
+        area_focus="MG",
+        db=FakeDb(),
+        admin=user,
+    )
+
+    assert response["locations"][0]["loadDirection"] == "left"
+    assert captured["set_business_id"] == 20
+    assert captured["set_user_id"] == 7
+    assert captured["get_business_ids"] == [20, 20, 20]
+    assert captured["audit_business_id"] == 20
+    assert captured["committed"] is True
 
 
 def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):

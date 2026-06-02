@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from warehouse_tools import flows
+from warehouse_tools.carrier_clusters import read_carrier_clusters
 from warehouse_tools.surface_generation import generate_surface_plan
+from warehouse_tools.ytgenerering_map import normalize_map_location_rows
 
 
 pd = pytest.importorskip("pandas")
@@ -604,6 +606,31 @@ def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
     assert captured["orders_path"] == required["orders"]
 
 
+def test_trans_agency_defaults_fill_known_carriers(tmp_path):
+    trans_agency = tmp_path / "trans_agency.csv"
+    trans_agency.write_text(
+        "agency_num,agency_desc,agency_alias,cluster_group,assignment_order,start_seq,end_seq\n"
+        "39,,,,,,\n"
+        "40,,,,,,\n"
+        "41,,,,,,\n",
+        encoding="utf-8",
+    )
+
+    rows = read_carrier_clusters(trans_agency)["rows"]
+    by_num = {row["carrierNum"]: row for row in rows}
+
+    assert by_num["39"]["clusterGroup"] == "Freja"
+    assert by_num["39"]["assignmentOrder"] == 10
+    assert by_num["39"]["startSeq"] == 600
+    assert by_num["39"]["endSeq"] == 652
+    assert by_num["39"]["color"] == "#c4b5fd"
+    assert by_num["40"]["clusterGroup"] == "Freja"
+    assert by_num["41"]["clusterGroup"] == ""
+    assert by_num["41"]["assignmentOrder"] == 6
+    assert by_num["41"]["startSeq"] == 356
+    assert by_num["41"]["endSeq"] == 205
+
+
 def test_forecast_stage_support_files_uses_canonical_names(tmp_path):
     from warehouse_tools.mg_forecast import forecast as mg_forecast
 
@@ -1067,7 +1094,7 @@ def test_ytgenerering_map_layout_adds_missing_location_capacity(monkeypatch, tmp
     )
     layout = {
         "locations": [
-            {"location": "UTL206", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 1},
+            {"location": "UTL206", "x": 100, "y": 100, "w": 240, "h": 80, "maxPall": 1, "loadDirection": "left"},
         ]
     }
 
@@ -1080,7 +1107,21 @@ def test_ytgenerering_map_layout_adds_missing_location_capacity(monkeypatch, tmp
     assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL205", "UTL206"]
     assert [loc["location"] for loc in result["maps"][0]["locations"]] == ["UTL205", "UTL206"]
     assert result["maps"][0]["locations"][1]["maxPall"] == 1
+    assert result["maps"][0]["locations"][1]["loadDirection"] == "left"
     assert any("Ytkartsinställningar lade till 1 ytor" in line for line in result["log"])
+
+
+def test_ytgenerering_map_load_direction_stays_parallel_to_long_side():
+    rows = normalize_map_location_rows(
+        [
+            {"location": "UTL600", "x": 0, "y": 0, "w": 240, "h": 80, "loadDirection": "down"},
+            {"location": "UTL601", "x": 0, "y": 0, "w": 80, "h": 240, "loadDirection": "left"},
+            {"location": "UTL602", "x": 0, "y": 0, "w": 240, "h": 80, "loadDirection": "left"},
+            {"location": "UTL603", "x": 0, "y": 0, "w": 80, "h": 240, "loadDirection": "up"},
+        ]
+    )
+
+    assert [row["loadDirection"] for row in rows] == ["right", "down", "left", "up"]
 
 
 def test_ytgenerering_flow_uses_transport_cluster_json(monkeypatch, tmp_path):

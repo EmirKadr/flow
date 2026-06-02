@@ -4498,6 +4498,10 @@ tr.filter-row input {
   min-height: 0;
   cursor: grab;
 }
+.allocation-map-settings-canvas.is-drop-target .allocation-map-settings-svg {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 .allocation-map-settings-workspace:fullscreen .allocation-map-settings-canvas-grid {
   grid-template-columns: minmax(0, 1fr) 380px;
   height: auto;
@@ -4557,12 +4561,19 @@ tr.filter-row input {
 }
 .allocation-map-setting-label {
   dominant-baseline: middle;
+  font-family: inherit;
   fill: var(--text);
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0;
   pointer-events: none;
   text-anchor: middle;
   user-select: none;
+}
+.allocation-map-setting-direction-arrow {
+  fill: #94a3b8;
+  opacity: .62;
+  pointer-events: none;
 }
 .allocation-map-settings-side {
   display: grid;
@@ -4617,6 +4628,12 @@ tr.filter-row input {
   width: 100%;
   min-height: 32px;
   box-shadow: none;
+}
+.allocation-map-settings-list button[draggable="true"] {
+  cursor: grab;
+}
+.allocation-map-settings-list button.is-dragging {
+  opacity: .62;
 }
 .allocation-map-settings-list button.active {
   border-color: var(--accent);

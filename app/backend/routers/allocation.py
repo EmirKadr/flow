@@ -249,18 +249,26 @@ def _process_matrix_response(db: Session, user: User) -> dict:
     return bridge.process_matrix_public_payload(matrix, flows=flows, area_codes=_active_area_codes_for_user(db, user))
 
 
-def _stored_ytgenerering_map_layout(db: Session) -> dict[str, object]:
-    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None)
+def _allocation_settings_business_id(db: Session, user: User, area_focus: str | None = None) -> int | None:
+    business_id = _business_id_from_area_focus(db, user, area_focus)
+    if business_id is None:
+        business_id = user_business_id(db, user)
+    assert_user_can_access_business(db, user, business_id)
+    return business_id
+
+
+def _stored_ytgenerering_map_layout(db: Session, *, business_id: int | None = None) -> dict[str, object]:
+    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None, business_id=business_id)
     return bridge.ytgenerering_map_layout_payload(stored)
 
 
-def _stored_ytgenerering_map_rows(db: Session) -> list[dict[str, object]]:
-    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None)
+def _stored_ytgenerering_map_rows(db: Session, *, business_id: int | None = None) -> list[dict[str, object]]:
+    stored = get_json_setting(db, YTGENERERING_MAP_LAYOUT_KEY, default=None, business_id=business_id)
     return bridge.normalize_ytgenerering_map_location_rows(stored)
 
 
-def _ytgenerering_map_layout_response(db: Session, user: User) -> dict[str, object]:
-    payload = _stored_ytgenerering_map_layout(db)
+def _ytgenerering_map_layout_response(db: Session, user: User, *, business_id: int | None = None) -> dict[str, object]:
+    payload = _stored_ytgenerering_map_layout(db, business_id=business_id)
     access = _role_access_for_user(db, user)
     return {
         **payload,
@@ -284,8 +292,9 @@ def _ytgenerering_map_layout_with_options(
     *,
     area_focus: str | None = None,
 ) -> dict[str, object]:
+    business_id = _allocation_settings_business_id(db, user, area_focus)
     return {
-        **_ytgenerering_map_layout_response(db, user),
+        **_ytgenerering_map_layout_response(db, user, business_id=business_id),
         "available_locations": _ytgenerering_location_options(db, user, area_focus=area_focus),
     }
 
@@ -512,7 +521,8 @@ def update_ytgenerering_map_layout(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("allocationSettings", "edit")),
 ) -> dict:
-    before = _stored_ytgenerering_map_layout(db)
+    business_id = _allocation_settings_business_id(db, admin, area_focus)
+    before = _stored_ytgenerering_map_layout(db, business_id=business_id)
     rows = bridge.normalize_ytgenerering_map_location_rows(payload.locations)
     if not rows:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ytkartan behöver minst en giltig UTL-yta.")
@@ -521,8 +531,9 @@ def update_ytgenerering_map_layout(
         YTGENERERING_MAP_LAYOUT_KEY,
         {"version": 1, "locations": rows},
         user_id=getattr(admin, "id", None),
+        business_id=business_id,
     )
-    after = _stored_ytgenerering_map_layout(db)
+    after = _stored_ytgenerering_map_layout(db, business_id=business_id)
     if before.get("locations") != after.get("locations"):
         audit.log(
             db,
@@ -532,7 +543,7 @@ def update_ytgenerering_map_layout(
             old_value={"key": YTGENERERING_MAP_LAYOUT_KEY, "count": len(before.get("locations") or [])},
             new_value={"key": YTGENERERING_MAP_LAYOUT_KEY, "count": len(after.get("locations") or [])},
             user_id=getattr(admin, "id", None),
-            business_id=None,
+            business_id=business_id,
         )
     db.commit()
     return _ytgenerering_map_layout_with_options(db, admin, area_focus=bridge.normalize_process_area_focus(area_focus or ""))
@@ -704,12 +715,13 @@ async def run_flow(
         if flow_id == "ytgenerering":
             ytgenerering_focus = area_focus or "ALLT"
             utl_min, utl_max = bridge.process_ytgenerering_utl_range(ytgenerering_focus, process_matrix)
+            map_business_id = _allocation_settings_business_id(db, user, area_focus)
             if area_focus:
                 params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
             params[bridge.YTGENERERING_UTL_MIN_PARAM] = str(utl_min)
             params[bridge.YTGENERERING_UTL_MAX_PARAM] = str(utl_max)
             params["__ytgenerering_map_locations_json"] = json.dumps(
-                _stored_ytgenerering_map_rows(db),
+                _stored_ytgenerering_map_rows(db, business_id=map_business_id),
                 ensure_ascii=False,
             )
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:

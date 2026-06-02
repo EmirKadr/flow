@@ -714,10 +714,46 @@ function normalizeAllocationProcessMatrix(data = null) {
 
 const ALLOCATION_CLUSTER_DEFAULT_TIMES = { asn: "11:00", arrive: "12:00", depart: "14:00" };
 const ALLOCATION_CLUSTER_HUES = [350, 265, 150, 40, 210, 320, 175, 285, 25, 130, 195, 300];
+const ALLOCATION_CARRIER_CLUSTER_DEFAULTS = new Map();
+
+function allocationRegisterCarrierClusterDefaults(carrierNums, defaults) {
+  carrierNums.forEach((carrierNum) => {
+    ALLOCATION_CARRIER_CLUSTER_DEFAULTS.set(String(carrierNum), { ...defaults });
+  });
+}
+
+allocationRegisterCarrierClusterDefaults([78, 79], { clusterGroup: "Schenker", assignmentOrder: "0", startSeq: "205", endSeq: "356", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#94a3b8" });
+allocationRegisterCarrierClusterDefaults([76, 77], { clusterGroup: "Schenker", assignmentOrder: "1", startSeq: "205", endSeq: "356", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#60a5fa" });
+allocationRegisterCarrierClusterDefaults([93, 94], { clusterGroup: "Schenker", assignmentOrder: "2", startSeq: "205", endSeq: "356", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#94a3b8" });
+allocationRegisterCarrierClusterDefaults([74, 75], { clusterGroup: "Schenker", assignmentOrder: "3", startSeq: "205", endSeq: "356", asn: "10:00", arrive: "11:00", depart: "13:00", color: "#fb923c" });
+allocationRegisterCarrierClusterDefaults([82, 83], { clusterGroup: "Schenker", assignmentOrder: "4", startSeq: "205", endSeq: "356", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#34d399" });
+allocationRegisterCarrierClusterDefaults([80, 81], { clusterGroup: "Schenker", assignmentOrder: "5", startSeq: "205", endSeq: "356", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#2dd4bf" });
+allocationRegisterCarrierClusterDefaults([41], { assignmentOrder: "6", startSeq: "356", endSeq: "205", asn: "18:00", arrive: "19:00", depart: "23:00", color: "#fcd34d" });
+allocationRegisterCarrierClusterDefaults([61, 63, 69], { assignmentOrder: "7", startSeq: "356", endSeq: "205", asn: "17:00", arrive: "19:00", depart: "23:00", color: "#86efac" });
+allocationRegisterCarrierClusterDefaults([85], { assignmentOrder: "8", startSeq: "356", endSeq: "205", asn: "16:00", arrive: "19:00", depart: "23:00", color: "#f9a8d4" });
+allocationRegisterCarrierClusterDefaults([42, 43], { clusterGroup: "Freja", assignmentOrder: "9", startSeq: "600", endSeq: "652", asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd" });
+allocationRegisterCarrierClusterDefaults([39, 40], { clusterGroup: "Freja", assignmentOrder: "10", startSeq: "600", endSeq: "652", asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd" });
+allocationRegisterCarrierClusterDefaults([44, 45], { clusterGroup: "Freja", assignmentOrder: "11", startSeq: "600", endSeq: "652", asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd" });
+allocationRegisterCarrierClusterDefaults([48, 49], { clusterGroup: "Freja", assignmentOrder: "12", startSeq: "600", endSeq: "652", asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd" });
+allocationRegisterCarrierClusterDefaults([46, 47], { clusterGroup: "Freja", assignmentOrder: "13", startSeq: "600", endSeq: "652", asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd" });
+allocationRegisterCarrierClusterDefaults([51], { assignmentOrder: "14", startSeq: "652", endSeq: "600", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#fdba74" });
+allocationRegisterCarrierClusterDefaults([53], { clusterGroup: "Sandahls Sundsvall", assignmentOrder: "15", startSeq: "205", endSeq: "652", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#f472b6" });
+allocationRegisterCarrierClusterDefaults([55], { clusterGroup: "Sandahls Sundsvall", assignmentOrder: "16", startSeq: "205", endSeq: "652", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#f472b6" });
+allocationRegisterCarrierClusterDefaults([57], { clusterGroup: "Sandahls Norrland", assignmentOrder: "17", startSeq: "600", endSeq: "652", asn: "15:00", arrive: "16:00", depart: "17:00", color: "#fb7185" });
+allocationRegisterCarrierClusterDefaults([59], { clusterGroup: "Sandahls Norrland", assignmentOrder: "18", startSeq: "600", endSeq: "652", asn: "15:00", arrive: "16:00", depart: "17:00", color: "#fda4af" });
+allocationRegisterCarrierClusterDefaults([97], { assignmentOrder: "19", startSeq: "205", endSeq: "652", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#e879f9" });
+allocationRegisterCarrierClusterDefaults([65, 67], { assignmentOrder: "20", startSeq: "205", endSeq: "652", asn: "10:00", arrive: "11:00", depart: "13:00", color: "#4ade80" });
+allocationRegisterCarrierClusterDefaults([71, 73], { assignmentOrder: "21", startSeq: "205", endSeq: "652", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#fbbf24" });
 
 function allocationCarrierClusterText(value) {
   const text = String(value ?? "").trim();
   return ["nan", "nat", "none", "null"].includes(text.toLowerCase()) ? "" : text;
+}
+
+function allocationCarrierClusterIdentifier(value) {
+  const text = allocationCarrierClusterText(value);
+  const match = text.match(/^(\d+)\.0+$/);
+  return match ? match[1] : text;
 }
 
 function allocationHslToHex(h, s, l) {
@@ -772,6 +808,16 @@ function allocationCarrierClusterNumber(value) {
   return Number.isFinite(parsed) ? String(parsed) : "";
 }
 
+function allocationCarrierClusterDefaults(carrierNum, alias, description) {
+  for (const value of [carrierNum, alias, description]) {
+    const key = allocationCarrierClusterText(value);
+    if (ALLOCATION_CARRIER_CLUSTER_DEFAULTS.has(key)) {
+      return ALLOCATION_CARRIER_CLUSTER_DEFAULTS.get(key);
+    }
+  }
+  return {};
+}
+
 function allocationCarrierClusterKey(value) {
   return allocationCarrierClusterText(value)
     .normalize("NFD")
@@ -788,7 +834,7 @@ function normalizeAllocationCarrierClusters(payload) {
       ? payload.rows
       : [];
   const normalizedRows = rows.map((row, index) => {
-    const carrierNum = allocationCarrierClusterText(row.carrierNum ?? row.carrier_num ?? row.agencyNum ?? row.agency_num ?? row.AGENCY_NUM);
+    const carrierNum = allocationCarrierClusterIdentifier(row.carrierNum ?? row.carrier_num ?? row.agencyNum ?? row.agency_num ?? row.AGENCY_NUM);
     const description = allocationCarrierClusterText(row.description ?? row.agencyDesc ?? row.agency_desc ?? row.AGENCY_DESC ?? row.carrier ?? row.transportor);
     const alias = allocationCarrierClusterText(row.alias ?? row.agencyAlias ?? row.agency_alias ?? row.AGENCY_ALIAS);
     const label = alias || description || carrierNum;
@@ -796,19 +842,20 @@ function normalizeAllocationCarrierClusters(payload) {
     const asn = allocationCarrierClusterText(row.asn ?? row.agency_asn ?? row.agencyAsn ?? row.ASN);
     const arrive = allocationCarrierClusterText(row.arrive ?? row.agency_arrive ?? row.agencyArrive ?? row.ARRIVE);
     const depart = allocationCarrierClusterText(row.depart ?? row.agency_depart ?? row.agencyDepart ?? row.DEPART);
+    const defaults = allocationCarrierClusterDefaults(carrierNum, alias, description);
     return {
       id: allocationCarrierClusterText(row.id) || carrierNum || `row-${index + 1}`,
       carrierNum,
       description,
       alias,
-      clusterGroup: allocationCarrierClusterText(row.clusterGroup ?? row.cluster_group ?? row.CLUSTER_GROUP ?? row.cluster),
-      assignmentOrder: allocationCarrierClusterNumber(row.assignmentOrder ?? row.assignment_order ?? row.ASSIGNMENT_ORDER ?? row.order),
-      startSeq: allocationCarrierClusterNumber(row.startSeq ?? row.start_seq ?? row.START_SEQ ?? row.from ?? row.utlFrom),
-      endSeq: allocationCarrierClusterNumber(row.endSeq ?? row.end_seq ?? row.END_SEQ ?? row.to ?? row.utlTo),
-      asn: asn || ALLOCATION_CLUSTER_DEFAULT_TIMES.asn,
-      arrive: arrive || ALLOCATION_CLUSTER_DEFAULT_TIMES.arrive,
-      depart: depart || ALLOCATION_CLUSTER_DEFAULT_TIMES.depart,
-      color: allocationCarrierClusterText(row.color ?? row.colour),
+      clusterGroup: allocationCarrierClusterText(row.clusterGroup ?? row.cluster_group ?? row.CLUSTER_GROUP ?? row.cluster) || defaults.clusterGroup || "",
+      assignmentOrder: allocationCarrierClusterNumber(row.assignmentOrder ?? row.assignment_order ?? row.ASSIGNMENT_ORDER ?? row.order) || defaults.assignmentOrder || "",
+      startSeq: allocationCarrierClusterNumber(row.startSeq ?? row.start_seq ?? row.START_SEQ ?? row.from ?? row.utlFrom) || defaults.startSeq || "",
+      endSeq: allocationCarrierClusterNumber(row.endSeq ?? row.end_seq ?? row.END_SEQ ?? row.to ?? row.utlTo) || defaults.endSeq || "",
+      asn: asn || defaults.asn || ALLOCATION_CLUSTER_DEFAULT_TIMES.asn,
+      arrive: arrive || defaults.arrive || ALLOCATION_CLUSTER_DEFAULT_TIMES.arrive,
+      depart: depart || defaults.depart || ALLOCATION_CLUSTER_DEFAULT_TIMES.depart,
+      color: allocationCarrierClusterText(row.color ?? row.colour) || defaults.color || "",
     };
   }).filter(Boolean);
   normalizedRows.sort((a, b) => {
@@ -842,10 +889,11 @@ function allocationCarrierClustersFromForecastTable(data) {
     const order = rows.length + 1;
     rows.push({
       id: `forecast-${order}`,
+      carrierNum: carrier,
       description: carrier,
       alias: carrier,
-      clusterGroup: carrier,
-      assignmentOrder: String(order),
+      clusterGroup: "",
+      assignmentOrder: "",
       startSeq: "",
       endSeq: "",
     });
@@ -2247,6 +2295,10 @@ function setupAllocationWarehouseMap(host, entry) {
       w: allocationMapNumber(loc.w, 1),
       h: allocationMapNumber(loc.h, 1),
       maxPall: allocationMapRound(loc.maxPall),
+      loadDirection: allocationNormalizeMapLoadDirection(
+        loc.loadDirection ?? loc.load_direction ?? loc.loadingDirection ?? loc.direction,
+        loc,
+      ),
     }))
     .filter((loc) => loc.location);
   locations.sort((a, b) => allocationMapCompareLocation(a.location, b.location));
@@ -2386,15 +2438,30 @@ function setupAllocationWarehouseMap(host, entry) {
     const horizontal = loc.w >= loc.h;
     const shortSide = Math.max(1, Math.min(loc.w, loc.h));
     const edgeBand = allocationMapClamp(shortSide * 0.55, 22, 44);
+    const loadSide = allocationMapLoadOriginSide(loc.loadDirection, loc);
+    const contentRect = { x: loc.x, y: loc.y, w: loc.w, h: loc.h };
+    if (assignment) {
+      if (loadSide === "left") {
+        contentRect.x += edgeBand;
+        contentRect.w = Math.max(1, contentRect.w - edgeBand);
+      } else if (loadSide === "right") {
+        contentRect.w = Math.max(1, contentRect.w - edgeBand);
+      } else if (loadSide === "top") {
+        contentRect.y += edgeBand;
+        contentRect.h = Math.max(1, contentRect.h - edgeBand);
+      } else if (loadSide === "bottom") {
+        contentRect.h = Math.max(1, contentRect.h - edgeBand);
+      }
+    }
     const shortLocation = allocationMapShortLocation(loc.location);
     const label = assignment
       ? (assignment.customer || assignment.carrier || assignment.cluster || assignment.shipment)
       : shortLocation;
     const labelLines = assignment ? allocationMapLabelLines(label) : [label];
-    const contentX = horizontal ? loc.x + edgeBand + Math.max(1, loc.w - edgeBand) / 2 : center.x;
-    const contentY = horizontal ? center.y : loc.y + edgeBand + Math.max(1, loc.h - edgeBand) / 2;
-    const contentWidth = Math.max(18, horizontal ? loc.w - edgeBand - 10 : loc.w - 10);
-    const contentHeight = Math.max(18, horizontal ? loc.h - 10 : loc.h - edgeBand - 10);
+    const contentX = contentRect.x + contentRect.w / 2;
+    const contentY = contentRect.y + contentRect.h / 2;
+    const contentWidth = Math.max(18, horizontal ? contentRect.w - 10 : contentRect.h - 10);
+    const contentHeight = Math.max(18, horizontal ? contentRect.h - 10 : contentRect.w - 10);
     const mainFont = assignment
       ? allocationMapClamp(contentHeight / (labelLines.length > 1 ? 2.45 : 1.85), 13, 22)
       : allocationMapClamp(shortSide * 0.24, 11, 15);
@@ -2408,19 +2475,28 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.edgeText.removeAttribute("textLength");
     elements.edgeText.removeAttribute("lengthAdjust");
     const edgeFont = Number.parseFloat(elements.edgeText.style.fontSize) || 14;
-    if (allocationMapEstimatedTextWidth(shortLocation, edgeFont) > shortSide - 6) {
-      elements.edgeText.setAttribute("textLength", String(Math.max(8, Math.round(shortSide - 6))));
+    const edgeMaxWidth = loadSide === "left" || loadSide === "right" ? loc.h - 6 : loc.w - 6;
+    if (allocationMapEstimatedTextWidth(shortLocation, edgeFont) > edgeMaxWidth) {
+      elements.edgeText.setAttribute("textLength", String(Math.max(8, Math.round(edgeMaxWidth))));
       elements.edgeText.setAttribute("lengthAdjust", "spacingAndGlyphs");
     }
     if (assignment) {
-      if (horizontal) {
+      if (loadSide === "left") {
         const edgeX = loc.x + edgeBand / 2;
         elements.edgeText.setAttribute("x", edgeX);
         elements.edgeText.setAttribute("y", center.y);
         elements.edgeText.setAttribute("transform", `rotate(-90, ${edgeX}, ${center.y})`);
-      } else {
+      } else if (loadSide === "right") {
+        const edgeX = loc.x + loc.w - edgeBand / 2;
+        elements.edgeText.setAttribute("x", edgeX);
+        elements.edgeText.setAttribute("y", center.y);
+        elements.edgeText.setAttribute("transform", `rotate(-90, ${edgeX}, ${center.y})`);
+      } else if (loadSide === "top") {
         elements.edgeText.setAttribute("x", center.x);
         elements.edgeText.setAttribute("y", loc.y + edgeBand / 2);
+      } else {
+        elements.edgeText.setAttribute("x", center.x);
+        elements.edgeText.setAttribute("y", loc.y + loc.h - edgeBand / 2);
       }
     }
 
@@ -2429,8 +2505,12 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.mainText.setAttribute("y", firstLineY);
     elements.mainText.setAttribute("class", assignment ? "allocation-map-label-main" : "allocation-map-label");
     elements.mainText.style.fontSize = `${mainFont}px`;
+    elements.mainText.removeAttribute("transform");
     elements.mainText.removeAttribute("textLength");
     elements.mainText.removeAttribute("lengthAdjust");
+    if (assignment && !horizontal) {
+      elements.mainText.setAttribute("transform", `rotate(-90, ${contentX}, ${contentY})`);
+    }
     labelLines.forEach((line, index) => {
       const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
       span.setAttribute("x", assignment ? contentX : center.x);
@@ -2461,11 +2541,26 @@ function setupAllocationWarehouseMap(host, entry) {
     const color = colorMap.get(assignment.carrier) || "#94a3b8";
     elements.unusedPatternBase?.setAttribute("fill", allocationMapMixHexColor(color, "#ffffff", 0.72));
     elements.unusedPatternBand?.setAttribute("fill", allocationMapMixHexColor(color, "#ffffff", 0.36));
-    const horizontal = loc.w >= loc.h;
-    unusedEl.setAttribute("x", loc.x);
-    unusedEl.setAttribute("y", loc.y);
-    unusedEl.setAttribute("width", horizontal ? loc.w * fraction : loc.w);
-    unusedEl.setAttribute("height", horizontal ? loc.h : loc.h * fraction);
+    const loadSide = allocationMapLoadOriginSide(loc.loadDirection, loc);
+    let x = loc.x;
+    let y = loc.y;
+    let w = loc.w;
+    let h = loc.h;
+    if (loadSide === "left") {
+      w = loc.w * fraction;
+    } else if (loadSide === "right") {
+      w = loc.w * fraction;
+      x = loc.x + loc.w - w;
+    } else if (loadSide === "top") {
+      h = loc.h * fraction;
+    } else {
+      h = loc.h * fraction;
+      y = loc.y + loc.h - h;
+    }
+    unusedEl.setAttribute("x", x);
+    unusedEl.setAttribute("y", y);
+    unusedEl.setAttribute("width", w);
+    unusedEl.setAttribute("height", h);
     unusedEl.setAttribute("fill", `url(#${elements.unusedPatternId})`);
     unusedEl.style.display = "";
   }
@@ -2488,12 +2583,17 @@ function setupAllocationWarehouseMap(host, entry) {
     if (!metrics) return;
     const placed = allocationMapRound(assignments.reduce((sum, assignment) => sum + assignment.placedPallets, 0));
     const capacity = allocationMapRound(locations.reduce((sum, loc) => sum + loc.maxPall, 0));
+    const availablePallets = allocationMapRound(Math.max(0, capacity - placed));
+    const placedLocationCount = assignmentByLocation.size;
+    const freeLocationCount = Math.max(0, locations.length - placedLocationCount);
     const over = assignments.filter((assignment) => assignment.unusedCapacity < -0.001).length;
     const unplaced = Array.isArray(entry.unplaced) ? entry.unplaced.length : 0;
     metrics.innerHTML = `
       <div><span>Placeringar</span><strong>${assignments.length}</strong></div>
       <div><span>Pallplatser</span><strong>${placed}</strong></div>
+      <div><span>Lediga pallplatser</span><strong>${availablePallets}</strong></div>
       <div><span>Kapacitet</span><strong>${capacity}</strong></div>
+      <div><span>Lediga ytor</span><strong>${freeLocationCount}</strong></div>
       <div class="${over ? "is-warning" : ""}"><span>Över kapacitet</span><strong>${over}</strong></div>
       <div class="${unplaced ? "is-warning" : ""}"><span>Ej placerade</span><strong>${unplaced}</strong></div>
     `;
@@ -3294,6 +3394,68 @@ function canEditAllocationMapSettings() {
   return Boolean(window.canEditPage?.(allocationState.user, "allocationSettings") || allocationState.user?.is_super_user);
 }
 
+const ALLOCATION_MAP_LOAD_DIRECTIONS = {
+  horizontal: ["right", "left"],
+  vertical: ["down", "up"],
+};
+
+function allocationMapDefaultLoadDirection(row = {}) {
+  const w = allocationMapNumber(row.w ?? row.width, 1);
+  const h = allocationMapNumber(row.h ?? row.height, 1);
+  return w >= h ? "right" : "down";
+}
+
+function allocationMapLoadDirectionsForRow(row = {}) {
+  const w = allocationMapNumber(row.w ?? row.width, 1);
+  const h = allocationMapNumber(row.h ?? row.height, 1);
+  return w >= h ? ALLOCATION_MAP_LOAD_DIRECTIONS.horizontal : ALLOCATION_MAP_LOAD_DIRECTIONS.vertical;
+}
+
+function allocationNormalizeMapLoadDirection(value, row = {}) {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const aliases = {
+    right: "right",
+    hoger: "right",
+    east: "right",
+    left: "left",
+    vanster: "left",
+    west: "left",
+    up: "up",
+    upp: "up",
+    north: "up",
+    down: "down",
+    ner: "down",
+    ned: "down",
+    south: "down",
+  };
+  const direction = aliases[raw] || "";
+  return allocationMapLoadDirectionsForRow(row).includes(direction) ? direction : allocationMapDefaultLoadDirection(row);
+}
+
+function allocationNextMapLoadDirection(value, row = {}) {
+  const current = allocationNormalizeMapLoadDirection(value, row);
+  const directions = allocationMapLoadDirectionsForRow(row);
+  const index = directions.indexOf(current);
+  return directions[(index + 1) % directions.length];
+}
+
+function allocationMapLoadDirectionLabel(value) {
+  const labels = { right: "höger", down: "ned", left: "vänster", up: "upp" };
+  return labels[value] || value;
+}
+
+function allocationMapLoadOriginSide(value, row = {}) {
+  const direction = allocationNormalizeMapLoadDirection(value, row);
+  if (direction === "down") return "top";
+  if (direction === "up") return "bottom";
+  if (direction === "left") return "right";
+  return "left";
+}
+
 function normalizeAllocationMapLayout(payload) {
   const rows = Array.isArray(payload)
     ? payload
@@ -3310,7 +3472,18 @@ function normalizeAllocationMapLayout(payload) {
     const h = Math.max(1, Math.round(allocationMapNumber(row?.h ?? row?.height, 80)));
     const maxPall = allocationMapRound(row?.maxPall ?? row?.max_pall ?? 2);
     if (!/^UTL\d+[A-ZÅÄÖ]?$/.test(location)) return null;
-    return { location, x, y, w, h, maxPall: maxPall > 0 ? maxPall : 2 };
+    return {
+      location,
+      x,
+      y,
+      w,
+      h,
+      maxPall: maxPall > 0 ? maxPall : 2,
+      loadDirection: allocationNormalizeMapLoadDirection(
+        row?.loadDirection ?? row?.load_direction ?? row?.loadingDirection ?? row?.direction,
+        { w, h },
+      ),
+    };
   }).filter(Boolean);
   const byLocation = new Map();
   normalized.forEach((row) => byLocation.set(row.location, row));
@@ -3328,6 +3501,20 @@ function normalizeAllocationMapLayout(payload) {
       }).filter(Boolean).sort((a, b) => allocationMapCompareLocation(a.location, b.location))
     : [];
   return { version: 1, locations, defaults, availableLocations, canEdit: Boolean(payload?.can_edit) };
+}
+
+function allocationMapLayoutSaveSignature(items = []) {
+  return normalizeAllocationMapLayout({ locations: items }).locations
+    .map((row) => [
+      row.location,
+      row.x,
+      row.y,
+      row.w,
+      row.h,
+      row.maxPall,
+      row.loadDirection,
+    ].join("|"))
+    .join("\n");
 }
 
 async function loadAllocationMapLayout() {
@@ -3360,6 +3547,83 @@ function allocationMapLayoutNextNumber(rows) {
     .map((match) => Number.parseInt(match[1], 10))
     .filter(Number.isFinite);
   return numbers.length ? Math.max(...numbers) + 1 : 1;
+}
+
+function allocationMapSettingLabelAttrs(row) {
+  const horizontal = row.w >= row.h;
+  const cx = row.x + row.w / 2;
+  const cy = row.y + row.h / 2;
+  const shortSide = Math.max(1, Math.min(row.w, row.h));
+  const longSide = Math.max(1, Math.max(row.w, row.h));
+  const label = allocationMapShortLocation(row.location);
+  const fontSize = allocationMapClamp(shortSide * 0.58, 16, 48);
+  const maxWidth = Math.max(8, longSide - 8);
+  const attrs = {
+    x: cx,
+    y: cy,
+    label,
+    fontSize,
+    textLength: "",
+    transform: horizontal ? "" : `rotate(-90, ${cx}, ${cy})`,
+  };
+  if (allocationMapEstimatedTextWidth(label, fontSize) > maxWidth) {
+    attrs.textLength = String(Math.round(maxWidth));
+  }
+  return attrs;
+}
+
+function allocationRenderMapSettingLabel(row) {
+  const attrs = allocationMapSettingLabelAttrs(row);
+  return `<text class="allocation-map-setting-label" x="${attrs.x}" y="${attrs.y}" style="font-size:${attrs.fontSize}px"${attrs.transform ? ` transform="${attrs.transform}"` : ""}${attrs.textLength ? ` textLength="${attrs.textLength}" lengthAdjust="spacingAndGlyphs"` : ""}>${allocationEscape(attrs.label)}</text>`;
+}
+
+function allocationUpdateMapSettingLabelElement(labelElement, row) {
+  if (!labelElement) return;
+  const attrs = allocationMapSettingLabelAttrs(row);
+  labelElement.setAttribute("x", attrs.x);
+  labelElement.setAttribute("y", attrs.y);
+  labelElement.style.fontSize = `${attrs.fontSize}px`;
+  labelElement.textContent = attrs.label;
+  if (attrs.transform) labelElement.setAttribute("transform", attrs.transform);
+  else labelElement.removeAttribute("transform");
+  if (attrs.textLength) {
+    labelElement.setAttribute("textLength", attrs.textLength);
+    labelElement.setAttribute("lengthAdjust", "spacingAndGlyphs");
+  } else {
+    labelElement.removeAttribute("textLength");
+    labelElement.removeAttribute("lengthAdjust");
+  }
+}
+
+function allocationMapSettingDirectionMarkerBand(row) {
+  const shortSide = Math.max(1, Math.min(row.w, row.h));
+  return allocationMapClamp(shortSide * 0.56, 24, 58);
+}
+
+function allocationMapSettingDirectionPath(row) {
+  const direction = allocationNormalizeMapLoadDirection(row.loadDirection, row);
+  const inset = allocationMapClamp(Math.min(row.w, row.h) * 0.08, 4, 10);
+  const band = allocationMapSettingDirectionMarkerBand(row);
+  const cx = row.x + row.w / 2;
+  const cy = row.y + row.h / 2;
+  if (direction === "down") {
+    return `M${row.x + inset} ${row.y + inset}L${row.x + row.w - inset} ${row.y + inset}L${cx} ${row.y + band}Z`;
+  }
+  if (direction === "up") {
+    return `M${row.x + inset} ${row.y + row.h - inset}L${row.x + row.w - inset} ${row.y + row.h - inset}L${cx} ${row.y + row.h - band}Z`;
+  }
+  if (direction === "left") {
+    return `M${row.x + row.w - inset} ${row.y + inset}L${row.x + row.w - inset} ${row.y + row.h - inset}L${row.x + row.w - band} ${cy}Z`;
+  }
+  return `M${row.x + inset} ${row.y + inset}L${row.x + inset} ${row.y + row.h - inset}L${row.x + band} ${cy}Z`;
+}
+
+function allocationRenderMapSettingDirectionArrow(row) {
+  return `<path class="allocation-map-setting-direction-arrow" d="${allocationMapSettingDirectionPath(row)}"></path>`;
+}
+
+function allocationUpdateMapSettingDirectionArrowElement(arrowElement, row) {
+  arrowElement?.setAttribute("d", allocationMapSettingDirectionPath(row));
 }
 
 function allocationMapLayoutStep(row, direction, gap) {
@@ -3395,6 +3659,7 @@ function allocationMapLayoutSelectedRow(rows, selectedLocation) {
     w: 240,
     h: 80,
     maxPall: 2,
+    loadDirection: "right",
   };
 }
 
@@ -3421,13 +3686,19 @@ function allocationMapLayoutSeriesRows(rows, options) {
     }
     const available = availableByLocation.get(location);
     if (useAvailableFilter && !available) continue;
+    const draftWidth = Math.max(1, Math.round(allocationMapNumber(options.w, base.w)));
+    const draftHeight = Math.max(1, Math.round(allocationMapNumber(options.h, base.h)));
     const draft = {
       location,
       x: cursor.x,
       y: cursor.y,
-      w: Math.max(1, Math.round(allocationMapNumber(options.w, base.w))),
-      h: Math.max(1, Math.round(allocationMapNumber(options.h, base.h))),
+      w: draftWidth,
+      h: draftHeight,
       maxPall: allocationMapRound(options.maxPall || available?.maxPall || base.maxPall || 2),
+      loadDirection: allocationNormalizeMapLoadDirection(options.loadDirection || base.loadDirection, {
+        w: draftWidth,
+        h: draftHeight,
+      }),
     };
     const placed = allocationMapLayoutAvoidCollision([...rows, ...additions], draft, direction, gap);
     additions.push(placed);
@@ -3461,6 +3732,9 @@ async function mountAllocationMapSettingsPage(editor) {
   let viewBox = null;
   let statusText = "";
   let ignoreNextMapClick = false;
+  let lastMapCellClick = { location: "", at: 0 };
+  let lastLoadDirectionCycle = { location: "", at: 0 };
+  const LOCATION_DRAG_TYPE = "application/x-flow-yt-location";
 
   try {
     layout = await loadAllocationMapLayout();
@@ -3585,6 +3859,40 @@ async function mountAllocationMapSettingsPage(editor) {
     setSvgViewBox();
   }
 
+  function svgPointFromClient(svg, clientX, clientY) {
+    const point = svg?.createSVGPoint?.();
+    const ctm = svg?.getScreenCTM?.();
+    if (point && ctm) {
+      point.x = clientX;
+      point.y = clientY;
+      const mapped = point.matrixTransform(ctm.inverse());
+      return { x: mapped.x, y: mapped.y };
+    }
+    const box = svg?.getBoundingClientRect?.();
+    const current = ensureViewBox();
+    if (!box) return { x: current.x + current.width / 2, y: current.y + current.height / 2 };
+    return {
+      x: current.x + ((clientX - box.left) / Math.max(1, box.width)) * current.width,
+      y: current.y + ((clientY - box.top) / Math.max(1, box.height)) * current.height,
+    };
+  }
+
+  function hasLocationDrag(event) {
+    const types = event.dataTransfer?.types;
+    if (!types) return false;
+    if (typeof types.includes === "function") return types.includes(LOCATION_DRAG_TYPE);
+    if (typeof types.contains === "function") return types.contains(LOCATION_DRAG_TYPE);
+    return Array.from(types).includes(LOCATION_DRAG_TYPE);
+  }
+
+  function draggedLocationFromEvent(event) {
+    return String(
+      event.dataTransfer?.getData(LOCATION_DRAG_TYPE)
+      || event.dataTransfer?.getData("text/plain")
+      || ""
+    ).trim().toUpperCase();
+  }
+
   function availableNotMapped(options = {}) {
     const placed = new Set(rows.map((row) => row.location));
     const search = options.ignoreSearch
@@ -3619,6 +3927,21 @@ async function mountAllocationMapSettingsPage(editor) {
     renderEditor();
   }
 
+  function cycleLocationLoadDirection(location) {
+    if (!canEdit) return;
+    const row = rows.find((item) => item.location === location);
+    if (!row) return;
+    const now = Date.now();
+    if (lastLoadDirectionCycle.location === location && now - lastLoadDirectionCycle.at < 160) return;
+    lastLoadDirectionCycle = { location, at: now };
+    pushUndoSnapshot();
+    row.loadDirection = allocationNextMapLoadDirection(row.loadDirection, row);
+    selectedLocation = row.location;
+    selectedLocations = new Set([row.location]);
+    statusText = `${row.location}: riktning ${allocationMapLoadDirectionLabel(row.loadDirection)}.`;
+    renderEditor();
+  }
+
   function baseRowForPlacement() {
     return selectedRow() || rows[rows.length - 1] || layout.defaults?.[0] || {
       location: "UTL0",
@@ -3627,6 +3950,7 @@ async function mountAllocationMapSettingsPage(editor) {
       w: 240,
       h: 80,
       maxPall: 2,
+      loadDirection: "right",
     };
   }
 
@@ -3644,6 +3968,7 @@ async function mountAllocationMapSettingsPage(editor) {
       w: base.w,
       h: base.h,
       maxPall: allocationMapRound(locationRow.maxPall || base.maxPall || 2),
+      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, base),
     };
     const placed = allocationMapLayoutAvoidCollision(rows, draft, direction, gap);
     rows = sortedMapRows([...rows, placed]);
@@ -3653,18 +3978,48 @@ async function mountAllocationMapSettingsPage(editor) {
     renderEditor();
   }
 
+  function addLocationRowAt(locationRow, point) {
+    if (!canEdit || !locationRow || rows.some((row) => row.location === locationRow.location)) return;
+    pushUndoSnapshot();
+    const base = baseRowForPlacement();
+    const direction = editor.querySelector("[data-map-series-direction]")?.value || "right";
+    const gap = Math.max(0, Number.parseInt(editor.querySelector("[data-map-series-gap]")?.value, 10) || 20);
+    const width = Math.max(1, Math.round(allocationMapNumber(locationRow.w, base.w)));
+    const height = Math.max(1, Math.round(allocationMapNumber(locationRow.h, base.h)));
+    const draft = {
+      location: locationRow.location,
+      x: Math.round((allocationMapNumber(point?.x, base.x) - width / 2) / 10) * 10,
+      y: Math.round((allocationMapNumber(point?.y, base.y) - height / 2) / 10) * 10,
+      w: width,
+      h: height,
+      maxPall: allocationMapRound(locationRow.maxPall || base.maxPall || 2),
+      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, { w: width, h: height }),
+    };
+    const placed = allocationMapLayoutAvoidCollision(rows, draft, direction, gap);
+    rows = sortedMapRows([...rows, placed]);
+    selectedLocation = placed.location;
+    selectedLocations = new Set([placed.location]);
+    statusText = `${placed.location} placerad p\u00e5 kartan.`;
+    renderEditor();
+  }
+
   async function saveMapSettings(button) {
     if (!canEdit) return;
     button.disabled = true;
     try {
       const focus = allocationProcessAreaCode();
       const query = focus ? `?area_focus=${encodeURIComponent(focus)}` : "";
+      const requestedSignature = allocationMapLayoutSaveSignature(rows);
       const response = await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locations: rows }),
       });
-      layout = normalizeAllocationMapLayout(response);
+      const savedLayout = normalizeAllocationMapLayout(response);
+      if (allocationMapLayoutSaveSignature(savedLayout.locations) !== requestedSignature) {
+        throw new Error("Servern bekräftade inte ytkartsändringarna. Ladda om och försök igen.");
+      }
+      layout = savedLayout;
       rows = [...layout.locations];
       availableLocations = [...(layout.availableLocations || [])];
       statusText = "Ytkartsinställningar sparade.";
@@ -3914,7 +4269,8 @@ async function mountAllocationMapSettingsPage(editor) {
               ${rows.map((item) => `
                 <g data-map-setting-node="${allocationEscape(item.location)}">
                   <rect class="allocation-map-setting-loc${selectedLocations.has(item.location) ? " is-selected" : ""}" data-map-setting-rect="${allocationEscape(item.location)}" x="${item.x}" y="${item.y}" width="${item.w}" height="${item.h}"></rect>
-                  <text class="allocation-map-setting-label" x="${item.x + item.w / 2}" y="${item.y + item.h / 2}">${allocationEscape(item.location)}</text>
+                  ${allocationRenderMapSettingLabel(item)}
+                  ${allocationRenderMapSettingDirectionArrow(item)}
                 </g>
               `).join("")}
             </svg>
@@ -3949,7 +4305,7 @@ async function mountAllocationMapSettingsPage(editor) {
             <input data-map-location-search class="allocation-map-location-search" placeholder="Sök UTL" value="${allocationEscape(editor.querySelector("[data-map-location-search]")?.value || "")}" />
             <div class="allocation-map-settings-list">
               ${freeLocations.map((item) => `
-                <button type="button" data-map-add-location="${allocationEscape(item.location)}" ${canEdit ? "" : "disabled"}>
+                <button type="button" data-map-add-location="${allocationEscape(item.location)}" draggable="${canEdit ? "true" : "false"}" ${canEdit ? "" : "disabled"}>
                   <span>${allocationEscape(item.location)}</span><small>${allocationEscape(item.maxPall)} pall</small>
                 </button>
               `).join("") || `<p class="allocation-muted">Inga lediga U-platser.</p>`}
@@ -3974,7 +4330,16 @@ async function mountAllocationMapSettingsPage(editor) {
           ignoreNextMapClick = false;
           return;
         }
-        setSelection(item.dataset.mapSettingRect || "", event);
+        const location = item.dataset.mapSettingRect || "";
+        const now = Date.now();
+        if (canEdit && lastMapCellClick.location === location && now - lastMapCellClick.at < 1200) {
+          lastMapCellClick = { location: "", at: 0 };
+          cycleLocationLoadDirection(location);
+          focusMapSettingsWorkspace();
+          return;
+        }
+        lastMapCellClick = { location, at: now };
+        setSelection(location, event);
         renderEditor();
         focusMapSettingsWorkspace();
       });
@@ -3985,6 +4350,18 @@ async function mountAllocationMapSettingsPage(editor) {
     editor.querySelector("[data-map-location-search]")?.addEventListener("input", renderEditor);
     editor.querySelectorAll("[data-map-add-location]").forEach((button) => {
       button.addEventListener("click", () => addLocationRow(availableLocations.find((row) => row.location === button.dataset.mapAddLocation)));
+      button.addEventListener("dragstart", (event) => {
+        if (!canEdit || !event.dataTransfer) return;
+        const location = button.dataset.mapAddLocation || "";
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(LOCATION_DRAG_TYPE, location);
+        event.dataTransfer.setData("text/plain", location);
+        button.classList.add("is-dragging");
+      });
+      button.addEventListener("dragend", () => {
+        button.classList.remove("is-dragging");
+        editor.querySelector(".allocation-map-settings-canvas")?.classList.remove("is-drop-target");
+      });
     });
     editor.querySelector("[data-map-add-series]")?.addEventListener("click", () => {
       const base = baseRowForPlacement();
@@ -3997,6 +4374,7 @@ async function mountAllocationMapSettingsPage(editor) {
         maxPall: editor.querySelector("[data-map-series-max]")?.value,
         w: base.w,
         h: base.h,
+        loadDirection: base.loadDirection,
         availableLocations,
       });
       if (additions.length) {
@@ -4032,15 +4410,54 @@ async function mountAllocationMapSettingsPage(editor) {
     });
 
     const svg = editor.querySelector("[data-map-settings-svg]");
+    const canvas = editor.querySelector(".allocation-map-settings-canvas");
+    canvas?.addEventListener("dragover", (event) => {
+      if (!canEdit || !hasLocationDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      canvas.classList.add("is-drop-target");
+    });
+    canvas?.addEventListener("dragleave", (event) => {
+      if (event.relatedTarget && canvas.contains(event.relatedTarget)) return;
+      canvas.classList.remove("is-drop-target");
+    });
+    canvas?.addEventListener("drop", (event) => {
+      if (!canEdit || !hasLocationDrag(event) || !svg) return;
+      event.preventDefault();
+      event.stopPropagation();
+      canvas.classList.remove("is-drop-target");
+      const location = draggedLocationFromEvent(event);
+      const locationRow = availableLocations.find((row) => row.location === location);
+      addLocationRowAt(locationRow, svgPointFromClient(svg, event.clientX, event.clientY));
+      focusMapSettingsWorkspace();
+    });
     svg?.addEventListener("wheel", (event) => {
       event.preventDefault();
       zoomView(event.deltaY < 0 ? 0.88 : 1.12, event);
     }, { passive: false });
+    svg?.addEventListener("dblclick", (event) => {
+      const rect = event.target.closest("[data-map-setting-rect]");
+      if (!rect || !canEdit) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cycleLocationLoadDirection(rect.dataset.mapSettingRect || "");
+      focusMapSettingsWorkspace();
+    });
     svg?.addEventListener("pointerdown", (event) => {
       const rect = event.target.closest("[data-map-setting-rect]");
       if (rect && canEdit) {
-        const row = rows.find((item) => item.location === rect.dataset.mapSettingRect);
+        const location = rect.dataset.mapSettingRect || "";
+        const row = rows.find((item) => item.location === location);
         if (!row) return;
+        const now = Date.now();
+        if (lastMapCellClick.location === location && now - lastMapCellClick.at < 1200) {
+          lastMapCellClick = { location: "", at: 0 };
+          cycleLocationLoadDirection(location);
+          focusMapSettingsWorkspace();
+          event.preventDefault();
+          return;
+        }
+        lastMapCellClick = { location, at: now };
         setSelection(row.location, event, { keepExisting: true });
         syncSelectionVisuals();
         const picked = selectedRows();
@@ -4052,6 +4469,7 @@ async function mountAllocationMapSettingsPage(editor) {
               row: pickedRow,
               rect: pickedRect,
               label: pickedRect?.closest("[data-map-setting-node]")?.querySelector(".allocation-map-setting-label"),
+              arrow: pickedRect?.closest("[data-map-setting-node]")?.querySelector(".allocation-map-setting-direction-arrow"),
               originalX: pickedRow.x,
               originalY: pickedRow.y,
             };
@@ -4086,8 +4504,8 @@ async function mountAllocationMapSettingsPage(editor) {
           item.row.y = Math.round((item.originalY + dy) / 10) * 10;
           item.rect?.setAttribute("x", item.row.x);
           item.rect?.setAttribute("y", item.row.y);
-          item.label?.setAttribute("x", item.row.x + item.row.w / 2);
-          item.label?.setAttribute("y", item.row.y + item.row.h / 2);
+          allocationUpdateMapSettingLabelElement(item.label, item.row);
+          allocationUpdateMapSettingDirectionArrowElement(item.arrow, item.row);
         });
         return;
       }

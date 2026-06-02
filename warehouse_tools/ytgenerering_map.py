@@ -12,6 +12,10 @@ import pandas as pd
 
 MAP_LOCATIONS_PATH = Path(__file__).with_name("ytgenerering_map_locations.json")
 DEFAULT_MAP_MAX_PALL = 2.0
+MAP_LOAD_DIRECTIONS = {
+    "horizontal": {"right", "left"},
+    "vertical": {"down", "up"},
+}
 
 
 def _norm(value: object) -> str:
@@ -82,6 +86,35 @@ def _location_sort_key(value: object) -> tuple[int, str]:
     return int(match.group(1)), match.group(2)
 
 
+def _default_load_direction(w: int | float, h: int | float) -> str:
+    return "right" if float(w) >= float(h) else "down"
+
+
+def _load_directions_for_size(w: int | float, h: int | float) -> set[str]:
+    return MAP_LOAD_DIRECTIONS["horizontal"] if float(w) >= float(h) else MAP_LOAD_DIRECTIONS["vertical"]
+
+
+def _load_direction(value: object, *, w: int | float, h: int | float) -> str:
+    key = _norm(value)
+    aliases = {
+        "right": "right",
+        "hoger": "right",
+        "east": "right",
+        "left": "left",
+        "vanster": "left",
+        "west": "left",
+        "up": "up",
+        "upp": "up",
+        "north": "up",
+        "down": "down",
+        "ner": "down",
+        "ned": "down",
+        "south": "down",
+    }
+    direction = aliases.get(key, "")
+    return direction if direction in _load_directions_for_size(w, h) else _default_load_direction(w, h)
+
+
 def normalize_map_location_rows(value: object) -> list[dict[str, object]]:
     if value is None:
         return []
@@ -121,6 +154,13 @@ def normalize_map_location_rows(value: object) -> list[dict[str, object]]:
             "w": w,
             "h": h,
             "maxPall": round(max_pall, 2),
+            "loadDirection": _load_direction(
+                raw.get("loadDirection")
+                if "loadDirection" in raw
+                else raw.get("load_direction") or raw.get("loadingDirection") or raw.get("direction"),
+                w=w,
+                h=h,
+            ),
         }
     return sorted(rows_by_location.values(), key=lambda row: _location_sort_key(row["location"]))
 
@@ -280,6 +320,7 @@ def build_ytgenerering_map_payload(
                 "w": coord["w"],
                 "h": coord["h"],
                 "maxPall": round(capacity_by_location.get(name, 0.0), 2),
+                "loadDirection": coord.get("loadDirection", _default_load_direction(coord["w"], coord["h"])),
             }
         )
 
@@ -337,6 +378,7 @@ def build_ytgenerering_map_payload(
                     "w": coord["w"],
                     "h": coord["h"],
                     "maxPall": round(capacity_by_location.get(str(location), 0.0), 2),
+                    "loadDirection": coord.get("loadDirection", _default_load_direction(coord["w"], coord["h"])),
                 }
             )
 

@@ -474,6 +474,33 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                             }
                         ],
                         "log": [],
+                        "maps": [
+                            {
+                                "label": "Ytkarta",
+                                "locations": [
+                                    {"location": "UTL100", "x": 0, "y": 0, "w": 120, "h": 80, "maxPall": 2},
+                                    {"location": "UTL101", "x": 140, "y": 0, "w": 120, "h": 80, "maxPall": 3},
+                                    {"location": "UTL102", "x": 280, "y": 0, "w": 120, "h": 80, "maxPall": 2},
+                                ],
+                                "assignments": [
+                                    {
+                                        "id": "S-1-UTL100",
+                                        "shipment": "S-1",
+                                        "carrier": "Akeri A",
+                                        "cluster": "Freja Test",
+                                        "customer": "Kund A",
+                                        "location": "UTL100",
+                                        "placedPallets": 2,
+                                        "shipmentPallets": 2,
+                                        "maxPall": 2,
+                                        "unusedCapacity": 0,
+                                        "placementNo": 1,
+                                        "orderNumbers": ["O-1"],
+                                    }
+                                ],
+                                "unplaced": [],
+                            }
+                        ],
                         "auto_downloads": [
                             {
                                 "key": "order_set_area_import",
@@ -524,6 +551,10 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Ytgenerering")
         expect(page.locator(".allocation-result")).to_contain_text("UTL100")
+        expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga pallplatser")
+        expect(page.locator("[data-map-metrics]")).to_contain_text("5")
+        expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga ytor")
+        expect(page.locator("[data-map-metrics]")).to_contain_text("2")
         assert download_response.value.status == 200
         assert "forecast-session-1" in captured["post_data"]
         assert 'name="forecast_session_id"' in captured["post_data"]
@@ -581,13 +612,18 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
 
         expect(page.locator(".allocation-map-settings-list")).to_contain_text("UTL206")
         expect(page.locator(".allocation-map-settings-list")).not_to_contain_text("UTL205")
+        expect(page.locator('[data-map-setting-node="UTL205"] .allocation-map-setting-label')).to_have_text("205")
+        page.locator('[data-map-setting-rect="UTL205"]').click()
+        page.locator('[data-map-setting-rect="UTL205"]').click()
+        expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("riktning vänster")
         page.click("[data-map-zoom-in]")
         page.click("[data-map-zoom-out]")
         page.fill("[data-map-series-start]", "206")
         page.fill("[data-map-series-end]", "207")
         page.fill("[data-map-series-max]", "3")
         page.click("[data-map-add-series]")
-        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL207")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("207")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL207")
         page.locator('[data-map-setting-rect="UTL206"]').click()
         page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
@@ -607,21 +643,71 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         page.keyboard.press("Control+C")
         page.keyboard.press("Control+V")
-        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL209")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("209")
         page.keyboard.press("Control+Z")
-        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL209")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("209")
+        page.evaluate(
+            """
+            ({ sourceSelector, targetSelector }) => {
+                const source = document.querySelector(sourceSelector);
+                const target = document.querySelector(targetSelector);
+                if (!source || !target) throw new Error("Missing drag source or target");
+                const box = target.getBoundingClientRect();
+                const clientX = box.left + box.width * 0.58;
+                const clientY = box.top + box.height * 0.46;
+                const dataTransfer = new DataTransfer();
+                source.dispatchEvent(new DragEvent("dragstart", {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer,
+                    clientX,
+                    clientY,
+                }));
+                target.dispatchEvent(new DragEvent("dragover", {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer,
+                    clientX,
+                    clientY,
+                }));
+                target.dispatchEvent(new DragEvent("drop", {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer,
+                    clientX,
+                    clientY,
+                }));
+                source.dispatchEvent(new DragEvent("dragend", {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer,
+                    clientX,
+                    clientY,
+                }));
+            }
+            """,
+            {
+                "sourceSelector": '[data-map-add-location="UTL208"]',
+                "targetSelector": ".allocation-map-settings-canvas",
+            },
+        )
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("208")
+        expect(page.locator(".allocation-map-settings-list")).not_to_contain_text("UTL208")
         page.locator('[data-map-setting-rect="UTL206"]').click()
         page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         page.keyboard.press("Delete")
-        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL207")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("207")
         page.keyboard.press("Control+Z")
-        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("UTL207")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("207")
         page.click("[data-map-save]")
 
         expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("sparade", timeout=15000)
         locations = captured["payload"]["locations"]
-        assert [row["location"] for row in locations] == ["UTL205", "UTL206", "UTL207"]
+        assert [row["location"] for row in locations] == ["UTL205", "UTL206", "UTL207", "UTL208"]
+        assert locations[0]["loadDirection"] == "left"
         assert locations[1]["maxPall"] == 3
+        assert locations[1]["loadDirection"] == "left"
         assert locations[2]["x"] > locations[1]["x"]
+        assert locations[3]["maxPall"] == 3
     finally:
         context.close()

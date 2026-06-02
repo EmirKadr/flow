@@ -138,7 +138,7 @@ I produktion kör Render inte seed. Live-data är användarstyrd och första adm
    ```powershell
    cd "C:\Users\emikad\OneDrive - Dole Nordic AB\Skrivbordet\projects\flow"
    git init
-   git add app/ demo/ referens/
+   git add app/ desktop/ wiki/ warehouse_tools/ tests/
    git commit -m "Initial commit: flow MVP"
    git remote add origin https://github.com/<DITT_NAMN>/flow.git
    git push -u origin main

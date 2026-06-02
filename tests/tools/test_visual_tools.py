@@ -802,9 +802,13 @@ def test_bearbeta_area_focus_filter_contract():
     assert "renderAllocationMapSettingsView" in allocation
     assert "ytgenerering-map-layout" in allocation
     assert "availableLocations" in allocation
+    assert "allocationMapLayoutSaveSignature" in allocation
+    assert "Servern bekräftade inte ytkartsändringarna" in allocation
     assert "allocationMapLayoutSeriesRows" in allocation
     assert "data-map-add-series" in allocation
     assert "data-map-add-location" in allocation
+    assert "application/x-flow-yt-location" in allocation
+    assert "addLocationRowAt" in allocation
     assert "data-map-zoom-in" in allocation
     assert "data-map-zoom-out" in allocation
     assert "data-map-fit" in allocation
@@ -815,6 +819,32 @@ def test_bearbeta_area_focus_filter_contract():
     assert "allocation-map-settings-svg" in allocation
     assert ".allocation-map-settings-page-panel" in styles
     assert ".allocation-map-settings-fullscreen-button" in styles
+    assert ".allocation-map-settings-canvas.is-drop-target" in styles
+    assert "function allocationMapSettingLabelAttrs" in allocation
+    assert "const ALLOCATION_MAP_LOAD_DIRECTIONS" in allocation
+    assert "function allocationNormalizeMapLoadDirection" in allocation
+    assert "function allocationMapLoadDirectionsForRow" in allocation
+    assert 'horizontal: ["right", "left"]' in allocation
+    assert 'vertical: ["down", "up"]' in allocation
+    assert "function allocationMapLoadOriginSide" in allocation
+    assert "allocationMapShortLocation(row.location)" in allocation
+    assert "row.w >= row.h" in allocation
+    assert "allocationMapClamp(shortSide * 0.58, 16, 48)" in allocation
+    assert "function allocationMapSettingDirectionMarkerBand" in allocation
+    assert "const cx = row.x + row.w / 2" in allocation
+    assert "const maxWidth = Math.max(8, longSide - 8)" in allocation
+    assert 'rotate(-90, ${cx}, ${cy})' in allocation
+    assert "L${row.x + band} ${cy}Z" in allocation
+    assert "allocationRenderMapSettingLabel(item)" in allocation
+    assert "allocationUpdateMapSettingLabelElement(item.label, item.row)" in allocation
+    assert "allocationRenderMapSettingDirectionArrow(item)" in allocation
+    assert "cycleLocationLoadDirection" in allocation
+    assert "allocationNextMapLoadDirection(row.loadDirection, row)" in allocation
+    assert "allocationMapLoadOriginSide(loc.loadDirection, loc)" in allocation
+    assert ".allocation-map-setting-label" in styles
+    assert ".allocation-map-setting-label {\n  dominant-baseline: middle;\n  font-family: inherit;\n  fill: var(--text);\n  font-size: 32px;\n  font-weight: 400;" in styles
+    assert ".allocation-map-setting-direction-arrow" in styles
+    assert "fill: #94a3b8;" in styles
     assert "allocation-process-matrix-table" in allocation
     assert "Ytgenerering UTL" in allocation
     assert "ytgenereringUtlMin" in allocation
@@ -835,8 +865,17 @@ def test_bearbeta_area_focus_filter_contract():
     assert "allocationMapMixHexColor" in allocation
     assert "unusedPatternBase" in allocation
     assert "unusedPatternBand" in allocation
+    assert "ALLOCATION_CARRIER_CLUSTER_DEFAULTS" in allocation
+    assert "allocationRegisterCarrierClusterDefaults([39, 40]" in allocation
+    assert 'clusterGroup: "Freja", assignmentOrder: "10", startSeq: "600", endSeq: "652"' in allocation
+    assert 'asn: "09:00", arrive: "11:00", depart: "13:00", color: "#c4b5fd"' in allocation
+    assert "allocationCarrierClusterDefaults" in allocation
+    assert "allocationCarrierClusterIdentifier" in allocation
     assert "allocationMapLabelLines" in allocation
     assert 'document.createElementNS(ALLOCATION_MAP_NS, "tspan")' in allocation
+    assert "const contentRect = { x: loc.x, y: loc.y, w: loc.w, h: loc.h }" in allocation
+    assert "horizontal ? contentRect.w - 10 : contentRect.h - 10" in allocation
+    assert 'elements.mainText.setAttribute("transform", `rotate(-90, ${contentX}, ${contentY})`)' in allocation
     assert "allocation-map-label-edge" in allocation
     assert ".allocation-map-label-edge" in styles
     assert "paint-order: stroke" not in styles
@@ -853,6 +892,8 @@ def test_bearbeta_area_focus_filter_contract():
     assert ">Fullskärm</button>" not in allocation
     assert "Sök UTL, sändning eller transportör" in allocation
     assert "Över kapacitet" in allocation
+    assert "Lediga pallplatser" in allocation
+    assert "Lediga ytor" in allocation
     assert "Sändningsnr" in allocation
     assert "Transportör" in allocation
     assert "Okänd" in allocation
@@ -870,7 +911,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert "openAllocationCarrierClusterModal" in allocation
     assert "allocationCarrierClustersFromForecastTable" in allocation
     assert "generated: true" in allocation
-    # Kluster-popupen i demo-stil: drag-sortering, tidskolumner och färgväljare.
+    # Kluster-popupen: drag-sortering, tidskolumner och färgväljare.
     assert "allocation-cluster-advanced-table" in allocation
     assert "initAllocationCarrierClusterDrag" in allocation
     for advanced_header in (">ASN<", ">Arrive<", ">Depart<", ">Group<", ">Start seq<", ">End seq<", ">Color<"):

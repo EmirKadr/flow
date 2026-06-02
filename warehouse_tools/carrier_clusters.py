@@ -10,6 +10,38 @@ from typing import Any
 import pandas as pd
 
 
+CARRIER_CLUSTER_DEFAULTS: dict[str, dict[str, Any]] = {}
+
+
+def _register_carrier_cluster_defaults(carrier_nums: tuple[int, ...], **defaults: Any) -> None:
+    for carrier_num in carrier_nums:
+        CARRIER_CLUSTER_DEFAULTS[str(carrier_num)] = dict(defaults)
+
+
+_register_carrier_cluster_defaults((78, 79), clusterGroup="Schenker", assignmentOrder=0, startSeq=205, endSeq=356, color="#94a3b8")
+_register_carrier_cluster_defaults((76, 77), clusterGroup="Schenker", assignmentOrder=1, startSeq=205, endSeq=356, color="#60a5fa")
+_register_carrier_cluster_defaults((93, 94), clusterGroup="Schenker", assignmentOrder=2, startSeq=205, endSeq=356, color="#94a3b8")
+_register_carrier_cluster_defaults((74, 75), clusterGroup="Schenker", assignmentOrder=3, startSeq=205, endSeq=356, color="#fb923c")
+_register_carrier_cluster_defaults((82, 83), clusterGroup="Schenker", assignmentOrder=4, startSeq=205, endSeq=356, color="#34d399")
+_register_carrier_cluster_defaults((80, 81), clusterGroup="Schenker", assignmentOrder=5, startSeq=205, endSeq=356, color="#2dd4bf")
+_register_carrier_cluster_defaults((41,), assignmentOrder=6, startSeq=356, endSeq=205, color="#fcd34d")
+_register_carrier_cluster_defaults((61, 63, 69), assignmentOrder=7, startSeq=356, endSeq=205, color="#86efac")
+_register_carrier_cluster_defaults((85,), assignmentOrder=8, startSeq=356, endSeq=205, color="#f9a8d4")
+_register_carrier_cluster_defaults((42, 43), clusterGroup="Freja", assignmentOrder=9, startSeq=600, endSeq=652, color="#c4b5fd")
+_register_carrier_cluster_defaults((39, 40), clusterGroup="Freja", assignmentOrder=10, startSeq=600, endSeq=652, color="#c4b5fd")
+_register_carrier_cluster_defaults((44, 45), clusterGroup="Freja", assignmentOrder=11, startSeq=600, endSeq=652, color="#c4b5fd")
+_register_carrier_cluster_defaults((48, 49), clusterGroup="Freja", assignmentOrder=12, startSeq=600, endSeq=652, color="#c4b5fd")
+_register_carrier_cluster_defaults((46, 47), clusterGroup="Freja", assignmentOrder=13, startSeq=600, endSeq=652, color="#c4b5fd")
+_register_carrier_cluster_defaults((51,), assignmentOrder=14, startSeq=652, endSeq=600, color="#fdba74")
+_register_carrier_cluster_defaults((53,), clusterGroup="Sandahls Sundsvall", assignmentOrder=15, startSeq=205, endSeq=652, color="#f472b6")
+_register_carrier_cluster_defaults((55,), clusterGroup="Sandahls Sundsvall", assignmentOrder=16, startSeq=205, endSeq=652, color="#f472b6")
+_register_carrier_cluster_defaults((57,), clusterGroup="Sandahls Norrland", assignmentOrder=17, startSeq=600, endSeq=652, color="#fb7185")
+_register_carrier_cluster_defaults((59,), clusterGroup="Sandahls Norrland", assignmentOrder=18, startSeq=600, endSeq=652, color="#fda4af")
+_register_carrier_cluster_defaults((97,), assignmentOrder=19, startSeq=205, endSeq=652, color="#e879f9")
+_register_carrier_cluster_defaults((65, 67), assignmentOrder=20, startSeq=205, endSeq=652, color="#4ade80")
+_register_carrier_cluster_defaults((71, 73), assignmentOrder=21, startSeq=205, endSeq=652, color="#fbbf24")
+
+
 def text_value(value: object) -> str:
     if value is None:
         return ""
@@ -20,6 +52,12 @@ def text_value(value: object) -> str:
         pass
     text = str(value).strip()
     return "" if text.lower() in {"nan", "nat", "none", "null"} else text
+
+
+def identifier_value(value: object) -> str:
+    text = text_value(value)
+    match = re.fullmatch(r"(\d+)\.0+", text)
+    return match.group(1) if match else text
 
 
 def carrier_match_key(value: object) -> str:
@@ -61,6 +99,14 @@ def _first_value(row: dict[str, Any], *keys: str) -> object:
     return None
 
 
+def _carrier_cluster_defaults(carrier_num: str, alias: str, description: str) -> dict[str, Any]:
+    for value in (carrier_num, alias, description):
+        key = text_value(value)
+        if key in CARRIER_CLUSTER_DEFAULTS:
+            return CARRIER_CLUSTER_DEFAULTS[key]
+    return {}
+
+
 def _read_csv(path: Path) -> pd.DataFrame:
     data = Path(path).read_bytes()
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
@@ -79,7 +125,7 @@ def normalize_carrier_cluster_rows(rows: list[dict[str, Any]]) -> list[dict[str,
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
-        carrier_num = text_value(
+        carrier_num = identifier_value(
             _first_value(row, "carrierNum", "carrier_num", "agencyNum", "agency_num", "AGENCY_NUM")
         )
         description = text_value(
@@ -103,17 +149,18 @@ def normalize_carrier_cluster_rows(rows: list[dict[str, Any]]) -> list[dict[str,
         end_seq = _to_int(
             _first_value(row, "endSeq", "end_seq", "END_SEQ", "to", "utlTo")
         )
+        defaults = _carrier_cluster_defaults(carrier_num, alias, description)
         normalized.append(
             {
                 "id": text_value(row.get("id")) or carrier_num or f"row-{index + 1}",
                 "carrierNum": carrier_num,
                 "description": description,
                 "alias": alias,
-                "clusterGroup": cluster_group,
-                "assignmentOrder": assignment_order,
-                "startSeq": start_seq,
-                "endSeq": end_seq,
-                "color": text_value(_first_value(row, "color", "colour")),
+                "clusterGroup": cluster_group or defaults.get("clusterGroup", ""),
+                "assignmentOrder": assignment_order if assignment_order is not None else defaults.get("assignmentOrder"),
+                "startSeq": start_seq if start_seq is not None else defaults.get("startSeq"),
+                "endSeq": end_seq if end_seq is not None else defaults.get("endSeq"),
+                "color": text_value(_first_value(row, "color", "colour")) or text_value(defaults.get("color")),
             }
         )
     normalized.sort(
