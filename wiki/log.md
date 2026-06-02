@@ -7,6 +7,14 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-02] feature | Lanar person via hogerklick i Bemanning
+
+Bemanning har nu en hogerklicksmeny pa personnamn med `Skicka till <omrade>`.
+Valet skriver personens schemalagda timmar for aktuell dag till malomradets
+aktiva standardaktivitet via `POST /api/schedule/cells` med `action=loan_to_area`.
+Personens hemomrade andras inte; samma omradesfilter som tidigare gor att
+personen syns bade i hemomradet och i omradet som lanar in personen.
+
 ## [2026-06-02] fix | Ytkarta sparas per verksamhet
 
 Ytgenereringens ytkartsinstallningar laser och sparar nu `ytgenerering_map_layout`
@@ -685,3 +693,7 @@ Ytgenerering-kartans sidolista kopierar nu radens sandningsnummer till urklipp n
 ## [2026-06-01] fix | AllocationSettings ar separat behorighet
 
 `allocationSettings` raknas inte langre som generell lagerverktygsatkomst. Vanlig admin kan fortsatt ha settings-/matrisbehorighet via vyregler, men `require_allocation_tools_user` kraver fortfarande Lagerkontorist, Artikelplacerare eller Super User for de vanliga lagerverktygen.
+
+## [2026-06-02] feature | Personliga schema- och produktivitetsvyer
+
+Flow har nu rollen `person`, vyerna `Mitt schema` och `Min produktivitet` samt `/api/personal/...`-endpoints. En person kan logga in med sitt `noman`-namn; om anvandaren saknas skapas kontot automatiskt med `person_id`, verksamhet och hemomrade fran personregistret och skickas till forsta losenord. Personrollen ser bara sin egen vy, medan Super User kan valja person i rullista.

@@ -1,6 +1,6 @@
 #define MyAppName "flow"
 #ifndef MyAppVersion
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.4"
 #endif
 #define MyAppExeName "flow.exe"
 

@@ -94,6 +94,8 @@ BASE_WIKI_DOCS = [
 ]
 
 PAGE_WIKI_DOCS = {
+    "/mitt-schema.html": ["auth-roles-access.md", "ui-map.md"],
+    "/min-produktivitet.html": ["auth-roles-access.md", "ui-map.md"],
     "/index.html": ["bemanning-schedule.md"],
     "/": ["bemanning-schedule.md"],
     "/overblick.html": ["overview-page.md"],
@@ -113,6 +115,8 @@ PAGE_WIKI_DOCS = {
 }
 
 PAGE_VIEW_IDS = {
+    "/mitt-schema.html": "mySchedule",
+    "/min-produktivitet.html": "myProductivity",
     "/index.html": "schedule",
     "/": "schedule",
     "/overblick.html": "overview",
@@ -138,11 +142,14 @@ ROLE_LABELS = {
     "viewer": "Visare",
     "warehouse_clerk": "Lagerkontorist",
     "article_placer": "Artikelplacerare",
+    "person": "Person",
     SUPER_USER_ROLE: "Super User",
     LEGACY_SUPER_USER_ROLE: "Super User",
 }
 
 VIEW_LABELS = {
+    "mySchedule": "Mitt schema",
+    "myProductivity": "Min produktivitet",
     "schedule": "Bemanning",
     "overview": "Översikt",
     "productivity": "Produktivitet",
@@ -165,6 +172,8 @@ VIEW_LABELS = {
 }
 
 VIEW_CONTEXT_ORDER = [
+    "mySchedule",
+    "myProductivity",
     "schedule",
     "overview",
     "productivity",

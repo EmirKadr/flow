@@ -24,7 +24,7 @@ from ..business_scope import (
 )
 from ..deps import get_db, require_view_access
 from ..demo_session import DEMO_USERNAME
-from ..models import AppSetting, Area, AuditLog, PersonScheduleTemplate, ScheduleCell, User
+from ..models import AppSetting, Area, AuditLog, Person, PersonScheduleTemplate, ScheduleCell, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserImportRowsRequest, UserUpdate
 from ..security import hash_password
 from ..user_access import SUPER_USER_ROLE, can_admin, is_demo_user, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
@@ -82,6 +82,9 @@ ROLE_ALIASES = {
     "lasare": "viewer",
     "läsare": "viewer",
     "viewer": "viewer",
+    "person": "person",
+    "personal": "person",
+    "medarbetare": "person",
 }
 ROLE_SPLIT_CHARS = ",;/+&"
 
@@ -137,6 +140,7 @@ def _user_snapshot(user: User) -> dict:
         "roles": roles,
         "business_id": user.business_id,
         "area_id": user.area_id,
+        "person_id": user.person_id,
         "is_active": user.is_active,
         "must_change_password": bool(user.must_change_password or user.password_hash is None),
     }
@@ -240,7 +244,7 @@ def _parse_user_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -> 
                 UserImportError(
                     row=row_number,
                     username=username,
-                    error="Roll måste vara admin, arbetsledare, bemanningsansvarig, lagerkontorist, artikelplacerare eller visning. Flera roller kan separeras med komma.",
+                    error="Roll måste vara admin, arbetsledare, bemanningsansvarig, lagerkontorist, artikelplacerare, person eller visning. Flera roller kan separeras med komma.",
                 )
             )
             continue
@@ -278,6 +282,17 @@ def _validate_area_id(db: Session, area_id: int | None, user: User, business_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
     if business_id is not None and area.business_id != business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Område tillhör annan verksamhet")
+
+
+def _validate_person_link(db: Session, person_id: int | None, user: User, business_id: int | None) -> Person | None:
+    if person_id is None:
+        return None
+    person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
+    if person.is_active is not True:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
+    if business_id is not None and person.business_id != business_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Person tillhör annan verksamhet")
+    return person
 
 
 def build_user_import_template_excel() -> bytes:
@@ -465,17 +480,26 @@ def create_user(
     if _find_username_conflict(db, payload.username):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Användarnamnet används redan")
     area = db.get(Area, payload.area_id) if payload.area_id is not None else None
+    person = db.get(Person, payload.person_id) if payload.person_id is not None else None
     if payload.area_id is not None:
         assert_scoped_object(db, admin, area, detail="Område hittades inte")
         if area.is_active is not True:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
+    if payload.person_id is not None:
+        assert_scoped_object(db, admin, person, detail="Person hittades inte")
+        if person.is_active is not True:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
     business_id = resolve_write_business_id(
         db,
         admin,
         requested_business_id=payload.business_id,
-        related_ids=related_business_ids(area),
+        related_ids=related_business_ids(area, person),
     )
-    _validate_area_id(db, payload.area_id, admin, business_id)
+    area_id = payload.area_id
+    if area_id is None and person is not None:
+        area_id = person.home_area_id
+    _validate_area_id(db, area_id, admin, business_id)
+    _validate_person_link(db, payload.person_id, admin, business_id)
     roles = normalize_user_roles(payload.roles, payload.role)
     _guard_super_user_role_change(current_roles=[], new_roles=roles, admin=admin)
 
@@ -486,7 +510,8 @@ def create_user(
         role=primary_role(roles),
         roles=roles,
         business_id=business_id,
-        area_id=payload.area_id,
+        area_id=area_id,
+        person_id=payload.person_id,
         is_active=True,
         must_change_password=payload.password is None,
     )
@@ -531,21 +556,31 @@ def update_user(
 
     if payload.username is not None and _find_username_conflict(db, payload.username, exclude_user_id=user_id):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Användarnamnet används redan")
+    fields_set = payload.model_fields_set
     area = db.get(Area, payload.area_id) if payload.area_id is not None else None
+    person = db.get(Person, payload.person_id) if payload.person_id is not None else None
     if payload.area_id is not None:
         assert_scoped_object(db, admin, area, detail="Område hittades inte")
         if area.is_active is not True:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
+    if payload.person_id is not None:
+        assert_scoped_object(db, admin, person, detail="Person hittades inte")
+        if person.is_active is not True:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Person hittades inte")
     target_business_id = user.business_id
-    if payload.business_id is not None:
+    target_person = person if "person_id" in fields_set else (db.get(Person, user.person_id) if user.person_id is not None else None)
+    related_ids = related_business_ids(area, target_person)
+    if payload.business_id is not None or related_ids:
         target_business_id = resolve_write_business_id(
             db,
             admin,
             requested_business_id=payload.business_id,
-            related_ids=related_business_ids(area),
+            related_ids=related_ids,
         )
     if area is not None and area.business_id != target_business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Område tillhör annan verksamhet")
+
+    _validate_person_link(db, target_person.id if target_person is not None else None, admin, target_business_id)
 
     current_roles = user_roles(user)
     if payload.roles is not None or payload.role is not None:
@@ -568,12 +603,16 @@ def update_user(
     before = _user_snapshot(user)
     updates = payload.model_dump(exclude_unset=True, exclude={"password", "role", "roles"})
     updates.pop("is_active", None)
+    if target_business_id != user.business_id and ("person_id" in updates or "area_id" in updates):
+        updates["business_id"] = target_business_id
     if "business_id" in updates:
         updates["business_id"] = target_business_id
         if "area_id" not in updates and user.area_id is not None:
             current_area = db.get(Area, user.area_id)
             if current_area is not None and current_area.business_id != target_business_id:
                 updates["area_id"] = None
+    if "person_id" in updates and target_person is not None and "area_id" not in updates:
+        updates["area_id"] = target_person.home_area_id
     for key, value in updates.items():
         setattr(user, key, value)
     user.is_active = True

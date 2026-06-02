@@ -63,13 +63,20 @@ TEST_USERS: dict[str, tuple[str, str]] = {
     "leader": ("visual_leader", VISUAL_PASSWORD),
     "staffing": ("visual_staffing", VISUAL_PASSWORD),
     "viewer": ("visual_viewer", VISUAL_PASSWORD),
+    "person": ("visual_person", VISUAL_PASSWORD),
     "warehouse": ("visual_lager", VISUAL_PASSWORD),
     "article": ("visual_artikel", VISUAL_PASSWORD),
     "r3": ("visual_r3_admin", VISUAL_PASSWORD),
 }
 
+LOGIN_LANDING: dict[str, tuple[str, str]] = {
+    "person": ("/mitt-schema.html", "#personalApp .personal-header"),
+}
+
 PAGES: tuple[VisualPage, ...] = (
     VisualPage("login", "/login.html", "#login-form", ("public",)),
+    VisualPage("mitt-schema", "/mitt-schema.html", "#personalApp .personal-header", ("admin", "person")),
+    VisualPage("min-produktivitet", "/min-produktivitet.html", "#personalApp .personal-header", ("admin", "person")),
     VisualPage("flow", "/index.html", "#scheduleTable", ("admin", "leader", "staffing", "viewer", "r3")),
     VisualPage("oversikt", "/overblick.html", "#overviewTable", ("admin", "leader", "staffing", "viewer")),
     VisualPage("produktivitet", "/produktivitet.html", "#productivityStatus", ("admin",)),
@@ -281,8 +288,9 @@ def _login(page, base_url: str, role: str) -> None:
     page.fill("#username", username)
     page.fill("#password", password)
     page.click("button.primary")
-    page.wait_for_url("**/index.html", timeout=15000)
-    _wait_for_page(page, "#scheduleTable")
+    landing_path, wait_for = LOGIN_LANDING.get(role, ("/index.html", "#scheduleTable"))
+    page.wait_for_url(f"**{landing_path}", timeout=15000)
+    _wait_for_page(page, wait_for)
 
 
 def _apply_state(page, state: VisualState) -> None:

@@ -25,6 +25,7 @@ from .routers import (
     overview,
     person_schedules,
     persons,
+    personal,
     productivity,
     public,
     schedule,
@@ -32,7 +33,7 @@ from .routers import (
     users,
 )
 
-app = FastAPI(title="flow", version="0.1.3")
+app = FastAPI(title="flow", version="0.1.4")
 
 app.add_middleware(
     SessionMiddleware,
@@ -128,6 +129,7 @@ app.include_router(activities.router)
 app.include_router(audit_logs.router)
 app.include_router(persons.router)
 app.include_router(person_schedules.router)
+app.include_router(personal.router)
 app.include_router(schedule.router)
 app.include_router(bulk.router)
 app.include_router(coredata.router)

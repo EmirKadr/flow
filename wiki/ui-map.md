@@ -1,7 +1,7 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
@@ -15,7 +15,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 
 | Kontroll | Var | Vem ser/far | Vad hander | Vanliga fel/fragor |
 | --- | --- | --- | --- | --- |
-| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Navigerar till Bemanning, Oversikt, Produktivitet, Hamta data, Bearbeta, Dela, Personer, Aktiviteter, Historik, Anvandare | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
+| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Navigerar till Mitt schema, Min produktivitet, Bemanning, Oversikt, Produktivitet, Hamta data, Bearbeta, Dela, Personer, Aktiviteter, Historik, Anvandare | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
 | Hamburgare | Sidebar topp | Alla inloggade | Faller ihop/oppnar sidebar och sparar `sidebar-collapsed` i `localStorage` | Om menyn ser "for liten" ut ar den troligen hopfallen. |
 | Appzoom | Sidebar topp, forstoringsglas med minus/plus | Alla inloggade | Zoomar hela appytan ut/in. Reset finns pa `Ctrl+0`; zoom kan ocksa andras med `Ctrl+-`, `Ctrl++` och `Ctrl+scroll`, och sparas lokalt i `flow-app-zoom`. | Om tabeller eller text kanns for stora/sma kan anvandaren justera utan webblasarmenyn. |
 | Redigera meny | Sidebar topp, pennikon | Anvandare med edit pa `sidebarLayout` | Oppnar modal dar menyordning, rubriker och undervyer kan andras for aktuell verksamhet | Andringen galler aktuell verksamhet efter sparning. |
@@ -34,6 +34,8 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | --- | --- | --- | --- |
 | Login | `login.html` | Anvandarnamn, losenord, Logga in | [Roller och behorighet](auth-roles-access.md) |
 | Skapa losenord | `set-password.html` | Nytt losenord, Bekrafta, Spara losenord | [Roller och behorighet](auth-roles-access.md) |
+| Mitt schema | `mitt-schema.html` | Veckonavigering, personval for Super User, dagens status, just nu, veckans dagar och aktiviteter | [Roller och behorighet](auth-roles-access.md) |
+| Min produktivitet | `min-produktivitet.html` | Datumnavigering, personval for Super User, dagens aktivitetssummering, pass och veckosummering | [Roller och behorighet](auth-roles-access.md) |
 | Bemanning | `index.html` | Ar, vecka, dag, datum, Kopiera dag, Rensa dag, undo/redo, celler, tips, kalkyl | [Bemanning](bemanning-schedule.md) |
 | Oversikt | `overblick.html` | Vy vecka/manad, prev/next, ar, vecka/manad, undo/redo, dagceller | [Oversikt](overview-page.md) |
 | Personer | `personer.html` | Ny person, Flera nya personer, importmall, importera Excel, hjalp, filter/sortering, Schema, Ta bort | [Personer](persons.md) |

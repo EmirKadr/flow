@@ -143,6 +143,28 @@ const ASSISTANT_CHAT_ICON = `
   </svg>
 `;
 
+const MY_SCHEDULE_ICON = `
+  <svg class="sidebar-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M8 2v3"></path>
+    <path d="M16 2v3"></path>
+    <path d="M4 8h16"></path>
+    <rect x="3" y="4" width="18" height="17" rx="3"></rect>
+    <circle cx="9" cy="13" r="1.7"></circle>
+    <path d="M13 13h4"></path>
+    <path d="M8 17h8"></path>
+  </svg>
+`;
+
+const MY_PRODUCTIVITY_ICON = `
+  <svg class="sidebar-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="7.5" cy="7" r="3"></circle>
+    <path d="M3.5 20c.5-3 2-5 4-5s3.5 2 4 5"></path>
+    <path d="M14 19V9"></path>
+    <path d="M18 19v-6"></path>
+    <path d="M22 19v-9"></path>
+  </svg>
+`;
+
 const ASSISTANT_CHAT_STORAGE_KEY = "flow-assistant-chat";
 const ASSISTANT_CHAT_OPEN_KEY = "flow-assistant-chat-open";
 const ASSISTANT_CHAT_COUNT_KEY = "flow-assistant-chat-count";
@@ -165,6 +187,8 @@ const SIDEBAR_MOVE_DOWN_ICON = `
 `;
 
 const SIDEBAR_DEFAULT_LAYOUT = [
+  { id: "mySchedule" },
+  { id: "myProductivity" },
   { id: "schedule" },
   { id: "overview" },
   { id: "productivity" },
@@ -186,6 +210,8 @@ const VIEW_ID_ALIASES = {
 };
 
 const ROLE_VIEW_IDS = [
+  "mySchedule",
+  "myProductivity",
   "schedule",
   "overview",
   "productivity",
@@ -219,10 +245,12 @@ const ROLE_VIEW_ROLES = [
   { value: "admin", label: "Administratör" },
   { value: "warehouse_clerk", label: "Lagerkontorist" },
   { value: "article_placer", label: "Artikelplacerare" },
+  { value: "person", label: "Person" },
   { value: "viewer", label: "Visning" },
 ];
 const ROLE_VIEW_LEVELS = ["none", "view", "edit"];
 const ROLE_VIEW_LEVEL_RANK = { none: 0, view: 1, edit: 2 };
+const PERSONAL_VIEW_IDS = new Set(["mySchedule", "myProductivity"]);
 const ROLE_VIEW_DEFAULT_ACCESS = {
   leader: {
     schedule: "edit",
@@ -280,6 +308,10 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
   viewer: {
     schedule: "view",
     overview: "view",
+  },
+  person: {
+    mySchedule: "view",
+    myProductivity: "view",
   },
 };
 
@@ -1394,6 +1426,9 @@ function roleViewAccessLevel(user, viewId) {
   if (user?.is_super_user) return "edit";
   const access = roleViewAccessForRender();
   const normalizedViewId = normalizeViewId(viewId);
+  if (PERSONAL_VIEW_IDS.has(normalizedViewId)) {
+    return userRoles(user).includes("person") ? "view" : "none";
+  }
   let best = "none";
   const roles = userRoles(user);
   if (user?.is_demo && !roles.includes("demo")) roles.push("demo");
@@ -1452,6 +1487,22 @@ function sidebarDefaultLayout() {
 
 function sidebarPageDefinitions(user, activePage) {
   return [
+    {
+      id: "mySchedule",
+      label: "Mitt schema",
+      href: "/mitt-schema.html",
+      iconHtml: MY_SCHEDULE_ICON,
+      visible: canViewPage(user, "mySchedule"),
+      active: activePage === "mySchedule",
+    },
+    {
+      id: "myProductivity",
+      label: "Min produktivitet",
+      href: "/min-produktivitet.html",
+      iconHtml: MY_PRODUCTIVITY_ICON,
+      visible: canViewPage(user, "myProductivity"),
+      active: activePage === "myProductivity",
+    },
     {
       id: "schedule",
       label: "Bemanning",
@@ -3181,6 +3232,18 @@ function enqueueVisiblePagePrefetches(user, activePage) {
 
   enqueueBackgroundPrefetch("/api/settings/sidebar", 5 * 60 * 1000);
   enqueueBackgroundPrefetch("/api/settings/role-access", 5 * 60 * 1000);
+
+  if (canViewPage(user, "mySchedule") || canViewPage(user, "myProductivity")) {
+    enqueueBackgroundPrefetch("/api/personal/persons", 30 * 1000);
+  }
+  if (canViewPage(user, "mySchedule")) {
+    enqueueBackgroundPrefetch(`/api/personal/schedule?year=${year}&week=${week}`, 25 * 1000);
+  }
+  if (canViewPage(user, "myProductivity")) {
+    const today = new Date();
+    const dateValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    enqueueBackgroundPrefetch(`/api/personal/productivity?date=${dateValue}`, 25 * 1000);
+  }
 
   if (canViewPage(user, "schedule")) {
     enqueueBackgroundPrefetch("/api/areas");

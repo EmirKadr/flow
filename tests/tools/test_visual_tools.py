@@ -20,6 +20,8 @@ def test_visual_smoke_covers_expected_routes():
 
     assert set(pages_by_name) == {
         "login",
+        "mitt-schema",
+        "min-produktivitet",
         "flow",
         "oversikt",
         "produktivitet",
@@ -33,6 +35,8 @@ def test_visual_smoke_covers_expected_routes():
         "bearbeta",
         "dela",
     }
+    assert pages_by_name["mitt-schema"].roles == ("admin", "person")
+    assert pages_by_name["min-produktivitet"].roles == ("admin", "person")
     assert pages_by_name["flow"].roles == ("admin", "leader", "staffing", "viewer", "r3")
     assert pages_by_name["personer"].roles == ("admin", "leader", "staffing")
     assert pages_by_name["produktivitet"].roles == ("admin",)
@@ -754,6 +758,13 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "setScheduleAllCache(baseKey, allData)" in schedule
     assert "setScheduleAreaCache(scheduleAreaCacheKey(requestedAreaId, baseKey), cachedData)" in schedule
     assert "applyScheduleData(cachedData)" in schedule
+    assert "function openScheduleLoanMenu" in schedule
+    assert "function scheduleLoanTargetOptions" in schedule
+    assert "async function sendPersonToArea" in schedule
+    assert 'action: "loan_to_area"' in schedule
+    assert "Skicka till" in schedule
+    assert "schedule-loan-enabled" in schedule
+    assert ".schedule-loan-menu" in styles
     assert "const overviewAreaCache = new Map();" in overview
     assert "function overviewAreaCacheKey" in overview
     assert "function renderOverviewFromCache" in overview

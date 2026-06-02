@@ -676,6 +676,59 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
 .area-focus-menu-empty.error {
   color: var(--danger);
 }
+.schedule-loan-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 230px;
+  max-width: min(340px, calc(100vw - 16px));
+  max-height: min(430px, calc(100vh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.schedule-loan-menu-title {
+  padding: 7px 9px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-loan-menu button {
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 9px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  text-align: left;
+}
+.schedule-loan-menu button:hover {
+  background: var(--bg-2);
+  border-color: transparent;
+}
+.schedule-loan-menu button small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .log-sidebar {
   position: fixed;
   inset: 0 0 0 auto;
@@ -1987,6 +2040,9 @@ table.matrix th.name, table.matrix td.name {
 }
 table.matrix td.name { background: var(--surface); font-size: 12px; }
 table.matrix tr:hover td.name { background: #fafbfd; }
+table.matrix td.name.schedule-loan-enabled {
+  cursor: context-menu;
+}
 table.matrix td.name.person-order-draggable,
 table.overview td.name.person-order-draggable {
   cursor: grab;
@@ -5253,5 +5309,345 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
   50% {
     outline-color: #ef4444;
     box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+  }
+}
+
+/* Personal views */
+.personal-page {
+  width: min(1180px, calc(100vw - var(--sidebar-w) - 40px));
+  margin: 20px auto 48px;
+  padding: 0 6px;
+}
+
+.personal-loading,
+.personal-error {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: var(--shadow-1);
+}
+
+.personal-error h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.personal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  padding: 18px 0 14px;
+}
+
+.personal-header p {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.personal-header h1 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.08;
+}
+
+.personal-header span {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.personal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.personal-person-chip,
+.personal-person-select {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-weight: 700;
+}
+
+.personal-person-select span {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.personal-person-select select,
+.personal-date-controls input {
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 7px 9px;
+  min-height: 34px;
+}
+
+.personal-date-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.personal-date-controls button,
+.personal-error button {
+  min-height: 36px;
+  border-radius: 7px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  padding: 7px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.personal-date-controls button:hover,
+.personal-error button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.personal-week-label {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.personal-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.personal-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: var(--shadow-1);
+  min-height: 92px;
+}
+
+.personal-stat span,
+.personal-stat small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-stat strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.personal-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.personal-day-card,
+.personal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: var(--shadow-1);
+}
+
+.personal-day-card.is-today {
+  border-color: rgba(79, 70, 229, .55);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, .12);
+}
+
+.personal-day-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.personal-day-card header span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.personal-day-card h2,
+.personal-panel h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.personal-day-card header strong {
+  display: block;
+  text-align: right;
+  font-size: 17px;
+}
+
+.personal-day-card header small {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-align: right;
+}
+
+.personal-day-date {
+  margin: 8px 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-timeline {
+  display: grid;
+  gap: 7px;
+}
+
+.personal-segment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--segment-color);
+  border-radius: 7px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--segment-color) 12%, var(--surface));
+}
+
+.personal-segment-ledig {
+  opacity: .76;
+  background: var(--surface-2);
+}
+
+.personal-segment strong,
+.personal-segment span,
+.personal-segment small {
+  display: block;
+}
+
+.personal-segment strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.personal-segment span,
+.personal-segment small,
+.personal-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-muted {
+  margin: 0;
+  padding: 8px 0;
+}
+
+.personal-activity-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.personal-activity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-left: 4px solid var(--activity-color);
+  background: var(--surface-2);
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-productivity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.personal-panel h2 {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 1180px) {
+  .personal-page {
+    width: min(100%, calc(100vw - var(--sidebar-w) - 24px));
+  }
+
+  .personal-week {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .personal-page {
+    width: 100%;
+    margin: 10px 0 34px;
+    padding: 0 12px 76px;
+  }
+
+  .personal-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    padding-top: 10px;
+  }
+
+  .personal-header h1 {
+    font-size: 25px;
+  }
+
+  .personal-toolbar,
+  .personal-date-controls,
+  .personal-person-select {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .personal-person-chip,
+  .personal-person-select,
+  .personal-person-select select,
+  .personal-date-controls input {
+    width: 100%;
+  }
+
+  .personal-date-controls button {
+    flex: 1 1 0;
+  }
+
+  .personal-summary,
+  .personal-week,
+  .personal-productivity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .personal-stat {
+    min-height: 0;
   }
 }

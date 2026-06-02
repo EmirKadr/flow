@@ -1,7 +1,7 @@
 ---
 title: Roller och behorighet
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [auth, roller, behorighet]
 ---
 
@@ -13,11 +13,13 @@ Kort svar: inloggning ar sessionsbaserad. Roller styr vad anvandaren ser och far
 
 1. Anvandaren skickar anvandarnamn och losenord till `/api/auth/login`.
 2. Backend accepterar bara aktiv anvandare.
-3. Om anvandaren saknar/far satt forsta losenord markeras `must_change_password`.
-4. Klienten skickar anvandaren till `set-password.html` om losenord maste skapas.
-5. Varje skyddad sida anropar `/api/auth/me` via `initPage`.
-6. `/api/auth/me` returnerar aven `business_id`, verksamhetskod, verksamhetsnamn och Super User-status.
-7. `401` leder till `login.html`; `403 password_setup_required` leder till `set-password.html`.
+3. Om anvandarnamnet saknas som anvandare men matchar en aktiv persons `noman`, skapas ett aktivt `person`-konto automatiskt med `person_id`, verksamhet och hemomrade fran personen.
+4. Auto-skapade personkonton loggar in forsta gangen med tomt losenord och skickas sedan till `set-password.html`.
+5. Om anvandaren saknar/far satt forsta losenord markeras `must_change_password`.
+6. Klienten skickar anvandaren till `set-password.html` om losenord maste skapas.
+7. Varje skyddad sida anropar `/api/auth/me` via `initPage`.
+8. `/api/auth/me` returnerar aven `business_id`, verksamhetskod, verksamhetsnamn, `person_id` och Super User-status.
+9. `401` leder till `login.html`; `403 password_setup_required` leder till `set-password.html`.
 
 ## Verksamhetsscope
 
@@ -38,6 +40,7 @@ Kort svar: inloggning ar sessionsbaserad. Roller styr vad anvandaren ser och far
 | `super_user` | Super User | Kravs for historik, Meta, verksamheter och vissa kodandringar; kan alltid redigera vyer |
 | `warehouse_clerk` | Lagerkontorist | Lagerverktyg, framfor allt uppladdning och Dela |
 | `article_placer` | Artikelplacerare | Lagerverktyg med liknande sjalvservicebehov |
+| `person` | Person | Egenvy for Mitt schema och Min produktivitet |
 | `viewer` | Visning | Laslage for Bemanning/Oversikt |
 
 Utöver rollerna finns det fasta `demo`-kontot (username = `demo`, admin-roll mot Stigamo) som triggar [demo-laget](demo-mode.md): en privat SQLite-snapshot per inloggning som städas vid utloggning. `is_demo`-flaggan i `UserOut`/`UserAdminOut` styr DEMO-bannern, guidad rundtur och låsning av kontot i Användare-vyn.
@@ -53,6 +56,7 @@ Apphjalpens LLM-prompt far en begransad supportkontext om inloggad anvandare: ro
 Vyer som kan styras:
 
 - `schedule`, `overview`, `productivity`, `dataFetch`
+- `mySchedule`, `myProductivity`
 - `allocationUploads`, `allocationProcess`, `allocationProcessMatrix`, `allocationSplit`
 - `persons`, `personSortOrder`, `personImport`
 - `activities`, `activityImport`, `areas`
@@ -79,6 +83,7 @@ Om anvandaren bara har `view`:
 - Bearbeta saknas eller nekas: rollen saknar `allocationProcess=edit` i vyatkomst. Lagerroller har som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
 - Matris-knappen i Bearbeta saknas: rollen saknar `allocationProcessMatrix=view`. Knappen visas lasande med `view` och kan spara forst med `allocationProcessMatrix=edit`; admin har `edit` som standard och Super User har alltid full atkomst.
 - Installningar saknas eller Ytgenereringens ytkarta inte kan sparas: rollen saknar `allocationSettings=view` eller `allocationSettings=edit`. Admin har `edit` som standard och Super User har alltid full atkomst.
+- Mitt schema eller Min produktivitet saknas: kontot saknar rollen `person` och ar inte Super User. Person-konton kan bara se sin egen `person_id`; Super User kan valja person i vyernas rullista.
 
 ## Kallor
 

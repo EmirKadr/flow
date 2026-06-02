@@ -58,6 +58,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE app_settings ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if user_columns and "area_id" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN area_id INTEGER REFERENCES areas(id)")
+        if user_columns and "person_id" not in user_columns:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN person_id INTEGER REFERENCES persons(id)")
         if user_columns and "roles" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN roles JSON")
             connection.exec_driver_sql("UPDATE users SET roles = json_array(role) WHERE roles IS NULL")

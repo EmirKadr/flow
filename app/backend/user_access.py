@@ -12,12 +12,14 @@ VIEWER_ROLE = "viewer"
 STAFFING_MANAGER_ROLE = "staffing_manager"
 WAREHOUSE_CLERK_ROLE = "warehouse_clerk"
 ARTICLE_PLACER_ROLE = "article_placer"
+PERSON_ROLE = "person"
 ADMIN_ROLES = {"admin", SUPER_USER_ROLE, LEGACY_SUPER_USER_ROLE}
 EDITOR_ROLES = {"leader", STAFFING_MANAGER_ROLE, *ADMIN_ROLES}
 PERSON_SORT_ORDER_ROLES = {STAFFING_MANAGER_ROLE, "admin"}
 ALLOCATION_TOOL_ROLES = {WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
 PLANNING_VIEW_ROLES = {VIEWER_ROLE, *EDITOR_ROLES}
-BASE_ROLES = {"admin", "leader", STAFFING_MANAGER_ROLE, VIEWER_ROLE, WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE}
+PERSONAL_VIEW_IDS = {"mySchedule", "myProductivity"}
+BASE_ROLES = {"admin", "leader", STAFFING_MANAGER_ROLE, VIEWER_ROLE, WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE, PERSON_ROLE}
 ROLE_VIEW_ROLES = {*BASE_ROLES, DEMO_ROLE}
 ASSIGNABLE_ROLES = {*BASE_ROLES, SUPER_USER_ROLE}
 ROLE_ACCESS_LEVEL_RANK = {"none": 0, "view": 1, "edit": 2}
@@ -26,6 +28,8 @@ ROLE_VIEW_ID_ALIASES = {
     "stallenImport": "activityImport",
 }
 ROLE_VIEW_IDS = {
+    "mySchedule",
+    "myProductivity",
     "schedule",
     "overview",
     "productivity",
@@ -108,6 +112,10 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "schedule": "view",
         "overview": "view",
     },
+    PERSON_ROLE: {
+        "mySchedule": "view",
+        "myProductivity": "view",
+    },
 }
 
 
@@ -122,7 +130,7 @@ def user_roles(user: User) -> list[str]:
 
 
 def primary_role(roles: list[str]) -> str:
-    for candidate in (SUPER_USER_ROLE, "admin", STAFFING_MANAGER_ROLE, "leader", WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE, VIEWER_ROLE):
+    for candidate in (SUPER_USER_ROLE, "admin", STAFFING_MANAGER_ROLE, "leader", WAREHOUSE_CLERK_ROLE, ARTICLE_PLACER_ROLE, VIEWER_ROLE, PERSON_ROLE):
         if candidate in roles:
             return candidate
     return roles[0] if roles else "leader"
@@ -215,6 +223,8 @@ def role_view_access_level(user: User, access: dict | None, view_id: str) -> str
     if is_super_user(user):
         return "edit"
     view_key = normalize_role_view_id(view_id)
+    if view_key in PERSONAL_VIEW_IDS:
+        return "view" if PERSON_ROLE in user_roles(user) else "none"
     normalized = normalize_role_view_access(access)
     best = "none"
     roles = user_roles(user)
@@ -231,6 +241,10 @@ def can_access_view(user: User, access: dict | None, view_id: str, min_level: st
     wanted = ROLE_ACCESS_LEVEL_RANK.get(min_level, ROLE_ACCESS_LEVEL_RANK["view"])
     actual = ROLE_ACCESS_LEVEL_RANK.get(role_view_access_level(user, access, view_id), 0)
     return actual >= wanted
+
+
+def can_view_personal_pages(user: User) -> bool:
+    return is_super_user(user) or PERSON_ROLE in user_roles(user)
 
 
 def can_use_allocation_tools(user: User, access: dict | None = None) -> bool:
@@ -263,6 +277,7 @@ def user_out(user: User) -> UserOut:
         business_code=getattr(business, "code", None),
         business_name=getattr(business, "name", None),
         area_id=user.area_id,
+        person_id=user.person_id,
         must_change_password=user_needs_password_setup(user),
         is_super_user=is_super_user(user),
         is_demo=is_demo_user(user),
@@ -281,6 +296,7 @@ def user_admin_out(user: User) -> UserAdminOut:
         business_code=getattr(business, "code", None),
         business_name=getattr(business, "name", None),
         area_id=user.area_id,
+        person_id=user.person_id,
         is_active=user.is_active,
         must_change_password=user_needs_password_setup(user),
         created_at=user.created_at,

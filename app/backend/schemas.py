@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer", "super_user"]
+UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer", "person", "super_user"]
 
 
 class BusinessOut(BaseModel):
@@ -398,6 +398,7 @@ class UserOut(BaseModel):
     business_code: str | None = None
     business_name: str | None = None
     area_id: int | None = None
+    person_id: int | None = None
     must_change_password: bool = False
     is_super_user: bool = False
     is_demo: bool = False
@@ -414,6 +415,7 @@ class UserAdminOut(BaseModel):
     business_code: str | None = None
     business_name: str | None = None
     area_id: int | None = None
+    person_id: int | None = None
     is_active: bool
     must_change_password: bool = False
     created_at: datetime
@@ -429,6 +431,7 @@ class UserCreate(BaseModel):
     roles: list[UserRole] | None = None
     business_id: int | None = None
     area_id: int | None = None
+    person_id: int | None = None
     is_active: bool = True
 
     @field_validator("username")
@@ -474,6 +477,7 @@ class UserUpdate(BaseModel):
     roles: list[UserRole] | None = None
     business_id: int | None = None
     area_id: int | None = None
+    person_id: int | None = None
     is_active: bool | None = None
 
     @field_validator("username")
@@ -645,3 +649,74 @@ class RoleViewAccessOut(BaseModel):
 
 class RoleViewAccessUpdate(BaseModel):
     access: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+
+class PersonalPersonOut(BaseModel):
+    id: int
+    name: str
+    noman: str | None = None
+    business_id: int | None = None
+    business_name: str | None = None
+    home_area_id: int | None = None
+    home_area: str | None = None
+
+
+class PersonalActivityTotal(BaseModel):
+    activity_id: int | None = None
+    label: str
+    color: str | None = None
+    category: str | None = None
+    minutes: int
+    hours: float
+
+
+class PersonalScheduleSegment(BaseModel):
+    hour: int
+    minute_start: int
+    minute_end: int
+    start: str
+    end: str
+    label: str
+    activity_id: int | None = None
+    color: str | None = None
+    category: str | None = None
+    source: str
+    minutes: int
+
+
+class PersonalScheduleDay(BaseModel):
+    date: str
+    weekday: int
+    weekday_label: str
+    status: str
+    total_minutes: int
+    work_minutes: int
+    absence_minutes: int
+    segments: list[PersonalScheduleSegment] = Field(default_factory=list)
+    activities: list[PersonalActivityTotal] = Field(default_factory=list)
+
+
+class PersonalWeekSummary(BaseModel):
+    total_minutes: int
+    work_minutes: int
+    absence_minutes: int
+    scheduled_days: int
+    activities: list[PersonalActivityTotal] = Field(default_factory=list)
+
+
+class PersonalScheduleOut(BaseModel):
+    year: int
+    week: int
+    person: PersonalPersonOut
+    days: list[PersonalScheduleDay]
+    summary: PersonalWeekSummary
+
+
+class PersonalProductivityOut(BaseModel):
+    date: str
+    year: int
+    week: int
+    weekday: int
+    person: PersonalPersonOut
+    day: PersonalScheduleDay
+    summary: PersonalWeekSummary

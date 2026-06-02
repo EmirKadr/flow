@@ -134,6 +134,9 @@ verksamheter.
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |
 | `schedule.fill_from_left` | `POST` | `/api/schedule/fill-from-left` | Fyll från vänster |
+| `personal.persons` | `GET` | `/api/personal/persons` | Personval för personliga vyer |
+| `personal.schedule` | `GET` | `/api/personal/schedule` | Mitt schema för en person |
+| `personal.productivity` | `GET` | `/api/personal/productivity` | Min produktivitet för en person |
 | `overview.week` | `GET` | `/api/overview` | Översikt vecka |
 | `overview.month` | `GET` | `/api/overview/month` | Översikt månad |
 | `overview.revision` | `GET` | `/api/overview/revision` | Översikt revision |

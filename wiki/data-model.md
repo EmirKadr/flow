@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [databas, modeller]
 ---
 
@@ -14,7 +14,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | Tabell | Modell | Syfte | Viktiga falt |
 | --- | --- | --- | --- |
 | `businesses` | `Business` | Verksamheter/isoleringsniva | `code`, `name`, `sort_order`, `is_active` |
-| `users` | `User` | Inloggning, roller, verksamhet och omrade | `business_id`, `username`, `password_hash`, `role`, `roles`, `area_id`, `is_active`, `must_change_password` |
+| `users` | `User` | Inloggning, roller, verksamhet, omrade och eventuell personkoppling | `business_id`, `username`, `password_hash`, `role`, `roles`, `area_id`, `person_id`, `is_active`, `must_change_password` |
 | `areas` | `Area` | Omraden/stallen inom en verksamhet | `business_id`, `code`, `name`, `sort_order`, `is_active` |
 | `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
 | `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `color`, `category`, `sort_order`, `is_active` |
@@ -34,6 +34,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - Icke-Super Users filtreras alltid till sin egen `business_id`.
 - Super User kan se allt med `∞`, eller filtrera pa `business_id`.
 - Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
+- Personkonton kan ha `person_id` till `persons`. Auto-skapade `person`-anvandare far `person_id`, `business_id` och `area_id` fran matchande `Person.noman`.
 - Schemaceller pekar fortfarande pa person och aktivitet, men writes validerar att person och aktivitet tillhor samma verksamhet.
 
 ## Schemaceller

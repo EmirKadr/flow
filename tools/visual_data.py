@@ -91,6 +91,7 @@ def _ensure_person(
     area: Area,
     home_activity: Activity,
     sort_order: int,
+    noman: str | None = None,
 ) -> Person:
     person = db.scalar(select(Person).where(Person.name == name))
     if person is None:
@@ -99,6 +100,7 @@ def _ensure_person(
     person.business_id = area.business_id
     person.home_area_id = area.id
     person.home_activity_id = home_activity.id
+    person.noman = noman
     person.sort_order = sort_order
     person.is_active = True
     return person
@@ -272,7 +274,7 @@ def seed_visual_data() -> None:
         r3_ledig = _activity_by_code(db, "LEDIG", r3)
 
         people = [
-            _ensure_person(db, name="Visual GG Plock", area=gg, home_activity=gg_plock, sort_order=1),
+            _ensure_person(db, name="Visual GG Plock", area=gg, home_activity=gg_plock, sort_order=1, noman="visual_person"),
             _ensure_person(db, name="Visual GG VM", area=gg, home_activity=gg_vm, sort_order=2),
             _ensure_person(db, name="Visual GG OP", area=gg, home_activity=gg_op, sort_order=3),
             _ensure_person(db, name="Visual MG VM", area=mg, home_activity=mg_vm, sort_order=4),
@@ -281,6 +283,14 @@ def seed_visual_data() -> None:
             _ensure_person(db, name="Visual R3 Person", area=r3_area, home_activity=r3_ledig, sort_order=1),
         ]
         db.flush()
+        personal_user = _ensure_user(
+            db,
+            username="visual_person",
+            display_name="Visual Person",
+            role="person",
+            area=gg,
+        )
+        personal_user.person_id = people[0].id
 
         for person in people:
             _set_template(db, person, r3_admin if person.business_id == r3.id else admin)

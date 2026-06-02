@@ -40,6 +40,7 @@ class User(Base):
     roles: Mapped[list[str] | None] = mapped_column(JsonField)
     business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

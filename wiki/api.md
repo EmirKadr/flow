@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [api, backend]
 ---
 
@@ -43,6 +43,9 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `POST /api/overview/day` - satt en hel dag.
 - `POST /api/overview/days/bulk` - satt flera dagar via drag.
 - `PUT /api/persons/sort-order` - sparar ny personordning nar personnamn dras i Bemanning eller Oversikt. Vanliga admin/bemanningsansvariga sorterar eget omrade; Super User och demo kan sortera alla synliga personer med `personSortOrder=edit`.
+- `GET /api/personal/persons` - personval for Mitt schema/Min produktivitet. Super User far alla aktiva personer; rollen `person` far bara sin egen kopplade person.
+- `GET /api/personal/schedule` - veckopayload for en persons schema med dagar, segment, status och aktivitetssummering. `person_id` accepteras bara for Super User.
+- `GET /api/personal/productivity` - dagsvy for en persons produktivitet/schematid baserad pa samma personliga schemapayload. `date` valjer dag.
 
 ## Register och settings
 

@@ -1,24 +1,83 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import demo_session
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
-from ..models import User
+from ..models import Person, User
 from ..schemas import LoginRequest, PasswordSetRequest, UserOut
 from ..security import hash_password, verify_password
-from ..user_access import is_demo_user, user_needs_password_setup, user_out
+from ..user_access import PERSON_ROLE, is_demo_user, user_needs_password_setup, user_out
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _auto_create_person_user(db: Session, username: str) -> User | None:
+    cleaned = username.strip()
+    if not cleaned:
+        return None
+    matches = (
+        db.query(Person)
+        .filter(Person.is_active.is_(True), func.lower(func.trim(Person.noman)) == cleaned.lower())
+        .order_by(Person.id.asc())
+        .all()
+    )
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Flera personer har samma Noman-namn. Be en administratör rätta personregistret.",
+        )
+
+    person = matches[0]
+    user = User(
+        username=cleaned,
+        password_hash=None,
+        display_name=person.name,
+        role=PERSON_ROLE,
+        roles=[PERSON_ROLE],
+        business_id=person.business_id,
+        area_id=person.home_area_id,
+        person_id=person.id,
+        is_active=True,
+        must_change_password=True,
+    )
+    db.add(user)
+    db.flush()
+    audit_log(
+        db,
+        entity_type="user",
+        entity_id=user.id,
+        action="auto_create_person_user",
+        old_value=None,
+        new_value={
+            "id": user.id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "roles": user.roles,
+            "business_id": user.business_id,
+            "area_id": user.area_id,
+            "person_id": user.person_id,
+        },
+        user_id=None,
+        business_id=user.business_id,
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @router.post("/login", response_model=UserOut)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> UserOut:
     user = db.query(User).filter_by(username=payload.username).one_or_none()
+    if user is None:
+        user = _auto_create_person_user(db, payload.username)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Felaktigt användarnamn eller lösenord")
     if user.password_hash is None:

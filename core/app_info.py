@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 
 
 APP_NAME = "flow"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 APP_TITLE = f"{APP_NAME} {APP_VERSION}"
 GITHUB_REPO = "EmirKadr/flow"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"

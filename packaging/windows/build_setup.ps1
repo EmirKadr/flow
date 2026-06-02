@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.3"
+    [string]$Version = "0.1.4"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,7 +29,7 @@ $iscc = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -F
 
 if (-not $iscc) {
     Write-Host "Inno Setup compiler not found. Skipping Setup.exe."
-    Write-Host "Installera Inno Setup 6 och kor build_windows.bat igen for att skapa release\flow-0.1.3-Setup.exe."
+    Write-Host "Installera Inno Setup 6 och kor build_windows.bat igen for att skapa release\flow-0.1.4-Setup.exe."
     exit 0
 }
 

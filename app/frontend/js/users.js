@@ -13,6 +13,7 @@ const ROLE_OPTIONS = [
   { value: "admin", label: "Administratör" },
   { value: "warehouse_clerk", label: "Lagerkontorist" },
   { value: "article_placer", label: "Artikelplacerare" },
+  { value: "person", label: "Person" },
   { value: "viewer", label: "Visning" },
 ];
 const SUPER_USER_ROLE_OPTION = { value: "super_user", label: "Super User" };
@@ -25,6 +26,8 @@ const ROLE_ACCESS_LEVEL_OPTIONS = [
 ];
 const ROLE_ACCESS_LEVEL_ORDER = ROLE_ACCESS_LEVEL_OPTIONS.map((option) => option.value);
 const VIEW_ACCESS_OPTIONS = [
+  { id: "mySchedule", label: "Mitt schema" },
+  { id: "myProductivity", label: "Min produktivitet" },
   { id: "schedule", label: "Bemanning" },
   { id: "overview", label: "Översikt" },
   { id: "productivity", label: "Produktivitet" },
@@ -69,6 +72,7 @@ function primaryRoleFromRoles(roles) {
   if (roles.includes("leader")) return "leader";
   if (roles.includes("warehouse_clerk")) return "warehouse_clerk";
   if (roles.includes("article_placer")) return "article_placer";
+  if (roles.includes("person")) return "person";
   if (roles.includes("viewer")) return "viewer";
   return "leader";
 }
