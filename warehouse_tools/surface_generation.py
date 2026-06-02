@@ -51,8 +51,6 @@ def _to_number(series: pd.Series) -> pd.Series:
 
 def _location_key(value: object) -> tuple[int, str, str] | None:
     location = str(value).strip().upper()
-    if len(location) < 6:
-        return None
     match = re.fullmatch(r"UTL(\d+)(.*)", location)
     if not match:
         return None
@@ -471,5 +469,5 @@ def generate_surface_plan(
     shipments = prepare_forecast(forecast)
     surfaces = locations if _locations_are_prepared(locations) else prepare_locations(locations)
     if surfaces.empty:
-        raise ValueError("Lagerplatser saknar giltiga ytor: Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.")
+        raise ValueError("Lagerplatser saknar giltiga ytor: Typ U, UTL-nummer 1-652 och Max pall > 0.")
     return _generate_surface_plan_clustered(shipments, surfaces, carrier_clusters)

@@ -1018,7 +1018,7 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
         tables.append(("ej_placerade", "Ej placerade", result.unplaced))
 
     log = [
-        "Lagerplatser filtrerade på Typ U, UTL1-UTL652, minst 6 tecken och Max pall > 0.",
+        "Lagerplatser filtrerade på Typ U, UTL-nummer 1-652 och Max pall > 0.",
         "Sändningar placerade en och en. Transportörskluster styr sortering och UTL-område när kluster finns.",
     ]
     if area_log:

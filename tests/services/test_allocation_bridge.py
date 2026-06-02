@@ -706,7 +706,10 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
 def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeypatch, tmp_path):
     user = business_user(7, 20)
     location_path = tmp_path / "location.csv"
-    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL300\tU\t2\nPL1\tP\t1\n", encoding="utf-8")
+    location_path.write_text(
+        "Lagerplats\tTyp\tMax pall\nUTL01\tU\t1\nUTL99\tU\t1.5\nUTL300\tU\t2\nPL1\tP\t1\n",
+        encoding="utf-8",
+    )
     captured = {}
     saved_layout = {
         "locations": [
@@ -737,7 +740,11 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
 
     assert response["can_edit"] is True
     assert response["locations"] == saved_layout["locations"]
-    assert response["available_locations"] == [{"location": "UTL300", "maxPall": 2.0}]
+    assert response["available_locations"] == [
+        {"location": "UTL01", "maxPall": 1.0},
+        {"location": "UTL99", "maxPall": 1.5},
+        {"location": "UTL300", "maxPall": 2.0},
+    ]
     assert captured == {
         "settings_business_id": 20,
         "area_focus": "MG",

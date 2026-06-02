@@ -7,7 +7,7 @@ import pytest
 
 from warehouse_tools import flows
 from warehouse_tools.carrier_clusters import read_carrier_clusters
-from warehouse_tools.surface_generation import generate_surface_plan
+from warehouse_tools.surface_generation import generate_surface_plan, prepare_locations
 from warehouse_tools.ytgenerering_map import normalize_map_location_rows
 
 
@@ -483,7 +483,7 @@ def test_ytgenerering_places_shipments_separately_and_sorts_by_carrier():
     )
     locations = pd.DataFrame(
         [
-            {"Lagerplats": "UTL1", "Typ": "U", "Max pall": 10},
+            {"Lagerplats": "UTL999", "Typ": "U", "Max pall": 10},
             {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1},
             {"Lagerplats": "UTL101", "Typ": "U", "Max pall": 2},
             {"Lagerplats": "UTL102", "Typ": "U", "Max pall": 1},
@@ -500,6 +500,25 @@ def test_ytgenerering_places_shipments_separately_and_sorts_by_carrier():
     assert list(result.assignments["Transportör"]) == ["Akeri A", "Akeri A", "Akeri A", "Akeri B"]
     assert result.assignments["Lagerplats"].is_unique
     assert list(result.assignments["Placerade pallplatser"]) == [1.0, 1.5, 1.0, 2.0]
+
+
+def test_prepare_locations_accepts_zero_padded_short_utl_codes():
+    locations = pd.DataFrame(
+        [
+            {"Lagerplats": "UTL01", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL99", "Typ": "U", "Max pall": 2},
+            {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 3},
+            {"Lagerplats": "UTL0", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL653", "Typ": "U", "Max pall": 1},
+            {"Lagerplats": "UTL02", "Typ": "H", "Max pall": 1},
+            {"Lagerplats": "UTL03", "Typ": "U", "Max pall": 0},
+        ]
+    )
+
+    prepared = prepare_locations(locations)
+
+    assert list(prepared["Lagerplats"]) == ["UTL01", "UTL99", "UTL100"]
+    assert list(prepared["_location_number"]) == [1, 99, 100]
 
 
 def test_ytgenerering_places_shipments_by_transport_cluster_ranges():

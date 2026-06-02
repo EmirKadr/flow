@@ -570,7 +570,7 @@ def update_user(
     target_business_id = user.business_id
     target_person = person if "person_id" in fields_set else (db.get(Person, user.person_id) if user.person_id is not None else None)
     related_ids = related_business_ids(area, target_person)
-    if payload.business_id is not None or related_ids:
+    if payload.business_id is not None:
         target_business_id = resolve_write_business_id(
             db,
             admin,

@@ -1728,6 +1728,17 @@ function firstAccessiblePageHref(user, activePage = "") {
   return visiblePage?.href || "";
 }
 
+function isPersonOnlyAccount(user) {
+  const roles = userRoles(user);
+  return !user?.is_super_user && roles.length === 1 && roles[0] === "person";
+}
+
+function preferredPostAuthPage(user) {
+  if (isPersonOnlyAccount(user) && canViewPage(user, "mySchedule")) return "/mitt-schema.html";
+  if (canViewPage(user, "schedule")) return "/index.html";
+  return firstAccessiblePageHref(user, "") || "/index.html";
+}
+
 function renderAccessDeniedFallback(message) {
   document.body.classList.remove("with-sidebar");
   document.body.innerHTML = `
@@ -1763,7 +1774,7 @@ async function resolvePostAuthPage(user) {
   if (user?.must_change_password) return "/set-password.html";
   clearAuthNavigationCache();
   await refreshRoleViewAccessForRouting();
-  return firstAccessiblePageHref(user, "") || "/index.html";
+  return preferredPostAuthPage(user);
 }
 
 function renderSidebarLink(page, { active = false, subview = false } = {}) {

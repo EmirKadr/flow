@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-02] fix | Korta UTL-ytor visas i Installningar
+
+Ytgenereringens lagerplatsfilter accepterar nu `Typ=U`-ytor med UTL-nummer
+1-652 oavsett om numret ar skrivet med inledande nollor. Det gor att
+`UTL01`-`UTL99` syns i Installningars lista over lediga U-platser och kan
+anvandas i Ytgenerering pa samma satt som `UTL100` och uppat.
+
 ## [2026-06-02] feature | Lanar person via hogerklick i Bemanning
 
 Bemanning har nu en hogerklicksmeny pa personnamn med `Skicka till <omrade>`.
@@ -267,7 +274,7 @@ Sidebaren ar nu en fast vansterpanel i webb och desktop-frontend. Huvudytan rese
 
 ## [2026-05-25] feature | Forecast och Ytgenerering i Bearbeta
 
-Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, cachar fardigfiltrerade lagerplatser per `location`-filversion, filtrerar lagerplatser pa `Typ=U`, UTL1-UTL652, minst 6 tecken och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Ny `location`-uppladdning raderar den gamla verksamhetsfilen, rensar location-cachen och forvarmer den nya ytlistan direkt. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
+Bearbeta har fatt `Forecast` och `Ytgenerering`. Forecast kor den portade prognosmotorn fristaende i Flow, grupperar per `Sandningsnr`, anvander verksamhetens coredata (`custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`) och sparar resultatet bade som tabell/Excel och som temporar sessiondata. Ytgenerering kraver verksamhetens `location` och en kord forecast-session, anvander forecastens DataFrame direkt for snabbaste kedja med JSON-artifact som fallback, cachar fardigfiltrerade lagerplatser per `location`-filversion, filtrerar lagerplatser pa `Typ=U`, UTL-nummer 1-652 och `Max pall > 0`, och placerar sandningar transportorsvis utan att dela en lagerplats mellan flera sandningar. Ny `location`-uppladdning raderar den gamla verksamhetsfilen, rensar location-cachen och forvarmer den nya ytlistan direkt. Teststodet omfattar handler-/domantester, API/session/coredata-tester, statiska UI-kontrakt och Playwright-test for att Forecast aktiverar Ytgenerering och skickar `forecast_session_id`.
 
 Allokering anvander nu samma filversionsprincip for snabb upprepad korning: hela outputpaketet med allokerade rader, near-miss, refill och pallplatser cachas per orders-/buffert-/saldo-/item-version. Omradesfiltren for GG/MG sparar ocksa filtrerade kopior per originalfilversion och regel, sa samma resultat ateranvands utan att berakningsresultatet andras.
 

@@ -3443,6 +3443,11 @@ function allocationNextMapLoadDirection(value, row = {}) {
   return directions[(index + 1) % directions.length];
 }
 
+function allocationRotateMapLoadDirectionLeft(value) {
+  const rotated = { right: "up", up: "left", left: "down", down: "right" };
+  return rotated[value] || value;
+}
+
 function allocationMapLoadDirectionLabel(value) {
   const labels = { right: "höger", down: "ned", left: "vänster", up: "upp" };
   return labels[value] || value;
@@ -3733,7 +3738,6 @@ async function mountAllocationMapSettingsPage(editor) {
   let statusText = "";
   let ignoreNextMapClick = false;
   let lastMapCellClick = { location: "", at: 0 };
-  let lastLoadDirectionCycle = { location: "", at: 0 };
   const LOCATION_DRAG_TYPE = "application/x-flow-yt-location";
 
   try {
@@ -3923,22 +3927,45 @@ async function mountAllocationMapSettingsPage(editor) {
     row.w = Math.max(1, Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-w]")?.value, row.w)));
     row.h = Math.max(1, Math.round(allocationMapNumber(editor.querySelector("[data-map-setting-h]")?.value, row.h)));
     row.maxPall = Math.max(0.1, allocationMapRound(editor.querySelector("[data-map-setting-max]")?.value || row.maxPall));
+    row.loadDirection = allocationNormalizeMapLoadDirection(row.loadDirection, row);
     rows = sortedMapRows(rows);
     renderEditor();
   }
 
-  function cycleLocationLoadDirection(location) {
+  function rotateLocationLeft(location) {
     if (!canEdit) return;
     const row = rows.find((item) => item.location === location);
     if (!row) return;
-    const now = Date.now();
-    if (lastLoadDirectionCycle.location === location && now - lastLoadDirectionCycle.at < 160) return;
-    lastLoadDirectionCycle = { location, at: now };
     pushUndoSnapshot();
-    row.loadDirection = allocationNextMapLoadDirection(row.loadDirection, row);
+    const cx = row.x + row.w / 2;
+    const cy = row.y + row.h / 2;
+    const nextWidth = row.h;
+    const nextHeight = row.w;
+    const rotatedDirection = allocationRotateMapLoadDirectionLeft(allocationNormalizeMapLoadDirection(row.loadDirection, row));
+    row.x = Math.round(cx - nextWidth / 2);
+    row.y = Math.round(cy - nextHeight / 2);
+    row.w = nextWidth;
+    row.h = nextHeight;
+    row.loadDirection = allocationNormalizeMapLoadDirection(rotatedDirection, row);
     selectedLocation = row.location;
     selectedLocations = new Set([row.location]);
-    statusText = `${row.location}: riktning ${allocationMapLoadDirectionLabel(row.loadDirection)}.`;
+    statusText = `${row.location}: roterad vÃ¤nster.`;
+    renderEditor();
+  }
+
+  function cycleSelectedLoadDirections() {
+    if (!canEdit || !selectedLocations.size) return;
+    const picked = selectedRows();
+    if (!picked.length) return;
+    pushUndoSnapshot();
+    picked.forEach((row) => {
+      row.loadDirection = allocationNextMapLoadDirection(row.loadDirection, row);
+    });
+    if (picked.length === 1) {
+      statusText = `${picked[0].location}: riktning ${allocationMapLoadDirectionLabel(picked[0].loadDirection)}.`;
+    } else {
+      statusText = `${picked.length} ytor: riktning bytt.`;
+    }
     renderEditor();
   }
 
@@ -4196,6 +4223,39 @@ async function mountAllocationMapSettingsPage(editor) {
 
   function focusMapSettingsWorkspace() {
     editor.querySelector("[data-map-settings-workspace]")?.focus({ preventScroll: true });
+  }
+
+  function closeMapSettingsContextMenu() {
+    document.querySelector(".allocation-map-settings-context-menu")?.remove();
+  }
+
+  function openMapSettingsContextMenu(event, location) {
+    if (!canEdit || !location || !rows.some((row) => row.location === location)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeMapSettingsContextMenu();
+    if (!selectedLocations.has(location)) {
+      selectedLocations = new Set([location]);
+    }
+    selectedLocation = location;
+    syncSelectionVisuals();
+
+    const menu = document.createElement("div");
+    menu.className = "allocation-map-settings-context-menu";
+    menu.innerHTML = `<button type="button" data-map-context-direction>Byt riktning</button>`;
+    menu.addEventListener("click", (clickEvent) => clickEvent.stopPropagation());
+    menu.querySelector("[data-map-context-direction]")?.addEventListener("click", () => {
+      closeMapSettingsContextMenu();
+      cycleSelectedLoadDirections();
+      focusMapSettingsWorkspace();
+    });
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - rect.width - 8)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - rect.height - 8)}px`;
+    window.setTimeout(() => {
+      document.addEventListener("click", closeMapSettingsContextMenu, { once: true });
+    }, 0);
   }
 
   async function toggleMapSettingsFullscreen() {
