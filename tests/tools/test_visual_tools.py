@@ -289,6 +289,8 @@ def test_allocation_observations_github_sync_is_wired():
     assert "data/community-observations" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/observations_*.csv.gz" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/*/observations_*.csv.gz" in workflow
+    assert "root_data_dir / 'stigamo'" in workflow
+    assert "Moved legacy root session file" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/" in workflow
     assert "artikel_max.csv" in workflow
     assert "np.percentile(group['antal'], [25, 75])" in workflow
@@ -296,7 +298,9 @@ def test_allocation_observations_github_sync_is_wired():
     assert "Ändrade maxvärden" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
     assert "fetch_observations_from_github(business_code=business_code)" in main
-    assert "R3_BUSINESS_CODE" in main
+    assert "ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS" in main
+    assert "ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS" in main
+    assert "_allocation_observation_business_codes" in main
     assert "sync_allocation_observations_on_startup" in main
     assert '"OBSERVATIONS_GITHUB_TOKEN"' in engine
     assert '"FLOW_GITHUB_TOKEN"' in engine
@@ -304,6 +308,7 @@ def test_allocation_observations_github_sync_is_wired():
     assert "article_max_changed_rows" in engine
     assert "business_observations_path" in engine
     assert "business_artikel_max_path" in engine
+    assert "ensure_business_allocation_data_files" in engine
 
 
 def test_app_migration_plan_documents_high_risk_workflows():
@@ -1469,9 +1474,16 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "fallbackSlotKey" in allocation
     assert 'data-allocation-drop data-drop-scope="flow"' in allocation
     assert "event.stopPropagation()" in allocation
-    assert "Detalj Kundorder(alla)" in allocation
-    assert "Detalj Kundorder(alla)" in catalog
-    assert "Detalj Kundorder(alla)" in flows
+    assert "Detalj kundorder(alla)" in allocation
+    assert "Detalj kundorder(alla)" in catalog
+    assert "Detalj kundorder(alla)" in flows
+    assert "ALLOCATION_SLOT_LABEL_ALIASES" in allocation
+    assert "function allocationUploadSlotLabel(slot)" in allocation
+    assert "allocationUploadSlotLabel({ key, label: input.label })" in allocation
+    assert "<h3>${allocationEscape(allocationUploadSlotLabel(slot))}</h3>" in allocation
+    assert "<h3>${allocationEscape(slot.label)}</h3>" not in allocation
+    assert '"customer_order_details_all"' in allocation
+    assert '"detalj kundorder(alla)"' in common
     assert "Beställningslinjer" not in catalog
     assert "Beställningslinjer" not in flows
     assert "Saldo ink. Automation" in allocation

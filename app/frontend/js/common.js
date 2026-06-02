@@ -66,7 +66,7 @@ const SHARED_ALLOCATION_SLOT_MIRRORS = {
   wms_booking: ["not_putaway"],
 };
 const SHARED_ALLOCATION_FILE_WORDS = {
-  orders: ["v_ask_customer_order_details_all", "customer_order_details_all", "customer_order_details", "detalj kundorder"],
+  orders: ["v_ask_customer_order_details_all", "customer_order_details_all", "customer_order_details", "detalj kundorder", "detalj kundorder(alla)"],
   buffer: ["v_ask_article_buffertpallet", "v_ask_article_bufferpallet", "article_buffertpallet", "article_bufferpallet", "buffertpall", "buffertpallet", "bufferpall", "bufferpallet"],
   overview: ["v_ask_order_overview", "order_overview", "orderoversikt"],
   dispatch: ["v_ask_dispatch_pallet", "dispatch_pallet", "dispatchpall"],

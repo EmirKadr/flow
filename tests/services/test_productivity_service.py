@@ -150,7 +150,7 @@ NY\t404\tOUTBOUND\tManual_Pick\tNy verksamhet\t30\t0\t0
     assert "ny_verksamhet" in [part.lower() for part in Path(new["source"]["path"]).parts]
 
 
-def test_productivity_kpi_legacy_stigamo_fallback_does_not_leak_to_other_businesses(tmp_path):
+def test_productivity_kpi_root_file_is_not_business_scoped_for_any_business(tmp_path):
     write(
         tmp_path / "v_ask_kpi_target-20260518080915.csv",
         """
@@ -159,8 +159,8 @@ GG\t404\tOUTBOUND\tManual_Pick\tLegacy Stigamo\t10\t0\t0
 """,
     )
 
-    assert read_productivity_targets(tmp_path, business_code="STIGAMO")["targets"][0]["description"] == "Legacy Stigamo"
-
+    with pytest.raises(ProductivitySourceError, match="stigamo"):
+        read_productivity_targets(tmp_path, business_code="STIGAMO")
     with pytest.raises(ProductivitySourceError, match="r3"):
         read_productivity_targets(tmp_path, business_code="R3")
 

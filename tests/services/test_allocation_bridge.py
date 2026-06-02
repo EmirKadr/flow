@@ -1243,6 +1243,8 @@ def test_native_detector_uses_ask_filename_hints_without_reading_headers(tmp_pat
 
 def test_native_detector_recognizes_current_upload_filename_hints(tmp_path):
     cases = {
+        "customer_order_details_all-20260519090640.csv": "orders",
+        "customer_order_details-20260519090640.csv": "orders",
         "item_option-20260519090653.csv": "item",
         "v_ask_article_bufferpallet-20260519090645.csv": "buffer",
         "v_ask_article_buffertpallet-20260519090645.csv": "buffer",
@@ -1356,17 +1358,33 @@ def test_observations_paths_are_separate_per_business(tmp_path, monkeypatch):
     stigamo_max = legacy_engine.business_artikel_max_path("STIGAMO")
     r3_observations = legacy_engine.business_observations_path("R3")
     r3_max = legacy_engine.business_artikel_max_path("R3")
+    t3_observations = legacy_engine.business_observations_path("T3")
+    t3_max = legacy_engine.business_artikel_max_path("T3")
 
-    assert stigamo_observations == tmp_path / "observations.csv.gz"
-    assert stigamo_max == tmp_path / "artikel_max.csv"
+    assert stigamo_observations == tmp_path / "stigamo" / "observations.csv.gz"
+    assert stigamo_max == tmp_path / "stigamo" / "artikel_max.csv"
     assert r3_observations == tmp_path / "r3" / "observations.csv.gz"
     assert r3_max == tmp_path / "r3" / "artikel_max.csv"
+    assert t3_observations == tmp_path / "t3" / "observations.csv.gz"
+    assert t3_max == tmp_path / "t3" / "artikel_max.csv"
+    assert list(pd.read_csv(stigamo_observations, compression="gzip").columns) == [
+        "artikelnummer",
+        "pallid",
+        "antal",
+    ]
     assert list(pd.read_csv(r3_observations, compression="gzip").columns) == [
         "artikelnummer",
         "pallid",
         "antal",
     ]
+    assert list(pd.read_csv(t3_observations, compression="gzip").columns) == [
+        "artikelnummer",
+        "pallid",
+        "antal",
+    ]
+    assert stigamo_max.read_text(encoding="utf-8-sig").startswith("artikelnummer,max,pallid")
     assert r3_max.read_text(encoding="utf-8-sig").startswith("artikelnummer,max,pallid")
+    assert t3_max.read_text(encoding="utf-8-sig").startswith("artikelnummer,max,pallid")
 
 
 def test_allocation_bridge_imports_without_tkinter_on_headless_server():

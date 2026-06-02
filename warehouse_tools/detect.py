@@ -7,6 +7,8 @@ from pathlib import Path
 
 NAME_HINTS = {
     "v_ask_customer_order_details_all": "orders",
+    "customer_order_details_all": "orders",
+    "customer_order_details": "orders",
     "v_ask_item_summary_stock_automation": "automation",
     "v_ask_order_overview": "overview",
     "v_ask_dispatch_pallet": "dispatch",

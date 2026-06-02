@@ -1,5 +1,7 @@
 from pathlib import Path
+import logging
 import threading
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
@@ -7,8 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import allocation_bridge, demo_session
-from .business_scope import DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE
+from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
+from .database import SessionLocal
+from .models import Business
 from .routers import (
     activities,
     allocation,
@@ -34,6 +38,7 @@ from .routers import (
 )
 
 app = FastAPI(title="flow", version="0.1.5")
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     SessionMiddleware,
@@ -95,12 +100,58 @@ def public_meta_upload_page_redirect() -> RedirectResponse:
 
 
 def _sync_allocation_observations_background() -> None:
+    if not settings.ALLOCATION_OBSERVATIONS_STARTUP_SYNC:
+        return
+    delay_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS or 0))
+    spacing_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS or 0))
+    if delay_seconds:
+        time.sleep(delay_seconds)
     try:
         engine_module, _flows_module = allocation_bridge.require_available()
-        for business_code in (DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE):
-            engine_module.fetch_observations_from_github(business_code=business_code)
     except Exception:
+        logger.warning("Allocation observations startup sync could not load warehouse tools.", exc_info=True)
         return
+
+    for index, business_code in enumerate(_allocation_observation_business_codes()):
+        if index and spacing_seconds:
+            time.sleep(spacing_seconds)
+        try:
+            engine_module.fetch_observations_from_github(business_code=business_code)
+        except Exception:
+            logger.warning("Allocation observations startup sync failed for %s.", business_code, exc_info=True)
+
+
+def _allocation_observation_business_codes() -> list[str]:
+    try:
+        db = SessionLocal()
+    except Exception:
+        logger.warning("Could not open database session for allocation observations startup sync.", exc_info=True)
+        return [DEFAULT_BUSINESS_CODE]
+    try:
+        rows = (
+            db.query(Business.code)
+            .filter(Business.is_active.is_(True))
+            .order_by(Business.sort_order, Business.id)
+            .all()
+        )
+    except Exception:
+        logger.warning("Could not load active businesses for allocation observations startup sync.", exc_info=True)
+        return [DEFAULT_BUSINESS_CODE]
+    finally:
+        db.close()
+
+    codes = []
+    seen = set()
+    for row in rows:
+        try:
+            raw_code = row[0]
+        except Exception:
+            raw_code = getattr(row, "code", row)
+        code = normalize_business_code(raw_code)
+        if code and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    return codes or [DEFAULT_BUSINESS_CODE]
 
 
 @app.on_event("startup")

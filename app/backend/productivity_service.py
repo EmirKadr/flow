@@ -165,7 +165,6 @@ GROUPS = (
 )
 
 GROUP_TITLES = {group["id"]: group["title"] for group in GROUPS}
-DEFAULT_BUSINESS_CODE = "STIGAMO"
 
 
 def _repo_root() -> Path:
@@ -248,15 +247,6 @@ def _latest_business_file(
                 return _latest_file(target_dir, prefix)
             except ProductivitySourceError:
                 pass
-
-    # Legacy Stigamo fallback keeps existing deployments working until the
-    # first scoped KPI upload creates data/stigamo. Other businesses never use it.
-    base_dir = Path(reference_dir) if reference_dir is not None else default_reference_dir()
-    if business_code_normalized == DEFAULT_BUSINESS_CODE and base_dir.exists():
-        try:
-            return _latest_file(base_dir, prefix)
-        except ProductivitySourceError:
-            pass
 
     raise ProductivitySourceError(f"Saknar referensfil med prefix {prefix} i {read_dirs[0]}")
 

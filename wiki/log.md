@@ -7,6 +7,29 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-02] fix | Uppladdningar visar svenska filnamn
+
+Uppladdningars filrader normaliserar nu rubriken via filkunskapen innan den
+ritas. Tekniska alias som `customer_order_details_all` visas darfor som
+`Detalj kundorder(alla)` i stallet for databasnamnet.
+
+## [2026-06-02] change | Samma datamappar for alla verksamheter
+
+Stigamo anvander nu samma buffertpall-upplagg som R3/T3 med egen undermapp
+under `warehouse_tools/vendor/lowfreqdata/buffertpall/stigamo/`.
+Observations-startup-syncen laser aktiva verksamheter fran databasen i stallet
+for en hardkodad Stigamo/R3-lista, och nya verksamheter provisionerar egna
+coredata-/sammanstalld-data-roots vid skapande. Produktivitetens
+verksamhetsscopeade KPI-lasning har inte langre Stigamo-root som specialfall.
+
+## [2026-06-02] fix | Forsenad observations-sync vid serverstart
+
+Render-starten laddar inte langre lagerverktygens observations-sync direkt.
+Startup-hooken finns kvar men vantar nu enligt
+`ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS` och syncar verksamheterna en i
+taget med paus enligt `ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS`.
+Automatiken kan stangas av med `ALLOCATION_OBSERVATIONS_STARTUP_SYNC=false`.
+
 ## [2026-06-02] fix | Ytkartans hjalplinjer blir mjukare
 
 Installningar for Ytgenereringens ytkarta har nu ett tajtare snap-avstand och

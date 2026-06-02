@@ -267,7 +267,6 @@ def find_coredata_file(
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
     *,
-    allow_legacy_stigamo_root: bool = True,
     db: Session | None = None,
 ) -> Path:
     spec = CORE_DATA_SPEC_BY_KEY.get(file_type)
@@ -285,15 +284,6 @@ def find_coredata_file(
             return _latest_file(directory, spec)
         except CoreDataError:
             pass
-
-    business_code_normalized = normalize_business_code(business_code)
-    if allow_legacy_stigamo_root and file_type == "kpi" and business_code_normalized == DEFAULT_BUSINESS_CODE:
-        legacy_root = coredata_legacy_base_dir(reference_dir)
-        if legacy_root.exists():
-            try:
-                return _latest_file(legacy_root, spec)
-            except CoreDataError:
-                pass
 
     first_dir = coredata_read_dirs(reference_dir, business_code)[0]
     raise CoreDataError(f"Saknar kärnfil med prefix {spec.prefix} i {first_dir}")

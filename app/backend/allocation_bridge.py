@@ -263,6 +263,9 @@ def require_available() -> tuple[ModuleType, ModuleType]:
 
 def business_allocation_data_paths(business_code: str | None) -> dict[str, str]:
     engine_module, _flows_module = require_available()
+    ensure_files = getattr(engine_module, "ensure_business_allocation_data_files", None)
+    if callable(ensure_files):
+        return ensure_files(business_code)
     return {
         "observations_path": str(engine_module.business_observations_path(business_code)),
         "article_max_path": str(engine_module.business_artikel_max_path(business_code)),

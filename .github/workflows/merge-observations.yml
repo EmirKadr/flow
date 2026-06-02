@@ -39,16 +39,34 @@ jobs:
           python <<'PY'
           import glob
           import os
+          import shutil
           from pathlib import Path
 
           import numpy as np
           import pandas as pd
 
           root_data_dir = Path('warehouse_tools/vendor/lowfreqdata/buffertpall')
-          data_dir = root_data_dir
+          data_dir = root_data_dir / 'stigamo'
           observations_path = data_dir / 'observations.csv.gz'
           artikel_max_path = data_dir / 'artikel_max.csv'
           cols = ['artikelnummer', 'pallid', 'antal']
+          data_dir.mkdir(parents=True, exist_ok=True)
+
+          legacy_observations_path = root_data_dir / 'observations.csv.gz'
+          legacy_artikel_max_path = root_data_dir / 'artikel_max.csv'
+          if legacy_observations_path.exists() and not observations_path.exists():
+              shutil.copy2(legacy_observations_path, observations_path)
+              print('Seeded STIGAMO observations from legacy root file.')
+          if legacy_artikel_max_path.exists() and not artikel_max_path.exists():
+              shutil.copy2(legacy_artikel_max_path, artikel_max_path)
+              print('Seeded STIGAMO artikel_max from legacy root file.')
+          for legacy_user_file in sorted(root_data_dir.glob('observations_*.csv.gz')):
+              target = data_dir / legacy_user_file.name
+              if target.exists():
+                  base_name = legacy_user_file.name[:-7] if legacy_user_file.name.endswith('.csv.gz') else legacy_user_file.stem
+                  target = data_dir / f"{base_name}_legacy.csv.gz"
+              legacy_user_file.replace(target)
+              print(f'Moved legacy root session file to {target}')
 
           def read_observations(path: Path) -> pd.DataFrame:
               if path.exists() and path.stat().st_size > 0:
@@ -239,6 +257,8 @@ jobs:
               print(f'Removed {filename}')
 
           for business_dir in sorted(path for path in root_data_dir.iterdir() if path.is_dir()):
+              if business_dir.name.lower() == 'stigamo':
+                  continue
               business_label = business_dir.name.upper()
               observations_path = business_dir / 'observations.csv.gz'
               artikel_max_path = business_dir / 'artikel_max.csv'

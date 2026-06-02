@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     RENDER_POSTGRES_ID: str = ""
     RENDER_DATABASE_ID: str = ""
     HEALTHCHECK_PUBLIC_URL: str = ""
+    ALLOCATION_OBSERVATIONS_STARTUP_SYNC: bool = True
+    ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS: float = 180.0
+    ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS: float = 30.0
 
     @property
     def is_production(self) -> bool:

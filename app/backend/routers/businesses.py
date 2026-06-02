@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from .. import allocation_bridge
 from ..audit import log as audit_log
 from ..code_utils import code_part
+from ..coredata_service import business_coredata_dir
 from ..deps import get_db, require_super_user
 from ..models import Business, User
 from ..schemas import BusinessCreate, BusinessOut, BusinessUpdate
 
 
 router = APIRouter(prefix="/api/businesses", tags=["businesses"])
+logger = logging.getLogger(__name__)
 
 
 def _business_snapshot(business: Business) -> dict:
@@ -49,6 +54,17 @@ def _resolve_business_code(db: Session, payload: BusinessCreate) -> str:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Verksamhet med samma kod finns redan")
         return code
     return _unique_business_code(db, code_part(payload.name))
+
+
+def _ensure_business_data_roots(code: str) -> None:
+    try:
+        business_coredata_dir(business_code=code).mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.warning("Could not create coredata directory for business %s.", code, exc_info=True)
+    try:
+        allocation_bridge.business_allocation_data_paths(code)
+    except Exception:
+        logger.warning("Could not create allocation data files for business %s.", code, exc_info=True)
 
 
 @router.get("", response_model=list[BusinessOut])
@@ -90,6 +106,7 @@ def create_business(
     )
     db.commit()
     db.refresh(business)
+    _ensure_business_data_roots(business.code)
     return business
 
 

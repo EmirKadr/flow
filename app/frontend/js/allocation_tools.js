@@ -85,7 +85,7 @@ const ALLOCATION_PROCESS_MATRIX = {
 };
 const ALLOCATION_KEY_OVERRIDES = { details: "orders", wms_buffert: "buffer" };
 const ALLOCATION_FILE_WORDS = {
-  orders: ["v_ask_customer_order_details_all", "customer_order_details_all", "customer_order_details", "detalj kundorder"],
+  orders: ["v_ask_customer_order_details_all", "customer_order_details_all", "customer_order_details", "detalj kundorder", "detalj kundorder(alla)"],
   buffer: ["v_ask_article_buffertpallet", "v_ask_article_bufferpallet", "article_buffertpallet", "article_bufferpallet", "buffertpall", "buffertpallet", "bufferpall", "bufferpallet"],
   overview: ["v_ask_order_overview", "order_overview", "orderoversikt"],
   dispatch: ["v_ask_dispatch_pallet", "dispatch_pallet", "dispatchpall"],
@@ -116,7 +116,7 @@ const PRODUCTIVITY_SHARED_UPLOAD_WORDS = [
   "v_ask_kpi_target",
 ];
 const ALLOCATION_SLOT_LABELS = {
-  orders: "Detalj Kundorder(alla)",
+  orders: "Detalj kundorder(alla)",
   buffer: "Buffertpallar",
   overview: "Orderöversikt",
   dispatch: "Dispatchpallar",
@@ -134,6 +134,22 @@ const ALLOCATION_SLOT_LABELS = {
   remote_file: "Observationsfil",
   values_file: "Textfil med värden",
 };
+function allocationSlotAliasKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+const ALLOCATION_SLOT_LABEL_ALIASES = Object.fromEntries(
+  Object.entries(ALLOCATION_FILE_WORDS).flatMap(([key, words]) => [
+    [allocationSlotAliasKey(key), key],
+    ...(words || []).map((word) => [allocationSlotAliasKey(word), key]),
+  ])
+);
 const ALLOCATION_SLOT_ORDER = [
   "orders", "buffer", "overview", "dispatch", "custom_adr", "saldo", "items", "not_putaway",
   "prognos", "campaign", "max_csv", "wms_booking", "wms_trans", "wms_pick",
@@ -479,8 +495,22 @@ function allocationFileInputKey(input) {
   return allocationLogicalKey(input.pool || input.key);
 }
 
+function allocationCanonicalSlotKey(key) {
+  const logicalKey = allocationLogicalKey(key);
+  return ALLOCATION_SLOT_LABEL_ALIASES[allocationSlotAliasKey(logicalKey)] || logicalKey;
+}
+
 function allocationSlotLabel(key) {
-  return ALLOCATION_SLOT_LABELS[allocationLogicalKey(key)] || key;
+  const canonicalKey = allocationCanonicalSlotKey(key);
+  return ALLOCATION_SLOT_LABELS[canonicalKey] || key;
+}
+
+function allocationUploadSlotLabel(slot) {
+  const keyLabel = allocationSlotLabel(slot?.key);
+  if (keyLabel && keyLabel !== slot?.key) return keyLabel;
+  const rawLabel = slot?.label || "";
+  const label = allocationSlotLabel(rawLabel);
+  return label && label !== rawLabel ? label : rawLabel || slot?.key || "";
 }
 
 function allocationPersistentStatusFile(key) {
@@ -1326,7 +1356,7 @@ function deriveAllocationSlots(flows) {
       if (input.type && input.type !== "file") continue;
       const key = allocationFileInputKey(input);
       if (!map.has(key)) {
-        map.set(key, { key, label: ALLOCATION_SLOT_LABELS[key] || input.label, detect: new Set(input.detect || []) });
+        map.set(key, { key, label: allocationUploadSlotLabel({ key, label: input.label }), detect: new Set(input.detect || []) });
       } else {
         (input.detect || []).forEach((value) => map.get(key).detect.add(value));
       }
@@ -1627,7 +1657,7 @@ function allocationFileRows(slots) {
     return `
       <div class="allocation-file-slot ${displayEntry ? "filled" : ""}" data-allocation-drop data-drop-slot="${allocationEscape(slot.key)}">
         <div>
-          <h3>${allocationEscape(slot.label)}</h3>
+          <h3>${allocationEscape(allocationUploadSlotLabel(slot))}</h3>
           <p>${displayEntry ? `${allocationEscape(displayEntry.name)} ${sizeLabel ? `<span>${allocationEscape(sizeLabel)}</span>` : ""}` : "Ingen fil vald"}</p>
         </div>
         <div class="allocation-file-actions">

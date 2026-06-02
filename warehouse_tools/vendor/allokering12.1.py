@@ -353,8 +353,6 @@ def _normalise_observations_business_code(business_code: Optional[str] = None) -
 
 def _business_path_segment(business_code: Optional[str] = None) -> str:
     code = _normalise_observations_business_code(business_code)
-    if code == DEFAULT_OBSERVATIONS_BUSINESS_CODE:
-        return ""
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", code).strip("._-").lower()
     return safe or "business"
 
@@ -367,16 +365,27 @@ def _business_bufferpall_runtime_dir(business_code: Optional[str] = None) -> Pat
 
 def _business_bufferpall_resource_path(business_code: Optional[str], filename: str) -> Path:
     segment = _business_path_segment(business_code)
-    return _bufferpall_resource_path(segment, filename) if segment else _bufferpall_resource_path(filename)
+    return _bufferpall_resource_path(segment, filename)
+
+
+def _legacy_default_bufferpall_resource_path(business_code: Optional[str], filename: str) -> Optional[Path]:
+    if _normalise_observations_business_code(business_code) != DEFAULT_OBSERVATIONS_BUSINESS_CODE:
+        return None
+    return _bufferpall_resource_path(filename)
 
 
 def _seed_bufferpall_runtime_file(filename: str, business_code: Optional[str] = None) -> Path:
     runtime_path = _business_bufferpall_runtime_dir(business_code) / filename
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
 
-    resource_path = _business_bufferpall_resource_path(business_code, filename)
-    if not runtime_path.exists() and resource_path.exists() and resource_path.resolve() != runtime_path.resolve():
-        shutil.copy2(resource_path, runtime_path)
+    resource_paths = [_business_bufferpall_resource_path(business_code, filename)]
+    legacy_default_path = _legacy_default_bufferpall_resource_path(business_code, filename)
+    if legacy_default_path is not None:
+        resource_paths.append(legacy_default_path)
+    for resource_path in resource_paths:
+        if not runtime_path.exists() and resource_path.exists() and resource_path.resolve() != runtime_path.resolve():
+            shutil.copy2(resource_path, runtime_path)
+            break
     return runtime_path
 
 def read_prognos_xlsx(path: str) -> pd.DataFrame:
@@ -1283,12 +1292,12 @@ def find_col(df: pd.DataFrame, candidates: List[str], required: bool = True, def
 
 def _find_lyx_max_csv() -> Optional[Path]:
     candidates = [
-        _seed_bufferpall_runtime_file("artikel_max.csv"),
-        _bufferpall_resource_path("artikel_max.csv"),
-        _bufferpall_source_dir() / "artikel_max.csv",
+        business_artikel_max_path(DEFAULT_OBSERVATIONS_BUSINESS_CODE),
+        _business_bufferpall_resource_path(DEFAULT_OBSERVATIONS_BUSINESS_CODE, "artikel_max.csv"),
+        _legacy_default_bufferpall_resource_path(DEFAULT_OBSERVATIONS_BUSINESS_CODE, "artikel_max.csv"),
     ]
     for candidate in candidates:
-        if candidate.exists():
+        if candidate is not None and candidate.exists():
             return candidate
     return None
 
@@ -1723,16 +1732,16 @@ OBSERVATIONS_COLS = ["artikelnummer", "pallid", "antal"]
 GITHUB_REPO = "EmirKadr/flow"
 GITHUB_OBS_BRANCH = "data/community-observations"
 GITHUB_OBS_DIR = "warehouse_tools/vendor/lowfreqdata/buffertpall"
-GITHUB_OBS_FILE = f"{GITHUB_OBS_DIR}/observations.csv.gz"
+GITHUB_OBS_FILE = f"{GITHUB_OBS_DIR}/{_business_path_segment(DEFAULT_OBSERVATIONS_BUSINESS_CODE)}/observations.csv.gz"
 
 
 def _observations_path() -> Path:
     """Returnera lokalt path for observations.csv.gz."""
-    return _seed_bufferpall_runtime_file(OBSERVATIONS_FILENAME)
+    return business_observations_path(DEFAULT_OBSERVATIONS_BUSINESS_CODE)
 
 
 def _artikel_max_path() -> Path:
-    return _seed_bufferpall_runtime_file("artikel_max.csv")
+    return business_artikel_max_path(DEFAULT_OBSERVATIONS_BUSINESS_CODE)
 
 
 def _ensure_empty_observations(path: Path) -> Path:
@@ -1755,21 +1764,24 @@ def _ensure_empty_artikel_max(path: Path) -> Path:
 
 def business_observations_path(business_code: Optional[str] = None) -> Path:
     path = _seed_bufferpall_runtime_file(OBSERVATIONS_FILENAME, business_code)
-    if _business_path_segment(business_code):
-        return _ensure_empty_observations(path)
-    return path
+    return _ensure_empty_observations(path)
 
 
 def business_artikel_max_path(business_code: Optional[str] = None) -> Path:
     path = _seed_bufferpall_runtime_file("artikel_max.csv", business_code)
-    if _business_path_segment(business_code):
-        return _ensure_empty_artikel_max(path)
-    return path
+    return _ensure_empty_artikel_max(path)
+
+
+def ensure_business_allocation_data_files(business_code: Optional[str] = None) -> Dict[str, str]:
+    return {
+        "observations_path": str(business_observations_path(business_code)),
+        "article_max_path": str(business_artikel_max_path(business_code)),
+    }
 
 
 def _github_business_dir(business_code: Optional[str] = None) -> str:
     segment = _business_path_segment(business_code)
-    return f"{GITHUB_OBS_DIR}/{segment}" if segment else GITHUB_OBS_DIR
+    return f"{GITHUB_OBS_DIR}/{segment}"
 
 
 def _read_observations(path: Path) -> pd.DataFrame:

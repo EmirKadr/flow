@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
 from app.backend.models import Activity, AppSetting, Area, Business, Person, ScheduleCell, User
+from app.backend.routers import businesses as businesses_router
 from app.backend.routers import public
 from app.backend.routers.activities import create_activity, list_activities, update_activity
 from app.backend.routers.areas import create_area, delete_area, list_areas
@@ -314,8 +315,10 @@ def test_all_areas_marker_can_exist_in_each_business(business_session):
     )
 
 
-def test_business_and_area_codes_are_generated_from_name(business_session):
+def test_business_and_area_codes_are_generated_from_name(business_session, monkeypatch):
     session, data = business_session
+    provisioned_codes: list[str] = []
+    monkeypatch.setattr(businesses_router, "_ensure_business_data_roots", lambda code: provisioned_codes.append(code))
 
     business = create_business(
         BusinessCreate(name="T3", sort_order=3),
@@ -335,6 +338,7 @@ def test_business_and_area_codes_are_generated_from_name(business_session):
 
     assert business.code == "T3"
     assert business.name == "T3"
+    assert provisioned_codes == ["T3"]
     assert area.code == "AUTOSTORE"
     assert duplicate_area.code == "AUTOSTORE_2"
 
