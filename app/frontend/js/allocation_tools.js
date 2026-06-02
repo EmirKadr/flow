@@ -2066,9 +2066,6 @@ function renderResultMap(entry, index) {
               <pattern data-map-grid id="allocation-map-grid-${index}" width="80" height="80" patternUnits="userSpaceOnUse">
                 <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#d8dee8" stroke-width="0.8"></path>
               </pattern>
-              <pattern data-map-unused-stripes id="allocation-map-unused-stripes-${index}" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect x="0" y="0" width="8" height="18" fill="#ffffff" opacity="0.78"></rect>
-              </pattern>
             </defs>
             <g data-map-rotate-group>
               <rect width="100%" height="100%" fill="url(#allocation-map-grid-${index})"></rect>
@@ -2143,6 +2140,36 @@ function allocationMapEstimatedTextWidth(text, fontSize) {
   return String(text || "").length * fontSize * 0.56;
 }
 
+function allocationMapSafeSvgId(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]+/g, "-") || "item";
+}
+
+function allocationMapHexToRgb(value) {
+  const raw = String(value || "").trim();
+  const short = raw.match(/^#([0-9a-f]{3})$/i);
+  const long = raw.match(/^#([0-9a-f]{6})$/i);
+  const hex = short
+    ? short[1].split("").map((part) => `${part}${part}`).join("")
+    : long?.[1];
+  if (!hex) return null;
+  return {
+    r: Number.parseInt(hex.slice(0, 2), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    b: Number.parseInt(hex.slice(4, 6), 16),
+  };
+}
+
+function allocationMapMixHexColor(color, target = "#ffffff", amount = 0.5) {
+  const sourceRgb = allocationMapHexToRgb(color);
+  const targetRgb = allocationMapHexToRgb(target);
+  if (!sourceRgb || !targetRgb) return color || target;
+  const ratio = allocationMapClamp(amount, 0, 1);
+  const channel = (name) => Math.round(sourceRgb[name] * (1 - ratio) + targetRgb[name] * ratio)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${channel("r")}${channel("g")}${channel("b")}`;
+}
+
 function allocationMapLabelLines(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return [""];
@@ -2210,8 +2237,7 @@ function setupAllocationWarehouseMap(host, entry) {
   const missingToggle = host.querySelector("[data-map-missing]");
   const missingPanel = host.querySelector("[data-map-missing-panel]");
   if (!svg || !canvas || !entry) return;
-  const unusedPattern = svg.querySelector("[data-map-unused-stripes]");
-  const unusedStripeFill = unusedPattern?.id ? `url(#${unusedPattern.id})` : "";
+  const defs = svg.querySelector("defs");
 
   const locations = (Array.isArray(entry.locations) ? entry.locations : [])
     .map((loc) => ({
@@ -2423,20 +2449,24 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.metaText.setAttribute("y", contentY);
   }
 
-  function setUnusedCapacityStripe(unusedEl, loc, assignment) {
+  function setUnusedCapacityStripe(elements, loc, assignment) {
+    const unusedEl = elements.unused;
     unusedEl.style.display = "none";
-    if (!assignment || !unusedStripeFill) return;
+    if (!assignment || !elements.unusedPatternId) return;
     const capacity = allocationMapNumber(assignment.maxPall || loc.maxPall);
     const placed = allocationMapNumber(assignment.placedPallets);
     if (capacity <= 0 || placed >= capacity) return;
     const fraction = allocationMapClamp((capacity - Math.max(0, placed)) / capacity, 0, 1);
     if (fraction < 0.01) return;
+    const color = colorMap.get(assignment.carrier) || "#94a3b8";
+    elements.unusedPatternBase?.setAttribute("fill", allocationMapMixHexColor(color, "#ffffff", 0.72));
+    elements.unusedPatternBand?.setAttribute("fill", allocationMapMixHexColor(color, "#ffffff", 0.36));
     const horizontal = loc.w >= loc.h;
     unusedEl.setAttribute("x", loc.x);
     unusedEl.setAttribute("y", loc.y);
     unusedEl.setAttribute("width", horizontal ? loc.w * fraction : loc.w);
     unusedEl.setAttribute("height", horizontal ? loc.h : loc.h * fraction);
-    unusedEl.setAttribute("fill", unusedStripeFill);
+    unusedEl.setAttribute("fill", `url(#${elements.unusedPatternId})`);
     unusedEl.style.display = "";
   }
 
@@ -2450,7 +2480,7 @@ function setupAllocationWarehouseMap(host, entry) {
     elements.rect.classList.toggle("is-clipboard-source", state.clipboard?.source === location);
     elements.rect.classList.toggle("is-over-capacity", Boolean(assignment && assignment.unusedCapacity < -0.001));
     elements.rect.style.fill = assignment ? (colorMap.get(assignment.carrier) || "") : "";
-    setUnusedCapacityStripe(elements.unused, loc, assignment);
+    setUnusedCapacityStripe(elements, loc, assignment);
     setMapText(elements, loc, assignment);
   }
 
@@ -2698,6 +2728,7 @@ function setupAllocationWarehouseMap(host, entry) {
 
   function renderLocations() {
     canvas.innerHTML = "";
+    defs?.querySelectorAll("[data-map-unused-stripes]").forEach((pattern) => pattern.remove());
     state.locElements.clear();
     locations.forEach((loc) => {
       const group = document.createElementNS(ALLOCATION_MAP_NS, "g");
@@ -2709,6 +2740,27 @@ function setupAllocationWarehouseMap(host, entry) {
       rect.setAttribute("height", loc.h);
       rect.setAttribute("class", "allocation-map-loc");
       rect.dataset.mapLocation = loc.location;
+      const unusedPatternId = `allocation-map-unused-stripes-${host.dataset.mapIndex || "0"}-${allocationMapSafeSvgId(loc.location)}`;
+      const unusedPattern = document.createElementNS(ALLOCATION_MAP_NS, "pattern");
+      unusedPattern.setAttribute("id", unusedPatternId);
+      unusedPattern.setAttribute("data-map-unused-stripes", loc.location);
+      unusedPattern.setAttribute("width", "18");
+      unusedPattern.setAttribute("height", "18");
+      unusedPattern.setAttribute("patternUnits", "userSpaceOnUse");
+      unusedPattern.setAttribute("patternTransform", "rotate(45)");
+      const unusedPatternBase = document.createElementNS(ALLOCATION_MAP_NS, "rect");
+      unusedPatternBase.setAttribute("x", "0");
+      unusedPatternBase.setAttribute("y", "0");
+      unusedPatternBase.setAttribute("width", "18");
+      unusedPatternBase.setAttribute("height", "18");
+      const unusedPatternBand = document.createElementNS(ALLOCATION_MAP_NS, "rect");
+      unusedPatternBand.setAttribute("x", "0");
+      unusedPatternBand.setAttribute("y", "0");
+      unusedPatternBand.setAttribute("width", "8");
+      unusedPatternBand.setAttribute("height", "18");
+      unusedPattern.appendChild(unusedPatternBase);
+      unusedPattern.appendChild(unusedPatternBand);
+      defs?.appendChild(unusedPattern);
       const unused = document.createElementNS(ALLOCATION_MAP_NS, "rect");
       unused.setAttribute("class", "allocation-map-unused");
       const edgeText = document.createElementNS(ALLOCATION_MAP_NS, "text");
@@ -2723,7 +2775,17 @@ function setupAllocationWarehouseMap(host, entry) {
       group.appendChild(mainText);
       group.appendChild(metaText);
       canvas.appendChild(group);
-      state.locElements.set(loc.location, { group, rect, unused, edgeText, mainText, metaText });
+      state.locElements.set(loc.location, {
+        group,
+        rect,
+        unused,
+        unusedPatternId,
+        unusedPatternBase,
+        unusedPatternBand,
+        edgeText,
+        mainText,
+        metaText,
+      });
     });
     refreshMap();
   }

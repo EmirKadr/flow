@@ -832,6 +832,9 @@ def test_bearbeta_area_focus_filter_contract():
     assert "allocation-map-unused" in allocation
     assert ".allocation-map-unused" in styles
     assert "allocationMapShortLocation" in allocation
+    assert "allocationMapMixHexColor" in allocation
+    assert "unusedPatternBase" in allocation
+    assert "unusedPatternBand" in allocation
     assert "allocationMapLabelLines" in allocation
     assert 'document.createElementNS(ALLOCATION_MAP_NS, "tspan")' in allocation
     assert "allocation-map-label-edge" in allocation
@@ -840,8 +843,10 @@ def test_bearbeta_area_focus_filter_contract():
     assert "stroke: rgba(255, 255, 255" not in styles
     assert 'elements.metaText.textContent = "";' in allocation
     assert '${assignment.placedPallets}/${assignment.maxPall || "?"} pall' not in allocation
-    assert 'patternTransform="rotate(45)"' in allocation
-    assert 'width="8" height="18" fill="#ffffff" opacity="0.78"' in allocation
+    assert 'unusedPattern.setAttribute("patternTransform", "rotate(45)")' in allocation
+    assert 'allocationMapMixHexColor(color, "#ffffff", 0.72)' in allocation
+    assert 'allocationMapMixHexColor(color, "#ffffff", 0.36)' in allocation
+    assert 'fill="#ffffff" opacity="0.78"' not in allocation
     assert "M-5 18L18 -5" not in allocation
     assert "Återställ vy" in allocation
     assert "Fullskärm" in allocation

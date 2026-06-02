@@ -11,7 +11,7 @@ tags: [wiki, logg]
 
 Ytgenereringens ytkarta visar nu kort ytkod utan `UTL` i ytans kortsida,
 kundnamn i mitten som kan brytas pa tva rader utan halo, ingen pallrad inne pa
-ytan och transparenta vita rander for outnyttjad kapacitet proportionellt mot
+ytan och fargade ljusare rander for outnyttjad kapacitet proportionellt mot
 ledig andel.
 
 ## [2026-06-01] feature | Ytkarta far egen Installningar-vy
