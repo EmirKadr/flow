@@ -71,12 +71,9 @@ def test_sidebar_log_persists_across_view_navigation(local_sidebar_server, chrom
 
         page.evaluate("() => window.clearAppLog()")
         page.evaluate("() => window.flowLog.success('Testlogg sparad över vybyte', 'Test')")
-        expect(page.locator("#log-notice")).to_be_visible()
-        expect(page.locator("#log-notice")).to_have_text("1")
+        page.wait_for_selector("#log-toggle.log-signal", timeout=1500)
         page.goto(f"{local_sidebar_server}/personer.html", wait_until="networkidle")
         page.wait_for_selector("#persons-body tr", timeout=15000)
-        expect(page.locator("#log-notice")).to_be_visible()
-        assert int(page.locator("#log-notice").inner_text()) >= 1
         page.click("#log-toggle")
 
         expect(page.locator("#log-sidebar")).to_be_visible()

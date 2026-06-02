@@ -568,23 +568,38 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
 .database-toggle .upload-notice[hidden] { display: none; }
 .log-toggle .log-notice {
   position: absolute;
-  top: -6px;
-  left: -6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  top: -5px;
+  left: -5px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
   border-radius: 999px;
-  display: grid;
-  place-items: center;
+  display: block;
   background: #4f46e5;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  box-shadow: 0 5px 14px rgba(79, 70, 229, .28);
+  box-shadow: 0 0 0 0 rgba(79, 70, 229, .35), 0 5px 14px rgba(79, 70, 229, .24);
   border: 2px solid var(--surface);
   z-index: 1;
+  pointer-events: none;
 }
 .log-toggle .log-notice[hidden] { display: none; }
+.log-toggle .log-arrow {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  color: #16a34a;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(9px);
+}
+.log-toggle.log-signal .log-arrow {
+  animation: logArrowRise .78s ease-out;
+}
+.log-toggle.log-signal .log-notice {
+  animation: logBubbleBurst .82s ease-out forwards;
+}
 .database-toggle .upload-arrow {
   position: absolute;
   bottom: 4px;
@@ -598,6 +613,40 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
 }
 .database-toggle.uploading .upload-arrow {
   animation: uploadArrowRise .72s linear infinite;
+}
+@keyframes logArrowRise {
+  0% {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  24% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes logBubbleBurst {
+  0% {
+    opacity: 0;
+    transform: scale(.42);
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, .38), 0 5px 14px rgba(79, 70, 229, .24);
+  }
+  24% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  72% {
+    opacity: .72;
+    transform: scale(1.16);
+    box-shadow: 0 0 0 8px rgba(79, 70, 229, .12), 0 5px 14px rgba(79, 70, 229, .18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+    box-shadow: 0 0 0 14px rgba(79, 70, 229, 0), 0 5px 14px rgba(79, 70, 229, 0);
+  }
 }
 .upload-context-menu {
   position: fixed;
@@ -4599,6 +4648,16 @@ tr.filter-row input {
 .allocation-map-settings-page-panel .allocation-map-setting-loc {
   cursor: move;
 }
+.allocation-map-settings-guide-layer {
+  pointer-events: none;
+}
+.allocation-map-settings-guide-line {
+  stroke: #64748b;
+  stroke-width: 1.25;
+  stroke-dasharray: 5 7;
+  opacity: .38;
+  vector-effect: non-scaling-stroke;
+}
 .allocation-map-setting-loc {
   fill: var(--surface);
   stroke: #94a3b8;
@@ -4630,6 +4689,28 @@ tr.filter-row input {
   fill: #94a3b8;
   opacity: .62;
   pointer-events: none;
+}
+.allocation-map-settings-context-menu {
+  position: absolute;
+  z-index: 3200;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.allocation-map-settings-context-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+.allocation-map-settings-context-menu button:hover {
+  background: #eef2ff;
+  border-color: transparent;
 }
 .allocation-map-settings-side {
   display: grid;

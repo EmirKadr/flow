@@ -397,3 +397,97 @@ def test_audit_errors_groups_client_and_failed_events(audit_db_session):
     assert {bucket.label for bucket in summary.top_actions} == {"client_error", "upload_failed"}
     assert any(bucket.label == "/api/persons" for bucket in summary.top_paths)
     assert {event.action for event in summary.recent} == {"client_error", "upload_failed"}
+
+
+def test_audit_endpoints_can_filter_by_business(audit_db_session):
+    stigamo = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    r3 = Business(code="R3", name="R3", sort_order=2)
+    audit_db_session.add_all([stigamo, r3])
+    audit_db_session.flush()
+    super_user = User(
+        username="root",
+        display_name="Root",
+        role="super_user",
+        roles=["super_user"],
+        business_id=stigamo.id,
+        is_active=True,
+    )
+    r3_user = User(
+        username="r3-admin",
+        display_name="R3 Admin",
+        role="admin",
+        roles=["admin"],
+        business_id=r3.id,
+        is_active=True,
+    )
+    audit_db_session.add_all([super_user, r3_user])
+    audit_db_session.flush()
+    now = datetime.now(timezone.utc)
+    audit_db_session.add_all([
+        AuditLog(
+            business_id=stigamo.id,
+            entity_type="person",
+            entity_id=1,
+            action="update",
+            old_value={"name": "A"},
+            new_value={"name": "B"},
+            user_id=super_user.id,
+            created_at=now,
+        ),
+        AuditLog(
+            business_id=r3.id,
+            entity_type="client_error",
+            entity_id=500,
+            action="client_error",
+            old_value=None,
+            new_value={"path": "/api/r3", "status_code": 500, "error_code": "HTTP 500"},
+            user_id=r3_user.id,
+            created_at=now,
+        ),
+    ])
+    audit_db_session.commit()
+
+    entries = audit_logs.list_audit_entries(
+        limit=100,
+        offset=0,
+        business_id=r3.id,
+        user_id=None,
+        entity_type=None,
+        action=None,
+        entity_id=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=super_user,
+    )
+    summary = audit_logs.audit_summary(
+        business_id=r3.id,
+        user_id=None,
+        entity_type=None,
+        action=None,
+        entity_id=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=super_user,
+    )
+    errors = audit_logs.audit_errors(
+        limit=100,
+        scan_limit=5000,
+        business_id=r3.id,
+        user_id=None,
+        entity_type=None,
+        action=None,
+        entity_id=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=super_user,
+    )
+
+    assert [entry.business_id for entry in entries] == [r3.id]
+    assert [entry.entity_type for entry in entries] == ["client_error"]
+    assert summary.total_events == 1
+    assert summary.top_users[0].label == "R3 Admin"
+    assert errors.total_errors == 1
+    assert errors.recent[0].path == "/api/r3"

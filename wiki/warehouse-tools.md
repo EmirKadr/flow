@@ -1,7 +1,7 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
@@ -89,7 +89,7 @@ Ytgenerering sorterar transportorer efter Forecast-klustren nar de finns: rader 
 
 Ytgenerering-kartans sidopanel visar `Lediga pallplatser` som total kapacitet minus placerade pallplatser och `Lediga ytor` som antalet kartytor utan placering. Bada vardena raknas om nar anvandaren flyttar, klistrar in eller angrar placeringar pa kartan.
 
-I `Installningar` kan lediga U-platser ocksa dras fran sidolistan direkt till kartan. Droppunkten blir ytans koordinat, och ytan far sin `maxPall` fran verksamhetens `location`-underlag innan layouten sparas for aktiv verksamhet. Kartans ytetiketter visar kort kod utan `UTL`, foljer ytans langsta sida och anvander samma normalviktade fontstil som Ytgenereringens ytkarta, men med storre ytkod eftersom redigeringsytorna saknar kundtext. Varje yta visar ocksa en diskret fylld lastningspil i ytans kant; dubbelklick pa ytan vaxlar mellan de tva riktningar som ar parallella med ytans langsta sida och sparar `loadDirection`. I Ytgenerering styr riktningen var ytkoden visas och vilken sida som blir randig vid outnyttjad kapacitet.
+I `Installningar` kan lediga U-platser ocksa dras fran sidolistan direkt till kartan. Droppunkten blir ytans koordinat, och ytan far sin `maxPall` fran verksamhetens `location`-underlag innan layouten sparas for aktiv verksamhet. Nya ytor fran listan behaller basytans kortsidesbredd men skalar langssidan efter kapacitet, sa exempelvis en 7-palls-yta blir 3,5 ganger langre an en 2-palls-yta. Kartans ytetiketter visar kort kod utan `UTL`, foljer ytans langsta sida och anvander samma normalviktade fontstil som Ytgenereringens ytkarta, men med storre ytkod eftersom redigeringsytorna saknar kundtext. Nar en yta dras visar kartan diskreta hjalplinjer och snappar bara nara andra ytors kanter och mittlinjer for enklare linjering. Varje yta visar ocksa en diskret fylld lastningspil i ytans kant; dubbelklick pa ytan roterar den 90 grader at vanster, medan hogerklicksmenyn `Byt riktning` vaxlar lastningsriktning for en eller flera markerade ytor och sparar `loadDirection`. Menyn positioneras lokalt i kartans workspace vid hogerklickspunkten, sa den foljer musen aven nar appen eller kartan ar zoomad. I Ytgenerering styr riktningen var ytkoden visas och vilken sida som blir randig vid outnyttjad kapacitet.
 
 Ytkartan visar nu en kort ytkod utan `UTL` i ytans kortsida, sa kundnamnet kan ligga storre i mitten av ytan utan pallrad under. Kundnamnet bryts pa max tva rader nar det innehaller flera ord, visas utan halo/outline och ligger alltid parallellt med ytans langsta sida. Det ersatter den tidigare centrerade UTL-raden i varje kartkort. Outnyttjad kapacitet visas som ljusare fargnyanser av samma ytfarg, proportionellt mot ledig andel, till exempel 50 procent randigt vid 5 av 10 placerade pallplatser.
 

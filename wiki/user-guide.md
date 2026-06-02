@@ -98,11 +98,11 @@ Sista administratören i en verksamhet kan inte tas bort eller nedgraderas.
 ## Historik
 
 1. Ga till `Historik`.
-2. Valj om du vill se `Anvandarhistorik`, `Analys` eller `Felkoder`.
+2. Valj om du vill se `Anvandarhistorik`, `Analys`, `Felkoder`, `Vantetider` eller `Halsa`.
 3. Valj period.
-4. Filtrera pa anvandare, typ, atgard eller objekt-id.
+4. Filtrera pa verksamhet, anvandare, typ, atgard eller objekt-id.
 5. Klicka `Uppdatera`.
-6. Anvand tabellen, analysen eller felkodsdashboarden for att forklara vad som hande.
+6. Anvand tabellen, analysen, felkodsdashboarden eller vantetiderna for att forklara vad som hande.
 
 Felkodsvyn ar en felsokningsvy ovanpa auditloggen. Den visar klientrapporterade API-fel och backendfloden som auditloggats som misslyckade.
 

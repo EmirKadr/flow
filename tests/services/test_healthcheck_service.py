@@ -75,6 +75,57 @@ def test_wait_metric_collection_summarizes_slowest_steps():
     assert summary["analysis"]
 
 
+def test_wait_metric_summary_can_filter_by_business():
+    engine, db = make_session()
+    try:
+        stigamo = Business(code="STIGAMO", name="Stigamo")
+        r3 = Business(code="R3", name="R3")
+        db.add_all([stigamo, r3])
+        db.flush()
+        user = User(username="root", password_hash="x", role="super_user", business_id=stigamo.id)
+        db.add(user)
+        db.flush()
+        db.add_all([
+            UserWaitMetric(
+                business_id=stigamo.id,
+                user_id=user.id,
+                event_type="api_request",
+                view_id="analytics",
+                target="GET /api/audit",
+                duration_ms=100,
+                status="ok",
+            ),
+            UserWaitMetric(
+                business_id=r3.id,
+                user_id=user.id,
+                event_type="api_request",
+                view_id="analytics",
+                target="GET /api/r3",
+                duration_ms=900,
+                status="ok",
+            ),
+        ])
+        db.commit()
+
+        summary = healthcheck.wait_metrics_summary(
+            period="all",
+            limit=100,
+            business_id=r3.id,
+            user_id=None,
+            q=None,
+            db=db,
+            _=user,
+        )
+    finally:
+        db.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+    assert summary["count"] == 1
+    assert summary["max_ms"] == 900
+    assert summary["by_target"][0]["key"] == "GET /api/r3"
+
+
 def test_healthcheck_redacts_secret_like_text():
     assert "secret[redacted]" in clean_text("secret=abc123")
     assert "abc123" not in clean_text("token=abc123")

@@ -76,9 +76,12 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'data-history-mode="errors"' in html
     assert 'data-history-mode="waits"' in html
     assert 'data-history-mode="health"' in html
+    assert 'id="businessFilter"' in html
     assert 'id="recentErrorBody"' in html
     assert 'id="slowWaitBody"' in html
     assert 'id="healthChecksBody"' in html
+    assert 'api.get("/api/businesses?include_inactive=true")' in analytics
+    assert 'params.set("business_id", businessId)' in analytics
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
     assert 'api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`)' in analytics
     assert 'api.get("/api/healthcheck?include_render=true"' in analytics
@@ -100,6 +103,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "appendAppLog(message" in common
     assert "APP_LOG_STORAGE_KEY" in common
     assert "APP_LOG_UNREAD_STORAGE_KEY" in common
+    assert "triggerAppLogSignal" in common
+    assert "appLogSignalTimer" in common
+    assert "readStoredAppLogUnreadCount" not in common
+    assert "persistAppLogUnreadCount" not in common
+    assert "incrementAppLogNotice" not in common
     assert "function recordWaitMetric" in common
     assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
     assert "client_long_task" in common
@@ -541,9 +549,12 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "renderAllocationUploadUtility" in common
     assert "renderLogUtility" in common
     assert 'id="log-toggle"' in common
+    assert 'class="log-arrow"' in common
     assert 'id="log-notice"' in common
     assert "updateAppLogNotice" in common
     assert "clearAppLogNotice" in common
+    assert "triggerAppLogSignal" in common
+    assert "log-signal" in common
     assert 'panel.id = "log-sidebar"' in common
     assert 'id="log-sidebar-close"' in common
     assert "ensureLogSidebar" in common
@@ -567,6 +578,10 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "[hidden] { display: none !important; }" in styles
     assert ".log-toggle" in styles
     assert ".log-toggle .log-notice" in styles
+    assert ".log-toggle .log-arrow" in styles
+    assert "@keyframes logArrowRise" in styles
+    assert "@keyframes logBubbleBurst" in styles
+    assert "animation: logBubbleBurst" in styles
     assert ".log-sidebar" in styles
     assert ".log-sidebar[hidden]" in styles
     assert ".log-sidebar-close" in styles
@@ -795,6 +810,7 @@ def test_area_focus_toggle_is_wired_to_views():
 def test_bearbeta_area_focus_filter_contract():
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "frontend" / "css" / "styles.css").read_text(encoding="utf-8")
+    settings_html = (ROOT / "app" / "frontend" / "installningar.html").read_text(encoding="utf-8")
 
     assert "ALLOCATION_PROCESS_MATRIX" in allocation
     assert 'GG: {' in allocation
@@ -816,6 +832,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert "allocationMapLayoutSaveSignature" in allocation
     assert "Servern bekräftade inte ytkartsändringarna" in allocation
     assert "allocationMapLayoutSeriesRows" in allocation
+    assert "function allocationMapLayoutSizeForCapacity" in allocation
     assert "data-map-add-series" in allocation
     assert "data-map-add-location" in allocation
     assert "application/x-flow-yt-location" in allocation
@@ -824,6 +841,13 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-map-zoom-out" in allocation
     assert "data-map-fit" in allocation
     assert "data-map-settings-fullscreen" in allocation
+    assert "data-map-snap-guides" in allocation
+    assert "function snapTargetsForDrag" in allocation
+    assert "function applySnapToDrag" in allocation
+    assert "function mapSettingRowAtClientPoint" in allocation
+    assert "const MAP_SNAP_SCREEN_PX = 4" in allocation
+    assert "updateMapSnapGuides(guides, dragState.viewBox)" in allocation
+    assert "snapTargets: snapTargetsForDrag()" in allocation
     assert "data-map-selection-count" in allocation
     assert "handleMapSettingsKeydown" in allocation
     assert "selectedLocations" in allocation
@@ -831,6 +855,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert ".allocation-map-settings-page-panel" in styles
     assert ".allocation-map-settings-fullscreen-button" in styles
     assert ".allocation-map-settings-canvas.is-drop-target" in styles
+    assert ".allocation-map-settings-guide-line" in styles
     assert "function allocationMapSettingLabelAttrs" in allocation
     assert "const ALLOCATION_MAP_LOAD_DIRECTIONS" in allocation
     assert "function allocationNormalizeMapLoadDirection" in allocation
@@ -849,12 +874,23 @@ def test_bearbeta_area_focus_filter_contract():
     assert "allocationRenderMapSettingLabel(item)" in allocation
     assert "allocationUpdateMapSettingLabelElement(item.label, item.row)" in allocation
     assert "allocationRenderMapSettingDirectionArrow(item)" in allocation
-    assert "cycleLocationLoadDirection" in allocation
+    assert "allocationRotateMapLoadDirectionLeft" in allocation
+    assert "function rotateLocationLeft" in allocation
+    assert "function cycleSelectedLoadDirections" in allocation
+    assert "data-map-context-direction" in allocation
+    assert "function positionMapSettingsContextMenu" in allocation
+    assert 'menu.style.position = "absolute"' in allocation
+    assert "workspace.appendChild(menu)" in allocation
+    assert "document.body.appendChild(menu)" not in allocation
+    assert "allocation_tools.js?v=20260602-map-snap-guides" in settings_html
+    assert 'svg?.addEventListener("contextmenu"' in allocation
     assert "allocationNextMapLoadDirection(row.loadDirection, row)" in allocation
     assert "allocationMapLoadOriginSide(loc.loadDirection, loc)" in allocation
     assert ".allocation-map-setting-label" in styles
     assert ".allocation-map-setting-label {\n  dominant-baseline: middle;\n  font-family: inherit;\n  fill: var(--text);\n  font-size: 32px;\n  font-weight: 400;" in styles
     assert ".allocation-map-setting-direction-arrow" in styles
+    assert ".allocation-map-settings-context-menu" in styles
+    assert ".allocation-map-settings-context-menu {\n  position: absolute;" in styles
     assert "fill: #94a3b8;" in styles
     assert "allocation-process-matrix-table" in allocation
     assert "Ytgenerering UTL" in allocation

@@ -113,11 +113,14 @@ def record_wait_metrics(
 def wait_metrics_summary(
     period: str = Query("24h"),
     limit: int = Query(5000, ge=100, le=20000),
+    business_id: int | None = Query(None),
     user_id: int | None = Query(None),
     q: str | None = Query(None, max_length=120),
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> dict[str, Any]:
+    if not isinstance(business_id, int):
+        business_id = None
     if not isinstance(user_id, int):
         user_id = None
     if not isinstance(q, str):
@@ -126,6 +129,8 @@ def wait_metrics_summary(
     query = select(UserWaitMetric).order_by(UserWaitMetric.created_at.desc()).limit(limit)
     if since is not None:
         query = query.where(UserWaitMetric.created_at >= since)
+    if business_id is not None:
+        query = query.where(UserWaitMetric.business_id == business_id)
     if user_id is not None:
         query = query.where(UserWaitMetric.user_id == user_id)
     query_text = clean_text(q, limit=120)

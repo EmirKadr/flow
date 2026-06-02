@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandelser
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [anvandare, handelser, toast, state, chat]
 ---
 
@@ -21,7 +21,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | API-fel loggas | Ingen extra UI-storning | Frontend far 4xx/5xx eller natverksfel fran API | Felet rapporteras tyst som `client_error` nar anvandaren ar inloggad, sa Super User kan felsoka i Historik > Felkoder. Galler aven Bearbeta. |
 | Publikt Meta-fel loggas | Meta-uppladdningen visar kort feltext och markerar filen som `Fel` | Anonym uppladdning till `/api/meta/uploads` nar backend hinner ta emot men misslyckas | Backend skriver `meta_media_upload/upload_failed` som systemhandelse i Historik > Felkoder, med status och storlek men utan filnamn/innehall. Klienten fortsatter med nasta valda fil. |
 | Vy oppnas | Ingen rad i dokumentloggen | Sidan rapporterar tyst `view/open` till Historik | Anvands for sparad audit, inte for snabb felsokningslogg. |
-| Dokument-logg fylls | Dokument-ikonen visar badge med antal nya loggrader och panelen visar success/info/varning/fel | Funktioner, importer, exporter, bakgrundsvarningar och API-wrappern skriver till en sessionlagrad loggpanel | Oppna dokument-ikonen for snabb felsokning; badgen nollas nar panelen oppnas eller loggen rensas. Loggen foljer med vid sidbyte i samma browserflik men ska inte fyllas av vanliga sidbyten. Anvand Historik for sparad audit. |
+| Dokument-logg fylls | Dokument-ikonen visar en kort pil- och bubbelsignal och panelen visar success/info/varning/fel | Funktioner, importer, exporter, bakgrundsvarningar och API-wrappern skriver till en sessionlagrad loggpanel | Oppna dokument-ikonen for snabb felsokning. Signalen ar tillfallig och visar ingen raknare efterat. Loggen foljer med vid sidbyte i samma browserflik men ska inte fyllas av vanliga sidbyten. Anvand Historik for sparad audit. |
 | Bakgrundsladdning misslyckas | Warn-rad i dokumentloggen | En forvarmning/cachehamtning kunde inte hamtas utan att stoppa vyn | Fortsatt jobba; om samma varning upprepas, ladda om eller kontrollera backend/natverk. |
 | Tema andras | Ikon/vy byter ljust/morkt | Tema sparas lokalt | Inget fel; per enhet/browser. |
 | Appzoom andras | Hela appytan blir storre/mindre | Anvandaren klickar forstoringsglas minus/plus, trycker `Ctrl+-`, `Ctrl++`, `Ctrl+0` eller anvander `Ctrl+scroll` | Zoomnivan sparas lokalt per browser/app i `flow-app-zoom`. `Ctrl+0` aterstaller till 100%. |

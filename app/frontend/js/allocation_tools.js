@@ -3668,6 +3668,18 @@ function allocationMapLayoutSelectedRow(rows, selectedLocation) {
   };
 }
 
+function allocationMapLayoutSizeForCapacity(base, maxPall) {
+  const baseWidth = Math.max(1, Math.round(allocationMapNumber(base.w ?? base.width, 240)));
+  const baseHeight = Math.max(1, Math.round(allocationMapNumber(base.h ?? base.height, 80)));
+  const baseCapacity = Math.max(0.1, allocationMapNumber(base.maxPall ?? base.max_pall, 2));
+  const nextCapacity = Math.max(0.1, allocationMapNumber(maxPall, baseCapacity));
+  const ratio = nextCapacity / baseCapacity;
+  if (baseWidth >= baseHeight) {
+    return { w: Math.max(1, Math.round(baseWidth * ratio)), h: baseHeight };
+  }
+  return { w: baseWidth, h: Math.max(1, Math.round(baseHeight * ratio)) };
+}
+
 function allocationMapLayoutSeriesRows(rows, options) {
   const start = Math.max(1, Number.parseInt(options.start, 10) || allocationMapLayoutNextNumber(rows));
   const end = Math.max(1, Number.parseInt(options.end, 10) || start);
@@ -3686,29 +3698,36 @@ function allocationMapLayoutSeriesRows(rows, options) {
     const location = `UTL${number}`;
     if (existing.has(location)) {
       const existingRow = rows.find((row) => row.location === location);
-      if (existingRow) cursor = { ...existingRow, x: existingRow.x + step.dx, y: existingRow.y + step.dy };
+      if (existingRow) {
+        const existingStep = allocationMapLayoutStep(existingRow, direction, gap);
+        cursor = { ...existingRow, x: existingRow.x + existingStep.dx, y: existingRow.y + existingStep.dy };
+      }
       continue;
     }
     const available = availableByLocation.get(location);
     if (useAvailableFilter && !available) continue;
-    const draftWidth = Math.max(1, Math.round(allocationMapNumber(options.w, base.w)));
-    const draftHeight = Math.max(1, Math.round(allocationMapNumber(options.h, base.h)));
+    const maxPall = allocationMapRound(options.maxPall || available?.maxPall || base.maxPall || 2);
+    const scaledSize = allocationMapLayoutSizeForCapacity(
+      { ...base, w: allocationMapNumber(options.w, base.w), h: allocationMapNumber(options.h, base.h) },
+      maxPall,
+    );
     const draft = {
       location,
       x: cursor.x,
       y: cursor.y,
-      w: draftWidth,
-      h: draftHeight,
-      maxPall: allocationMapRound(options.maxPall || available?.maxPall || base.maxPall || 2),
+      w: scaledSize.w,
+      h: scaledSize.h,
+      maxPall,
       loadDirection: allocationNormalizeMapLoadDirection(options.loadDirection || base.loadDirection, {
-        w: draftWidth,
-        h: draftHeight,
+        w: scaledSize.w,
+        h: scaledSize.h,
       }),
     };
     const placed = allocationMapLayoutAvoidCollision([...rows, ...additions], draft, direction, gap);
     additions.push(placed);
     existing.add(location);
-    cursor = { ...placed, x: placed.x + step.dx, y: placed.y + step.dy };
+    const placedStep = allocationMapLayoutStep(placed, direction, gap);
+    cursor = { ...placed, x: placed.x + placedStep.dx, y: placed.y + placedStep.dy };
   }
   return additions;
 }
@@ -3737,8 +3756,11 @@ async function mountAllocationMapSettingsPage(editor) {
   let viewBox = null;
   let statusText = "";
   let ignoreNextMapClick = false;
-  let lastMapCellClick = { location: "", at: 0 };
+  let ignoreMapContextClickUntil = 0;
+  let lastMapRotationAt = 0;
   const LOCATION_DRAG_TYPE = "application/x-flow-yt-location";
+  const MAP_SNAP_SCREEN_PX = 4;
+  const MAP_SNAP_MIN_UNITS = 2;
 
   try {
     layout = await loadAllocationMapLayout();
@@ -3808,6 +3830,22 @@ async function mountAllocationMapSettingsPage(editor) {
     editor.querySelectorAll("[data-map-setting-rect]").forEach((item) => {
       item.classList.toggle("is-selected", selectedLocations.has(item.dataset.mapSettingRect || ""));
     });
+    const count = editor.querySelector("[data-map-selection-count]");
+    if (count) count.textContent = `${selectedLocations.size || 0} valda`;
+    const row = selectedRow();
+    if (!row) return;
+    const fields = [
+      ["[data-map-setting-location]", row.location],
+      ["[data-map-setting-x]", row.x],
+      ["[data-map-setting-y]", row.y],
+      ["[data-map-setting-w]", row.w],
+      ["[data-map-setting-h]", row.h],
+      ["[data-map-setting-max]", row.maxPall],
+    ];
+    fields.forEach(([selector, value]) => {
+      const input = editor.querySelector(selector);
+      if (input) input.value = String(value);
+    });
   }
 
   function restoreMapRows(snapshot) {
@@ -3819,6 +3857,59 @@ async function mountAllocationMapSettingsPage(editor) {
   function currentBounds() {
     const sourceRows = rows.length ? rows : (layout.defaults || []);
     return allocationMapLayoutBounds(sourceRows);
+  }
+
+  function snapTargetsForDrag() {
+    const targets = { x: [], y: [] };
+    rows.forEach((row) => {
+      if (selectedLocations.has(row.location)) return;
+      targets.x.push(row.x, row.x + row.w / 2, row.x + row.w);
+      targets.y.push(row.y, row.y + row.h / 2, row.y + row.h);
+    });
+    return targets;
+  }
+
+  function closestSnap(candidates, targets, threshold) {
+    let best = null;
+    candidates.forEach((candidate) => {
+      targets.forEach((target) => {
+        const distance = Math.abs(target - candidate);
+        if (distance <= threshold && (!best || distance < best.distance)) {
+          best = { distance, delta: target - candidate, target };
+        }
+      });
+    });
+    return best;
+  }
+
+  function updateMapSnapGuides(guides = [], box = ensureViewBox()) {
+    const group = editor.querySelector("[data-map-snap-guides]");
+    if (!group) return;
+    group.innerHTML = guides.map((guide) => {
+      if (guide.axis === "x") {
+        return `<line class="allocation-map-settings-guide-line" x1="${guide.value}" y1="${box.y}" x2="${guide.value}" y2="${box.y + box.height}"></line>`;
+      }
+      return `<line class="allocation-map-settings-guide-line" x1="${box.x}" y1="${guide.value}" x2="${box.x + box.width}" y2="${guide.value}"></line>`;
+    }).join("");
+  }
+
+  function applySnapToDrag(dragState, dx, dy, scaleX, scaleY) {
+    const draftRows = dragState.items.map((item) => ({
+      row: item.row,
+      x: item.originalX + dx,
+      y: item.originalY + dy,
+      w: item.row.w,
+      h: item.row.h,
+    }));
+    const xCandidates = draftRows.flatMap((item) => [item.x, item.x + item.w / 2, item.x + item.w]);
+    const yCandidates = draftRows.flatMap((item) => [item.y, item.y + item.h / 2, item.y + item.h]);
+    const xSnap = closestSnap(xCandidates, dragState.snapTargets.x, Math.max(MAP_SNAP_MIN_UNITS, scaleX * MAP_SNAP_SCREEN_PX));
+    const ySnap = closestSnap(yCandidates, dragState.snapTargets.y, Math.max(MAP_SNAP_MIN_UNITS, scaleY * MAP_SNAP_SCREEN_PX));
+    const guides = [];
+    if (xSnap) guides.push({ axis: "x", value: xSnap.target });
+    if (ySnap) guides.push({ axis: "y", value: ySnap.target });
+    updateMapSnapGuides(guides, dragState.viewBox);
+    return { dx: dx + (xSnap?.delta || 0), dy: dy + (ySnap?.delta || 0), snapX: Boolean(xSnap), snapY: Boolean(ySnap) };
   }
 
   function ensureViewBox() {
@@ -3879,6 +3970,16 @@ async function mountAllocationMapSettingsPage(editor) {
       x: current.x + ((clientX - box.left) / Math.max(1, box.width)) * current.width,
       y: current.y + ((clientY - box.top) / Math.max(1, box.height)) * current.height,
     };
+  }
+
+  function mapSettingRowAtClientPoint(svg, clientX, clientY) {
+    const point = svgPointFromClient(svg, clientX, clientY);
+    return [...rows].reverse().find((row) => (
+      point.x >= row.x
+      && point.x <= row.x + row.w
+      && point.y >= row.y
+      && point.y <= row.y + row.h
+    )) || null;
   }
 
   function hasLocationDrag(event) {
@@ -3949,8 +4050,16 @@ async function mountAllocationMapSettingsPage(editor) {
     row.loadDirection = allocationNormalizeMapLoadDirection(rotatedDirection, row);
     selectedLocation = row.location;
     selectedLocations = new Set([row.location]);
-    statusText = `${row.location}: roterad vÃ¤nster.`;
+    statusText = `${row.location}: roterad v\u00e4nster.`;
     renderEditor();
+  }
+
+  function rotateLocationFromMapEvent(location) {
+    const now = Date.now();
+    if (!location || now - lastMapRotationAt < 240) return;
+    lastMapRotationAt = now;
+    rotateLocationLeft(location);
+    focusMapSettingsWorkspace();
   }
 
   function cycleSelectedLoadDirections() {
@@ -3987,15 +4096,17 @@ async function mountAllocationMapSettingsPage(editor) {
     const base = baseRowForPlacement();
     const direction = editor.querySelector("[data-map-series-direction]")?.value || "right";
     const gap = Math.max(0, Number.parseInt(editor.querySelector("[data-map-series-gap]")?.value, 10) || 20);
+    const maxPall = allocationMapRound(locationRow.maxPall || base.maxPall || 2);
+    const size = allocationMapLayoutSizeForCapacity(base, maxPall);
     const step = allocationMapLayoutStep(base, direction, gap);
     const draft = {
       location: locationRow.location,
       x: base.x + step.dx,
       y: base.y + step.dy,
-      w: base.w,
-      h: base.h,
-      maxPall: allocationMapRound(locationRow.maxPall || base.maxPall || 2),
-      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, base),
+      w: size.w,
+      h: size.h,
+      maxPall,
+      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, size),
     };
     const placed = allocationMapLayoutAvoidCollision(rows, draft, direction, gap);
     rows = sortedMapRows([...rows, placed]);
@@ -4011,16 +4122,19 @@ async function mountAllocationMapSettingsPage(editor) {
     const base = baseRowForPlacement();
     const direction = editor.querySelector("[data-map-series-direction]")?.value || "right";
     const gap = Math.max(0, Number.parseInt(editor.querySelector("[data-map-series-gap]")?.value, 10) || 20);
-    const width = Math.max(1, Math.round(allocationMapNumber(locationRow.w, base.w)));
-    const height = Math.max(1, Math.round(allocationMapNumber(locationRow.h, base.h)));
+    const maxPall = allocationMapRound(locationRow.maxPall || base.maxPall || 2);
+    const size = allocationMapLayoutSizeForCapacity(
+      { ...base, w: allocationMapNumber(locationRow.w, base.w), h: allocationMapNumber(locationRow.h, base.h) },
+      maxPall,
+    );
     const draft = {
       location: locationRow.location,
-      x: Math.round((allocationMapNumber(point?.x, base.x) - width / 2) / 10) * 10,
-      y: Math.round((allocationMapNumber(point?.y, base.y) - height / 2) / 10) * 10,
-      w: width,
-      h: height,
-      maxPall: allocationMapRound(locationRow.maxPall || base.maxPall || 2),
-      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, { w: width, h: height }),
+      x: Math.round((allocationMapNumber(point?.x, base.x) - size.w / 2) / 10) * 10,
+      y: Math.round((allocationMapNumber(point?.y, base.y) - size.h / 2) / 10) * 10,
+      w: size.w,
+      h: size.h,
+      maxPall,
+      loadDirection: allocationNormalizeMapLoadDirection(base.loadDirection, size),
     };
     const placed = allocationMapLayoutAvoidCollision(rows, draft, direction, gap);
     rows = sortedMapRows([...rows, placed]);
@@ -4229,6 +4343,20 @@ async function mountAllocationMapSettingsPage(editor) {
     document.querySelector(".allocation-map-settings-context-menu")?.remove();
   }
 
+  function positionMapSettingsContextMenu(menu, event) {
+    const workspace = editor.querySelector("[data-map-settings-workspace]") || editor;
+    const workspaceRect = workspace.getBoundingClientRect();
+    const scaleX = workspaceRect.width > 0 ? workspace.clientWidth / workspaceRect.width : 1;
+    const scaleY = workspaceRect.height > 0 ? workspace.clientHeight / workspaceRect.height : scaleX;
+    const clickX = (event.clientX - workspaceRect.left) * scaleX;
+    const clickY = (event.clientY - workspaceRect.top) * scaleY;
+    const padding = 8;
+    const maxLeft = Math.max(padding, workspace.clientWidth - menu.offsetWidth - padding);
+    const maxTop = Math.max(padding, workspace.clientHeight - menu.offsetHeight - padding);
+    menu.style.left = `${Math.max(padding, Math.min(clickX, maxLeft))}px`;
+    menu.style.top = `${Math.max(padding, Math.min(clickY, maxTop))}px`;
+  }
+
   function openMapSettingsContextMenu(event, location) {
     if (!canEdit || !location || !rows.some((row) => row.location === location)) return;
     event.preventDefault();
@@ -4242,6 +4370,7 @@ async function mountAllocationMapSettingsPage(editor) {
 
     const menu = document.createElement("div");
     menu.className = "allocation-map-settings-context-menu";
+    menu.style.position = "absolute";
     menu.innerHTML = `<button type="button" data-map-context-direction>Byt riktning</button>`;
     menu.addEventListener("click", (clickEvent) => clickEvent.stopPropagation());
     menu.querySelector("[data-map-context-direction]")?.addEventListener("click", () => {
@@ -4249,10 +4378,9 @@ async function mountAllocationMapSettingsPage(editor) {
       cycleSelectedLoadDirections();
       focusMapSettingsWorkspace();
     });
-    document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    menu.style.left = `${Math.min(event.clientX, window.innerWidth - rect.width - 8)}px`;
-    menu.style.top = `${Math.min(event.clientY, window.innerHeight - rect.height - 8)}px`;
+    const workspace = editor.querySelector("[data-map-settings-workspace]") || editor;
+    workspace.appendChild(menu);
+    positionMapSettingsContextMenu(menu, event);
     window.setTimeout(() => {
       document.addEventListener("click", closeMapSettingsContextMenu, { once: true });
     }, 0);
@@ -4326,6 +4454,7 @@ async function mountAllocationMapSettingsPage(editor) {
                 </pattern>
               </defs>
               <rect data-map-pan-surface x="-100000" y="-100000" width="200000" height="200000" fill="url(#allocation-map-settings-grid)"></rect>
+              <g data-map-snap-guides class="allocation-map-settings-guide-layer"></g>
               ${rows.map((item) => `
                 <g data-map-setting-node="${allocationEscape(item.location)}">
                   <rect class="allocation-map-setting-loc${selectedLocations.has(item.location) ? " is-selected" : ""}" data-map-setting-rect="${allocationEscape(item.location)}" x="${item.x}" y="${item.y}" width="${item.w}" height="${item.h}"></rect>
@@ -4386,22 +4515,26 @@ async function mountAllocationMapSettingsPage(editor) {
     workspace?.addEventListener("pointerdown", () => workspace.focus());
     editor.querySelectorAll("[data-map-setting-rect]").forEach((item) => {
       item.addEventListener("click", (event) => {
+        if (event.button === 2) return;
+        if (event.detail >= 2 && canEdit) {
+          rotateLocationFromMapEvent(item.dataset.mapSettingRect || "");
+          event.preventDefault();
+          return;
+        }
+        if (Date.now() < ignoreMapContextClickUntil) return;
         if (ignoreNextMapClick) {
           ignoreNextMapClick = false;
           return;
         }
         const location = item.dataset.mapSettingRect || "";
-        const now = Date.now();
-        if (canEdit && lastMapCellClick.location === location && now - lastMapCellClick.at < 1200) {
-          lastMapCellClick = { location: "", at: 0 };
-          cycleLocationLoadDirection(location);
-          focusMapSettingsWorkspace();
-          return;
-        }
-        lastMapCellClick = { location, at: now };
-        setSelection(location, event);
-        renderEditor();
+        setSelection(location, event, { keepExisting: true });
+        syncSelectionVisuals();
         focusMapSettingsWorkspace();
+      });
+      item.addEventListener("dblclick", (event) => {
+        if (!canEdit || event.button === 2) return;
+        rotateLocationFromMapEvent(item.dataset.mapSettingRect || "");
+        event.preventDefault();
       });
     });
     editor.querySelectorAll("[data-map-setting-location], [data-map-setting-x], [data-map-setting-y], [data-map-setting-w], [data-map-setting-h], [data-map-setting-max]").forEach((input) => {
@@ -4495,29 +4628,39 @@ async function mountAllocationMapSettingsPage(editor) {
       event.preventDefault();
       zoomView(event.deltaY < 0 ? 0.88 : 1.12, event);
     }, { passive: false });
-    svg?.addEventListener("dblclick", (event) => {
-      const rect = event.target.closest("[data-map-setting-rect]");
-      if (!rect || !canEdit) return;
-      event.preventDefault();
-      event.stopPropagation();
-      cycleLocationLoadDirection(rect.dataset.mapSettingRect || "");
-      focusMapSettingsWorkspace();
+    svg?.addEventListener("contextmenu", (event) => {
+      const node = event.target.closest?.("[data-map-setting-node]");
+      const rect = event.target.closest?.("[data-map-setting-rect]") || node?.querySelector("[data-map-setting-rect]");
+      const hitRow = rect ? null : mapSettingRowAtClientPoint(svg, event.clientX, event.clientY);
+      const location = rect?.dataset.mapSettingRect || hitRow?.location || "";
+      if (!location || !canEdit) return;
+      openMapSettingsContextMenu(event, location);
     });
+    svg?.addEventListener("dblclick", (event) => {
+      const node = event.target.closest?.("[data-map-setting-node]");
+      const rect = event.target.closest?.("[data-map-setting-rect]") || node?.querySelector("[data-map-setting-rect]");
+      const hitRow = rect ? null : mapSettingRowAtClientPoint(svg, event.clientX, event.clientY);
+      const location = rect?.dataset.mapSettingRect || hitRow?.location || "";
+      if (!location || !canEdit) return;
+      rotateLocationFromMapEvent(location);
+      event.preventDefault();
+    });
+    svg?.addEventListener("mousedown", (event) => {
+      if (event.button === 2) ignoreMapContextClickUntil = Date.now() + 600;
+    }, true);
     svg?.addEventListener("pointerdown", (event) => {
-      const rect = event.target.closest("[data-map-setting-rect]");
-      if (rect && canEdit) {
-        const location = rect.dataset.mapSettingRect || "";
+      if (event.button === 2) {
+        ignoreMapContextClickUntil = Date.now() + 600;
+        return;
+      }
+      closeMapSettingsContextMenu();
+      const node = event.target.closest?.("[data-map-setting-node]");
+      const rect = event.target.closest?.("[data-map-setting-rect]") || node?.querySelector("[data-map-setting-rect]");
+      const hitRow = rect ? null : mapSettingRowAtClientPoint(svg, event.clientX, event.clientY);
+      const location = rect?.dataset.mapSettingRect || hitRow?.location || "";
+      if (location && canEdit) {
         const row = rows.find((item) => item.location === location);
         if (!row) return;
-        const now = Date.now();
-        if (lastMapCellClick.location === location && now - lastMapCellClick.at < 1200) {
-          lastMapCellClick = { location: "", at: 0 };
-          cycleLocationLoadDirection(location);
-          focusMapSettingsWorkspace();
-          event.preventDefault();
-          return;
-        }
-        lastMapCellClick = { location, at: now };
         setSelection(row.location, event, { keepExisting: true });
         syncSelectionVisuals();
         const picked = selectedRows();
@@ -4538,6 +4681,7 @@ async function mountAllocationMapSettingsPage(editor) {
           startY: event.clientY,
           box: svg.getBoundingClientRect(),
           viewBox: { ...ensureViewBox() },
+          snapTargets: snapTargetsForDrag(),
           snapshot: cloneMapRows(),
           moved: false,
         };
@@ -4549,7 +4693,11 @@ async function mountAllocationMapSettingsPage(editor) {
           viewBox: { ...ensureViewBox() },
         };
       }
-      svg.setPointerCapture?.(event.pointerId);
+      try {
+        svg.setPointerCapture?.(event.pointerId);
+      } catch (_) {
+        // Synthetic browser tests do not always create an active pointer first.
+      }
       event.preventDefault();
     });
     svg?.addEventListener("pointermove", (event) => {
@@ -4558,10 +4706,15 @@ async function mountAllocationMapSettingsPage(editor) {
         const scaleY = drag.viewBox.height / Math.max(1, drag.box.height);
         const dx = (event.clientX - drag.startX) * scaleX;
         const dy = (event.clientY - drag.startY) * scaleY;
+        const snapped = applySnapToDrag(drag, dx, dy, scaleX, scaleY);
         if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 2) drag.moved = true;
         drag.items.forEach((item) => {
-          item.row.x = Math.round((item.originalX + dx) / 10) * 10;
-          item.row.y = Math.round((item.originalY + dy) / 10) * 10;
+          item.row.x = snapped.snapX
+            ? Math.round(item.originalX + snapped.dx)
+            : Math.round((item.originalX + snapped.dx) / 10) * 10;
+          item.row.y = snapped.snapY
+            ? Math.round(item.originalY + snapped.dy)
+            : Math.round((item.originalY + snapped.dy) / 10) * 10;
           item.rect?.setAttribute("x", item.row.x);
           item.rect?.setAttribute("y", item.row.y);
           allocationUpdateMapSettingLabelElement(item.label, item.row);
@@ -4581,10 +4734,15 @@ async function mountAllocationMapSettingsPage(editor) {
       }
     });
     svg?.addEventListener("pointerup", (event) => {
-      svg.releasePointerCapture?.(event.pointerId);
+      try {
+        svg.releasePointerCapture?.(event.pointerId);
+      } catch (_) {
+        // The pointer may already be released in synthetic browser tests.
+      }
       const hadDrag = drag;
       drag = null;
       pan = null;
+      updateMapSnapGuides([]);
       if (hadDrag?.moved) {
         undoStack.push(hadDrag.snapshot);
         if (undoStack.length > 80) undoStack.shift();
@@ -4596,6 +4754,7 @@ async function mountAllocationMapSettingsPage(editor) {
     svg?.addEventListener("pointercancel", () => {
       drag = null;
       pan = null;
+      updateMapSnapGuides([]);
       renderEditor();
     });
   }

@@ -3,6 +3,7 @@ let users = [];
 let persons = [];
 let activities = [];
 let areas = [];
+let businesses = [];
 let currentHistoryMode = "history";
 let healthReportCache = null;
 let healthReportLoadedAt = 0;
@@ -226,6 +227,9 @@ function currentParams(limit = 200) {
   const fromAt = periodStartIso(period);
   if (fromAt) params.set("from_at", fromAt);
 
+  const businessId = document.getElementById("businessFilter").value;
+  if (businessId) params.set("business_id", businessId);
+
   const userId = document.getElementById("userFilter").value;
   if (userId) params.set("user_id", userId);
 
@@ -361,6 +365,8 @@ function waitMetricParams() {
   const params = new URLSearchParams();
   params.set("period", document.getElementById("periodSelect").value || "24h");
   params.set("limit", "10000");
+  const businessId = document.getElementById("businessFilter").value;
+  if (businessId) params.set("business_id", businessId);
   const userId = document.getElementById("userFilter").value;
   if (userId) params.set("user_id", userId);
   const query = document.getElementById("actionFilter").value.trim();
@@ -526,26 +532,48 @@ async function loadHealthReport(force = false) {
 
 function fillUserFilter() {
   const select = document.getElementById("userFilter");
+  const selected = select.value;
+  const businessId = document.getElementById("businessFilter").value;
+  const visibleUsers = businessId
+    ? users.filter((user) => Number(user.business_id) === Number(businessId))
+    : users;
   select.innerHTML = '<option value="">Alla</option>';
-  users.forEach((user) => {
+  visibleUsers.forEach((user) => {
     const option = document.createElement("option");
     option.value = String(user.id);
     option.textContent = user.display_name || user.username;
     select.appendChild(option);
   });
+  if (selected && visibleUsers.some((user) => String(user.id) === selected)) {
+    select.value = selected;
+  }
+}
+
+function fillBusinessFilter() {
+  const select = document.getElementById("businessFilter");
+  select.innerHTML = '<option value="">Alla</option>';
+  businesses.forEach((business) => {
+    const option = document.createElement("option");
+    option.value = String(business.id);
+    option.textContent = business.name || business.code;
+    select.appendChild(option);
+  });
 }
 
 async function loadLookups() {
-  const [usersResp, personsResp, activitiesResp, areasResp] = await Promise.all([
+  const [businessesResp, usersResp, personsResp, activitiesResp, areasResp] = await Promise.all([
+    api.get("/api/businesses?include_inactive=true"),
     api.get("/api/users"),
     api.get("/api/persons?include_inactive=true"),
     api.get("/api/activities?include_inactive=true"),
     api.get("/api/areas?include_inactive=true"),
   ]);
+  businesses = businessesResp;
   users = usersResp;
   persons = personsResp;
   activities = activitiesResp;
   areas = areasResp;
+  fillBusinessFilter();
   fillUserFilter();
 }
 
@@ -581,6 +609,10 @@ async function refreshAnalytics() {
       setHistoryMode(button.dataset.historyMode);
       void refreshAnalytics();
     });
+  });
+  document.getElementById("businessFilter").addEventListener("change", () => {
+    fillUserFilter();
+    void refreshAnalytics();
   });
   ["periodSelect", "userFilter", "entityFilter"].forEach((id) => {
     document.getElementById(id).addEventListener("change", refreshAnalytics);

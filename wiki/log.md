@@ -7,6 +7,61 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-02] fix | Ytkartans hjalplinjer blir mjukare
+
+Installningar for Ytgenereringens ytkarta har nu ett tajtare snap-avstand och
+diskretare hjalplinjer vid dragning. Vanliga klick ritar inte langre om kartan
+direkt, sa dubbelklick pa en yta fungerar igen for att rotera den 90 grader.
+
+## [2026-06-02] feature | Hjalplinjer vid ytdragning
+
+Installningar for Ytgenereringens ytkarta visar nu hjalplinjer medan en yta
+dras. Dragningen snappar mot andra ytors vansterkant, mitt, hoger kant,
+topp, mitt och botten sa det blir lattare att hamna i samma hojd eller kolumn.
+
+## [2026-06-02] fix | Ytkartans hogerklicksmeny foljer klicket
+
+Hogerklicksmenyn `Byt riktning` i Installningar for Ytgenereringens ytkarta
+positioneras nu lokalt i kartans workspace och kompenserar for appzoom. Den
+ska darfor hamna vid hogerklicket i stallet for att flyta ut mot sidopanelen.
+Installningar-sidan har ocksa ny script-version sa browsern inte fortsatter
+ladda cachad kartkod.
+
+## [2026-06-02] polish | Loggikon signalerar utan raknare
+
+Dokument-/loggikonen i sidebaren visar nu en kort pil upp och en bubbla som
+tonar ut varje gang en loggrad skrivs. Den gamla olast-raknaren visas inte
+langre och gammalt sessionStorage-varde for raknaren rensas nar ikonen
+initialiseras eller signalerar.
+
+## [2026-06-02] fix | Ytkartor skalar nya ytor efter pallplatser
+
+Nar en ledig U-plats laggs till i Installningar for Ytgenereringens ytkarta
+skalas ytan nu efter sin `Max pall`. Formen behaller samma kortsidesbredd som
+basytan men forlangas langs langssidan, sa en 7-palls-yta blir 3,5 ganger
+langre an en 2-palls-yta.
+
+## [2026-06-02] fix | Ytkartsfalt foljer markerad yta
+
+Installningar for Ytgenereringens ytkarta synkar nu sidopanelens falt direkt
+nar anvandaren markerar en yta pa kartan. `Yta`, koordinater, storlek och
+kapacitet visar darfor den senast markerade ytan aven nar markeringen sker utan
+en full omritning av kartan.
+
+## [2026-06-02] feature | Verksamhetsfilter i Historik
+
+Historik har nu ett filter for `Verksamhet` i toppraden. Super User kan valja
+Alla eller en specifik verksamhet; valet skickas som `business_id` till
+anvandarhistorik, analys, felkoder och Vantetider. Anvandarlistan smalnas av
+nar verksamhet valjs. Halsa-fliken fortsatter visa global driftstatus.
+
+## [2026-06-02] polish | Ytkarta roterar med dubbelklick
+
+Installningar for Ytgenereringens ytkarta anvander nu dubbelklick pa en yta
+for att rotera ytan 90 grader at vanster runt sin mittpunkt. Lastningsriktning
+byts i stallet via hogerklicksmenyn `Byt riktning`, som fungerar for bade en
+markerad yta och flera markerade ytor samtidigt.
+
 ## [2026-06-02] fix | Korta UTL-ytor visas i Installningar
 
 Ytgenereringens lagerplatsfilter accepterar nu `Typ=U`-ytor med UTL-nummer

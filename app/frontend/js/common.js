@@ -99,7 +99,7 @@ const AREA_FOCUS_FALLBACK_NAMES = {
 let dynamicAreaFocusOptions = null;
 let areaFocusAreasRequest = null;
 const appLogEntries = readStoredAppLogEntries();
-let appLogUnreadCount = readStoredAppLogUnreadCount();
+let appLogSignalTimer = null;
 let waitMetricQueue = [];
 let waitMetricFlushTimer = null;
 let waitMetricInFlight = false;
@@ -1111,15 +1111,6 @@ function readStoredAppLogEntries() {
   }
 }
 
-function readStoredAppLogUnreadCount() {
-  try {
-    const count = Number(sessionStorage.getItem(APP_LOG_UNREAD_STORAGE_KEY) || 0);
-    return Number.isFinite(count) && count > 0 ? Math.min(99, Math.floor(count)) : 0;
-  } catch (_error) {
-    return 0;
-  }
-}
-
 function persistAppLogEntries() {
   try {
     sessionStorage.setItem(APP_LOG_STORAGE_KEY, JSON.stringify({
@@ -1129,42 +1120,43 @@ function persistAppLogEntries() {
   } catch (_error) {}
 }
 
-function persistAppLogUnreadCount() {
-  try {
-    if (appLogUnreadCount > 0) {
-      sessionStorage.setItem(APP_LOG_UNREAD_STORAGE_KEY, String(Math.min(99, appLogUnreadCount)));
-    } else {
-      sessionStorage.removeItem(APP_LOG_UNREAD_STORAGE_KEY);
-    }
-  } catch (_error) {}
-}
-
 function updateAppLogNotice() {
   const notice = document.getElementById("log-notice");
   const toggle = document.getElementById("log-toggle");
   if (!notice) return;
-  const count = Math.min(99, Math.max(0, appLogUnreadCount));
-  notice.hidden = count <= 0;
-  notice.textContent = count > 99 ? "99+" : String(count);
-  toggle?.classList.toggle("has-log-notice", count > 0);
-  toggle?.setAttribute("aria-label", count > 0 ? `Öppna logg, ${count} nya händelser` : "Öppna logg");
+  try { sessionStorage.removeItem(APP_LOG_UNREAD_STORAGE_KEY); } catch (_error) {}
+  notice.hidden = true;
+  notice.textContent = "";
+  toggle?.classList.remove("has-log-notice", "log-signal");
+  toggle?.setAttribute("aria-label", "Öppna logg");
 }
 
 function clearAppLogNotice() {
-  appLogUnreadCount = 0;
-  persistAppLogUnreadCount();
+  if (appLogSignalTimer) {
+    window.clearTimeout(appLogSignalTimer);
+    appLogSignalTimer = null;
+  }
   updateAppLogNotice();
 }
 
-function incrementAppLogNotice() {
-  const panel = document.getElementById("log-sidebar");
-  if (panel && !panel.hidden) {
-    clearAppLogNotice();
-    return;
-  }
-  appLogUnreadCount = Math.min(99, appLogUnreadCount + 1);
-  persistAppLogUnreadCount();
-  updateAppLogNotice();
+function triggerAppLogSignal() {
+  const notice = document.getElementById("log-notice");
+  const toggle = document.getElementById("log-toggle");
+  if (!notice || !toggle) return;
+  try { sessionStorage.removeItem(APP_LOG_UNREAD_STORAGE_KEY); } catch (_error) {}
+  if (appLogSignalTimer) window.clearTimeout(appLogSignalTimer);
+  notice.hidden = false;
+  notice.textContent = "";
+  toggle.classList.remove("log-signal");
+  void toggle.offsetWidth;
+  toggle.classList.add("log-signal");
+  toggle.setAttribute("aria-label", "Öppna logg, ny händelse loggad");
+  appLogSignalTimer = window.setTimeout(() => {
+    notice.hidden = true;
+    toggle.classList.remove("log-signal");
+    toggle.setAttribute("aria-label", "Öppna logg");
+    appLogSignalTimer = null;
+  }, 980);
 }
 
 function appendAppLog(message, kind = "info", title = "System") {
@@ -1179,7 +1171,7 @@ function appendAppLog(message, kind = "info", title = "System") {
   if (appLogEntries.length > APP_LOG_MAX_ENTRIES) appLogEntries.length = APP_LOG_MAX_ENTRIES;
   persistAppLogEntries();
   renderAppLogEntries();
-  incrementAppLogNotice();
+  triggerAppLogSignal();
   console.info(`[${title}] ${entry.message}`);
 }
 
@@ -1810,6 +1802,7 @@ function renderLogUtility() {
   return `
         <button class="log-toggle" id="log-toggle" type="button" title="Logg" aria-label="Öppna logg" aria-controls="log-sidebar" aria-expanded="false">
           ${LOG_ICON}
+          <span class="log-arrow" aria-hidden="true">&uarr;</span>
           <span class="log-notice" id="log-notice" hidden></span>
         </button>
   `;

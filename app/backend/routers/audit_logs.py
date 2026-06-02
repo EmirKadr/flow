@@ -29,8 +29,12 @@ logger = logging.getLogger(__name__)
 ERROR_ACTION_PATTERNS = ("%failed%", "%error%", "%exception%")
 
 
-def _apply_filters(query, *, user_id: int | None, entity_type: str | None, action: str | None,
+def _apply_filters(query, *, business_id: int | None, user_id: int | None, entity_type: str | None, action: str | None,
                    entity_id: int | None, from_at: datetime | None, to_at: datetime | None):
+    if not isinstance(business_id, int):
+        business_id = None
+    if business_id is not None:
+        query = query.where(AuditLog.business_id == business_id)
     if user_id is not None:
         query = query.where(AuditLog.user_id == user_id)
     if entity_id is not None:
@@ -176,6 +180,7 @@ def _client_event_payload(payload: AuditClientEventIn) -> dict[str, Any]:
 def list_audit_entries(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    business_id: int | None = Query(None),
     user_id: int | None = Query(None),
     entity_type: str | None = Query(None),
     action: str | None = Query(None),
@@ -191,6 +196,7 @@ def list_audit_entries(
     )
     query = _apply_filters(
         query,
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -209,6 +215,7 @@ def list_audit_entries(
             action=audit.action,
             old_value=audit.old_value,
             new_value=audit.new_value,
+            business_id=audit.business_id,
             user_id=audit.user_id,
             username=username,
             display_name=display_name,
@@ -220,6 +227,7 @@ def list_audit_entries(
 
 @router.get("/summary", response_model=AuditSummaryOut)
 def audit_summary(
+    business_id: int | None = Query(None),
     user_id: int | None = Query(None),
     entity_type: str | None = Query(None),
     action: str | None = Query(None),
@@ -232,6 +240,7 @@ def audit_summary(
     base = select(AuditLog.id).select_from(AuditLog)
     base = _apply_filters(
         base,
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -245,6 +254,7 @@ def audit_summary(
     last_24_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     recent_query = _apply_filters(
         select(func.count()).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -256,6 +266,7 @@ def audit_summary(
 
     distinct_users_query = _apply_filters(
         select(func.count(func.distinct(AuditLog.user_id))).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -272,6 +283,7 @@ def audit_summary(
     )
     users_query = _apply_filters(
         users_query,
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -296,6 +308,7 @@ def audit_summary(
 
     actions_query = _apply_filters(
         select(AuditLog.action, func.count().label("count")).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -308,6 +321,7 @@ def audit_summary(
 
     entities_query = _apply_filters(
         select(AuditLog.entity_type, func.count().label("count")).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -337,6 +351,7 @@ def audit_summary(
 def audit_errors(
     limit: int = Query(100, ge=1, le=500),
     scan_limit: int = Query(5000, ge=100, le=20000),
+    business_id: int | None = Query(None),
     user_id: int | None = Query(None),
     entity_type: str | None = Query(None),
     action: str | None = Query(None),
@@ -348,6 +363,7 @@ def audit_errors(
 ) -> AuditErrorSummaryOut:
     base = _apply_filters(
         select(AuditLog.id).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -360,6 +376,7 @@ def audit_errors(
     last_24_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     recent_count_query = _apply_filters(
         select(func.count()).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -371,6 +388,7 @@ def audit_errors(
 
     unique_users_query = _apply_filters(
         select(func.count(func.distinct(AuditLog.user_id))).select_from(AuditLog),
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,
@@ -386,6 +404,7 @@ def audit_errors(
     )
     rows_query = _apply_filters(
         rows_query,
+        business_id=business_id,
         user_id=user_id,
         entity_type=entity_type,
         action=action,

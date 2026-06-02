@@ -541,6 +541,7 @@ class AuditEntryOut(BaseModel):
     action: str
     old_value: dict | None = None
     new_value: dict | None = None
+    business_id: int | None = None
     user_id: int | None = None
     username: str | None = None
     display_name: str | None = None

@@ -581,7 +581,7 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
             {"location": "UTL205", "maxPall": 2},
             {"location": "UTL206", "maxPall": 3},
             {"location": "UTL207", "maxPall": 3},
-            {"location": "UTL208", "maxPall": 3},
+            {"location": "UTL208", "maxPall": 7},
             {"location": "UTL209", "maxPall": 3},
         ],
     }
@@ -614,7 +614,15 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         expect(page.locator(".allocation-map-settings-list")).not_to_contain_text("UTL205")
         expect(page.locator('[data-map-setting-node="UTL205"] .allocation-map-setting-label')).to_have_text("205")
         page.locator('[data-map-setting-rect="UTL205"]').click()
-        page.locator('[data-map-setting-rect="UTL205"]').click()
+        page.locator('[data-map-setting-rect="UTL205"]').click(button="right")
+        target_box = page.locator('[data-map-setting-rect="UTL205"]').bounding_box()
+        menu_box = page.locator(".allocation-map-settings-context-menu").bounding_box()
+        assert target_box and menu_box
+        target_center_x = target_box["x"] + target_box["width"] / 2
+        target_center_y = target_box["y"] + target_box["height"] / 2
+        assert abs(menu_box["x"] - target_center_x) < 24
+        assert abs(menu_box["y"] - target_center_y) < 24
+        page.get_by_role("button", name="Byt riktning").click()
         expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("riktning vänster")
         page.click("[data-map-zoom-in]")
         page.click("[data-map-zoom-out]")
@@ -624,8 +632,92 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         page.click("[data-map-add-series]")
         expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("207")
         expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("UTL207")
+        page.click("[data-map-fit]")
+        expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
         page.locator('[data-map-setting-rect="UTL206"]').click()
+        snap_result = page.evaluate(
+            """
+            () => {
+                const svg = document.querySelector("[data-map-settings-svg]");
+                const source = document.querySelector('[data-map-setting-rect="UTL206"]');
+                const target = document.querySelector('[data-map-setting-rect="UTL207"]');
+                if (!svg || !source || !target) throw new Error("Missing map snap test elements");
+                const viewBox = svg.viewBox.baseVal;
+                const svgBox = svg.getBoundingClientRect();
+                const sourceBox = source.getBoundingClientRect();
+                const startX = sourceBox.left + sourceBox.width / 2;
+                const startY = sourceBox.top + sourceBox.height / 2;
+                const sourceY = Number(source.getAttribute("y"));
+                const targetY = Number(target.getAttribute("y"));
+                const deltaY = ((targetY - sourceY) / Math.max(1, viewBox.height)) * svgBox.height + 2;
+                const pointerId = 41;
+                svg.dispatchEvent(new PointerEvent("pointerdown", {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId,
+                    button: 0,
+                    buttons: 1,
+                    clientX: startX,
+                    clientY: startY,
+                }));
+                svg.dispatchEvent(new PointerEvent("pointermove", {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId,
+                    button: 0,
+                    buttons: 1,
+                    clientX: startX,
+                    clientY: startY + deltaY,
+                }));
+                const lineCount = document.querySelectorAll("[data-map-snap-guides] .allocation-map-settings-guide-line").length;
+                const movedY = source.getAttribute("y");
+                svg.dispatchEvent(new PointerEvent("pointerup", {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId,
+                    button: 0,
+                    buttons: 0,
+                    clientX: startX,
+                    clientY: startY + deltaY,
+                }));
+                return {
+                    lineCount,
+                    movedY,
+                    sourceY,
+                    targetY,
+                    deltaY,
+                };
+            }
+            """
+        )
+        assert snap_result["lineCount"] > 0, snap_result
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        page.evaluate(
+            """
+            () => {
+                const rect = document.querySelector('[data-map-setting-rect="UTL207"]');
+                if (!rect) throw new Error("Missing UTL207 rect");
+                rect.dispatchEvent(new MouseEvent("click", {
+                    bubbles: true,
+                    cancelable: true,
+                    button: 0,
+                    ctrlKey: true,
+                }));
+            }
+            """
+        )
+        expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
+        page.locator('[data-map-setting-rect="UTL206"]').click(button="right")
+        page.get_by_role("button", name="Byt riktning").click()
+        expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("2 ytor: riktning bytt")
+        page.locator('[data-map-setting-rect="UTL206"]').dblclick()
+        expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("UTL206: roterad")
+        expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("width", "80")
+        expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("height", "360")
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        expect(page.locator("[data-map-setting-location]")).to_have_value("UTL206")
         page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
+        expect(page.locator("[data-map-setting-location]")).to_have_value("UTL207")
         expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
         original_y = float(page.locator('[data-map-setting-rect="UTL206"]').get_attribute("y"))
         page.click("[data-map-zoom-in]")
@@ -639,13 +731,17 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("y", str(int(moved_y)))
         page.keyboard.press("Control+Z")
         expect(page.locator('[data-map-setting-rect="UTL206"]')).to_have_attribute("y", str(int(original_y)))
-        page.locator('[data-map-setting-rect="UTL206"]').click()
-        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         page.keyboard.press("Control+C")
         page.keyboard.press("Control+V")
         expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("209")
         page.keyboard.press("Control+Z")
         expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("209")
+        page.locator('[data-map-setting-rect="UTL206"]').click()
+        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
+        page.keyboard.press("Delete")
+        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("207")
+        page.keyboard.press("Control+Z")
+        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("207")
         page.evaluate(
             """
             ({ sourceSelector, targetSelector }) => {
@@ -693,12 +789,6 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         )
         expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("208")
         expect(page.locator(".allocation-map-settings-list")).not_to_contain_text("UTL208")
-        page.locator('[data-map-setting-rect="UTL206"]').click()
-        page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
-        page.keyboard.press("Delete")
-        expect(page.locator(".allocation-map-settings-canvas")).not_to_contain_text("207")
-        page.keyboard.press("Control+Z")
-        expect(page.locator(".allocation-map-settings-canvas")).to_contain_text("207")
         page.click("[data-map-save]")
 
         expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("sparade", timeout=15000)
@@ -706,8 +796,14 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         assert [row["location"] for row in locations] == ["UTL205", "UTL206", "UTL207", "UTL208"]
         assert locations[0]["loadDirection"] == "left"
         assert locations[1]["maxPall"] == 3
-        assert locations[1]["loadDirection"] == "left"
+        assert locations[1]["w"] == 80
+        assert locations[1]["h"] == 360
+        assert locations[1]["loadDirection"] == "up"
         assert locations[2]["x"] > locations[1]["x"]
-        assert locations[3]["maxPall"] == 3
+        assert locations[2]["w"] == 360
+        assert locations[2]["loadDirection"] == "right"
+        assert locations[3]["maxPall"] == 7
+        assert locations[3]["w"] == 840
+        assert locations[3]["h"] == 80
     finally:
         context.close()
