@@ -7,6 +7,14 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-02] docs | Synkar releasepolling for agenter
+
+Releasepolling-regeln ar nu dokumenterad i `AGENTS.md`, `TESTPROTOCOL.md` och
+`wiki/testing-release.md`: efter push/tagg verifierar agenten normalt bara att
+workflowen startat och delar lank. Om anvandaren ber agenten vanta kvar galler
+pollingtrappan 15 minuter, 2 minuter, 1 minut och darefter 30 sekunder tills
+workflowen ar klar eller failad.
+
 ## [2026-06-02] fix | Uppladdningar visar svenska filnamn
 
 Uppladdningars filrader normaliserar nu rubriken via filkunskapen innan den

@@ -157,6 +157,24 @@ Om healthcheck visar `error` eller tydliga `warn` efter en stor andring ska
 agenten inte behandla arbetet som fardigt utan att antingen fixa orsaken eller
 tydligt rapportera kvarvarande risk, exakt kommando, tidpunkt och feltext.
 
+## Releasepolling for agenter
+
+Efter push/tagg for release ska agenten normalt bara verifiera att GitHub
+Actions-workflowen har startat, ge anvandaren lank till workflow/run och saga
+att det ar okej att avsluta har och be agenten kolla releasen senare.
+
+Agenten ska inte sitta och poll:a releasejobbet tatt om anvandaren inte
+uttryckligen ber om att vanta kvar. Om anvandaren ber agenten vanta kvar galler
+denna pollingtrappa:
+
+- vanta 15 minuter innan forsta statuskollen
+- om inte klart: vanta 2 minuter och kolla igen
+- om inte klart: vanta 1 minut och kolla igen
+- darefter kolla var 30:e sekund tills workflowen ar bekraftat klar eller failad
+
+Detta ar for att undvika onodiga statusanrop, logghamtningar och
+kontext-/tokenkostnad nar GitHub/Render anda arbetar asynkront.
+
 ## Testregel for agenter
 
 Varje gang en agent bygger nytt, andrar befintligt beteende eller lagger till ett

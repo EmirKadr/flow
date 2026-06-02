@@ -39,6 +39,24 @@ cmd /c build_windows.bat
 python -m tools.release_check
 ```
 
+## Releasepolling
+
+Efter push/tagg for release ska agenten som standard bara verifiera att GitHub
+Actions-workflowen har startat, dela lank till run/workflow och saga att det ar
+okej att avsluta har och be agenten kolla releasen senare. Ingen ny release
+eller tagg ska skapas om anvandaren bara ber om backend-push.
+
+Om anvandaren uttryckligen ber agenten vanta kvar pa releasejobbet ska agenten
+poll:a sparsamt:
+
+1. vanta 15 minuter fore forsta statuskollen
+2. om inte klart: vanta 2 minuter och kolla igen
+3. om inte klart: vanta 1 minut och kolla igen
+4. darefter var 30:e sekund tills workflowen ar bekraftat klar eller failad
+
+Syftet ar att lata GitHub/Render arbeta asynkront utan onodiga statusanrop,
+logghamtningar och token-/kontextkostnad.
+
 ## Halsa efter storre push eller deploy
 
 Halsa och vantetider ar en driftgrind for agentarbete. Efter storre pushar,

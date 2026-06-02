@@ -1,7 +1,7 @@
 ---
 title: Test och release
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-02
 tags: [test, release, agent]
 ---
 
@@ -95,6 +95,15 @@ For release: folj `TESTPROTOCOL.md` och `RELEASE.md`. Kort version:
 6. Healthcheck lokalt och, efter deploy, mot servern.
 7. Build Windows.
 8. Release check.
+
+Efter push/tagg for release ska agenten som standard bara verifiera att GitHub
+Actions-workflowen har startat, ge lank till run/workflow och saga att det ar
+okej att avsluta har och be agenten kolla releasen senare. Om anvandaren
+uttryckligen ber agenten vanta kvar ska statuskoll ske enligt pollingtrappan:
+vanta 15 minuter, sedan 2 minuter, sedan 1 minut och darefter var 30:e sekund
+tills workflowen ar bekraftat klar eller failad. Syftet ar att undvika onodiga
+statusanrop, logghamtningar och token-/kontextkostnad medan GitHub/Render jobbar
+asynkront.
 
 ## Kallor
 
