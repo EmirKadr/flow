@@ -171,6 +171,24 @@ def cleanup_stale_demo_sessions_on_startup() -> None:
         pass
 
 
+def _purge_expired_meta_media_background() -> None:
+    try:
+        from .meta_analysis_service import purge_expired_meta_media
+
+        purge_expired_meta_media()
+    except Exception:
+        logger.warning("Meta media retention purge failed at startup.", exc_info=True)
+
+
+@app.on_event("startup")
+def purge_expired_meta_media_on_startup() -> None:
+    threading.Thread(
+        target=_purge_expired_meta_media_background,
+        name="MetaMediaRetentionPurge",
+        daemon=True,
+    ).start()
+
+
 app.include_router(auth.router)
 app.include_router(allocation.router)
 app.include_router(assistant.router)

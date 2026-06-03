@@ -244,7 +244,11 @@ class MetaMediaUpload(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     duration_seconds: Mapped[float | None] = mapped_column(Float)
     content_hash: Mapped[str | None] = mapped_column(String(64))
-    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # Bytena lagras i MediaStore (disk). ``data`` behålls nullable enbart för
+    # bakåtkompatibilitet med ej migrerade rader och tas bort i en senare migration.
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    storage_backend: Mapped[str | None] = mapped_column(String(20))
+    storage_key: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending_analysis")
     analysis: Mapped[dict | None] = mapped_column(JsonField)
     source: Mapped[str] = mapped_column(String(80), nullable=False, default="public_upload")

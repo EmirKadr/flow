@@ -1,6 +1,7 @@
 import asyncio
 import io
 import re
+from types import SimpleNamespace
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -20,9 +21,15 @@ from app.backend.routers import meta_uploads
 
 
 @pytest.fixture(autouse=True)
-def disable_meta_analysis_provider(monkeypatch):
+def disable_meta_analysis_provider(monkeypatch, tmp_path):
+    from app.backend import media_store
+
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
-    monkeypatch.setattr(meta_uploads, "_probe_video_duration_seconds", lambda data, filename: None)
+    monkeypatch.setattr(settings, "MEDIA_STORE_ROOT", str(tmp_path / "media_store"))
+    monkeypatch.setattr(meta_uploads, "_probe_video_duration_from_path", lambda path: None)
+    media_store.reset_media_store_cache()
+    yield
+    media_store.reset_media_store_cache()
 
 
 def make_session():
@@ -135,7 +142,7 @@ def test_meta_record_hash_includes_shipment_number():
 
 
 def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypatch):
-    monkeypatch.setattr(meta_uploads, "_probe_video_duration_seconds", lambda data, filename: 42.4)
+    monkeypatch.setattr(meta_uploads, "_probe_video_duration_from_path", lambda path: 42.4)
     engine, session = make_session()
 
     def override_get_db():
@@ -165,8 +172,15 @@ def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypat
         assert all(re.fullmatch(r"[0-9a-f]{64}", row.content_hash or "") for row in rows)
         assert len({row.content_hash for row in rows}) == 2
         assert [row.media_type for row in rows] == ["image", "video"]
-        assert rows[0].data == b"image-bytes"
-        assert rows[1].data == b"video-bytes"
+        # Bytena ligger i MediaStore, inte i DB-kolumnen.
+        from app.backend.media_store import get_media_store
+
+        store = get_media_store()
+        assert rows[0].data is None and rows[1].data is None
+        assert rows[0].storage_key and rows[1].storage_key
+        assert rows[0].storage_backend == "filesystem"
+        assert b"".join(store.open_all(rows[0].storage_key)) == b"image-bytes"
+        assert b"".join(store.open_all(rows[1].storage_key)) == b"video-bytes"
         assert rows[0].duration_seconds is None
         assert rows[1].duration_seconds == 42.4
         assert len({row.batch_id for row in rows}) == 1
@@ -289,10 +303,12 @@ def test_meta_upload_skips_duplicate_media_bytes():
 
 def test_meta_upload_rejects_non_media_files():
     engine, session = make_session()
+    fake_request = SimpleNamespace(client=SimpleNamespace(host="test-client"))
     try:
         with pytest.raises(HTTPException) as exc_info:
             asyncio.run(
                 meta_uploads.upload_meta_media(
+                    request=fake_request,
                     background_tasks=BackgroundTasks(),
                     files=[make_upload("anteckning.txt", b"text", "text/plain")],
                     db=session,
