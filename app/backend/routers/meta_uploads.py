@@ -412,7 +412,6 @@ async def upload_meta_media(
                 size_bytes=size,
                 duration_seconds=duration_seconds,
                 content_hash=content_hash,
-                data=None,
                 storage_backend=store.backend,
                 storage_key=stored.key,
                 status="pending_analysis",
@@ -639,42 +638,14 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
         "Content-Disposition": _content_disposition(filename),
     }
 
-    # Strömma från MediaStore — hela filen hamnar aldrig i RAM.
-    if row.storage_key:
-        store = get_media_store()
-        stat = store.stat(row.storage_key)
-        if stat is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen hittades inte i lagringen.")
-        total = stat.size
-        range_header = request.headers.get("range") or request.headers.get("Range") or ""
-        match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
-        if match and total:
-            start, end = _resolve_range(match.groups(), total)
-            if start is None:
-                return Response(
-                    status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    headers={**base_headers, "Content-Range": f"bytes */{total}"},
-                )
-            headers = {
-                **base_headers,
-                "Content-Range": f"bytes {start}-{end}/{total}",
-                "Content-Length": str(end - start + 1),
-            }
-            return StreamingResponse(
-                store.open_range(row.storage_key, start, end),
-                status_code=status.HTTP_206_PARTIAL_CONTENT,
-                media_type=row.content_type,
-                headers=headers,
-            )
-        return StreamingResponse(
-            store.open_all(row.storage_key),
-            media_type=row.content_type,
-            headers={**base_headers, "Content-Length": str(total)},
-        )
-
-    # Bakåtkompatibel fallback för ej migrerade rader (bytea i DB).
-    data = row.data or b""
-    total = len(data)
+    # All media strömmas från MediaStore — hela filen hamnar aldrig i RAM.
+    if not row.storage_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen saknar lagringsreferens.")
+    store = get_media_store()
+    stat = store.stat(row.storage_key)
+    if stat is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen hittades inte i lagringen.")
+    total = stat.size
     range_header = request.headers.get("range") or request.headers.get("Range") or ""
     match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
     if match and total:
@@ -684,15 +655,18 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
                 status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
                 headers={**base_headers, "Content-Range": f"bytes */{total}"},
             )
-        chunk = data[start : end + 1]
-        return Response(
-            content=chunk,
+        return StreamingResponse(
+            store.open_range(row.storage_key, start, end),
             status_code=status.HTTP_206_PARTIAL_CONTENT,
             media_type=row.content_type,
-            headers={**base_headers, "Content-Range": f"bytes {start}-{end}/{total}", "Content-Length": str(len(chunk))},
+            headers={
+                **base_headers,
+                "Content-Range": f"bytes {start}-{end}/{total}",
+                "Content-Length": str(end - start + 1),
+            },
         )
-    return Response(
-        content=data,
+    return StreamingResponse(
+        store.open_all(row.storage_key),
         media_type=row.content_type,
         headers={**base_headers, "Content-Length": str(total)},
     )
