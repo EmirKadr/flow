@@ -38,9 +38,7 @@ def _media_size(upload: MetaMediaUpload) -> int:
         stat = get_media_store().stat(upload.storage_key)
         if stat is not None:
             return stat.size
-    if upload.size_bytes:
-        return int(upload.size_bytes)
-    return len(upload.data or b"")
+    return int(upload.size_bytes or 0)
 
 
 def _hash_from_storage(upload: MetaMediaUpload) -> str:
@@ -48,8 +46,6 @@ def _hash_from_storage(upload: MetaMediaUpload) -> str:
     if upload.storage_key:
         for chunk in get_media_store().open_all(upload.storage_key):
             digest.update(chunk)
-    elif upload.data:
-        digest.update(upload.data)
     return digest.hexdigest()
 
 
@@ -57,20 +53,11 @@ def _hash_from_storage(upload: MetaMediaUpload) -> str:
 def _media_file(upload: MetaMediaUpload) -> Iterator[Path]:
     """Ge en filväg till mediabytena utan att ladda dem i processminnet.
 
-    För store-backade rader pekar vägen på själva lagringsfilen (läses bara).
-    För ej migrerade bytea-rader materialiseras en temp-fil som städas efteråt.
+    Vägen pekar på själva lagringsfilen i MediaStore (läses bara).
     """
-    if upload.storage_key:
-        yield get_media_store().materialize_to_temp(upload.storage_key)
-        return
-    suffix = Path(upload.stored_filename or upload.original_filename or "video.mp4").suffix or ".mp4"
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    try:
-        tmp.write(upload.data or b"")
-        tmp.close()
-        yield Path(tmp.name)
-    finally:
-        Path(tmp.name).unlink(missing_ok=True)
+    if not upload.storage_key:
+        raise MetaAnalysisFailed("Mediafilen saknar lagringsreferens.")
+    yield get_media_store().materialize_to_temp(upload.storage_key)
 
 META_ANALYSIS_INSTRUCTIONS = """
 Analysera videon som en lotsvard har spelat in med Meta-glasogon.
@@ -505,6 +492,14 @@ def create_label_still_upload(db: Session, source_upload: MetaMediaUpload, image
     existing = db.query(MetaMediaUpload).filter(MetaMediaUpload.content_hash == image_hash).first()
     if existing is not None:
         return existing
+    store = get_media_store()
+    writer = store.create_writer(suffix=".jpg")
+    try:
+        writer.write(image_bytes)
+        stored = writer.commit()
+    except BaseException:
+        writer.abort()
+        raise
     now = datetime.now(timezone.utc)
     row = MetaMediaUpload(
         batch_id=source_upload.batch_id,
@@ -514,7 +509,8 @@ def create_label_still_upload(db: Session, source_upload: MetaMediaUpload, image
         media_type="image",
         size_bytes=len(image_bytes),
         content_hash=image_hash,
-        data=image_bytes,
+        storage_backend=store.backend,
+        storage_key=stored.key,
         status="label_still",
         source="meta_label_still",
         created_at=now,

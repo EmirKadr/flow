@@ -52,6 +52,15 @@ def make_upload(filename: str, content: bytes, content_type: str) -> UploadFile:
     )
 
 
+def store_bytes(content: bytes, suffix: str = ".bin") -> str:
+    """Skriv bytes till MediaStore och returnera storage_key (för testrader)."""
+    from app.backend.media_store import get_media_store
+
+    writer = get_media_store().create_writer(suffix=suffix)
+    writer.write(content)
+    return writer.commit().key
+
+
 def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
     monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-2.5-pro")
@@ -176,11 +185,11 @@ def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypat
         from app.backend.media_store import get_media_store
 
         store = get_media_store()
-        assert rows[0].data is None and rows[1].data is None
         assert rows[0].storage_key and rows[1].storage_key
         assert rows[0].storage_backend == "filesystem"
         assert b"".join(store.open_all(rows[0].storage_key)) == b"image-bytes"
         assert b"".join(store.open_all(rows[1].storage_key)) == b"video-bytes"
+        assert rows[0].storage_key and rows[1].storage_key
         assert rows[0].duration_seconds is None
         assert rows[1].duration_seconds == 42.4
         assert len({row.batch_id for row in rows}) == 1
@@ -333,7 +342,8 @@ def test_super_user_can_list_meta_uploads_and_stream_content():
         media_type="video",
         size_bytes=11,
         duration_seconds=65.1,
-        data=b"hello-video",
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
         status="pending_analysis",
         source="public_upload",
     )
@@ -385,7 +395,8 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         size_bytes=11,
         duration_seconds=75.4,
         content_hash="b" * 64,
-        data=b"hello-video",
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
         status="pending_analysis",
         source="public_upload",
     )
@@ -452,7 +463,8 @@ def test_super_user_can_delete_meta_uploads_and_audit_without_blob():
         media_type="image",
         size_bytes=10,
         content_hash="a" * 64,
-        data=b"image-data",
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"image-data", ".jpg"),
         status="pending_analysis",
         source="public_upload",
     )
