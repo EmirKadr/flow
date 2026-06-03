@@ -12,13 +12,18 @@ from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
 
+import threading
+import time
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from ..audit import log as audit_log, log_and_commit as audit_log_and_commit
 from ..config import settings
 from ..deps import get_db, require_super_user
+from ..media_store import get_media_store
 from ..meta_analysis_service import (
     analyze_meta_upload,
     ensure_shipment_observations,
@@ -32,13 +37,36 @@ from ..models import MetaMediaUpload, MetaShipmentObservation, User
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 logger = logging.getLogger(__name__)
 
-MAX_META_UPLOAD_FILES = 25
-MAX_META_UPLOAD_FILE_BYTES = 256 * 1024 * 1024
-MAX_META_UPLOAD_BATCH_BYTES = 1024 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 PUBLIC_UPLOAD_FAILURE_DETAIL = (
     "Uppladdningen misslyckades på servern. Försök igen eller dela upp videorna i färre filer."
 )
+
+# Enkel per-IP rate-limit (fast fönster) för den publika uppladdningsendpointen.
+_RATE_LOCK = threading.Lock()
+_RATE_HITS: dict[str, list[float]] = {}
+
+
+def _enforce_upload_rate_limit(request: Request) -> None:
+    limit = int(settings.META_UPLOAD_RATE_LIMIT_PER_MINUTE or 0)
+    if limit <= 0:
+        return
+    client = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window_start = now - 60.0
+    with _RATE_LOCK:
+        hits = [ts for ts in _RATE_HITS.get(client, []) if ts >= window_start]
+        if len(hits) >= limit:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="För många uppladdningar. Vänta en stund och försök igen.",
+            )
+        hits.append(now)
+        _RATE_HITS[client] = hits
+        # Lätt städning så dicten inte växer obegränsat.
+        if len(_RATE_HITS) > 2048:
+            for key in [k for k, v in _RATE_HITS.items() if not any(ts >= window_start for ts in v)]:
+                _RATE_HITS.pop(key, None)
 
 IMAGE_EXTENSIONS = {
     ".avif",
@@ -161,18 +189,11 @@ def _write_public_upload_failure_audit(
     )
 
 
-def _probe_video_duration_seconds(data: bytes, original_filename: str) -> float | None:
+def _probe_video_duration_from_path(path: Path) -> float | None:
     ffprobe = shutil.which("ffprobe")
-    if not ffprobe or not data:
+    if not ffprobe:
         return None
-    suffix = Path(original_filename).suffix.lower()
-    if suffix not in VIDEO_EXTENSIONS:
-        suffix = ".mp4"
-    temp_path = ""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_file.write(data)
-            temp_path = temp_file.name
         result = subprocess.run(
             [
                 ffprobe,
@@ -182,7 +203,7 @@ def _probe_video_duration_seconds(data: bytes, original_filename: str) -> float 
                 "format=duration",
                 "-of",
                 "default=noprint_wrappers=1:nokey=1",
-                temp_path,
+                str(path),
             ],
             capture_output=True,
             text=True,
@@ -197,12 +218,6 @@ def _probe_video_duration_seconds(data: bytes, original_filename: str) -> float 
     except (OSError, subprocess.SubprocessError, ValueError) as exc:
         logger.info("Kunde inte läsa videolängd för meta-video: %s", exc)
         return None
-    finally:
-        if temp_path:
-            try:
-                Path(temp_path).unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 def _stored_filename(uploaded_at: datetime, index: int, original_filename: str, media_type: str) -> str:
@@ -283,36 +298,52 @@ def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
     }
 
 
-async def _read_upload_data(upload: UploadFile, *, batch_total: int) -> tuple[bytes, int]:
-    chunks: list[bytes] = []
+async def _stream_upload_to_store(upload: UploadFile, *, store, batch_total: int):
+    """Strömma en uppladdad fil direkt till MediaStore.
+
+    Aldrig mer än en chunk i RAM. Returnerar (StoredObject, size). Gränser
+    kontrolleras under strömningen så att en för stor fil avbryts tidigt.
+    """
+    max_file = int(settings.MAX_META_UPLOAD_FILE_BYTES)
+    max_batch = int(settings.MAX_META_UPLOAD_BATCH_BYTES)
+    suffix = Path(_clean_filename(upload.filename)).suffix.lower()
+    writer = store.create_writer(suffix=suffix)
     size = 0
     try:
         while chunk := await upload.read(UPLOAD_CHUNK_BYTES):
             size += len(chunk)
-            if size > MAX_META_UPLOAD_FILE_BYTES:
+            if size > max_file:
                 raise HTTPException(
                     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"{_clean_filename(upload.filename)} är större än {_format_size(MAX_META_UPLOAD_FILE_BYTES)}.",
+                    detail=f"{_clean_filename(upload.filename)} är större än {_format_size(max_file)}.",
                 )
-            if batch_total + size > MAX_META_UPLOAD_BATCH_BYTES:
+            if batch_total + size > max_batch:
                 raise HTTPException(
                     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"Uppladdningen är större än {_format_size(MAX_META_UPLOAD_BATCH_BYTES)} totalt.",
+                    detail=f"Uppladdningen är större än {_format_size(max_batch)} totalt.",
                 )
-            chunks.append(chunk)
-    finally:
+            writer.write(chunk)
+    except BaseException:
+        writer.abort()
         await upload.close()
+        raise
+    await upload.close()
     if size <= 0:
+        writer.abort()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"{_clean_filename(upload.filename)} är tom.")
-    return b"".join(chunks), size
+    return writer.commit(), size
 
 
 @router.post("/uploads", status_code=status.HTTP_201_CREATED)
 async def upload_meta_media(
+    request: Request,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ) -> dict:
+    _enforce_upload_rate_limit(request)
+    store = get_media_store()
+    max_files = int(settings.MAX_META_UPLOAD_FILES)
     attempted_count = len(files or [])
     batch_id = uuid4().hex
     batch_total = 0
@@ -324,21 +355,22 @@ async def upload_meta_media(
     try:
         if not files:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades.")
-        if len(files) > MAX_META_UPLOAD_FILES:
+        if len(files) > max_files:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                detail=f"Du kan ladda upp max {MAX_META_UPLOAD_FILES} filer åt gången.",
+                detail=f"Du kan ladda upp max {max_files} filer åt gången.",
             )
 
         for index, upload in enumerate(files, start=1):
             filename = _clean_filename(upload.filename)
             content_type = str(upload.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
             media_type = _media_type(filename, content_type)
-            data, size = await _read_upload_data(upload, batch_total=batch_total)
+            stored, size = await _stream_upload_to_store(upload, store=store, batch_total=batch_total)
             batch_total += size
-            content_hash = hashlib.sha256(data).hexdigest()
+            content_hash = stored.sha256
             pending_duplicate = pending_hashes.get(content_hash)
             if pending_duplicate:
+                # Innehållet är redan lagrat under samma (hash-baserade) nyckel.
                 skipped.append(
                     _duplicate_item(
                         filename=filename,
@@ -366,6 +398,11 @@ async def upload_meta_media(
             uploaded_at = datetime.now(timezone.utc)
             stored_filename = _stored_filename(uploaded_at, index, filename, media_type)
             pending_hashes[content_hash] = stored_filename
+            duration_seconds = (
+                _probe_video_duration_from_path(store.materialize_to_temp(stored.key))
+                if media_type == "video"
+                else None
+            )
             row = MetaMediaUpload(
                 batch_id=batch_id,
                 original_filename=filename,
@@ -373,9 +410,11 @@ async def upload_meta_media(
                 content_type=content_type or "application/octet-stream",
                 media_type=media_type,
                 size_bytes=size,
-                duration_seconds=_probe_video_duration_seconds(data, filename) if media_type == "video" else None,
+                duration_seconds=duration_seconds,
                 content_hash=content_hash,
-                data=data,
+                data=None,
+                storage_backend=store.backend,
+                storage_key=stored.key,
                 status="pending_analysis",
                 source="public_upload",
                 created_at=uploaded_at,
@@ -390,17 +429,15 @@ async def upload_meta_media(
                     "media_type": media_type,
                     "size_bytes": size,
                     "size_label": _format_size(size),
-                    "duration_seconds": row.duration_seconds,
-                    "duration_label": _format_duration(row.duration_seconds),
+                    "duration_seconds": duration_seconds,
+                    "duration_label": _format_duration(duration_seconds),
                 }
             )
 
         if rows:
             db.add_all(rows)
-            db.commit()
-
+            db.flush()  # tilldela id:n utan att ladda blobbar (ingen db.refresh på data)
             for row, item in zip(rows, saved):
-                db.refresh(row)
                 item["id"] = row.id
             shipment_rows = ensure_shipment_observations(db, rows)
             db.commit()
@@ -541,7 +578,20 @@ def delete_meta_media_upload(
         observation.label_image_upload_id = None
         observation.label_image_hash = None
         refresh_record_hash(observation)
+    storage_key = row.storage_key
     db.delete(row)
+    db.flush()
+    # Radera bytena ur lagringen först när ingen annan rad delar samma
+    # (innehållsadresserade) nyckel.
+    if storage_key:
+        still_referenced = (
+            db.query(MetaMediaUpload.id)
+            .filter(MetaMediaUpload.storage_key == storage_key)
+            .first()
+            is not None
+        )
+        if not still_referenced:
+            get_media_store().delete(storage_key)
     audit_log(
         db,
         entity_type="meta_media_upload",
@@ -583,43 +633,84 @@ def _duplicate_item(
 
 
 def _media_response(row: MetaMediaUpload, request: Request) -> Response:
-    data = row.data or b""
-    total = len(data)
     filename = row.stored_filename or row.original_filename
     base_headers = {
         "Accept-Ranges": "bytes",
         "Content-Disposition": _content_disposition(filename),
     }
+
+    # Strömma från MediaStore — hela filen hamnar aldrig i RAM.
+    if row.storage_key:
+        store = get_media_store()
+        stat = store.stat(row.storage_key)
+        if stat is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen hittades inte i lagringen.")
+        total = stat.size
+        range_header = request.headers.get("range") or request.headers.get("Range") or ""
+        match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
+        if match and total:
+            start, end = _resolve_range(match.groups(), total)
+            if start is None:
+                return Response(
+                    status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                    headers={**base_headers, "Content-Range": f"bytes */{total}"},
+                )
+            headers = {
+                **base_headers,
+                "Content-Range": f"bytes {start}-{end}/{total}",
+                "Content-Length": str(end - start + 1),
+            }
+            return StreamingResponse(
+                store.open_range(row.storage_key, start, end),
+                status_code=status.HTTP_206_PARTIAL_CONTENT,
+                media_type=row.content_type,
+                headers=headers,
+            )
+        return StreamingResponse(
+            store.open_all(row.storage_key),
+            media_type=row.content_type,
+            headers={**base_headers, "Content-Length": str(total)},
+        )
+
+    # Bakåtkompatibel fallback för ej migrerade rader (bytea i DB).
+    data = row.data or b""
+    total = len(data)
     range_header = request.headers.get("range") or request.headers.get("Range") or ""
     match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
     if match and total:
-        start_text, end_text = match.groups()
-        if not start_text and end_text:
-            length = min(int(end_text), total)
-            start = total - length
-            end = total - 1
-        else:
-            start = int(start_text or 0)
-            end = int(end_text) if end_text else total - 1
-            end = min(end, total - 1)
-        if start > end or start >= total:
+        start, end = _resolve_range(match.groups(), total)
+        if start is None:
             return Response(
                 status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
                 headers={**base_headers, "Content-Range": f"bytes */{total}"},
             )
         chunk = data[start : end + 1]
-        headers = {
-            **base_headers,
-            "Content-Range": f"bytes {start}-{end}/{total}",
-            "Content-Length": str(len(chunk)),
-        }
-        return Response(content=chunk, status_code=status.HTTP_206_PARTIAL_CONTENT, media_type=row.content_type, headers=headers)
-
+        return Response(
+            content=chunk,
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            media_type=row.content_type,
+            headers={**base_headers, "Content-Range": f"bytes {start}-{end}/{total}", "Content-Length": str(len(chunk))},
+        )
     return Response(
         content=data,
         media_type=row.content_type,
         headers={**base_headers, "Content-Length": str(total)},
     )
+
+
+def _resolve_range(groups: tuple[str, str], total: int) -> tuple[int | None, int | None]:
+    start_text, end_text = groups
+    if not start_text and end_text:
+        length = min(int(end_text), total)
+        start = total - length
+        end = total - 1
+    else:
+        start = int(start_text or 0)
+        end = int(end_text) if end_text else total - 1
+        end = min(end, total - 1)
+    if start > end or start >= total:
+        return None, None
+    return start, end
 
 
 @router.get("/uploads/{upload_id}/content")

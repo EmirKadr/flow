@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
@@ -9,21 +10,67 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Iterator
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import SessionLocal
+from .media_store import get_media_store
 from .models import MetaMediaUpload, MetaShipmentObservation
 
 
 logger = logging.getLogger(__name__)
+
+# Begränsa hur många videoanalyser som körs samtidigt i processen (var och en
+# kan dra igång ffmpeg + nätverksuppladdning).
+_ANALYSIS_SEMAPHORE = threading.Semaphore(max(1, int(settings.META_ANALYSIS_MAX_CONCURRENCY or 1)))
+
+
+def _media_size(upload: MetaMediaUpload) -> int:
+    if upload.storage_key:
+        stat = get_media_store().stat(upload.storage_key)
+        if stat is not None:
+            return stat.size
+    if upload.size_bytes:
+        return int(upload.size_bytes)
+    return len(upload.data or b"")
+
+
+def _hash_from_storage(upload: MetaMediaUpload) -> str:
+    digest = hashlib.sha256()
+    if upload.storage_key:
+        for chunk in get_media_store().open_all(upload.storage_key):
+            digest.update(chunk)
+    elif upload.data:
+        digest.update(upload.data)
+    return digest.hexdigest()
+
+
+@contextmanager
+def _media_file(upload: MetaMediaUpload) -> Iterator[Path]:
+    """Ge en filväg till mediabytena utan att ladda dem i processminnet.
+
+    För store-backade rader pekar vägen på själva lagringsfilen (läses bara).
+    För ej migrerade bytea-rader materialiseras en temp-fil som städas efteråt.
+    """
+    if upload.storage_key:
+        yield get_media_store().materialize_to_temp(upload.storage_key)
+        return
+    suffix = Path(upload.stored_filename or upload.original_filename or "video.mp4").suffix or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        tmp.write(upload.data or b"")
+        tmp.close()
+        yield Path(tmp.name)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
 
 META_ANALYSIS_INSTRUCTIONS = """
 Analysera videon som en lotsvard har spelat in med Meta-glasogon.
@@ -149,7 +196,7 @@ def ensure_shipment_observation(db: Session, upload: MetaMediaUpload) -> MetaShi
     if existing is not None:
         return existing
 
-    video_hash = upload.content_hash or hashlib.sha256(upload.data or b"").hexdigest()
+    video_hash = upload.content_hash or _hash_from_storage(upload)
     if not upload.content_hash:
         upload.content_hash = video_hash
     row = MetaShipmentObservation(
@@ -231,11 +278,11 @@ def _request_json(request: urllib.request.Request, *, timeout: int) -> dict:
 
 
 def _gemini_upload_file(upload: MetaMediaUpload) -> dict:
-    data = upload.data or b""
+    size = _media_size(upload)
     max_bytes = max(1, int(settings.META_ANALYSIS_MAX_VIDEO_BYTES or 1))
-    if len(data) > max_bytes:
+    if size > max_bytes:
         raise MetaAnalysisFailed(
-            f"Videon ar {_size_label(len(data))}, vilket ar storre an grans for Gemini-analys {_size_label(max_bytes)}."
+            f"Videon ar {_size_label(size)}, vilket ar storre an grans for Gemini-analys {_size_label(max_bytes)}."
         )
     metadata = {
         "file": {
@@ -250,7 +297,7 @@ def _gemini_upload_file(upload: MetaMediaUpload) -> dict:
             "Content-Type": "application/json",
             "X-Goog-Upload-Protocol": "resumable",
             "X-Goog-Upload-Command": "start",
-            "X-Goog-Upload-Header-Content-Length": str(len(data)),
+            "X-Goog-Upload-Header-Content-Length": str(size),
             "X-Goog-Upload-Header-Content-Type": upload.content_type,
         },
     )
@@ -265,18 +312,21 @@ def _gemini_upload_file(upload: MetaMediaUpload) -> dict:
     if not upload_url:
         raise MetaAnalysisFailed("Gemini returnerade ingen upload-URL.")
 
-    upload_request = urllib.request.Request(
-        upload_url,
-        data=data,
-        method="POST",
-        headers={
-            "Content-Type": upload.content_type,
-            "Content-Length": str(len(data)),
-            "X-Goog-Upload-Offset": "0",
-            "X-Goog-Upload-Command": "upload, finalize",
-        },
-    )
-    return _request_json(upload_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS).get("file", {})
+    # Skicka videon strömmande från lagringsfilen — http.client läser
+    # filobjektet i block, så hela filen hamnar aldrig i RAM.
+    with _media_file(upload) as media_path, open(media_path, "rb") as handle:
+        upload_request = urllib.request.Request(
+            upload_url,
+            data=handle,
+            method="POST",
+            headers={
+                "Content-Type": upload.content_type,
+                "Content-Length": str(size),
+                "X-Goog-Upload-Offset": "0",
+                "X-Goog-Upload-Command": "upload, finalize",
+            },
+        )
+        return _request_json(upload_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS).get("file", {})
 
 
 def _gemini_get_file(name: str) -> dict:
@@ -428,11 +478,8 @@ def extract_label_still_bytes(upload: MetaMediaUpload, timestamp_seconds: float)
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return None
-    suffix = Path(upload.stored_filename or upload.original_filename or "video.mp4").suffix or ".mp4"
-    with tempfile.TemporaryDirectory() as temp_dir:
-        input_path = Path(temp_dir) / f"input{suffix}"
+    with _media_file(upload) as input_path, tempfile.TemporaryDirectory() as temp_dir:
         output_path = Path(temp_dir) / "label.jpg"
-        input_path.write_bytes(upload.data or b"")
         command = [
             ffmpeg,
             "-y",
@@ -541,7 +588,71 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
 def run_meta_analysis_background(upload_ids: list[int]) -> None:
     with SessionLocal() as db:
         for upload_id in upload_ids:
-            try:
-                analyze_meta_upload(db, upload_id)
-            except Exception:
-                logger.exception("Meta analysis background job failed for upload %s", upload_id)
+            # Semaforen håller nere samtidiga analyser (ffmpeg + uppladdning).
+            with _ANALYSIS_SEMAPHORE:
+                try:
+                    analyze_meta_upload(db, upload_id)
+                except Exception:
+                    logger.exception("Meta analysis background job failed for upload %s", upload_id)
+
+
+def purge_expired_meta_media(retention_days: int | None = None) -> int:
+    """Radera klaranalyserade meta-media äldre än retentiongränsen.
+
+    Tar bort både DB-raden och bytena i lagringen. Returnerar antal raderade
+    uppladdningar. Körs vid startup (se main.py).
+    """
+    days = int(settings.META_MEDIA_RETENTION_DAYS if retention_days is None else retention_days)
+    if days < 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    store = get_media_store()
+    removed = 0
+    done_statuses = {"analyzed", "manual_review", "analysis_failed", "needs_configuration"}
+    with SessionLocal() as db:
+        observations = {
+            obs.media_upload_id: obs.analysis_status
+            for obs in db.query(
+                MetaShipmentObservation.media_upload_id,
+                MetaShipmentObservation.analysis_status,
+            ).all()
+        }
+        rows = (
+            db.query(MetaMediaUpload)
+            .filter(MetaMediaUpload.created_at < cutoff)
+            .order_by(MetaMediaUpload.id)
+            .all()
+        )
+        for row in rows:
+            # Behåll videor vars analys inte är klar.
+            if row.media_type == "video":
+                state = observations.get(row.id)
+                if state is not None and state not in done_statuses:
+                    continue
+            storage_key = row.storage_key
+            db.query(MetaShipmentObservation).filter(
+                MetaShipmentObservation.media_upload_id == row.id
+            ).delete(synchronize_session=False)
+            label_refs = db.query(MetaShipmentObservation).filter(
+                MetaShipmentObservation.label_image_upload_id == row.id
+            ).all()
+            for observation in label_refs:
+                observation.label_image_upload_id = None
+                observation.label_image_hash = None
+                refresh_record_hash(observation)
+            db.delete(row)
+            db.flush()
+            if storage_key:
+                still_referenced = (
+                    db.query(MetaMediaUpload.id)
+                    .filter(MetaMediaUpload.storage_key == storage_key)
+                    .first()
+                    is not None
+                )
+                if not still_referenced:
+                    store.delete(storage_key)
+            removed += 1
+        db.commit()
+    if removed:
+        logger.info("Retention: raderade %s meta-media äldre än %s dagar.", removed, days)
+    return removed
