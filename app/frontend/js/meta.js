@@ -143,7 +143,9 @@ async function downloadMetaItem(item) {
 }
 
 async function downloadShipmentMedia(item, kind) {
-  const url = kind === "label" ? item?.label_still_url : item?.video_url;
+  const url = kind === "label" ? item?.label_still_url : item?.video_url
+    ? `${item.video_url}${String(item.video_url).includes("?") ? "&" : "?"}variant=playable`
+    : null;
   if (!url) return;
   const fallback = kind === "label" ? "etikett.jpg" : "meta-video";
   try {
@@ -234,10 +236,10 @@ function renderShipmentRows() {
     const labelDownloadLabel = `Ladda ner stillbild för ${videoTitle || "video"}`;
     return `
       <tr>
-        <td>${escapeHtml(item.order_number || "-")}</td>
-        <td>${escapeHtml(item.shipment_number || "-")}</td>
-        <td>${escapeHtml(item.username || "-")}</td>
-        <td>${escapeHtml(item.customer_name || "-")}</td>
+        <td>${escapeHtml(item.order_number || "")}</td>
+        <td>${escapeHtml(item.shipment_number || "")}</td>
+        <td>${escapeHtml(item.username || "")}</td>
+        <td>${escapeHtml(item.customer_name || "")}</td>
         <td>${escapeHtml(item.pallet_id || "-")}</td>
         <td title="${escapeHtml(deviations)}">${escapeHtml(deviations)}</td>
         <td>

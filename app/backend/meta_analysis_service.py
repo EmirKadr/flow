@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -33,6 +34,14 @@ logger = logging.getLogger(__name__)
 _ANALYSIS_SEMAPHORE = threading.Semaphore(max(1, int(settings.META_ANALYSIS_MAX_CONCURRENCY or 1)))
 
 
+@dataclass(frozen=True)
+class AudioFile:
+    path: Path
+    size_bytes: int
+    content_type: str = "audio/mpeg"
+    display_name: str = "meta-audio.mp3"
+
+
 def _media_size(upload: MetaMediaUpload) -> int:
     if upload.storage_key:
         stat = get_media_store().stat(upload.storage_key)
@@ -59,7 +68,63 @@ def _media_file(upload: MetaMediaUpload) -> Iterator[Path]:
         raise MetaAnalysisFailed("Mediafilen saknar lagringsreferens.")
     yield get_media_store().materialize_to_temp(upload.storage_key)
 
-META_ANALYSIS_INSTRUCTIONS = """
+
+def _imageio_ffmpeg_exe() -> str | None:
+    try:
+        import imageio_ffmpeg
+    except Exception:
+        return None
+    try:
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return None
+
+
+def _resolve_ffmpeg() -> str | None:
+    return shutil.which("ffmpeg") or _imageio_ffmpeg_exe()
+
+
+def _audio_filename(upload: MetaMediaUpload) -> str:
+    stem = Path(upload.stored_filename or upload.original_filename or f"meta-{upload.id}").stem[:180]
+    return f"{stem}_audio.mp3"[:255]
+
+
+@contextmanager
+def extract_audio_file(upload: MetaMediaUpload) -> Iterator[AudioFile]:
+    ffmpeg = _resolve_ffmpeg()
+    if not ffmpeg:
+        raise MetaAnalysisFailed("ffmpeg saknas, sa ljudet kunde inte extraheras.")
+    with _media_file(upload) as input_path, tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "meta-audio.mp3"
+        command = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(input_path),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "32k",
+            str(output_path),
+        ]
+        try:
+            completed = subprocess.run(command, capture_output=True, timeout=60, check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise MetaAnalysisFailed(f"Kunde inte extrahera ljud ur videon: {exc}") from exc
+        if completed.returncode != 0 or not output_path.exists():
+            stderr = (completed.stderr or b"").decode("utf-8", errors="replace")[:500]
+            raise MetaAnalysisFailed(f"Kunde inte extrahera ljud ur videon: {stderr}".strip())
+        size = output_path.stat().st_size
+        if size <= 0:
+            raise MetaAnalysisFailed("Videon saknar ljud att analysera.")
+        yield AudioFile(path=output_path, size_bytes=size, display_name=_audio_filename(upload))
+
+META_ANALYSIS_LEGACY_VIDEO_INSTRUCTIONS = """
 Analysera videon som en lotsvard har spelat in med Meta-glasogon.
 
 Du ska anvanda bade videobilden och ljudet:
@@ -88,6 +153,32 @@ label_frame_time_seconds, confidence.
 """.strip()
 
 
+META_ANALYSIS_INSTRUCTIONS = """
+Analysera endast ljudet fran en Meta-video som en lotsvard har spelat in.
+
+Du ska inte lasa eller tolka videobilden, etiketter, transportetiketter eller
+innehallsforteckningar. Analysen ska bara bygga pa vad personen sager.
+
+Forvantat talflode:
+- Personen borjar med att saga "Pall ID", "Pall" eller liknande.
+- Personen sager sedan vilket nummer/id pallen har.
+- Personen beskriver sedan vad som ar fel pa pallen eller pallarna.
+
+Regler:
+- Returnera exakt ett pallet_id: det pall-id som hors tydligast.
+- Om flera pall-id namns, valj bara det tydligaste och skriv osakerheten i
+  uncertainty_notes.
+- Returnera deviations som en lista med korta avvikelsebeskrivningar.
+- Fyll aldrig order_number, shipment_number, username eller customer_name. De
+  ska vara tomma eftersom de hamtas fran uppladdad data senare.
+- Gissa inte. Om pall-id eller avvikelser inte hors tydligt ska faltet lamnas
+  tomt eller osakerheten beskrivas.
+
+Returnera ett JSON-objekt med dessa falt:
+pallet_id, deviations, uncertainty_notes, confidence.
+""".strip()
+
+
 class MetaAnalysisNotConfigured(RuntimeError):
     pass
 
@@ -112,6 +203,29 @@ def _clean_text(value: Any, max_length: int) -> str | None:
     if not text:
         return None
     return text[:max_length]
+
+
+def _clean_single_text(value: Any, max_length: int) -> str | None:
+    if isinstance(value, list):
+        for item in value:
+            cleaned = _clean_single_text(item, max_length)
+            if cleaned:
+                return cleaned
+        return None
+    if isinstance(value, dict):
+        for key in ("pallet_id", "pallid", "id", "value", "text", "description"):
+            cleaned = _clean_single_text(value.get(key), max_length)
+            if cleaned:
+                return cleaned
+        return None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for separator in (",", ";", "\n", "|"):
+        if separator in text:
+            text = text.split(separator, 1)[0].strip()
+            break
+    return text[:max_length] if text else None
 
 
 def _clean_hash(value: str | None) -> str:
@@ -149,13 +263,9 @@ def calculate_record_hash(
     deviations: Any = None,
 ) -> str:
     payload = {
-        "version": "v1",
+        "version": "v2-audio-only",
         "video_hash": _clean_hash(video_hash),
         "label_image_hash": _clean_hash(label_image_hash),
-        "order_number": str(order_number or "").strip().casefold(),
-        "shipment_number": str(shipment_number or "").strip().casefold(),
-        "username": str(username or "").strip().casefold(),
-        "customer_name": str(customer_name or "").strip().casefold(),
         "pallet_id": str(pallet_id or "").strip().casefold(),
         "deviations": sorted(item.casefold() for item in normalize_deviations(deviations)),
     }
@@ -264,7 +374,7 @@ def _request_json(request: urllib.request.Request, *, timeout: int) -> dict:
         raise MetaAnalysisFailed("Gemini-svaret kunde inte tolkas som JSON.") from exc
 
 
-def _gemini_upload_file(upload: MetaMediaUpload) -> dict:
+def _gemini_upload_video_file(upload: MetaMediaUpload) -> dict:
     size = _media_size(upload)
     max_bytes = max(1, int(settings.META_ANALYSIS_MAX_VIDEO_BYTES or 1))
     if size > max_bytes:
@@ -316,6 +426,56 @@ def _gemini_upload_file(upload: MetaMediaUpload) -> dict:
         return _request_json(upload_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS).get("file", {})
 
 
+def _gemini_upload_audio(upload: MetaMediaUpload) -> dict:
+    video_size = _media_size(upload)
+    max_bytes = max(1, int(settings.META_ANALYSIS_MAX_VIDEO_BYTES or 1))
+    if video_size > max_bytes:
+        raise MetaAnalysisFailed(
+            f"Videon ar {_size_label(video_size)}, vilket ar storre an grans for Gemini-analys {_size_label(max_bytes)}."
+        )
+    with extract_audio_file(upload) as audio:
+        metadata = {"file": {"display_name": audio.display_name}}
+        start_request = urllib.request.Request(
+            _gemini_url("/upload/v1beta/files"),
+            data=json.dumps(metadata, ensure_ascii=False).encode("utf-8"),
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Upload-Protocol": "resumable",
+                "X-Goog-Upload-Command": "start",
+                "X-Goog-Upload-Header-Content-Length": str(audio.size_bytes),
+                "X-Goog-Upload-Header-Content-Type": audio.content_type,
+            },
+        )
+        try:
+            with urllib.request.urlopen(start_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS) as response:
+                upload_url = response.headers.get("x-goog-upload-url")
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            raise MetaAnalysisFailed(f"Gemini upload-start svarade HTTP {exc.code}: {error_body[:500]}") from exc
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            raise MetaAnalysisFailed("Gemini upload-start kunde inte nas inom timeout.") from exc
+        if not upload_url:
+            raise MetaAnalysisFailed("Gemini returnerade ingen upload-URL.")
+
+        handle = audio.path.open("rb")
+        try:
+            upload_request = urllib.request.Request(
+                upload_url,
+                data=handle,
+                method="POST",
+                headers={
+                    "Content-Type": audio.content_type,
+                    "Content-Length": str(audio.size_bytes),
+                    "X-Goog-Upload-Offset": "0",
+                    "X-Goog-Upload-Command": "upload, finalize",
+                },
+            )
+            return _request_json(upload_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS).get("file", {})
+        finally:
+            handle.close()
+
+
 def _gemini_get_file(name: str) -> dict:
     safe_name = str(name or "").strip().lstrip("/")
     if not safe_name:
@@ -353,7 +513,7 @@ def _gemini_generate_content(file_info: dict) -> dict:
                 "parts": [
                     {
                         "file_data": {
-                            "mime_type": mime_type or "video/mp4",
+                            "mime_type": mime_type or "audio/mpeg",
                             "file_uri": file_uri,
                         }
                     },
@@ -378,7 +538,7 @@ def _gemini_generate_content(file_info: dict) -> dict:
 def _call_meta_analysis_provider(upload: MetaMediaUpload) -> dict:
     if not meta_analysis_configured():
         raise MetaAnalysisNotConfigured("GEMINI_API_KEY saknas.")
-    file_info = _gemini_wait_file_active(_gemini_upload_file(upload))
+    file_info = _gemini_wait_file_active(_gemini_upload_audio(upload))
     response = _gemini_generate_content(file_info)
     try:
         return _extract_json_candidate(response)
@@ -394,6 +554,31 @@ def _field(payload: dict, *names: str) -> Any:
 
 
 def normalize_meta_analysis(payload: dict) -> dict:
+    return {
+        "order_number": None,
+        "shipment_number": None,
+        "username": None,
+        "customer_name": None,
+        "pallet_id": _clean_single_text(
+            _field(
+                payload,
+                "pallet_id",
+                "pallet_ids",
+                "pallet_candidates",
+                "pallid",
+                "pall_id",
+                "pall",
+                "pallet",
+            ),
+            120,
+        ),
+        "deviations": normalize_deviations(_field(payload, "deviations", "avvikelser", "faults", "issues")),
+        "uncertainty_notes": _clean_text(
+            _field(payload, "uncertainty_notes", "uncertainties", "osakerhet", "notes"),
+            2000,
+        ),
+        "label_frame_time_seconds": None,
+    }
     return {
         "order_number": _clean_text(
             _field(
@@ -436,12 +621,9 @@ def normalize_meta_analysis(payload: dict) -> dict:
 
 
 def _status_for_analysis(fields: dict, label_image_upload_id: int | None) -> str:
-    required = ["order_number", "shipment_number", "username", "customer_name", "pallet_id"]
-    if fields.get("uncertainty_notes") or any(not fields.get(key) for key in required):
+    if fields.get("uncertainty_notes"):
         return "manual_review"
-    if not fields.get("deviations"):
-        return "manual_review"
-    if fields.get("label_frame_time_seconds") and not label_image_upload_id:
+    if not fields.get("pallet_id") or not fields.get("deviations"):
         return "manual_review"
     return "analyzed"
 
@@ -456,13 +638,27 @@ def _timestamp_seconds(value: str | None) -> float | None:
     return parsed if parsed >= 0 else None
 
 
+def _configured_label_still_seconds() -> float | None:
+    try:
+        parsed = float(settings.META_LABEL_STILL_TIME_SECONDS)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _format_timestamp_seconds(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
 def _label_still_filename(upload: MetaMediaUpload, image_hash: str) -> str:
     stem = Path(upload.stored_filename or upload.original_filename or "meta-video").stem[:180]
     return f"{stem}_etikett_{image_hash[:10]}.jpg"[:255]
 
 
 def extract_label_still_bytes(upload: MetaMediaUpload, timestamp_seconds: float) -> bytes | None:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = _resolve_ffmpeg()
     if not ffmpeg:
         return None
     with _media_file(upload) as input_path, tempfile.TemporaryDirectory() as temp_dir:
@@ -551,7 +747,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
         observation.pallet_id = fields["pallet_id"]
         observation.deviations = fields["deviations"]
         observation.uncertainty_notes = fields["uncertainty_notes"]
-        observation.label_frame_time_seconds = fields["label_frame_time_seconds"]
+        observation.label_frame_time_seconds = _format_timestamp_seconds(_configured_label_still_seconds())
         observation.llm_raw_response = raw_response
 
         label_upload = None
@@ -583,11 +779,17 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
 
 def run_meta_analysis_background(upload_ids: list[int]) -> None:
     with SessionLocal() as db:
-        for upload_id in upload_ids:
+        for index, upload_id in enumerate(upload_ids):
             # Semaforen håller nere samtidiga analyser (ffmpeg + uppladdning).
             with _ANALYSIS_SEMAPHORE:
                 try:
+                    delay = float(settings.META_ANALYSIS_START_DELAY_SECONDS or 0)
+                    spacing = float(settings.META_ANALYSIS_SPACING_SECONDS or 0)
+                    if delay > 0:
+                        time.sleep(delay)
                     analyze_meta_upload(db, upload_id)
+                    if spacing > 0 and index < len(upload_ids) - 1:
+                        time.sleep(spacing)
                 except Exception:
                     logger.exception("Meta analysis background job failed for upload %s", upload_id)
 

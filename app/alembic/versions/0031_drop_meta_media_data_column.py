@@ -19,7 +19,19 @@ depends_on: Union[str, tuple[str, ...], None] = None
 
 
 def upgrade() -> None:
-    # Alla bytes är migrerade till MediaStore (disk); kolumnen är tom.
+    connection = op.get_bind()
+    pending = connection.execute(
+        sa.text(
+            "SELECT count(*) FROM meta_media_uploads "
+            "WHERE storage_key IS NULL OR data IS NOT NULL"
+        )
+    ).scalar()
+    if pending:
+        raise RuntimeError(
+            "Kan inte droppa meta_media_uploads.data innan alla Meta-media "
+            "har storage_key och data ar NULL. Kor forst "
+            "`python -m backend.scripts.migrate_meta_blobs_to_store` i lag trafik."
+        )
     op.drop_column("meta_media_uploads", "data")
 
 

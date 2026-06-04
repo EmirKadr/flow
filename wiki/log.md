@@ -1,7 +1,7 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-04
 tags: [wiki, logg]
 ---
 
@@ -790,3 +790,15 @@ Ytgenerering-kartans sidolista kopierar nu radens sandningsnummer till urklipp n
 ## [2026-06-02] feature | Personliga schema- och produktivitetsvyer
 
 Flow har nu rollen `person`, vyerna `Mitt schema` och `Min produktivitet` samt `/api/personal/...`-endpoints. En person kan logga in med sitt `noman`-namn; om anvandaren saknas skapas kontot automatiskt med `person_id`, verksamhet och hemomrade fran personregistret och skickas till forsta losenord. Personrollen ser bara sin egen vy, medan Super User kan valja person i rullista.
+
+## [2026-06-04] feature | Meta-analys anvander bara rost
+
+Meta-videoanalysen extraherar nu en temporar ljudfil fran videon och skickar bara rosten till Gemini. Analysen fyller ett tydligast hort pall-id och avvikelser, medan ordernummer, sandningsnummer, anvandarnamn och kund lamnas tomma tills de kan hamtas via pall-id fran uppladdad data. Autoanalys ar fortsatt ko-ad med en video i taget, delay/spacing-settings och best-effort stillbild fran video.
+
+## [2026-06-04] fix | Meta-video laddas ner som video
+
+Meta-uppladdningar normaliserar nu videoandelse + ljud-MIME, till exempel `.mp4` med `audio/mp4`, till video-MIME vid sparande. Content-endpointen normaliserar ocksa befintliga rader vid streaming, sa live-rader som sparats med fel MIME laddas ner och spelas som video.
+
+## [2026-06-04] fix | Meta-videopil laddar spelbar MP4
+
+Videopilen i Meta-analystabellen anvander nu `variant=playable` pa content-endpointen. Backend transkodar da temporart originalvideon till H.264/AAC-MP4 och raderar tempfilen efter svaret, sa filmer fran Meta-glasogon som annars bara ger ljudikon i Windows Media Player kan ses utan att originalfilen skrivs over.
