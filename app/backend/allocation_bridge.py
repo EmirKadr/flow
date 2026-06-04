@@ -23,6 +23,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from .compiled_data_paths import article_max_path
+
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +269,12 @@ def require_available() -> tuple[ModuleType, ModuleType]:
 def business_allocation_data_paths(business_code: str | None) -> dict[str, str]:
     engine_module, _flows_module = require_available()
     ensure_files = getattr(engine_module, "ensure_business_allocation_data_files", None)
+    persistent_article_max = article_max_path(business_code)
+    if persistent_article_max.exists():
+        return {
+            "observations_path": str(engine_module.business_observations_path(business_code)),
+            "article_max_path": str(persistent_article_max),
+        }
     if callable(ensure_files):
         return ensure_files(business_code)
     return {

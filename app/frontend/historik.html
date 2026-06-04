@@ -59,6 +59,11 @@
       <div class="history-mode-toggle" role="tablist" aria-label="Historikvy">
         <button type="button" class="history-mode-btn active" data-history-mode="history" role="tab" aria-selected="true">Användarhistorik</button>
         <button type="button" class="history-mode-btn" data-history-mode="analysis" role="tab" aria-selected="false">Analys</button>
+        <button type="button" class="history-mode-btn" data-history-mode="functions" role="tab" aria-selected="false">Funktioner</button>
+        <button type="button" class="history-mode-btn" data-history-mode="buttons" role="tab" aria-selected="false">Knappar</button>
+        <button type="button" class="history-mode-btn" data-history-mode="columns" role="tab" aria-selected="false">Kolumner</button>
+        <button type="button" class="history-mode-btn" data-history-mode="flows" role="tab" aria-selected="false">Fl&ouml;den</button>
+        <button type="button" class="history-mode-btn" data-history-mode="tracking-ai" role="tab" aria-selected="false">AI-analys</button>
         <button type="button" class="history-mode-btn" data-history-mode="errors" role="tab" aria-selected="false">Felkoder</button>
         <button type="button" class="history-mode-btn" data-history-mode="waits" role="tab" aria-selected="false">V&auml;ntetider</button>
         <button type="button" class="history-mode-btn" data-history-mode="health" role="tab" aria-selected="false">H&auml;lsa</button>
@@ -127,6 +132,142 @@
             <tbody id="topEntitiesBody"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="functions" hidden>
+      <div class="analytics-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="trackingTotalEvents">0</div>
+          <div class="stat-label">Trackingevents i urvalet</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="trackingRecentEvents">0</div>
+          <div class="stat-label">Senaste 24 timmarna</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="trackingUniqueUsers">0</div>
+          <div class="stat-label">Unika anv&auml;ndare</div>
+        </div>
+      </div>
+
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Mest anv&auml;nda funktioner</h3>
+          <table class="small-table">
+            <thead><tr><th>Funktion</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopFeaturesBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Vyer</h3>
+          <table class="small-table">
+            <thead><tr><th>Vy</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopViewsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Klientyta</h3>
+          <table class="small-table">
+            <thead><tr><th>Yta</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopSurfacesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Knappar som saknar anv&auml;ndning i urvalet</h3>
+        <table class="small-table">
+          <thead><tr><th>Vy</th><th>Kontroll</th><th>Namn</th></tr></thead>
+          <tbody id="trackingUnusedControlsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="buttons" hidden>
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Mest anv&auml;nda knappar</h3>
+          <table class="small-table">
+            <thead><tr><th>Knapp</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopControlsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Copy/export/download</h3>
+          <table class="small-table">
+            <thead><tr><th>M&ouml;nster</th><th>Events</th></tr></thead>
+            <tbody id="trackingButtonCopyPatternsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-wrap history-error-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Tid</th>
+              <th>Anv&auml;ndare</th>
+              <th>Vy</th>
+              <th>Event</th>
+              <th>Kontroll</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="trackingRecentBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="columns" hidden>
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Kolumnkopiering</h3>
+          <table class="small-table">
+            <thead><tr><th>Flow / tabell / kolumn</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopColumnsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Kopieringsm&ouml;nster</h3>
+          <table class="small-table">
+            <thead><tr><th>M&ouml;nster</th><th>Events</th></tr></thead>
+            <tbody id="trackingColumnCopyPatternsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="flows" hidden>
+      <div class="analytics-split">
+        <div class="card">
+          <h3>Fl&ouml;den</h3>
+          <table class="small-table">
+            <thead><tr><th>Flow</th><th>Events</th></tr></thead>
+            <tbody id="trackingTopFlowsBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Kolumner per flow</h3>
+          <table class="small-table">
+            <thead><tr><th>Kolumn</th><th>Events</th></tr></thead>
+            <tbody id="trackingFlowColumnsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="history-panel" data-history-panel="tracking-ai" hidden>
+      <div class="card">
+        <h3>Historik-AI</h3>
+        <form id="historyTrackingChatForm" class="analytics-chat-form">
+          <textarea id="historyTrackingQuestion" rows="3" placeholder="Fr&aring;ga om funktioner, knappar, kolumner, flows eller klientyta"></textarea>
+          <div class="actions">
+            <button type="submit" class="primary">Fr&aring;ga MiniMax</button>
+            <button type="button" id="historyTrackingChatClear">Rensa</button>
+          </div>
+        </form>
+        <div id="historyTrackingChatAnswer" class="history-ai-answer muted-cell">Ingen fr&aring;ga skickad.</div>
       </div>
     </section>
 

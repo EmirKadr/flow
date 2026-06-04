@@ -1,13 +1,13 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-04
 tags: [produktivitet, filer, kpi, ui]
 ---
 
 # Produktivitet
 
-Kort svar: Produktivitet analyserar stora lokala CSV-loggar i klienten och kombinerar dem med permanenta KPI-mal fran servern. KPI-malet ar en verksamhetsseparerad karnfil: Stigamo, R3 och framtida verksamheter har samma filtyp men egna data. Tre synliga loggar kravs lokalt: Plocklogg Full, Translogg och Pallastningslogg. Nar en sadan logg laddas upp uppdaterar backend samtidigt verksamhetens sammanstallda csv.gz-observationer for samma loggtyp. Atkomst styrs via Vybehorigheter for `productivity`, inte via hard Super User-krav.
+Kort svar: Produktivitet analyserar stora CSV-loggar lokalt och kombinerar dem med permanenta KPI-mal fran servern. I webben sparas filerna i IndexedDB och rapporten byggs i browsern. I Windows-appen sparas lokala filreferenser och rapporten byggs av den lokala desktop-servern mot filerna pa disk. KPI-malet ar en verksamhetsseparerad karnfil i Postgres. Tre synliga loggar kravs lokalt: Plocklogg Full, Translogg och Pallastningslogg. Nar en sadan logg laddas upp eller syncas uppdaterar backend samtidigt verksamhetens sammanstallda csv.gz-observationer for samma loggtyp. Atkomst styrs via Vybehorigheter for `productivity`, inte via hard Super User-krav.
 
 ## Behorighet
 
@@ -21,7 +21,7 @@ Rollen behover minst `productivity=view` for att oppna sidan och lasa status/KPI
 | Foregaende/nasta datum | Klickar pilar | Hoppar till narliggande datum som finns i datasetet | `shiftProductivityDate` | Disabled om inget fore/efter-datum finns. |
 | Omradesfokus i sidebar | Valjer Alla/GG/AS/EH/MG | Filtrerar rapportsektioner; `∞` visar alla block | `flow:areaFocusChanged`, `preferredProductivityGroupFilter` | Om fel block visas, kontrollera togglen nere i sidebar. |
 | Sok | Skriver text | Filtrerar sektioner/rader klient-side | `activeSearch`, `renderContent` | Sokningen ar lokal och paverkar inte datan. |
-| Filkrav/dropzoner | Drar filer till kravslot | Sparar lokal fil i IndexedDB | `productivityUploads.saveFiles` | Okand filtyp om namn/header inte matchar. |
+| Filkrav/dropzoner | Drar filer till kravslot | Webben sparar fil i IndexedDB; Windows sparar `localRef` och registrerar den hos desktop-servern | `productivityUploads.saveFiles`, `/api/desktop/productivity/files/register` | Okand filtyp om namn/header inte matchar. |
 | Välj per filslot | Oppnar filval for viss filtyp | Sparar vald fil pa den sloten | IndexedDB `flow-productivity-files` | Vald fel fil kan klassas om targetKey anvands. |
 | Rensa per filslot | Klick pa x | Tar bort lokal fil | `deleteFile` | KPI-mal ar permanent och kan inte rensas via x. |
 
@@ -29,14 +29,14 @@ Rollen behover minst `productivity=view` for att oppna sidan och lasa status/KPI
 
 | Nyckel | Label | Prefix/header-hints | Var sparas |
 | --- | --- | --- | --- |
-| `pick` | Plocklogg Full | `v_ask_pick_log_full`, headers `Zon`, `Plockat`, `Anvandare`, `Andrad`, `Bolag` | IndexedDB lokalt + `productivity_pick_observations` |
-| `trans` | Translogg | `v_ask_trans_log`, headers `Pallid`, `Fran`, `Till`, `Antal`, `Timestamp` | IndexedDB lokalt + `productivity_trans_observations` |
-| `pallet` | Pallastningslogg | `v_ask_palletloading_log`, headers `Plockpallsnr.`, `Palltyp`, `Pallplacering`, `Transnr.`, `Vikt` | IndexedDB lokalt + `productivity_pallet_observations` |
+| `pick` | Plocklogg Full | `v_ask_pick_log_full`, headers `Zon`, `Plockat`, `Anvandare`, `Andrad`, `Bolag` | IndexedDB eller Windows `localRef` + `productivity_pick_observations` |
+| `trans` | Translogg | `v_ask_trans_log`, headers `Pallid`, `Fran`, `Till`, `Antal`, `Timestamp` | IndexedDB eller Windows `localRef` + `productivity_trans_observations` |
+| `pallet` | Pallastningslogg | `v_ask_palletloading_log`, headers `Plockpallsnr.`, `Palltyp`, `Pallplacering`, `Transnr.`, `Vikt` | IndexedDB eller Windows `localRef` + `productivity_pallet_observations` |
 | `kpi` | KPI-mal | `v_ask_kpi_target`, headers `Flodesnamn`, `Processnamn`, `Beskrivning`, `Rader`, `Kollin` | Postgres/permanent verksamhetsdata |
 
 ## Sammanstallda loggar
 
-Plocklogg Full, Translogg och Pallastningslogg har varsin sammanstalld csv.gz-fil i verksamhetens `data/coredata/<verksamhetskod>/`:
+Plocklogg Full, Translogg och Pallastningslogg har varsin sammanstalld csv.gz-fil per verksamhet. I produktion ligger de pa persistent disk via `PRODUCTIVITY_DATA_DIR` eller `MEDIA_STORE_ROOT/flow-data`; repo-vagen `data/coredata/<verksamhetskod>/` ar bara lokal/dev- eller legacy-fallback:
 
 - `v_ask_pick_log_full_observations.csv.gz` for Plocklogg Full.
 - `v_ask_trans_log_observations.csv.gz` for Translogg.
@@ -67,13 +67,14 @@ Vissa anvandare exkluderas hardkodat i frontend/backendlogik for specifika grupp
 
 ## Tekniskt flode
 
-1. `productivity_uploads.js` sparar synliga loggar lokalt i IndexedDB.
-2. Samma loggfil skickas ocksa till `/api/productivity/files/raw`; backend uppdaterar ratt sammanstalld csv.gz-fil om filtypen ar Plocklogg Full, Translogg eller Pallastningslogg.
-3. KPI-fil laddas upp via `/api/productivity/files/raw` och sparas som verksamhetens `kpi`-rad i Postgres.
-4. `productivity.js` laser lokala filer radvis i browsern, bygger dataset och hamtar verksamhetens KPI-mal via `/api/productivity/targets`.
-5. Rapport for vald dag byggs lokalt och cachas. Intilliggande datum kan forhamtas.
-6. Backend har motsvarande service for serverklassning/status, permanenta KPI-mal och sammanstallda produktivitetsloggar.
-7. Serverhanterade uppladdningar/rensningar via `/api/productivity/files*` auditloggas som `productivity_file` med filtyp, antal forsokta, antal sparade och antal okanda filer. Om uppladdningen kraschar innan svar loggas `upload_failed` med feltyp och eventuell HTTP-status. Privata filnamn sparas inte i auditloggen.
+1. `productivity_uploads.js` sparar synliga loggar lokalt i IndexedDB for webben eller som `localRef` i Windows.
+2. Windows registrerar refsen hos desktop-servern. Full produktivitetsrapport via `/api/productivity` fangas lokalt och byggs av Python mot filerna pa disk.
+3. Samma loggfil syncas ocksa till `/api/productivity/files/raw` i bakgrundsko; backend uppdaterar ratt sammanstalld csv.gz-fil om filtypen ar Plocklogg Full, Translogg eller Pallastningslogg.
+4. KPI-fil syncas via `/api/productivity/files/raw` och sparas som verksamhetens `kpi`-rad i Postgres. I Windows kan en nyvald KPI-ref anvandas direkt lokalt innan syncen ar klar.
+5. I webben laser `productivity.js` lokala IndexedDB-filer radvis i browsern och hamtar verksamhetens KPI-mal via `/api/productivity/targets`.
+6. Rapport for vald dag byggs lokalt och cachas. Intilliggande datum kan forhamtas.
+7. Backend har motsvarande service for serverklassning/status, permanenta KPI-mal och sammanstallda produktivitetsloggar.
+8. Serverhanterade uppladdningar/rensningar via `/api/productivity/files*` auditloggas som `productivity_file` med filtyp, antal forsokta, antal sparade och antal okanda filer. Lokala Windows-korningar auditloggas som `desktop_local_run` med metadata, men utan lokala sokvagar, filnamn eller filinnehall.
 
 ## Felsokningssvar for framtida chat
 

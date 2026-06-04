@@ -1,13 +1,13 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-04
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
 # Lagerverktyg
 
-Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar for gemensamma lokala filer, Bearbeta for floden, Installningar for lager-/ytkarta och Dela for listdelning. Filer sparas lokalt i IndexedDB och skickas till API nar ett flode kors. Bearbeta och Dela behaller faltvarden, status och senaste resultat i aktuell browser-/desktop-session nar anvandaren byter vy och kommer tillbaka. Backend ateranvander samma uppladdade fil via innehallshash och cachar inlasta tabeller i processen for snabbare upprepade Bearbeta-korning.
+Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar for filval, Bearbeta for floden, Installningar for lager-/ytkarta och Dela for listdelning. I webben sparas vanliga filval i IndexedDB och skickas som uploads nar servern behover dem. I Windows-appen sparas i stallet lokala filreferenser for Bearbeta/Produktivitet, och den lokala desktop-servern kor berakningarna mot filerna pa disk. Ovriga vyer fortsatter ga mot central server. Bearbeta och Dela behaller faltvarden, status och senaste resultat i aktuell browser-/desktop-session nar anvandaren byter vy och kommer tillbaka.
 
 ## Vyer
 
@@ -22,11 +22,11 @@ Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar f
 
 | Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- |
-| Välj filer | Valjer en eller flera filer | Identifierar filtyp, mappar till slot, sparar i IndexedDB | `POST /api/allokering/detect` | Okand filtyp om namn/header inte matchar. |
-| Drag-drop | Drar filer till panel/slot/flode | Samma som Välj filer, med fallback till slot | `routeAllocationFiles` | Om flera filer okanda visas toast "Kunde inte sortera". |
+| Valj filer | Valjer en eller flera filer | Webben identifierar filtyp och sparar filen i IndexedDB; Windows registrerar lokal path som `localRef` med metadata | `routeAllocationFiles`, `DesktopFileBridge` | Okand filtyp om namn/header inte matchar. |
+| Drag-drop | Drar filer till panel/slot/flode | Samma som Valj filer, med fallback till slot. I Windows registreras filerna snabbt och tung sync sker koat | `routeAllocationFiles` | Om flera filer okanda visas toast "Kunde inte sortera". |
 | Välj per slot | Valjer fil for en specifik slot | Forsoker detektera men fallbackar till sloten | `fallbackSlotKey` | Bra nar automatisk identifiering missar. |
-| Visa | Oppnar en fylld filrad | Lokala filer forhandsvisas fran IndexedDB; karnfiler och sammanstalld data hamtas som textpreview fran servern | `openAllocationLocalFilePreview`, `GET /api/coredata/files/{file_key}/preview` | Binara lokala filer, t.ex. Excel, kan oppnas som original om de inte kan visas som tabell/text i appen. |
-| X per slot | Rensar slot | Tar bort lokal IndexedDB-post | `deleteAllocationFile` | Sammanstalld data som `artikel_max.csv` kan visas utan att vara uppladdad. |
+| Ladda ner/Oppna | Klickar explicit filatgard | Webben laddar ned sparad fil forst vid klick; Windows oppnar lokal fil eller mapp via desktop bridge | `data-download-*`, `/api/desktop/files/{ref}/open` | Ingen fil hamtas eller lases i forvag bara for att listan visas. |
+| X per slot | Rensar slot | Tar bort lokal IndexedDB-post eller lokal referens | `deleteAllocationFile` | Sammanstalld data som `artikel_max.csv` kan laddas ned utan att vara uppladdad i sessionen. |
 | Rensa alla | Rensar vanliga lokala filval | Tar bort icke-skyddade filer ur allokerings- och produktivitetsstores, stoppar gammal produktivitetssynk fran att skriva tillbaka rensade loggar, men bevarar karnfiler, sammanstalld data som `artikel_max.csv` och KPI-mal | `clearAllUploadedFiles`, `syncAllocationUploadsFromStore` | Bekraftelse sager att karnfiler och sammanstalld data ligger kvar. |
 | Uppladdningsbadge | Visar antal nya filer | Lagrar notice i sessionStorage | `allocationUploadActivity` | Badge rensas nar Uppladdningar oppnas. |
 
@@ -34,7 +34,7 @@ Kort svar: Lagerverktygen ar fyra vyer ovanpa `warehouse_tools`: Uppladdningar f
 
 Uppladdningar visar separata listor for permanenta karnfiler och sammanstalld data. Vanliga filrader visar alltid det svenska vy-/slotnamnet fran filkunskapens `label_sv` som fet rubrik, sa tekniska alias som `customer_order_details_all` visas som `Detalj Kundorder (Alla)` och `v_ask_booking_putaway` visas som `Ej Inlagrade Artiklar`. Prognosfil, Kampanjfil och Textfil med varden ar Flow-egna namn och normaliseras inte mot filkunskapen. `artikel_max.csv` ar sammanstalld data och uppdaterar samma verksamhetsfil som Ordersaldo, LYX och Pafyllnadsprio anvander. Produktivitetens tre sammanstallda loggfiler visas ocksa har: `productivity_pick_observations`, `productivity_trans_observations` och `productivity_pallet_observations`. Coredata-prefixen `custom`, `dimension`, `dispatch_template`, `item`, `item_alias`, `item_attribute`, `item_option`, `item_security_info`, `kpi_target_rule`, `location`, `location_cost`, `pallet_type` och `trans_agency` sparas som blobbar i Postgres-tabellen `coredata_files` med unik nyckel per verksamhet och filtyp. `trans_agency` ar transportors-/agency-karnfilen och kan aven laddas upp med filnamn som borjar pa `transportorer`, `transportor` eller `agency`. Om en anvandare laddar upp en ny fil med samma prefix for sin verksamhet ersatts DB-raden och den nya blir sanningen for alla anvandare i verksamheten. Andra verksamheters filer rors inte. Gamla filer under `data/coredata/<verksamhetskod>/` kan fortfarande lasas som fallback tills de laddas upp igen.
 
-Alla fyllda filrader i Uppladdningar har `Visa`. Vanliga lokala filer oppnas direkt fran IndexedDB och visas som tabell/text nar formatet ar textlikt; binara lokala filer far en knapp for att oppna originalet. Permanenta karnfiler, `artikel_max.csv` och produktivitetens sammanstallda csv.gz-filer forhandsvisas via `GET /api/coredata/files/{file_key}/preview`, som bara returnerar den forsta delen av filen som text och loggar anvandarhandelsen utan filinnehall.
+Uppladdningar forhandsvisar inte langre filinnehall. Fyllda filrader visar bara metadata och explicita atgarder: `Ladda ner` for web/serverlagrade filer och `Oppna fil`/`Mapp` for Windows-local refs. Det gor att listan kan visas utan att ladda ned eller lasa alla filer i forvag.
 
 Allokering anvander verksamhetens `item_option`-karnfil nar anvandaren inte laddat upp en egen Item Option-fil. En uppladdad lokal fil i sloten vinner for den korningen, men den permanenta karnfilen ligger kvar som verksamhetens fallback.
 
@@ -46,7 +46,7 @@ Nar en slot redan har verksamhetens karnfil eller sammanstallda data, till exemp
 
 `Rensa alla` i Uppladdningar tar bara bort vanliga lokala filval. Permanenta karnfiler, sammanstalld data och skyddade poster ligger kvar, sa anvandaren kan rensa order-/buffert-/loggfiler utan att tappa verksamhetens standardunderlag. Om en bakgrundssynk fran Produktivitet redan ar igang ignoreras dess gamla filkopior efter rensningen, sa till exempel Pallastningslogg inte dyker upp igen.
 
-Produktivitetens sammanstallda loggar skapas nar Plocklogg Full, Translogg eller Pallastningslogg laddas upp i Produktivitet. Plocklogg Full tar bara in nya `Radid` (kolumn-id `rowid`) och Translogg tar bara in nya `Rowid`; Pallastningslogg tar bara in rader nyare an senaste `Ändrad`/`timestamp` i den befintliga csv.gz-filen. Filerna ar verksamhetsscopeade pa samma katalogprincip som coredata.
+Produktivitetens sammanstallda loggar skapas nar Plocklogg Full, Translogg eller Pallastningslogg laddas upp i Produktivitet. Plocklogg Full tar bara in nya `Radid` (kolumn-id `rowid`) och Translogg tar bara in nya `Rowid`; Pallastningslogg tar bara in rader nyare an senaste `Andrad`/`timestamp` i den befintliga csv.gz-filen. I produktion skrivs de verksamhetsscopeade csv.gz-filerna till persistent disk via `PRODUCTIVITY_DATA_DIR` eller `MEDIA_STORE_ROOT/flow-data`, inte till repot. Lokalt/dev kan fortfarande falla tillbaka till gamla `data/coredata`-vagar.
 
 ## Bearbeta-floden
 
@@ -112,7 +112,11 @@ API: `POST /api/allokering/flow/split-values`.
 
 Korda lagerverktygsfloden auditloggas i Historik som `allocation_flow`. Lyckade korningar sparar flodes-id, vilka filslotar/parameternamn som anvandes, verksamhet, vald toggle/filter och hur manga resultattabeller som skapades, men inte filnamn eller inskickade listvarden. Om uppladdningen inte kan sparas, multipart-formularet inte kan lasas eller filen inte kan bearbetas loggas `upload_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status. Om automatisk filidentifiering kraschar loggas `detect_failed`. Om sjalva flodet kraschar loggas `flow_failed` med statuskod, felkod, feltyp, anvandarvanligt meddelande och tekniskt meddelande nar backend har ett. `No objects to concatenate` fran Forecast betyder normalt att flodet fick noll rader att sammanstalla efter inlagda filer och vald toggle/filter.
 
+Interaction-tracking for Bearbeta och Dela ligger bredvid auditloggen. `allocation_tools.js` skickar sanerade events for flodesstart, blockerade krav, lyckad/felad korning, foljdfloden, auto-download, Excel, CSV, textkopiering och kolumnkopiering. Events innehaller flow-id, resultatsessionens narvaro, tabellnyckel, tabellnamn, kolumnindex, kolumnnamn och radantal, men inte kopierade cellvarden, filnamn eller lokala sokvagar. Pa Pafyllnadsprio kan Historik > Kolumner/AI-analys darfor svara om anvandare normalt bara anvander auto-copy av forsta kolumnen eller manuellt kopierar flera kolumner i samma resultat.
+
 Bearbeta-uppladdningar sparas content-addressed i serverns temporara cachekatalog utan originalfilnamn. Nar samma fil skickas igen far den samma sokvag, och `warehouse_tools.flows` ateranvander inlast DataFrame sa lange filens storlek och modifieringstid ar oforandrade. Allokering cachar dessutom hela berakningspaketet per filversion: allokerade rader, near-miss, refill Huvudplock/AutoStore och pallplatser. GG/MG-radfilter cachas per originalfilversion och filterregel, sa samma filtrerade underlag kan ateranvandas mellan Bearbeta-korningar utan att originaluppladdningen i cache/IndexedDB andras. Frontenden forvarmer synliga vyers GET-data i en idle-ko med session-cache och sparar Uppladdningars filmetadata separat, sa Uppladdningar kan ritas fran cache medan stora IndexedDB-blobbar och coredata-status laddas i bakgrunden. Cachelagret rensas opportunistiskt, behaller bara ett begransat antal filer och ska bara paverka hastighet, inte resultat eller verksamhetsscope. Om samma anvandare laddar upp samma slot/filnamn med nytt innehall ersatts den tidigare cacheposten direkt.
+
+I Windows-appen skickar Bearbeta inte vanliga korfiler till central server for sjalva berakningen. Filval via Qt-bron sparar en `localRef`, den lokala desktop-servern fangar `/api/allokering/flow/*`, laser aktuell fil fran disk och kor samma `warehouse_tools`-motor lokalt. Bara sanerad historik skickas centralt: feature/flode/status, filslotar, varaktighet och rad-/resultatraknare, aldrig lokal sokvag eller filinnehall. Karnfiler/KPI och sammanstalld data kan fortfarande syncas centralt i bakgrundsko.
 
 Bearbeta-resultat lagras som temporara serversessioner. Sessionen binds till anvandaren som korde flodet, sa `Oppna i Excel`, `Ladda ner CSV` och kolumnkopiering inte kan hamta en annan anvandares resultat aven om ett session-id skulle delas.
 
@@ -127,7 +131,7 @@ Bearbeta och Dela sparar samtidigt arbetslaget klient-side i `sessionStorage` pe
 | Foljdknapp efter Forecast | Nar Forecast ar klart visas `Kor Ytgenerering` direkt i resultatpanelen om Ytgenerering finns i Bearbeta. Knappen ar disabled tills Forecast-sessionen och verksamhetens `location` finns, och skickar samma `forecast_session_id` som den vanliga Ytgenerering-knappen. Om Forecast har transportorskluster skickas aven `carrier_clusters_json` vidare. |
 | Redigera kluster | Visas i Forecast-resultatet nar Forecast har transportorer. Oppnar en modal med drag-sortering (radordningen satter `assignment_order`), index, Transportor och kolumnerna ASN/Arrive/Depart, Group (`cluster_group`), Start seq/End seq och en fargvaljare. ASN/Arrive/Depart seedas med standardtider (11:00/12:00/14:00) och sparas i `carrier_clusters` som metadata (styr inte placeringen). Om `trans_agency` inte gav klusterrader skapas raderna fran Forecast-tabellens unika transportorer. |
 | Kopiera text | Fritextrutor, till exempel Vecka 27-rapporten, har en kopieringsikon uppe till hoger som kopierar hela rutans text och visar toasten "Text kopierad". |
-| Resultattabell | Visar kolumnnamn i headern och en kopieringsikon per kolumn. Orderoversiktkontroll behaller `Avvikelsetyp` for samma Excel-/CSV-kontrakt som Allokera. |
+| Resultattabell | Visar kolumnnamn i headern och en kopieringsikon per kolumn. Orderoversiktkontroll behaller `Avvikelsetyp` for samma Excel-/CSV-kontrakt som Allokera. Kolumnkopiering trackas med tabell, kolumnindex, kolumnnamn och radantal. |
 | Oppna i Excel | Skickar session_id och tabellnyckel till `/api/allokering/open-excel`. Vid lyckad OS-start visas toasten "Excel oppnas"; om Windows/Excel inte kan oppna filen visas feltoast. |
 | Ladda ner CSV | Hamter `/api/allokering/download/{session_id}/{key}`. Exporten normaliserar cellvarden som preview/Excel, t.ex. `1.0` skrivs som `1` och tomma NaN-varden blir tomma celler. |
 

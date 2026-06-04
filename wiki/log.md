@@ -7,6 +7,17 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-04] feature | Windows kor Bearbeta och Produktivitet lokalt
+
+Windows-appen registrerar nu filval som lokala referenser via Qt-bron och later
+desktop-local-servern fanga Bearbeta- och Produktivitet-endpoints. Berakningen
+laser aktuell fil fran disk och koar bakgrundssync av karnfiler/KPI och
+sammanstalld data utan att starta alla tunga jobb samtidigt. Uppladdningars
+`Visa`-preview ar ersatt av explicita `Ladda ner`, `Oppna fil` och `Mapp`-
+atgarder sa filer bara hamtas eller oppnas nar anvandaren klickar. Lokala
+korningar auditloggas centralt som sanerad metadata utan sokvagar eller
+filinnehall.
+
 ## [2026-06-03] fix | Minskar 502 vid Render-OOM
 
 Render-startsyncen for allokeringsobservationer ar nu avstangd som standard med
@@ -811,7 +822,7 @@ Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudt
 
 ## [2026-06-01] feature | Uppladdningar kan forhandsvisa filer
 
-Alla fyllda filrader i Uppladdningar har nu `Visa`. Lokala arbetsfiler lases fran IndexedDB och visas som tabell/text nar formatet ar textlikt, med originaloppning for binara filer. Serverlagrade karnfiler, `artikel_max.csv` och produktivitetens sammanstallda csv.gz-filer kan forhandsvisas via `GET /api/coredata/files/{file_key}/preview`, som returnerar en begransad textpreview utan att logga filinnehall.
+Denna historiska andring lade till `Visa` for filrader. Funktionen ersattes 2026-06-04 av explicita download/open-atgarder, sa dagens Uppladdningar forhandsvisar inte langre filinnehall.
 
 ## [2026-06-01] feature | Installningar for Ytgenereringens ytkarta
 
@@ -848,3 +859,7 @@ Videopilen i Meta-analystabellen anvander nu `variant=playable` pa content-endpo
 ## [2026-06-04] feature | Meta-uppladdning koar obegransat klientval
 
 Meta-uppladdningssidan later anvandaren valja hela filkon pa en gang och visar total progress med aktuell fil, filnummer, kvarvarande mangd och ETA. Klienten skickar fortsatt en fil per request och backend streamar varje fil i chunks till MediaStore, sa langa koer inte kraver att hela batchen ligger i RAM. Standard-rate-limit for Meta-uppladdning ar avstangd for att sekventiella koer inte ska stoppas efter ett visst antal filer per minut.
+
+## [2026-06-04] feature | Historik far interaction-tracking
+
+Historik har nu ett separat `user_interaction_events`-lager bredvid audit och vantetider. Webben batchar klick, submit, change/contextmenu, API-resultat, nedladdningar och semantiska Bearbeta-events via `flowTrack`; desktop markerar `client_surface=desktop` och trackar appstart, lokala filval och update-floden. Historik har nya lagen Funktioner, Knappar, Kolumner, Floden och AI-analys med endpoints for raw events, summary, coverage och MiniMax-fragor. Backend sanerar payloaden och `TRACKING_ALLOW_VALUE_SAMPLES=false` strippar klartextprover som default; secrets, filnamn, filvagar, privata URL:er, request bodies och provider-detaljer far aldrig sparas.

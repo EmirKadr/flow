@@ -35,6 +35,13 @@ Uppdatera wikin nar du:
 - andrar Halsa, Vantetider, driftkontroller eller `tools.healthcheck`
 - upptacker att dokumentationen ar fel eller for vag
 
+Nar en andring ror interaction-tracking ska wikin beskriva bade vad som trackas
+och vad som inte far sparas. Klartext-vardeprov ar bara tillatet for uttryckligt
+trackade anvandarinteraktioner och bara nar backend-flaggan
+`TRACKING_ALLOW_VALUE_SAMPLES=true` ar satt. Losenord, cookies, tokens,
+API-nycklar, privata URL:er, filnamn, filvagar, request bodies och
+provider-detaljer far aldrig sparas som trackingpayload.
+
 Nar du lagger till eller andrar ett Bearbeta-flode ska du ocksa uppdatera
 `warehouse-tools.md`, `testing-release.md` och `log.md`. Dokumentera vilka
 lokala filer, karnfiler, sessioner/artifacts och knappar som kravs, samt hur en

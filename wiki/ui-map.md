@@ -27,6 +27,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Logga ut | Sidebar botten | Alla inloggade | `POST /api/auth/logout`, rensar sidebar-user-cache, gar till login | Om sessionen redan ar dod skickas anvandaren anda till login. |
 | Toast | Globalt | Alla | Korta status-/felmeddelanden fran JS | Viktig for chatt: be anvandaren citera toasten exakt. |
 | Enter i dialogruta | Alla modaler | Alla | Klickar modalens primara knapp, t.ex. `Spara`, `Skapa` eller `Stang` | Galler inte flerradiga textfalt, checkboxar eller knappar som redan har fokus. |
+| Interaction-tracking | Globalt via `common.js` | Inloggade vyer, samt allowlistad Meta-uppladdning | Auto-capturar klick, submit, select/checkbox/file-change, contextmenu och kopplar API-resultat till senaste interaction | Syns i Historik > Funktioner/Knappar/Kolumner/Floden. Klartextprover sparas bara om `TRACKING_ALLOW_VALUE_SAMPLES=true`; secrets, filnamn och sokvagar sparas aldrig. |
 
 ## Sidor och huvudkontroller
 
@@ -42,7 +43,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Aktiviteter | `aktiviteter.html` | Ny aktivitet, Flera nya aktiviteter, importmall, importera Excel, hjalp, Redigera, Ta bort | [Aktiviteter och omraden](activities-areas.md) |
 | Anvandare | `anvandare.html` | Ny anvandare, Flera nya anvandare, importmall, importera Excel, Vybehorigheter, cell-las, Visa inaktiva | [Anvandare och installningar](users-settings.md) |
 | Verksamheter | `verksamheter.html` | Ny verksamhet, klickbara celler, rubriksortering, Visa inaktiva, Nytt omrade, Lagg till `∞`, Ta bort omrade | [Anvandare och installningar](users-settings.md) |
-| Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera | [Historik och audit](history-audit.md) |
+| Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera, Funktioner, Knappar, Kolumner, Floden, AI-analys | [Historik och audit](history-audit.md) |
 | Hamta data | `hamta-data.html` | Prompt, max rader, Tolka, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
 | Produktivitet | `produktivitet.html` | Datum, prev/next, sok, filkrav/drag-drop | [Produktivitet](productivity.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |

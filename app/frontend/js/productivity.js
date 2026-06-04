@@ -512,10 +512,18 @@ function companyIs(event, company) {
 function localFilesSignature() {
   return VISIBLE_PRODUCTIVITY_SOURCE_SPECS
     .map((spec) => {
-      const file = productivityLocalFiles[spec.key]?.file;
+      const entry = productivityLocalFiles[spec.key];
+      if (entry?.localRef) return `${spec.key}:${entry.localRef}:${entry.name}:${entry.size}:${entry.lastModified}`;
+      const file = entry?.file;
       return file ? `${spec.key}:${file.name}:${file.size}:${file.lastModified}` : `${spec.key}:missing`;
     })
     .join("|");
+}
+
+function allRequiredProductivityFilesAreDesktopRefs() {
+  return VISIBLE_PRODUCTIVITY_SOURCE_SPECS
+    .filter((spec) => spec.required)
+    .every((spec) => Boolean(productivityLocalFiles[spec.key]?.localRef));
 }
 
 async function syncProductivityLocalFilesFromStore() {
@@ -529,16 +537,18 @@ function buildLocalFileStatus(serverStatus = {}) {
   const files = Object.fromEntries(VISIBLE_PRODUCTIVITY_SOURCE_SPECS.map((spec) => {
     const entry = productivityLocalFiles[spec.key];
     const file = entry?.file;
+    const uploaded = Boolean(file || entry?.localRef);
+    const size = Number(entry?.size || file?.size || 0);
     return [spec.key, {
       key: spec.key,
       label: spec.label,
       required: spec.required,
       visible: spec.visible,
-      uploaded: Boolean(file),
-      name: file?.name || null,
-      modified_at: file?.lastModified ? new Date(file.lastModified).toISOString() : null,
-      size: file?.size || null,
-      size_label: file ? formatFileSize(file.size) : null,
+      uploaded,
+      name: entry?.name || file?.name || null,
+      modified_at: entry?.lastModified || file?.lastModified ? new Date(entry?.lastModified || file.lastModified).toISOString() : null,
+      size: size || null,
+      size_label: uploaded ? formatFileSize(size) : null,
     }];
   }));
   const missing = Object.values(files)
@@ -759,14 +769,15 @@ function rowsFromBuckets({ spec, buckets, targets, pickTotals, transTotals }) {
 
 function localSourcePayload(key, rows) {
   const spec = PRODUCTIVITY_SOURCE_BY_KEY[key];
-  const file = productivityLocalFiles[key]?.file;
+  const entry = productivityLocalFiles[key];
+  const file = entry?.file;
   return {
     key,
     label: spec.label,
     visible: spec.visible,
-    name: file?.name || spec.label,
+    name: entry?.name || file?.name || spec.label,
     rows,
-    modified_at: file?.lastModified ? new Date(file.lastModified).toISOString() : null,
+    modified_at: entry?.lastModified || file?.lastModified ? new Date(entry?.lastModified || file.lastModified).toISOString() : null,
   };
 }
 
@@ -1067,6 +1078,10 @@ async function fetchProductivityReport(dateValue = "") {
   }
 
   const request = (async () => {
+    if (allRequiredProductivityFilesAreDesktopRefs()) {
+      const query = dateValue ? `?date=${encodeURIComponent(dateValue)}` : "";
+      return cacheReport(await api.get(`/api/productivity${query}`, { skipCache: true }));
+    }
     const [dataset, targets] = await Promise.all([
       getProductivityDataset(),
       loadProductivityTargets(),

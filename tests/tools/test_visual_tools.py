@@ -70,9 +70,17 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     api = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    meta_upload = (ROOT / "app" / "frontend" / "js" / "meta_upload.js").read_text(encoding="utf-8")
+    desktop_bridge = (ROOT / "app" / "frontend" / "js" / "desktop_bridge.js").read_text(encoding="utf-8")
+    desktop_app = (ROOT / "desktop" / "app.py").read_text(encoding="utf-8")
 
     assert 'data-history-mode="history"' in html
     assert 'data-history-mode="analysis"' in html
+    assert 'data-history-mode="functions"' in html
+    assert 'data-history-mode="buttons"' in html
+    assert 'data-history-mode="columns"' in html
+    assert 'data-history-mode="flows"' in html
+    assert 'data-history-mode="tracking-ai"' in html
     assert 'data-history-mode="errors"' in html
     assert 'data-history-mode="waits"' in html
     assert 'data-history-mode="health"' in html
@@ -80,6 +88,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'id="recentErrorBody"' in html
     assert 'id="slowWaitBody"' in html
     assert 'id="healthChecksBody"' in html
+    assert 'id="trackingTopFeaturesBody"' in html
+    assert 'id="trackingTopControlsBody"' in html
+    assert 'id="trackingTopColumnsBody"' in html
+    assert 'id="trackingTopFlowsBody"' in html
+    assert 'id="historyTrackingChatForm"' in html
     assert 'api.get("/api/businesses?include_inactive=true")' in analytics
     assert 'params.set("business_id", businessId)' in analytics
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
@@ -88,8 +101,17 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
+    assert "TRACKING_HISTORY_MODES" in analytics
+    assert "function interactionParams" in analytics
+    assert 'api.get(`/api/audit/interactions/summary?${trackingParams.toString()}`)' in analytics
+    assert 'api.get(`/api/audit/interactions/coverage?${interactionCoverageParams().toString()}`)' in analytics
+    assert 'api.get(`/api/audit/interactions?${interactionParams(200).toString()}`)' in analytics
+    assert 'api.post("/api/audit/interactions/chat"' in analytics
+    assert 'api.post("/api/audit/interactions/chat/clear"' in analytics
     assert 'const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";' in api
     assert 'const WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";' in api
+    assert 'const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in api
+    assert "function reportApiInteraction" in api
     assert "function reportApiWaitMetric" in api
     assert "function reportApiError" in api
     assert "window.reportApiError = reportApiError;" in api
@@ -114,6 +136,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "incrementAppLogNotice" not in common
     assert "function recordWaitMetric" in common
     assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
+    assert 'const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in common
+    assert "function flowTrack" in common
+    assert "function initInteractionAutoCapture" in common
+    assert "window.flowTrack = flowTrack;" in common
+    assert "window.flowCurrentInteractionContext = currentInteractionContext;" in common
     assert "client_long_task" in common
     assert "reportPageOpen(user, activePage)" in common
     assert "reportPageLoadWaitMetric(activePage)" in common
@@ -121,6 +148,19 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "window.flowLog" in common
     assert "clearAppLog" in common
     assert "pathWithoutQuery(path)" in api
+    assert "allocationTrack(\"flow_run_start\"" in allocation
+    assert "allocationTrack(\"copy_column\"" in allocation
+    assert "allocationTrack(\"auto_copy_column\"" in allocation
+    assert "allocationTableEventMeta(key, columnIndex)" in allocation
+    assert "copy_mode: \"manual\"" in allocation
+    public_summary = meta_upload.split("function publicMetaFileSummary", 1)[1].split("function publicMetaTrack", 1)[0]
+    assert "publicMetaTrack(\"public_meta_file_select\"" in meta_upload
+    assert "public_meta_upload_success" in meta_upload
+    assert "file.name" not in public_summary
+    assert "client_surface: \"desktop\"" in desktop_bridge
+    assert "desktop_file_select" in desktop_bridge
+    assert "desktop_update_check_start" in desktop_app
+    assert "desktop_update_download_success" in desktop_app
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -147,6 +187,11 @@ def test_visual_smoke_covers_critical_scenarios():
         "anvandare-vybehorigheter-modal",
         "verksamheter-ny-verksamhet-modal",
         "historik-filter",
+        "historik-funktioner",
+        "historik-knappar",
+        "historik-kolumner",
+        "historik-floden",
+        "historik-ai-analys",
         "historik-vantetider",
         "historik-halsa",
         "viewer-nekad-personer",
@@ -698,20 +743,20 @@ def test_frontend_theme_toggle_is_wired_globally():
         assert 'src="/js/common.js?v=20260601-coredata-types"' in html
 
 
-def test_uploads_preview_is_available_for_local_and_persistent_files():
+def test_uploads_file_actions_are_explicit_download_or_open():
     frontend = ROOT / "app" / "frontend"
     allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
-    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     coredata_router = (ROOT / "app" / "backend" / "routers" / "coredata.py").read_text(encoding="utf-8")
 
-    assert "data-preview-file-key" in allocation_tools
-    assert "openAllocationLocalFilePreview" in allocation_tools
-    assert "openAllocationPersistentFilePreview" in allocation_tools
-    assert "/api/coredata/files/${encodeURIComponent(key)}/preview" in allocation_tools
-    assert "Filförhandsvisning" in allocation_tools
-    assert "allocation-file-preview-modal" in styles
-    assert '@router.get("/files/{file_key}/preview")' in coredata_router
-    assert "_persistent_data_preview_payload" in coredata_router
+    assert "data-preview-file-key" not in allocation_tools
+    assert "data-preview-file-source" not in allocation_tools
+    assert "data-download-persistent-file" in allocation_tools
+    assert "data-download-local-file" in allocation_tools
+    assert "data-open-local-ref" in allocation_tools
+    assert "data-open-local-folder" in allocation_tools
+    assert "/api/desktop/files/${encodeURIComponent(entry.localRef)}/open" in allocation_tools
+    assert '@router.get("/files/{file_key}/download")' in coredata_router
+    assert "download_coredata_file" in coredata_router
 
 
 def test_data_fetch_plan_columns_are_user_editable():

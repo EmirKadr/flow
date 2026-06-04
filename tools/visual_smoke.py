@@ -116,6 +116,11 @@ STATES: tuple[VisualState, ...] = (
     VisualState("anvandare-vybehorigheter-modal", "/anvandare.html", "#role-view-access", "role_access_modal"),
     VisualState("verksamheter-ny-verksamhet-modal", "/verksamheter.html", "#new-business", "click_new_business", ("admin",)),
     VisualState("historik-filter", "/historik.html", "#auditBody", "analytics_filter", ("admin",)),
+    VisualState("historik-funktioner", "/historik.html", "#trackingTopFeaturesBody", "history_functions", ("admin",)),
+    VisualState("historik-knappar", "/historik.html", "#trackingTopControlsBody", "history_buttons", ("admin",)),
+    VisualState("historik-kolumner", "/historik.html", "#trackingTopColumnsBody", "history_columns", ("admin",)),
+    VisualState("historik-floden", "/historik.html", "#trackingTopFlowsBody", "history_flows", ("admin",)),
+    VisualState("historik-ai-analys", "/historik.html", "#historyTrackingChatForm", "history_tracking_ai", ("admin",)),
     VisualState("historik-vantetider", "/historik.html", "#auditBody", "history_waits", ("admin",)),
     VisualState("historik-halsa", "/historik.html", "#auditBody", "history_health", ("admin",)),
     VisualState("viewer-nekad-personer", "/personer.html", "#scheduleTable", "noop", ("viewer",)),
@@ -421,6 +426,36 @@ def _apply_state(page, state: VisualState) -> None:
     if state.action == "history_health":
         page.click('[data-history-mode="health"]')
         page.wait_for_selector("#healthChecksBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_functions":
+        page.click('[data-history-mode="functions"]')
+        page.wait_for_selector("#trackingTopFeaturesBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_buttons":
+        page.click('[data-history-mode="buttons"]')
+        page.wait_for_selector("#trackingTopControlsBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_columns":
+        page.click('[data-history-mode="columns"]')
+        page.wait_for_selector("#trackingTopColumnsBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_flows":
+        page.click('[data-history-mode="flows"]')
+        page.wait_for_selector("#trackingTopFlowsBody", timeout=15000)
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
+        return
+    if state.action == "history_tracking_ai":
+        page.click('[data-history-mode="tracking-ai"]')
+        page.wait_for_selector("#historyTrackingChatForm", timeout=15000)
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(500)
         return

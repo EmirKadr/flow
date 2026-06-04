@@ -14,6 +14,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .compiled_data_paths import compiled_data_root
 from .coredata_service import (
     business_coredata_dir,
     clear_coredata_file,
@@ -175,6 +176,9 @@ def default_reference_dir() -> Path:
     configured_data_dir = (settings.PRODUCTIVITY_DATA_DIR or "").strip()
     if configured_data_dir:
         return Path(configured_data_dir)
+    persistent_root = compiled_data_root()
+    if persistent_root is not None:
+        return persistent_root
     configured = (settings.PRODUCTIVITY_REFERENCE_DIR or "").strip()
     if configured:
         return Path(configured)
@@ -721,7 +725,11 @@ def read_productivity_targets(
     *,
     db: Session | None = None,
 ) -> dict[str, Any]:
-    path = find_kpi_file(reference_dir, business_code, db=db)
+    return read_productivity_targets_from_file(find_kpi_file(reference_dir, business_code, db=db))
+
+
+def read_productivity_targets_from_file(path: Path | str) -> dict[str, Any]:
+    path = Path(path)
     rows = _read_csv(path)
     targets = _parse_kpi_rows(rows)
     return {

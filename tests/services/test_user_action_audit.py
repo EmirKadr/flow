@@ -8,9 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import AuditLog, Business, User
+from app.backend.models import AuditLog, Business, User, UserInteractionEvent
 from app.backend.routers import allocation, audit_logs, productivity
-from app.backend.schemas import AuditClientErrorIn, AuditClientEventIn
+from app.backend.schemas import AuditClientErrorIn, AuditClientEventIn, InteractionChatRequest, InteractionEventBatchIn, InteractionEventIn
 
 
 class FakeAuditDb:
@@ -41,6 +41,24 @@ def audit_db_session():
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def add_audit_user(session):
+    business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    session.add(business)
+    session.flush()
+    user = User(
+        username="admin",
+        display_name="Admin",
+        role="super_user",
+        roles=["super_user"],
+        business_id=business.id,
+        is_active=True,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return business, user
 
 
 def test_productivity_upload_audit_omits_file_names():
@@ -317,6 +335,221 @@ def test_client_event_report_writes_view_open_audit_event(audit_db_session):
         "page_path": "/index.html",
     }
     assert "secret" not in json.dumps(entry.new_value, ensure_ascii=False)
+
+
+def test_interaction_batch_strips_sensitive_values_by_default(audit_db_session, monkeypatch):
+    business, user = add_audit_user(audit_db_session)
+    monkeypatch.setattr(audit_logs.settings, "TRACKING_ALLOW_VALUE_SAMPLES", False)
+
+    response = audit_logs.record_interactions(
+        InteractionEventBatchIn(
+            items=[
+                InteractionEventIn(
+                    event_type="change",
+                    view_id="allocationProcess",
+                    page_path="/bearbeta.html?token=secret",
+                    control_id="allocation-copy-column",
+                    control_label="Kopiera kolumn",
+                    feature="allocation",
+                    flow_id="pafyllnadsprio",
+                    table_key="complete",
+                    table_label="Prioritering",
+                    column_index=0,
+                    column_label="Order",
+                    row_count=12,
+                    client_surface="web",
+                    detail={
+                        "value_sample": "hemligt cellvarde",
+                        "selected_option_label": "Order",
+                        "password": "secret",
+                        "token": "secret",
+                        "file_name": "kundorder.csv",
+                        "file_path": "C:/hemligt/kundorder.csv",
+                    },
+                )
+            ]
+        ),
+        db=audit_db_session,
+        user=user,
+    )
+
+    event = audit_db_session.query(UserInteractionEvent).one()
+    assert response.status_code == 204
+    assert event.business_id == business.id
+    assert event.user_id == user.id
+    assert event.page_path == "/bearbeta.html"
+    assert event.flow_id == "pafyllnadsprio"
+    assert event.column_index == 0
+    assert event.column_label == "Order"
+    assert event.detail == {
+        "value_sample_length": len("hemligt cellvarde"),
+        "selected_option_label": "Order",
+    }
+    text = json.dumps(event.detail, ensure_ascii=False)
+    assert "secret" not in text
+    assert "kundorder" not in text
+
+
+def test_interaction_value_samples_require_backend_flag(audit_db_session, monkeypatch):
+    _business, user = add_audit_user(audit_db_session)
+    monkeypatch.setattr(audit_logs.settings, "TRACKING_ALLOW_VALUE_SAMPLES", True)
+
+    audit_logs.record_interactions(
+        InteractionEventBatchIn(
+            items=[
+                InteractionEventIn(
+                    event_type="copy_column",
+                    view_id="allocationProcess",
+                    control_id="allocation-copy-column",
+                    feature="allocation",
+                    detail={"value_sample": "tillatet prov", "api_key": "secret"},
+                )
+            ]
+        ),
+        db=audit_db_session,
+        user=user,
+    )
+
+    event = audit_db_session.query(UserInteractionEvent).one()
+    assert event.detail == {"value_sample": "tillatet prov"}
+
+
+def test_public_interaction_endpoint_only_persists_allowlisted_events(audit_db_session):
+    audit_logs.record_public_interactions(
+        InteractionEventBatchIn(
+            items=[
+                InteractionEventIn(event_type="click", view_id="metaUpload", detail={"file_name": "hemlig.mov"}),
+                InteractionEventIn(
+                    event_type="public_meta_file_select",
+                    view_id="other",
+                    client_surface="public",
+                    detail={"file_count": 2, "file_name": "hemlig.mov"},
+                ),
+            ]
+        ),
+        db=audit_db_session,
+    )
+
+    event = audit_db_session.query(UserInteractionEvent).one()
+    assert event.user_id is None
+    assert event.business_id is None
+    assert event.view_id == "metaUpload"
+    assert event.client_surface == "public"
+    assert event.detail == {"file_count": 2}
+
+
+def test_interaction_summary_coverage_and_chat_context(audit_db_session, monkeypatch):
+    business, user = add_audit_user(audit_db_session)
+    monkeypatch.setattr(audit_logs.settings, "TRACKING_ALLOW_VALUE_SAMPLES", False)
+
+    audit_logs.record_interactions(
+        InteractionEventBatchIn(
+            items=[
+                InteractionEventIn(
+                    event_type="auto_copy_column",
+                    view_id="allocationProcess",
+                    control_id="allocation-copy-column",
+                    control_label="Kopiera kolumn",
+                    feature="allocation",
+                    flow_id="pafyllnadsprio",
+                    table_key="complete",
+                    table_label="Prioritering",
+                    column_index=0,
+                    column_label="Order",
+                    row_count=8,
+                    client_surface="desktop",
+                    detail={"copy_mode": "first_column", "value_sample": "order 1", "token": "secret"},
+                ),
+                InteractionEventIn(
+                    event_type="copy_column",
+                    view_id="allocationProcess",
+                    control_id="allocation-copy-column",
+                    control_label="Kopiera kolumn",
+                    feature="allocation",
+                    flow_id="pafyllnadsprio",
+                    table_key="complete",
+                    table_label="Prioritering",
+                    column_index=1,
+                    column_label="Kund",
+                    row_count=8,
+                    client_surface="desktop",
+                    detail={"copy_mode": "manual"},
+                ),
+            ]
+        ),
+        db=audit_db_session,
+        user=user,
+    )
+
+    summary = audit_logs.interaction_summary(
+        limit=5000,
+        business_id=business.id,
+        user_id=None,
+        view_id=None,
+        event_type=None,
+        feature=None,
+        flow_id=None,
+        control_id=None,
+        q=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=user,
+    )
+    coverage = audit_logs.interaction_coverage(
+        period="all",
+        business_id=business.id,
+        user_id=None,
+        db=audit_db_session,
+        _=user,
+    )
+    listed = audit_logs.list_interactions(
+        limit=20,
+        offset=0,
+        business_id=business.id,
+        user_id=None,
+        view_id=None,
+        event_type=None,
+        feature=None,
+        flow_id=None,
+        control_id=None,
+        q=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=user,
+    )
+
+    assert summary.total_events == 2
+    assert summary.unique_users == 1
+    assert summary.top_flows[0].key == "pafyllnadsprio"
+    assert any("Prioritering / Order" in bucket.key for bucket in summary.top_columns)
+    assert summary.top_surfaces[0].key == "desktop"
+    assert coverage.used_controls >= 1
+    assert listed[0].username == "admin"
+
+    captured = {}
+
+    def fake_minimax(payload):
+        captured["payload"] = payload
+        return "Folk kopierar bade forsta och andra kolumnen."
+
+    monkeypatch.setattr(audit_logs.settings, "MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(audit_logs, "_call_minimax", fake_minimax)
+    response = asyncio.run(
+        audit_logs.interaction_chat(
+            InteractionChatRequest(question="Kopierar folk forsta kolumnen eller flera?", period="all"),
+            db=audit_db_session,
+            _=user,
+        )
+    )
+
+    assert response.event_count == 2
+    assert "forsta" in response.answer
+    prompt = json.dumps(captured["payload"], ensure_ascii=False)
+    assert "pafyllnadsprio" in prompt
+    assert "value_sample_length" in prompt
+    assert "secret" not in prompt
 
 
 def test_audit_errors_groups_client_and_failed_events(audit_db_session):

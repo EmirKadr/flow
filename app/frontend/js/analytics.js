@@ -7,6 +7,7 @@ let businesses = [];
 let currentHistoryMode = "history";
 let healthReportCache = null;
 let healthReportLoadedAt = 0;
+const TRACKING_HISTORY_MODES = new Set(["functions", "buttons", "columns", "flows", "tracking-ai"]);
 
 const ENTITY_LABELS = {
   schedule_cell: "Schema",
@@ -374,6 +375,139 @@ function waitMetricParams() {
   return params;
 }
 
+function setTextIfPresent(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = String(value ?? "");
+}
+
+function renderBucketsIfPresent(bodyId, buckets) {
+  if (!document.getElementById(bodyId)) return;
+  renderBuckets(bodyId, buckets || []);
+}
+
+function interactionParams(limit = 5000) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  const period = document.getElementById("periodSelect").value;
+  const fromAt = periodStartIso(period);
+  if (fromAt) params.set("from_at", fromAt);
+  const businessId = document.getElementById("businessFilter").value;
+  if (businessId) params.set("business_id", businessId);
+  const userId = document.getElementById("userFilter").value;
+  if (userId) params.set("user_id", userId);
+  const query = document.getElementById("actionFilter").value.trim();
+  if (query) params.set("q", query);
+  return params;
+}
+
+function interactionCoverageParams() {
+  const params = new URLSearchParams();
+  params.set("period", document.getElementById("periodSelect").value || "30d");
+  const businessId = document.getElementById("businessFilter").value;
+  if (businessId) params.set("business_id", businessId);
+  const userId = document.getElementById("userFilter").value;
+  if (userId) params.set("user_id", userId);
+  return params;
+}
+
+function renderTrackingUnusedControls(coverage = {}) {
+  const body = document.getElementById("trackingUnusedControlsBody");
+  if (!body) return;
+  const items = coverage.unused_controls || [];
+  body.innerHTML = "";
+  if (!items.length) {
+    body.innerHTML = '<tr><td colspan="3" class="muted-cell">Inga saknade kontroller i urvalet.</td></tr>';
+    return;
+  }
+  items.forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.view_id || "-")}</td>
+      <td>${escapeHtml(item.control_id || "-")}</td>
+      <td>${escapeHtml(item.label || "-")}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function renderTrackingRows(entries = []) {
+  const body = document.getElementById("trackingRecentBody");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!entries.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted-cell">Inga trackingevents matchade filtret.</td></tr>';
+    return;
+  }
+  entries.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(formatTimestamp(entry.created_at))}</td>
+      <td>${escapeHtml(userLabel(entry))}</td>
+      <td>${escapeHtml(entry.view_id || "-")}</td>
+      <td>${escapeHtml(entry.event_type || "-")}</td>
+      <td>${escapeHtml(entry.control_label || entry.control_id || "-")}</td>
+      <td>${escapeHtml(entry.status || "ok")}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function renderTrackingDashboards(summary = {}, coverage = {}, entries = []) {
+  setTextIfPresent("trackingTotalEvents", summary.total_events || 0);
+  setTextIfPresent("trackingRecentEvents", summary.events_last_24h || 0);
+  setTextIfPresent("trackingUniqueUsers", summary.unique_users || 0);
+  renderBucketsIfPresent("trackingTopFeaturesBody", summary.top_features);
+  renderBucketsIfPresent("trackingTopViewsBody", summary.top_views);
+  renderBucketsIfPresent("trackingTopSurfacesBody", summary.top_surfaces);
+  renderBucketsIfPresent("trackingTopControlsBody", summary.top_controls);
+  renderBucketsIfPresent("trackingButtonCopyPatternsBody", summary.copy_patterns);
+  renderBucketsIfPresent("trackingTopColumnsBody", summary.top_columns);
+  renderBucketsIfPresent("trackingColumnCopyPatternsBody", summary.copy_patterns);
+  renderBucketsIfPresent("trackingTopFlowsBody", summary.top_flows);
+  renderBucketsIfPresent("trackingFlowColumnsBody", summary.top_columns);
+  renderTrackingUnusedControls(coverage);
+  renderTrackingRows(entries.length ? entries : (summary.recent || []));
+}
+
+function trackingChatPayload(question) {
+  const businessId = document.getElementById("businessFilter").value;
+  const userId = document.getElementById("userFilter").value;
+  const query = document.getElementById("actionFilter").value.trim();
+  return {
+    question,
+    period: document.getElementById("periodSelect").value || "30d",
+    business_id: businessId ? Number(businessId) : null,
+    user_id: userId ? Number(userId) : null,
+    q: query || null,
+  };
+}
+
+async function submitTrackingChat(event) {
+  event.preventDefault();
+  const input = document.getElementById("historyTrackingQuestion");
+  const answer = document.getElementById("historyTrackingChatAnswer");
+  const question = input.value.trim();
+  if (!question) {
+    answer.textContent = "Skriv en fraga om historiken forst.";
+    return;
+  }
+  answer.textContent = "Analyserar trackinghistorik...";
+  try {
+    const response = await api.post("/api/audit/interactions/chat", trackingChatPayload(question));
+    answer.textContent = response.answer || "MiniMax gav inget svar.";
+  } catch (error) {
+    answer.textContent = error?.message || "Historik-AI kunde inte svara just nu.";
+  }
+}
+
+async function clearTrackingChat() {
+  document.getElementById("historyTrackingQuestion").value = "";
+  document.getElementById("historyTrackingChatAnswer").textContent = "Ingen fraga skickad.";
+  try {
+    await api.post("/api/audit/interactions/chat/clear", {});
+  } catch (_error) {}
+}
+
 function renderWaitAnalysis(items = []) {
   const target = document.getElementById("waitAnalysis");
   target.innerHTML = "";
@@ -581,18 +715,24 @@ async function refreshAnalytics() {
   const params = currentParams();
   const loadWaits = currentHistoryMode === "waits";
   const loadHealth = currentHistoryMode === "health";
-  const [summary, entries, errorSummary, waitSummary, healthReport] = await Promise.all([
+  const loadTracking = TRACKING_HISTORY_MODES.has(currentHistoryMode);
+  const trackingParams = interactionParams();
+  const [summary, entries, errorSummary, waitSummary, healthReport, trackingSummary, trackingCoverage, trackingEntries] = await Promise.all([
     api.get(`/api/audit/summary?${params.toString()}`),
     api.get(`/api/audit?${params.toString()}`),
     api.get(`/api/audit/errors?${params.toString()}`),
     loadWaits ? api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`) : Promise.resolve(null),
     loadHealth ? loadHealthReport() : Promise.resolve(null),
+    loadTracking ? api.get(`/api/audit/interactions/summary?${trackingParams.toString()}`) : Promise.resolve(null),
+    loadTracking ? api.get(`/api/audit/interactions/coverage?${interactionCoverageParams().toString()}`) : Promise.resolve(null),
+    loadTracking ? api.get(`/api/audit/interactions?${interactionParams(200).toString()}`) : Promise.resolve(null),
   ]);
   renderSummary(summary);
   renderAuditRows(entries);
   renderErrorDashboard(errorSummary);
   if (waitSummary) renderWaitMetrics(waitSummary);
   if (healthReport) renderHealthReport(healthReport);
+  if (trackingSummary) renderTrackingDashboards(trackingSummary, trackingCoverage, trackingEntries || []);
 }
 
 (async () => {
@@ -604,6 +744,8 @@ async function refreshAnalytics() {
   await refreshAnalytics();
 
   document.getElementById("refreshAuditBtn").addEventListener("click", refreshAnalytics);
+  document.getElementById("historyTrackingChatForm")?.addEventListener("submit", submitTrackingChat);
+  document.getElementById("historyTrackingChatClear")?.addEventListener("click", clearTrackingChat);
   document.querySelectorAll("[data-history-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       setHistoryMode(button.dataset.historyMode);

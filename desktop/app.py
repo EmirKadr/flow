@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import json
 import os
 import sys
 import tempfile
@@ -99,6 +100,7 @@ from core.app_info import (
     SERVER_BASE_URL,
     UPDATE_DISABLED_ENV,
 )
+from desktop.local_runtime import DesktopLocalRuntime
 from desktop.local_app_server import LocalAppServer
 from desktop.web_view import create_web_view
 from desktop.widgets.error_view import ErrorView
@@ -147,7 +149,10 @@ class MainWindow(QMainWindow):
         local_app_server_factory: Optional[Callable[[], object]] = None,
     ):
         super().__init__()
-        self._browser_factory = browser_factory or create_web_view
+        self._desktop_runtime = DesktopLocalRuntime()
+        self._browser_factory = browser_factory or (
+            lambda parent=None: create_web_view(parent, desktop_runtime=self._desktop_runtime)
+        )
         self._health_worker_factory = health_worker_factory or (
             lambda: HealthCheckWorker(SERVER_BASE_URL)
         )
@@ -158,7 +163,7 @@ class MainWindow(QMainWindow):
             lambda info, target_dir: UpdateDownloadWorker(info, target_dir)
         )
         self._local_app_server_factory = local_app_server_factory or (
-            lambda: LocalAppServer(upstream_base_url=SERVER_BASE_URL)
+            lambda: LocalAppServer(upstream_base_url=SERVER_BASE_URL, local_runtime=self._desktop_runtime)
         )
 
         self._health_worker = None
@@ -272,6 +277,46 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._loading_view)
         self.statusBar().showMessage(message)
 
+    def _track_desktop_event(
+        self,
+        event_type: str,
+        *,
+        status: str = "ok",
+        detail: dict[str, object] | None = None,
+    ) -> None:
+        page_getter = getattr(self._browser, "page", None)
+        if not callable(page_getter):
+            return
+        try:
+            page = page_getter()
+        except Exception:
+            return
+        if not hasattr(page, "runJavaScript"):
+            return
+        payload = {
+            "view_id": "desktop",
+            "feature": "desktop",
+            "control_id": "desktop-shell",
+            "control_label": "Windows-app",
+            "client_surface": "desktop",
+            "status": status,
+            "detail": detail or {},
+        }
+        script = (
+            "(() => {"
+            "const send = () => {"
+            "if (typeof window.flowTrack !== 'function') return false;"
+            f"window.flowTrack({json.dumps(event_type)}, {json.dumps(payload, ensure_ascii=False)});"
+            "return true;"
+            "};"
+            "if (!send()) window.setTimeout(send, 500);"
+            "})();"
+        )
+        try:
+            page.runJavaScript(script)
+        except Exception:
+            pass
+
     def _start_health_check(self) -> None:
         if self._health_worker and self._health_worker.isRunning():
             return
@@ -322,6 +367,10 @@ class MainWindow(QMainWindow):
 
     def _on_browser_load_finished(self, ok: bool) -> None:
         if ok:
+            self._track_desktop_event(
+                "desktop_app_load",
+                detail={"local_app": bool(self._local_app_url)},
+            )
             self.statusBar().showMessage("flow är redo.", 3000)
             return
         self._error_view.set_message(
@@ -354,6 +403,7 @@ class MainWindow(QMainWindow):
                 )
             return
 
+        self._track_desktop_event("desktop_update_check_start", detail={"manual": manual})
         worker = self._update_check_worker_factory()
         worker.update_available.connect(
             lambda info: self._on_update_available(info, manual)
@@ -370,6 +420,7 @@ class MainWindow(QMainWindow):
         worker.deleteLater()
 
     def _on_no_update(self, manual: bool) -> None:
+        self._track_desktop_event("desktop_update_check_no_update", detail={"manual": manual})
         if manual:
             QMessageBox.information(
                 self,
@@ -378,6 +429,11 @@ class MainWindow(QMainWindow):
             )
 
     def _on_update_error(self, message: str, manual: bool) -> None:
+        self._track_desktop_event(
+            "desktop_update_check_error",
+            status="error",
+            detail={"manual": manual, "message_length": len(message or "")},
+        )
         if manual:
             QMessageBox.warning(
                 self,
@@ -386,6 +442,14 @@ class MainWindow(QMainWindow):
             )
 
     def _on_update_available(self, info, manual: bool) -> None:
+        self._track_desktop_event(
+            "desktop_update_available",
+            detail={
+                "manual": manual,
+                "version": str(getattr(info, "version", ""))[:40],
+                "has_installer": bool(getattr(info, "installer_url", "")),
+            },
+        )
         if not info.installer_url:
             reply = QMessageBox.question(
                 self,
@@ -424,6 +488,10 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self._track_desktop_event(
+            "desktop_update_download_start",
+            detail={"version": str(getattr(info, "version", ""))[:40]},
+        )
         target_dir = Path(tempfile.gettempdir()) / APP_NAME / "updates"
         progress = QProgressDialog("Laddar ner uppdatering…", "Avbryt", 0, 100, self)
         progress.setWindowTitle("Uppdatering")
@@ -446,6 +514,7 @@ class MainWindow(QMainWindow):
             self._update_progress.setValue(100)
             self._update_progress.close()
 
+        self._track_desktop_event("desktop_update_download_success")
         started = QProcess.startDetached(installer_path, SILENT_UPDATE_ARGS)
         ok = bool(started[0]) if isinstance(started, tuple) else bool(started)
         if ok:
@@ -461,6 +530,11 @@ class MainWindow(QMainWindow):
     def _on_update_download_error(self, message: str) -> None:
         if self._update_progress:
             self._update_progress.close()
+        self._track_desktop_event(
+            "desktop_update_download_error",
+            status="error",
+            detail={"message_length": len(message or "")},
+        )
         QMessageBox.warning(
             self,
             "Kunde inte ladda ner uppdatering",

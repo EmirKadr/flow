@@ -4,6 +4,7 @@ referens/
 testdata/
 private-data/
 data/external_data_catalog.local*.json
+tmp_screenshots/
 
 # Lokala felsokningsinspelningar
 FELSÖK/*.mp4
