@@ -17,6 +17,12 @@ Samtidigt namespacades common.js interaction-endpoints sa de inte krockar med
 api.js globala konstanter; krockan gjorde att vanliga sidor kunde sluta boota
 efter login och fallerade Playwright-testerna.
 
+## [2026-06-04] fix | Historik-kontroller matchar frontend-idn
+
+Interaction-coverage i Historik anvander nu samma faktiska kontroll-id:n som
+frontendens personer-, aktiviteter- och anvandarvyer. Det gor att
+known-controls-kontraktet i CI inte faller pa gamla camelCase-alias.
+
 ## [2026-06-04] feature | Windows kor Bearbeta och Produktivitet lokalt
 
 Windows-appen registrerar nu filval som lokala referenser via Qt-bron och later

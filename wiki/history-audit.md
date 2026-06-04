@@ -29,7 +29,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 
 - `Anvandarhistorik`: tabell med tid, anvandare, typ, atgard, objekt och detalj.
 - `Analys`: statkort for antal handelser, senaste 24 h och unika anvandare samt topplistor for anvandare, atgarder och typer.
-- `Funktioner`: interaction-summary for mest anvanda funktioner, vyer och klientytor samt coverage for kanda knappar som inte anvants i urvalet.
+- `Funktioner`: interaction-summary for mest anvanda funktioner, vyer och klientytor samt coverage for kanda knappar som inte anvants i urvalet. Coverage-kontraktet anvander frontendens faktiska kontroll-id:n sa gamla alias inte smyger in igen.
 - `Knappar`: topplista for kontroller och senaste trackingevents med vy, eventtyp, kontroll och status.
 - `Kolumner`: copy/export/download-monster och kolumnkopiering per flow, resultattabell, kolumnindex och kolumnnamn.
 - `Floden`: flow-anvandning och vilka resultatkolumner som kopieras per flow. Pa `pafyllnadsprio` gar det att se om anvandaren bara kopierar forsta kolumnen via auto-copy eller manuellt kopierar flera kolumner i samma resultat/session.
