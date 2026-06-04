@@ -23,7 +23,7 @@
         <label class="meta-dropzone" id="metaDropzone">
           <input id="metaFiles" name="files" type="file" accept="image/*,video/*" multiple />
           <span class="meta-dropzone-title">Välj bilder eller videor</span>
-          <span class="meta-dropzone-subtitle">Flera filer går bra - uppladdning startar direkt</span>
+          <span class="meta-dropzone-subtitle">Välj hela kön - uppladdningen kör en fil i taget</span>
         </label>
 
         <div id="metaFileList" class="meta-file-list" aria-live="polite"></div>
@@ -33,7 +33,7 @@
             <span id="metaProgressLabel">Laddar upp</span>
             <strong id="metaProgressPercent">0%</strong>
           </div>
-          <div class="meta-progress-track" aria-hidden="true">
+          <div class="meta-progress-track" role="progressbar" aria-label="Uppladdningsförlopp" aria-valuemin="0" aria-valuemax="100">
             <div id="metaProgressBar" class="meta-progress-bar"></div>
           </div>
           <div id="metaProgressRemaining" class="meta-progress-remaining"></div>

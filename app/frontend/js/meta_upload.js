@@ -13,6 +13,7 @@ const META_UPLOAD_FILES_PER_REQUEST = 1;
 let selectedFiles = [];
 let fileUploadStates = [];
 let uploading = false;
+let uploadStartedAtMs = 0;
 const selectedVideoDurations = new WeakMap();
 let durationProbeGeneration = 0;
 
@@ -33,6 +34,18 @@ function formatDuration(seconds) {
   const hours = Math.floor(minutesTotal / 60);
   if (hours > 0) return `${hours}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+function formatEta(seconds) {
+  const value = Math.ceil(Number(seconds) || 0);
+  if (value <= 0) return "";
+  if (value < 60) return `ca ${value} sek kvar`;
+  const minutes = Math.floor(value / 60);
+  const sec = value % 60;
+  if (minutes < 60) return sec ? `ca ${minutes} min ${sec} sek kvar` : `ca ${minutes} min kvar`;
+  const hours = Math.floor(minutes / 60);
+  const min = minutes % 60;
+  return min ? `ca ${hours} h ${min} min kvar` : `ca ${hours} h kvar`;
 }
 
 function isVideoFile(file) {
@@ -164,6 +177,7 @@ function resetProgress() {
   progressPercent.textContent = "0%";
   progressLabel.textContent = "Laddar upp";
   progressRemaining.textContent = "";
+  uploadStartedAtMs = 0;
 }
 
 function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
@@ -174,13 +188,20 @@ function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
   const offsets = fileOffsets();
   let activeIndex = offsets.findIndex((item) => loaded >= item.start && loaded < item.end);
   if (activeIndex === -1 && loaded >= total && offsets.length) activeIndex = offsets.length - 1;
+  const elapsedSeconds = uploadStartedAtMs ? (Date.now() - uploadStartedAtMs) / 1000 : 0;
+  const bytesPerSecond = elapsedSeconds > 1 && loaded > 0 ? loaded / elapsedSeconds : 0;
+  const eta = bytesPerSecond > 0 && remaining > 0 ? formatEta(remaining / bytesPerSecond) : "";
+  const queueLabel = activeIndex >= 0 && selectedFiles.length
+    ? `fil ${activeIndex + 1} av ${selectedFiles.length}`
+    : `${selectedFiles.length} filer`;
 
   progressPanel.hidden = false;
   progressBar.style.width = `${percent}%`;
+  progressBar.parentElement?.setAttribute("aria-valuenow", String(percent));
   progressPercent.textContent = `${percent}%`;
   progressRemaining.textContent = remaining > 0
-    ? `${formatBytes(remaining)} kvar av ${formatBytes(total)}`
-    : `${formatBytes(total)} uppladdat`;
+    ? `${queueLabel} - ${formatBytes(remaining)} kvar av ${formatBytes(total)}${eta ? ` - ${eta}` : ""}`
+    : `${selectedFiles.length} filer klara - ${formatBytes(total)} uppladdat`;
   progressLabel.textContent = activeIndex >= 0
     ? `Laddar upp ${selectedFiles[activeIndex]?.name || "fil"}`
     : "Laddar upp";
@@ -242,10 +263,11 @@ async function startUpload() {
   if (!selectedFiles.length || uploading) return;
 
   setUploadControlsLocked(true);
+  uploadStartedAtMs = Date.now();
   fileUploadStates = selectedFiles.map(() => ({ label: "Väntar", type: "" }));
   renderFiles();
   updateProgress(0);
-  setStatus("Laddar upp...");
+  setStatus(`Laddar upp ${selectedFiles.length} filer i kö, en fil i taget...`);
   const totalBytes = totalSelectedBytes();
   let uploadedBeforeBytes = 0;
   let savedTotal = 0;

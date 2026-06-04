@@ -15,7 +15,7 @@ const PRODUCTIVITY_HOURS = Array.from({ length: 18 }, (_, index) => index + 6);
 const PRODUCTIVITY_SOURCE_SPECS = [
   {
     key: "pick",
-    label: "Plocklogg",
+    label: "Plocklogg Full",
     prefix: "v_ask_pick_log_full",
     required: true,
     visible: true,
@@ -31,7 +31,7 @@ const PRODUCTIVITY_SOURCE_SPECS = [
   },
   {
     key: "pallet",
-    label: "Palllastningslogg",
+    label: "Pallastningslogg",
     prefix: "v_ask_palletloading_log",
     required: true,
     visible: true,

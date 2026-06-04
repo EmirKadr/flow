@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.datastructures import Headers, UploadFile
 
-from app.backend.config import settings
+from app.backend.config import Settings, settings
 from app.backend.database import Base
 from app.backend.deps import get_current_user, get_db
 from app.backend.main import app
@@ -60,6 +60,13 @@ def store_bytes(content: bytes, suffix: str = ".bin") -> str:
     writer = get_media_store().create_writer(suffix=suffix)
     writer.write(content)
     return writer.commit().key
+
+
+def test_meta_upload_default_rate_limit_allows_long_sequential_queues(monkeypatch):
+    monkeypatch.delenv("META_UPLOAD_RATE_LIMIT_PER_MINUTE", raising=False)
+    defaults = Settings(_env_file=None)
+    assert defaults.META_UPLOAD_RATE_LIMIT_PER_MINUTE == 0
+    assert defaults.MAX_META_UPLOAD_FILES >= 1
 
 
 def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):

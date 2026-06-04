@@ -17,7 +17,7 @@ class HealthCheckWorker(QThread):
 
     def run(self) -> None:
         try:
-            info = check_server_health(base_url=self.base_url)
+            info = check_server_health(base_url=self.base_url, attempts=8, retry_delay=1.5)
         except Exception as exc:
             self.error.emit(str(exc))
             return

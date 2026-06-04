@@ -410,12 +410,12 @@ def _is_gotland_postcode(value: object) -> bool:
 
 
 def _security_levels_by_item(security_df: pd.DataFrame) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
-    item_col = _find_required_column(security_df, ("Artikel", "Artikelnummer", "Item", "Item Num"), "Artikel säkerhetsinformation")
+    item_col = _find_required_column(security_df, ("Artikel", "Artikelnummer", "Item", "Item Num"), "Artikel Säkerhetsinformation")
     company_col = _find_table_column(security_df, ("Bolag", "Company"))
     level_col = _find_required_column(
         security_df,
         ("Farligt gods nivå", "Farligt gods niva", "Farligt gods niv", "Farliggods", "Dangerous goods level"),
-        "Artikel säkerhetsinformation",
+        "Artikel Säkerhetsinformation",
     )
     priority = {"": 0, "LQ": 1, "DG": 2}
     by_item_company: dict[tuple[str, str], str] = {}
@@ -437,11 +437,11 @@ def _security_levels_by_item(security_df: pd.DataFrame) -> tuple[dict[tuple[str,
 
 
 def _address_sea_lookup(custom_adr_df: pd.DataFrame) -> dict[tuple[str, str], dict[str, object]]:
-    customer_col = _find_required_column(custom_adr_df, ("Kund", "Kundnr", "Custom Num"), "Alternativ leveransadress")
-    post_col = _find_required_column(custom_adr_df, ("Post nr", "Postnummer", "Post Num", "Post No"), "Alternativ leveransadress")
+    customer_col = _find_required_column(custom_adr_df, ("Kund", "Kundnr", "Custom Num"), "Alternativ Leveransadress")
+    post_col = _find_required_column(custom_adr_df, ("Post nr", "Postnummer", "Post Num", "Post No"), "Alternativ Leveransadress")
     adr_col = _find_table_column(custom_adr_df, ("Adr num", "Alt adress", "Custom Adr Num", "Custom_Adr_Num"))
     if adr_col is None:
-        raise ValueError("Alternativ leveransadress saknar kolumn: Adr num")
+        raise ValueError("Alternativ Leveransadress saknar kolumn: Adr num")
     address_by_customer_adr: dict[tuple[str, str], dict[str, object]] = {}
 
     for _, row in custom_adr_df.iterrows():
@@ -482,7 +482,7 @@ def _lq_sea_status(customer: str, adr_num: str, by_customer_adr: dict[tuple[str,
         return False, "LQ ej klar: kundnummer saknas för adressmatchning", adr_num, ""
     address = by_customer_adr.get((customer, adr_num))
     if address is None:
-        return False, "LQ ej klar: adressnumret hittades inte i Alternativ leveransadress", adr_num, ""
+        return False, "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress", adr_num, ""
     post_code = _clean_cell(address.get("post_code"))
     if bool(address.get("is_gotland")):
         return True, "LQ Gotland", adr_num, post_code
@@ -495,8 +495,8 @@ def flow_goods_declaration(files: dict, params: dict) -> dict:
     custom_adr_df = _read(files["custom_adr"])
     security_df = _read(files["item_security_info"])
 
-    order_col = _find_required_column(orders_df, ("Order nr", "Ordernr", "Order Num", "order_num"), "Detalj kundorder")
-    item_col = _find_required_column(orders_df, ("Artikel", "Artikelnummer", "Item", "Item Num"), "Detalj kundorder")
+    order_col = _find_required_column(orders_df, ("Order nr", "Ordernr", "Order Num", "order_num"), "Detalj Kundorder")
+    item_col = _find_required_column(orders_df, ("Artikel", "Artikelnummer", "Item", "Item Num"), "Detalj Kundorder")
     company_col = _find_table_column(orders_df, ("Bolag", "Company"))
     customer_col = _find_table_column(orders_df, ("Kund", "Kundnr", "Custom Num"))
     customer_name_col = _find_table_column(orders_df, ("Kund.1", "Kund namn", "Custom Desc"))
@@ -578,10 +578,10 @@ def flow_goods_declaration(files: dict, params: dict) -> dict:
 
     lq_rows = result_df[result_df["Farligt gods nivå"].eq("LQ")]
     log = [
-        f"Artikel säkerhetsinformation: {len(by_item)} artiklar med DG/LQ.",
+        f"Artikel Säkerhetsinformation: {len(by_item)} artiklar med DG/LQ.",
         f"Gotland räknas som postnummer {GOTLAND_POSTCODE_MIN // 100}-{GOTLAND_POSTCODE_MAX // 100}.",
     ]
-    log.append("Adressmatchning: Detalj kundorder.Order nr -> Orderöversikt.Alt adress -> Alternativ leveransadress.Adr num.")
+    log.append("Adressmatchning: Detalj Kundorder.Order nr -> Orderöversikt.Alt adress -> Alternativ Leveransadress.Adr num.")
 
     return {
         "summary": {
@@ -959,16 +959,11 @@ def flow_forecast(files: dict, params: dict) -> dict:
         "Medel pallplatser": raw_summary.get("medel_pallplatser", 0),
         "Max pallplatser": raw_summary.get("max_pallplatser", 0),
     }
-    artifact = {
-        "columns": list(forecast_df.columns),
-        "rows": forecast_df.to_dict("records"),
-        "summary": summary,
-    }
-    artifacts = {"forecast_json": artifact}
+    artifacts = {}
     carrier_clusters = None
     log = [
         "Forecast körd fristående i Flow.",
-        "Forecast sparad som session-artifact för Ytgenerering.",
+        "Forecast sparad som session-tabell för Ytgenerering.",
     ]
     if "trans_agency" in files:
         carrier_clusters = read_carrier_clusters(Path(files["trans_agency"]))
@@ -1077,11 +1072,11 @@ FLOWS: list[dict] = [
         "description": "Allokera kundorder mot buffertpallar (Helpall -> AutoStore -> Huvudplock, FIFO) med near-miss-loggning, refill och pallplatsberäkning.",
         "handler": flow_allocate,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
-            {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
-            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "items", "label": "Item Option", "type": "file", "required": False, "detect": ["item", "item_option"]},
+            {"key": "not_putaway", "label": "Ej Inlagrade Artiklar", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
         ],
     },
     {
@@ -1089,9 +1084,9 @@ FLOWS: list[dict] = [
         "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
         "handler": flow_forecast,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
         "coredata": [
             {"key": "custom", "label": "custom", "required": True},
@@ -1100,7 +1095,7 @@ FLOWS: list[dict] = [
             {"key": "dimension", "label": "dimension", "required": True},
             {"key": "pallet_type", "label": "pallet_type", "required": True},
             {"key": "item_option", "label": "item_option", "required": True},
-            {"key": "trans_agency", "label": "Transportörer", "required": False},
+            {"key": "trans_agency", "label": "Transportör", "required": False},
         ],
     },
     {
@@ -1115,11 +1110,11 @@ FLOWS: list[dict] = [
     },
     {
         "id": "ordersaldo", "label": "Ordersaldo", "category": "Order & saldo",
-        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån Detalj kundorder(alla).",
+        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån Detalj Kundorder (Alla).",
         "handler": flow_ordersaldo,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo ink. Automation (Utbestallt)", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
     },
@@ -1137,8 +1132,8 @@ FLOWS: list[dict] = [
         "description": "Prioritera påfyllnad utifrån underskott. Med orderöversikt används lastningsfönster-läge.",
         "handler": flow_pafyllnadsprio,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": False, "detect": ["overview"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
@@ -1148,7 +1143,7 @@ FLOWS: list[dict] = [
         "description": "Räkna ut vilka HIB-ordrar som behöver kopplas om samt missade avgångar.",
         "handler": flow_hib_koppling,
         "inputs": [
-            {"key": "details", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
         ],
     },
@@ -1158,7 +1153,7 @@ FLOWS: list[dict] = [
         "handler": flow_overview_check,
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "details", "label": "Detalj kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -1168,7 +1163,7 @@ FLOWS: list[dict] = [
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
             {"key": "dispatch", "label": "Dispatchpallar", "type": "file", "required": True, "detect": ["dispatch"]},
-            {"key": "details", "label": "Detalj kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -1176,12 +1171,12 @@ FLOWS: list[dict] = [
         "description": "Kontrollera DG/LQ-artiklar mot artikel säkerhetsinformation och Gotlandsadresser för sjö/hav.",
         "handler": flow_goods_declaration,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt (adressnummer)", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "custom_adr", "label": "Alternativ leveransadress", "type": "file", "required": True, "detect": ["custom_adr"]},
+            {"key": "custom_adr", "label": "Alternativ Leveransadress", "type": "file", "required": True, "detect": ["custom_adr"]},
         ],
         "coredata": [
-            {"key": "item_security_info", "label": "Artikel säkerhetsinformation", "required": True},
+            {"key": "item_security_info", "label": "Artikel Säkerhetsinformation", "required": True},
         ],
     },
     {
@@ -1189,7 +1184,7 @@ FLOWS: list[dict] = [
         "description": "Kontrollera orderrader mot vecka 27-reglerna.",
         "handler": flow_vecka27_check,
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
         ],
     },
     {
@@ -1199,8 +1194,8 @@ FLOWS: list[dict] = [
         "inputs": [
             {"key": "prognos", "label": "Prognosfil", "type": "file", "required": False, "detect": ["prognos"]},
             {"key": "campaign", "label": "Kampanjfil", "type": "file", "required": False, "detect": ["campaign"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": True, "detect": ["automation"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": False, "detect": ["buffer"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True, "detect": ["automation"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": False, "detect": ["buffer"]},
         ],
     },
     {
@@ -1208,7 +1203,7 @@ FLOWS: list[dict] = [
         "description": "Lägg till nya status-30-pallar i observations och räkna om artikel_max. Skriver till temporära filer.",
         "handler": flow_observations_update,
         "inputs": [
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
     },
     {
@@ -1253,14 +1248,14 @@ SOLO_FLOWS = {
 # varje flödes filinput mappas till en pool-nyckel. Endast "details" skiljer
 # sig från sin pool-nyckel (samma filformat som "orders").
 DATA_POOL: list[dict] = [
-    {"key": "orders", "label": "Detalj kundorder(alla)", "detect": ["orders"]},
-    {"key": "buffer", "label": "Buffertpallar", "detect": ["buffer"]},
-    {"key": "saldo", "label": "Saldo ink. Automation", "detect": ["automation"]},
+    {"key": "orders", "label": "Detalj Kundorder (Alla)", "detect": ["orders"]},
+    {"key": "buffer", "label": "Buffertpall", "detect": ["buffer"]},
+    {"key": "saldo", "label": "Saldo Inkl. Automation", "detect": ["automation"]},
     {"key": "overview", "label": "Orderöversikt", "detect": ["overview"]},
     {"key": "dispatch", "label": "Dispatchpallar", "detect": ["dispatch"]},
-    {"key": "custom_adr", "label": "Alternativ leveransadress", "detect": ["custom_adr"]},
-    {"key": "items", "label": "Item option", "detect": ["item"]},
-    {"key": "not_putaway", "label": "Ej inlagrade", "detect": ["not_putaway", "wms_booking"]},
+    {"key": "custom_adr", "label": "Alternativ Leveransadress", "detect": ["custom_adr"]},
+    {"key": "items", "label": "Item Option", "detect": ["item", "item_option"]},
+    {"key": "not_putaway", "label": "Ej Inlagrade Artiklar", "detect": ["not_putaway", "wms_booking"]},
     {"key": "prognos", "label": "Prognosfil", "detect": ["prognos"]},
     {"key": "campaign", "label": "Kampanjfil", "detect": ["campaign"]},
     {"key": "max_csv", "label": "artikel_max.csv", "detect": []},

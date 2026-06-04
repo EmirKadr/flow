@@ -122,7 +122,7 @@ MiniMax far bara vy-/kolumnstruktur och exempel pa fragor. API-lank och nycklar 
 Behorighet till vyn styrs via `Vybehorigheter` for `Produktivitet`. Visa racker for att oppna rapporten; Redigera kravs for serverhanterade KPI-/produktivitetsfiler.
 
 1. Ga till `Produktivitet`.
-2. Lagg in Plocklogg, Translogg och Palllastningslogg via dropzoner eller filval.
+2. Lagg in Plocklogg Full, Translogg och Pallastningslogg via dropzoner eller filval.
 3. Kontrollera att KPI-mal finns. KPI ar permanent serverdata.
 4. Valj datum.
 5. Filtrera omrade med togglen i sidebar och text med `Sok`.

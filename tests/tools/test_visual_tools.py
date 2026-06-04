@@ -96,6 +96,10 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";' in api
     assert "function reportClientEvent" in api
     assert "window.reportClientEvent = reportClientEvent;" in api
+    assert "function isLikelyHtmlDocument" in api
+    assert "function htmlErrorMessage" in api
+    assert "Servern svarade med ${httpStatusLabel(status)}" in api
+    assert "HTML-felsida fran servern" in api
     assert "logApiSuccess" in api
     assert "logApiFailure" in api
     assert "apiResultSummary" in api
@@ -279,6 +283,26 @@ def test_project_protocol_documents_healthcheck_workflow():
     assert "storre push" in docs["AGENTS.md"]
     assert "error" in docs["AGENTS.md"]
     assert "warn" in docs["AGENTS.md"]
+
+
+def test_project_protocol_documents_release_polling_policy():
+    docs = {
+        "AGENTS.md": (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+        "TESTPROTOCOL.md": (ROOT / "TESTPROTOCOL.md").read_text(encoding="utf-8"),
+        "wiki/testing-release.md": (ROOT / "wiki" / "testing-release.md").read_text(encoding="utf-8"),
+    }
+
+    for name, text in docs.items():
+        assert "Releasepolling" in text, name
+        assert "workflowen har startat" in text, name
+        assert "be agenten kolla releasen senare" in text, name
+        assert "15 minuter" in text, name
+        assert "2 minuter" in text, name
+        assert "1 minut" in text, name
+        assert "30:e sekund" in text, name
+
+    testprotocol_one_line = re.sub(r"\s+", " ", docs["TESTPROTOCOL.md"])
+    assert "Ingen ny release eller tagg ska skapas om anvandaren bara ber om backend-push" in testprotocol_one_line
 
 
 def test_allocation_observations_github_sync_is_wired():
@@ -622,7 +646,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "data-productivity-upload-panel" not in allocation_tools
     assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation_tools
     assert "productivity_pallet" in allocation_tools
-    assert "Palllastningslogg" in allocation_tools
+    assert "Pallastningslogg" in allocation_tools
     assert "PRODUCTIVITY_SHARED_UPLOAD_WORDS" in allocation_tools
     assert "v_ask_booking_putaway" in allocation_tools
     assert "ALLOCATION_SLOT_MIRRORS" in allocation_tools
@@ -1337,13 +1361,17 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert '<link rel="apple-touch-icon" href="/app-icon-192.png" />' in html
     assert '<link rel="manifest" href="/manifest.webmanifest" />' in html
     assert 'type="file" accept="image/*,video/*" multiple' in html
-    assert "uppladdning startar direkt" in html
+    assert "uppladdningen kör en fil i taget" in html
     assert "metaUploadButton" not in html
     assert 'id="metaProgress"' in html
+    assert 'role="progressbar"' in html
     assert 'XMLHttpRequest' in js
     assert "META_UPLOAD_FILES_PER_REQUEST = 1" in js
     assert "start += META_UPLOAD_FILES_PER_REQUEST" in js
     assert "uploadWithProgress(batch" in js
+    assert "formatEta" in js
+    assert "uploadStartedAtMs" in js
+    assert "fil ${activeIndex + 1} av ${selectedFiles.length}" in js
     assert 'xhr.upload.addEventListener("progress"' in js
     assert 'xhr.open("POST", "/api/meta/uploads")' in js
     assert "FormData" in js
@@ -1467,16 +1495,29 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "productivityUploads?.syncAllocationUploads" in allocation
     assert "Kunde inte synka produktivitetsfiler till Uppladdningar." in allocation
     assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation
-    assert "Palllastningslogg" in allocation
+    assert "Pallastningslogg" in allocation
     assert "data-productivity-upload-panel" not in allocation
     assert "allocationDropSlotsForTarget" in allocation
     assert "data-drop-slot" in allocation
     assert "fallbackSlotKey" in allocation
     assert 'data-allocation-drop data-drop-scope="flow"' in allocation
     assert "event.stopPropagation()" in allocation
-    assert "Detalj kundorder(alla)" in allocation
-    assert "Detalj kundorder(alla)" in catalog
-    assert "Detalj kundorder(alla)" in flows
+    assert "Detalj Kundorder (Alla)" in allocation
+    assert "Detalj Kundorder (Alla)" in catalog
+    assert "Detalj Kundorder (Alla)" in flows
+    assert "Detalj Kundorder (Alla) (kundnamn)" not in catalog
+    assert "Detalj Kundorder (Alla) (kundnamn)" not in flows
+    assert "Buffertpall" in allocation
+    assert "Buffertpall" in catalog
+    assert "Buffertpall" in flows
+    assert "Ej Inlagrade Artiklar" in allocation
+    assert "Ej Inlagrade Artiklar" in catalog
+    assert "Ej Inlagrade Artiklar" in flows
+    assert "Pallastningslogg" in allocation
+    assert "Palllastningslogg" not in allocation
+    assert '"pallastningslogg"' in allocation
+    assert '"pallastningslogg"' in common
+    assert "Plocklogg Full" in allocation
     assert "ALLOCATION_SLOT_LABEL_ALIASES" in allocation
     assert "function allocationUploadSlotLabel(slot)" in allocation
     assert "allocationUploadSlotLabel({ key, label: input.label })" in allocation
@@ -1486,8 +1527,14 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert '"detalj kundorder(alla)"' in common
     assert "Beställningslinjer" not in catalog
     assert "Beställningslinjer" not in flows
-    assert "Saldo ink. Automation" in allocation
-    assert "Saldo ink. Automation" in catalog
+    assert "Saldo Inkl. Automation" in allocation
+    assert "Saldo Inkl. Automation" in catalog
+    assert "Saldo Inkl. Automation" in flows
+    assert "Saldo Inkl. Automation (Utbest" not in catalog
+    assert "Saldo Inkl. Automation (Utbest" not in flows
+    assert "Item Option" in allocation
+    assert "Item Option" in catalog
+    assert "Item Option" in flows
     assert "Saldo / automation" not in catalog
     assert '"not_putaway", "wms_booking"' in catalog
     assert '"not_putaway", "wms_booking"' in flows
@@ -1524,11 +1571,11 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "const skipCache = options.skipCache !== false" in allocation
     assert 'loadAllocationCoreDataStatus({ skipCache: true })' in allocation
     assert 'window.api?.clearGetCache?.((key) => String(key || "").includes("/api/coredata/files"))' in allocation
-    assert "Alternativ leveransadress" in allocation
+    assert "Alternativ Leveransadress" in allocation
     assert "Godsdeklaration" in catalog
     assert "Godsdeklaration" in flows
     assert "Orderöversikt (adressnummer)" in catalog
-    assert "Alternativ leveransadress" in catalog
+    assert "Alternativ Leveransadress" in catalog
     assert "item_security_info" in catalog
     assert "flow_goods_declaration" in flows
 

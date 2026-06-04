@@ -55,9 +55,9 @@ class SectionSpec:
 
 
 SOURCE_SPECS = (
-    SourceFileSpec("pick", "Plocklogg", "v_ask_pick_log_full"),
+    SourceFileSpec("pick", "Plocklogg Full", "v_ask_pick_log_full"),
     SourceFileSpec("trans", "Translogg", "v_ask_trans_log"),
-    SourceFileSpec("pallet", "Palllastningslogg", "v_ask_palletloading_log"),
+    SourceFileSpec("pallet", "Pallastningslogg", "v_ask_palletloading_log"),
     SourceFileSpec("kpi", "KPI-Mål", "v_ask_kpi_target", required=True, visible=False),
 )
 
@@ -78,7 +78,7 @@ COMPILED_PRODUCTIVITY_LOG_SPECS = (
     CompiledProductivityLogSpec(
         "productivity_pick_observations",
         "pick",
-        "Plocklogg sammanstalld data",
+        "Plocklogg Full sammanstalld data",
         "v_ask_pick_log_full_observations.csv.gz",
         "rowid",
     ),
@@ -92,7 +92,7 @@ COMPILED_PRODUCTIVITY_LOG_SPECS = (
     CompiledProductivityLogSpec(
         "productivity_pallet_observations",
         "pallet",
-        "Palllastningslogg sammanstalld data",
+        "Pallastningslogg sammanstalld data",
         "v_ask_palletloading_log_observations.csv.gz",
         "timestamp",
     ),

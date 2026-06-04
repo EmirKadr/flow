@@ -7,6 +7,48 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-03] fix | Minskar 502 vid Render-OOM
+
+Render-startsyncen for allokeringsobservationer ar nu avstangd som standard med
+`ALLOCATION_OBSERVATIONS_STARTUP_SYNC=false`, sa servern inte gor tung
+observationssync direkt efter omstart. Coredata-status for `artikel_max.csv`
+raknar sin path utan att ladda legacy-lagerbryggan, och Windows-klientens
+health check forsoker om korta 502/503/504-fonster innan felvyn visas.
+
+## [2026-06-03] fix | Gor Forecast-CLI mappbaserad
+
+`warehouse_tools.cli forecast` kan nu ta Forecasts coredata-filer som egna
+argument och `--auto-dir` for att matcha en hel testdatamapp. Orelaterade filer
+i mappen ignoreras och tidigare matchade inputs behalls, sa en aktuell
+`item_option` i testmappen vinner over fallbacken i `data/coredata/Stigamo`.
+
+## [2026-06-03] fix | Minskar Forecast-minne efter korning
+
+Bearbeta-uppladdningar streamas nu till serverns temporara cache i bitar i
+stallet for att lasas som en enda bytes-klump. Forecast sparar fortsatt
+resultatet som sessionstabell for Ytgenerering, men skapar inte langre en full
+`forecast_json`-kopia av alla rader bredvid DataFrame-tabellen. Gamla
+Bearbeta-resultatsessioner stadas opportunistiskt for att minska risken for
+Render-minnesspik efter flera stora korningar.
+
+## [2026-06-03] fix | Sanerar 502-HTML i dokumentloggen
+
+Frontendens `api.js` visar inte langre raw HTML nar server/proxy svarar med en
+HTML-felsida, utan kort status som `HTTP 502 (Bad Gateway)`. Bakgrundsprefetch
+dolder likadana fel i 60 sekunder efter forsta warn-raden, sa dokumentloggen
+inte fylls av samma serverfel nar flera forvarmda API:er misslyckas samtidigt.
+`user-events.md`, `history-audit.md` och `error-reference.md` beskriver det nya
+felsokningsbeteendet.
+
+## [2026-06-02] fix | Synkar uppladdningsnamn mot filkunskap
+
+Uppladdningar, Bearbeta och Produktivitet använder nu svenska `label_sv` från
+filkunskapen för kända vyfiler. Exempel: `v_ask_booking_putaway` visas som
+`Ej Inlagrade Artiklar`, `v_ask_customer_order_details_all` som
+`Detalj Kundorder (Alla)` och `v_ask_palletloading_log` som
+`Pallastningslogg`. Prognosfil, Kampanjfil och Textfil med värden lämnas som
+Flow-egna namn eftersom de inte finns i filkunskapen.
+
 ## [2026-06-02] docs | Synkar releasepolling for agenter
 
 Releasepolling-regeln ar nu dokumenterad i `AGENTS.md`, `TESTPROTOCOL.md` och
@@ -19,7 +61,7 @@ workflowen ar klar eller failad.
 
 Uppladdningars filrader normaliserar nu rubriken via filkunskapen innan den
 ritas. Tekniska alias som `customer_order_details_all` visas darfor som
-`Detalj kundorder(alla)` i stallet for databasnamnet.
+`Detalj Kundorder (Alla)` i stallet for databasnamnet.
 
 ## [2026-06-02] change | Samma datamappar for alla verksamheter
 
@@ -802,3 +844,7 @@ Meta-uppladdningar normaliserar nu videoandelse + ljud-MIME, till exempel `.mp4`
 ## [2026-06-04] fix | Meta-videopil laddar spelbar MP4
 
 Videopilen i Meta-analystabellen anvander nu `variant=playable` pa content-endpointen. Backend transkodar da temporart originalvideon till H.264/AAC-MP4 och raderar tempfilen efter svaret, sa filmer fran Meta-glasogon som annars bara ger ljudikon i Windows Media Player kan ses utan att originalfilen skrivs over.
+
+## [2026-06-04] feature | Meta-uppladdning koar obegransat klientval
+
+Meta-uppladdningssidan later anvandaren valja hela filkon pa en gang och visar total progress med aktuell fil, filnummer, kvarvarande mangd och ETA. Klienten skickar fortsatt en fil per request och backend streamar varje fil i chunks till MediaStore, sa langa koer inte kraver att hela batchen ligger i RAM. Standard-rate-limit for Meta-uppladdning ar avstangd for att sekventiella koer inte ska stoppas efter ett visst antal filer per minut.

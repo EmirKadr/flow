@@ -21,6 +21,42 @@ function connectionError(path, originalError) {
   return err;
 }
 
+const HTTP_STATUS_LABELS = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  409: "Conflict",
+  413: "Request Entity Too Large",
+  422: "Validation Error",
+  429: "Too Many Requests",
+  500: "Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
+function httpStatusLabel(status) {
+  const code = Number(status || 0);
+  if (!code) return "serverfel";
+  const label = HTTP_STATUS_LABELS[code];
+  return label ? `HTTP ${code} (${label})` : `HTTP ${code}`;
+}
+
+function isLikelyHtmlDocument(value) {
+  const text = String(value || "").trim().slice(0, 1000).toLowerCase();
+  return (
+    text.startsWith("<!doctype html") ||
+    text.startsWith("<html") ||
+    /<html[\s>]/.test(text) ||
+    /<body[\s>]/.test(text)
+  );
+}
+
+function htmlErrorMessage(status) {
+  return `Servern svarade med ${httpStatusLabel(status)}.`;
+}
+
 function errorMessageFromBody(body, status) {
   const detail = body?.detail ?? body?.error;
   if (typeof detail === "string") return detail;
@@ -32,8 +68,11 @@ function errorMessageFromBody(body, status) {
       return `HTTP ${status}`;
     }
   }
-  if (typeof body === "string" && body.trim()) return body;
-  return `HTTP ${status}`;
+  if (typeof body === "string" && body.trim()) {
+    if (isLikelyHtmlDocument(body)) return htmlErrorMessage(status);
+    return truncateErrorText(body, 500) || httpStatusLabel(status);
+  }
+  return httpStatusLabel(status);
 }
 
 const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";
@@ -160,7 +199,7 @@ function pathWithoutQuery(path) {
   }
 }
 
-function errorDetailForReport(body) {
+function errorDetailForReport(body, status = 0) {
   const detail = body?.detail ?? body?.error;
   if (typeof detail === "string") return truncateErrorText(detail);
   if (Array.isArray(detail)) return `${detail.length} valideringsfel`;
@@ -169,7 +208,10 @@ function errorDetailForReport(body) {
     const keys = Object.keys(detail).slice(0, 6).join(", ");
     return keys ? `Detaljfält: ${keys}` : null;
   }
-  if (typeof body === "string") return truncateErrorText(body);
+  if (typeof body === "string") {
+    if (isLikelyHtmlDocument(body)) return `HTML-felsida fran servern: ${httpStatusLabel(status)}`;
+    return truncateErrorText(body);
+  }
   return null;
 }
 
@@ -238,7 +280,7 @@ function reportApiError(path, details = {}) {
     status,
     error_code: truncateErrorText(details.error_code || errorCodeForReport(details.body, status), 120),
     message: truncateErrorText(details.message),
-    detail: errorDetailForReport(details.body) || truncateErrorText(details.detail),
+    detail: errorDetailForReport(details.body, status) || truncateErrorText(details.detail),
     page_path: pathWithoutQuery(window.location?.pathname || "/"),
   };
   if (status === 0) {

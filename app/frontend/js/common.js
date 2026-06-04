@@ -74,13 +74,13 @@ const SHARED_ALLOCATION_FILE_WORDS = {
   saldo: ["v_ask_item_summary_stock_automation", "item_summary_stock_automation", "saldo ink", "automation"],
   items: ["item_option", "item option"],
   max_csv: ["artikel_max", "article_max"],
-  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
+  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade", "ej inlagrade artiklar"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
+  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "pallastningslogg", "palllastningslogg"],
 };
 const AREA_FOCUS_STORAGE_KEY = "flow-area-focus";
 const AREA_FOCUS_OPTIONS = [
@@ -3129,11 +3129,13 @@ async function maybeShowDemoTourPrompt(user, activePage) {
 
 const BACKGROUND_PREFETCH_TTL_MS = 60 * 1000;
 const BACKGROUND_PREFETCH_DELAY_MS = 250;
+const BACKGROUND_PREFETCH_ERROR_DEDUPE_MS = 60 * 1000;
 const backgroundPrefetchState = {
   queue: [],
   seen: new Set(),
   running: false,
   waiters: [],
+  lastErrorLogAt: new Map(),
 };
 
 function currentIsoWeekParts(date = new Date()) {
@@ -3193,6 +3195,27 @@ function waitForBackgroundPrefetchIdle(timeoutMs = 12000) {
   });
 }
 
+function backgroundPrefetchErrorKey(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error?.name || "unknown").trim();
+  return `${status || "unknown"}|${message || "unknown"}`;
+}
+
+function shouldLogBackgroundPrefetchError(error) {
+  const key = backgroundPrefetchErrorKey(error);
+  const now = Date.now();
+  const lastAt = backgroundPrefetchState.lastErrorLogAt.get(key) || 0;
+  if (now - lastAt < BACKGROUND_PREFETCH_ERROR_DEDUPE_MS) return false;
+  backgroundPrefetchState.lastErrorLogAt.set(key, now);
+  return true;
+}
+
+function backgroundPrefetchErrorMessage(item, error) {
+  const target = item?.path || item?.key || "okänt underlag";
+  const detail = error?.message ? `. ${error.message}` : ".";
+  return `Bakgrundsladdning misslyckades: ${target}${detail} Liknande bakgrundsfel döljs en stund för att hålla loggen läsbar.`;
+}
+
 function scheduleNextBackgroundPrefetch() {
   if (backgroundPrefetchState.running || !backgroundPrefetchState.queue.length) return;
   backgroundPrefetchState.running = true;
@@ -3207,11 +3230,11 @@ function scheduleNextBackgroundPrefetch() {
           telemetrySource: "idle_prefetch",
         });
       } catch (error) {
-        appendAppLog(
-          `Bakgrundsladdning misslyckades: ${item.path || item.key || "okänt underlag"}${error?.message ? ` (${error.message})` : ""}`,
-          "warn",
-          "Bakgrund",
-        );
+        if (shouldLogBackgroundPrefetchError(error)) {
+          appendAppLog(backgroundPrefetchErrorMessage(item, error), "warn", "Bakgrund");
+        } else {
+          console.warn("Bakgrundsladdning misslyckades", item.path || item.key, error);
+        }
       }
     }
     backgroundPrefetchState.running = false;

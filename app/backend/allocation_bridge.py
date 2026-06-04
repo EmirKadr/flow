@@ -49,6 +49,9 @@ SESSIONS: dict[str, dict] = {}
 UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
 UPLOAD_CACHE_TTL_SECONDS = 6 * 60 * 60
 UPLOAD_CACHE_MAX_FILES = 64
+UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
+SESSION_TTL_SECONDS = 2 * 60 * 60
+SESSION_MAX_COUNT = 12
 
 
 def _active_upload_cache_dir() -> Path:
@@ -894,33 +897,78 @@ def _cleanup_upload_cache(now: float | None = None) -> None:
         return
 
 
+async def _write_upload_to_temp(
+    upload: UploadFile,
+    *,
+    directory: Path | None = None,
+    prefix: str,
+    suffix: str,
+) -> tuple[Path, str]:
+    digest = hashlib.sha256()
+    tmp = tempfile.NamedTemporaryFile(delete=False, dir=directory, prefix=prefix, suffix=suffix)
+    path = Path(tmp.name)
+    try:
+        while True:
+            chunk = await upload.read(UPLOAD_READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            digest.update(chunk)
+            tmp.write(chunk)
+        tmp.close()
+        return path, digest.hexdigest()
+    except Exception:
+        tmp.close()
+        path.unlink(missing_ok=True)
+        raise
+
+
 async def save_upload(upload: UploadFile, *, cache: bool = False, cache_key: str | None = None) -> Path:
     suffix = Path(upload.filename or "").suffix or ".csv"
-    content = await upload.read()
     if cache:
-        digest = hashlib.sha256(content).hexdigest()
         cache_dir = _active_upload_cache_dir()
         cache_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_upload_cache()
+        temp_path, digest = await _write_upload_to_temp(
+            upload,
+            directory=cache_dir,
+            prefix="pending_",
+            suffix=suffix,
+        )
         target = cache_dir / f"{digest}{suffix}"
-        if not target.exists():
-            tmp = tempfile.NamedTemporaryFile(delete=False, dir=cache_dir, prefix="pending_", suffix=suffix)
-            try:
-                tmp.write(content)
-                tmp.close()
-                Path(tmp.name).replace(target)
-            except Exception:
-                Path(tmp.name).unlink(missing_ok=True)
-                raise
+        if target.exists():
+            temp_path.unlink(missing_ok=True)
+        else:
+            temp_path.replace(target)
         _remember_upload_cache(cache_key, target)
         _cleanup_upload_cache()
         return target
 
     prefix = f"bem_allok_upload_{_safe_upload_stem(upload.filename)}_"
-    tmp = tempfile.NamedTemporaryFile(delete=False, prefix=prefix, suffix=suffix)
-    tmp.write(content)
-    tmp.close()
-    return Path(tmp.name)
+    path, _digest = await _write_upload_to_temp(upload, prefix=prefix, suffix=suffix)
+    return path
+
+
+def _cleanup_sessions(now: float | None = None) -> None:
+    if not SESSIONS:
+        return
+    now_ts = time.time() if now is None else now
+    for session_id, session in list(SESSIONS.items()):
+        try:
+            created_at = float(session.get("created_at") or now_ts)
+        except (TypeError, ValueError):
+            created_at = now_ts
+        if now_ts - created_at > SESSION_TTL_SECONDS:
+            SESSIONS.pop(session_id, None)
+
+    overflow = len(SESSIONS) - SESSION_MAX_COUNT
+    if overflow <= 0:
+        return
+    ordered = sorted(
+        SESSIONS.items(),
+        key=lambda item: float(item[1].get("created_at") or now_ts),
+    )
+    for session_id, _session in ordered[:overflow]:
+        SESSIONS.pop(session_id, None)
 
 
 def open_path(path: str) -> None:
@@ -1063,9 +1111,11 @@ def run_flow_handler(
     tables = result.get("tables", [])
     artifacts = result.get("artifacts", {}) or {}
     download_files = result.get("download_files", {}) or {}
+    _cleanup_sessions()
     session_id = uuid.uuid4().hex
     SESSIONS[session_id] = {
         "flow_id": flow_id,
+        "created_at": time.time(),
         "tables": {key: df for key, _label, df in tables},
         "labels": {key: label for key, label, _df in tables},
         "artifacts": artifacts,

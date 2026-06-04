@@ -15,11 +15,11 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Allokering",
         "description": "Allokera kundorder mot buffertpallar med near-miss, refill och pallplatsberäkning.",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
-            {"key": "items", "label": "Item option", "type": "file", "required": False, "detect": ["item"]},
-            {"key": "not_putaway", "label": "Ej inlagrade", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "items", "label": "Item Option", "type": "file", "required": False, "detect": ["item", "item_option"]},
+            {"key": "not_putaway", "label": "Ej Inlagrade Artiklar", "type": "file", "required": False, "detect": ["not_putaway", "wms_booking"]},
         ],
     },
     {
@@ -28,9 +28,9 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Forecast & yta",
         "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
         "coredata": [
             {"key": "custom", "label": "custom", "required": True},
@@ -39,7 +39,7 @@ CATALOG_FLOWS: list[dict] = [
             {"key": "dimension", "label": "dimension", "required": True},
             {"key": "pallet_type", "label": "pallet_type", "required": True},
             {"key": "item_option", "label": "item_option", "required": True},
-            {"key": "trans_agency", "label": "Transportörer", "required": False},
+            {"key": "trans_agency", "label": "Transportör", "required": False},
         ],
     },
     {
@@ -57,10 +57,10 @@ CATALOG_FLOWS: list[dict] = [
         "id": "ordersaldo",
         "label": "Ordersaldo",
         "category": "Order & saldo",
-        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån Detalj kundorder(alla).",
+        "description": "Beräkna kompletta ordrar och artiklar med underskott utifrån Detalj Kundorder (Alla).",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo ink. Automation (Utbeställt)", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
     },
@@ -80,8 +80,8 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Order & saldo",
         "description": "Prioritera påfyllnad utifrån underskott. Med orderöversikt används lastningsfönster-läge.",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": False, "detect": ["automation"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
             {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": False, "detect": ["overview"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
@@ -92,7 +92,7 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Kontroller",
         "description": "Räkna ut vilka HIB-ordrar som behöver kopplas om samt missade avgångar.",
         "inputs": [
-            {"key": "details", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
         ],
     },
@@ -103,7 +103,7 @@ CATALOG_FLOWS: list[dict] = [
         "description": "Hitta sändningsnr med flera kunder/transportörer och HIB utan butikssändning.",
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "details", "label": "Detalj kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -114,7 +114,7 @@ CATALOG_FLOWS: list[dict] = [
         "inputs": [
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
             {"key": "dispatch", "label": "Dispatchpallar", "type": "file", "required": True, "detect": ["dispatch"]},
-            {"key": "details", "label": "Detalj kundorder(alla) (kundnamn)", "type": "file", "required": False, "detect": ["orders"]},
+            {"key": "details", "label": "Detalj Kundorder (Alla)", "type": "file", "required": False, "detect": ["orders"]},
         ],
     },
     {
@@ -123,12 +123,12 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Kontroller",
         "description": "Kontrollera DG/LQ-artiklar mot artikel säkerhetsinformation och Gotlandsadresser för sjö/hav.",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt (adressnummer)", "type": "file", "required": True, "detect": ["overview"]},
-            {"key": "custom_adr", "label": "Alternativ leveransadress", "type": "file", "required": True, "detect": ["custom_adr"]},
+            {"key": "custom_adr", "label": "Alternativ Leveransadress", "type": "file", "required": True, "detect": ["custom_adr"]},
         ],
         "coredata": [
-            {"key": "item_security_info", "label": "Artikel säkerhetsinformation", "required": True},
+            {"key": "item_security_info", "label": "Artikel Säkerhetsinformation", "required": True},
         ],
     },
     {
@@ -137,7 +137,7 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Kontroller",
         "description": "Kontrollera orderrader mot vecka 27-reglerna.",
         "inputs": [
-            {"key": "orders", "label": "Detalj kundorder(alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
         ],
     },
     {
@@ -148,8 +148,8 @@ CATALOG_FLOWS: list[dict] = [
         "inputs": [
             {"key": "prognos", "label": "Prognosfil", "type": "file", "required": False, "detect": ["prognos"]},
             {"key": "campaign", "label": "Kampanjfil", "type": "file", "required": False, "detect": ["campaign"]},
-            {"key": "saldo", "label": "Saldo ink. Automation", "type": "file", "required": True, "detect": ["automation"]},
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": False, "detect": ["buffer"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True, "detect": ["automation"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": False, "detect": ["buffer"]},
         ],
     },
     {
@@ -158,7 +158,7 @@ CATALOG_FLOWS: list[dict] = [
         "category": "Data & verktyg",
         "description": "Lägg till nya status-30-pallar i observations och räkna om artikel_max.",
         "inputs": [
-            {"key": "buffer", "label": "Buffertpallar", "type": "file", "required": True, "detect": ["buffer"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
     },
     {
@@ -200,14 +200,14 @@ SOLO_FLOWS = {
 }
 
 DATA_POOL: list[dict] = [
-    {"key": "orders", "label": "Detalj kundorder(alla)", "detect": ["orders"]},
-    {"key": "buffer", "label": "Buffertpallar", "detect": ["buffer"]},
-    {"key": "saldo", "label": "Saldo ink. Automation", "detect": ["automation"]},
+    {"key": "orders", "label": "Detalj Kundorder (Alla)", "detect": ["orders"]},
+    {"key": "buffer", "label": "Buffertpall", "detect": ["buffer"]},
+    {"key": "saldo", "label": "Saldo Inkl. Automation", "detect": ["automation"]},
     {"key": "overview", "label": "Orderöversikt", "detect": ["overview"]},
     {"key": "dispatch", "label": "Dispatchpallar", "detect": ["dispatch"]},
-    {"key": "custom_adr", "label": "Alternativ leveransadress", "detect": ["custom_adr"]},
-    {"key": "items", "label": "Item option", "detect": ["item"]},
-    {"key": "not_putaway", "label": "Ej inlagrade", "detect": ["not_putaway", "wms_booking"]},
+    {"key": "custom_adr", "label": "Alternativ Leveransadress", "detect": ["custom_adr"]},
+    {"key": "items", "label": "Item Option", "detect": ["item", "item_option"]},
+    {"key": "not_putaway", "label": "Ej Inlagrade Artiklar", "detect": ["not_putaway", "wms_booking"]},
     {"key": "prognos", "label": "Prognosfil", "detect": ["prognos"]},
     {"key": "campaign", "label": "Kampanjfil", "detect": ["campaign"]},
     {"key": "max_csv", "label": "artikel_max.csv", "detect": []},

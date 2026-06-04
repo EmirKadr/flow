@@ -256,14 +256,7 @@ def test_coredata_postgres_replaces_same_type_only_for_business(tmp_path):
 def test_coredata_router_status_includes_business_article_max(monkeypatch, tmp_path):
     max_path = tmp_path / "r3" / "artikel_max.csv"
     write(max_path, "artikelnummer,max\nA1,12\n")
-
-    def fake_business_paths(business_code):
-        return {
-            "observations_path": str(tmp_path / business_code.lower() / "observations.csv.gz"),
-            "article_max_path": str(max_path),
-        }
-
-    monkeypatch.setattr(coredata_router.bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(coredata_router, "_article_max_path", lambda business_code: max_path)
     monkeypatch.setattr(
         coredata_router,
         "build_productivity_compiled_data_status",
@@ -312,13 +305,7 @@ def test_coredata_router_saves_article_max_to_business_path(monkeypatch, tmp_pat
     write(old_variant, "artikelnummer,max\nOLD2,2\n")
     write(source, "artikelnummer,max\nNEW,3\n")
 
-    def fake_business_paths(business_code):
-        return {
-            "observations_path": str(tmp_path / business_code.lower() / "observations.csv.gz"),
-            "article_max_path": str(target),
-        }
-
-    monkeypatch.setattr(coredata_router.bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(coredata_router, "_article_max_path", lambda business_code: target)
 
     saved = coredata_router._save_article_max_file(
         source_path=source,

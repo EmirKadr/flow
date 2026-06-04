@@ -84,8 +84,38 @@ def _file_status_payload(*, key: str, label: str, prefix: str, path: Path | None
     return payload
 
 
+def _bufferpall_business_segment(business_code: str | None) -> str:
+    code = normalize_business_code(business_code) or DEFAULT_BUSINESS_CODE
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", code).strip("._-").lower()
+    return safe or "business"
+
+
+def _bufferpall_runtime_dir(business_code: str | None) -> Path:
+    return (
+        Path(__file__).resolve().parents[3]
+        / "warehouse_tools"
+        / "vendor"
+        / "lowfreqdata"
+        / "buffertpall"
+        / _bufferpall_business_segment(business_code)
+    )
+
+
+def _ensure_article_max_file(path: Path, business_code: str | None) -> Path:
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if normalize_business_code(business_code) == DEFAULT_BUSINESS_CODE:
+        legacy_path = path.parent.parent / "artikel_max.csv"
+        if legacy_path.exists():
+            shutil.copy2(legacy_path, path)
+            return path
+    path.write_text("artikelnummer,max,pallid\n", encoding="utf-8-sig")
+    return path
+
+
 def _article_max_path(business_code: str) -> Path:
-    return Path(bridge.business_allocation_data_paths(business_code)["article_max_path"])
+    return _ensure_article_max_file(_bufferpall_runtime_dir(business_code) / "artikel_max.csv", business_code)
 
 
 def _article_max_status(business_code: str) -> dict[str, Any]:

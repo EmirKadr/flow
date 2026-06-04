@@ -96,6 +96,8 @@ For release: folj `TESTPROTOCOL.md` och `RELEASE.md`. Kort version:
 7. Build Windows.
 8. Release check.
 
+## Releasepolling
+
 Efter push/tagg for release ska agenten som standard bara verifiera att GitHub
 Actions-workflowen har startat, ge lank till run/workflow och saga att det ar
 okej att avsluta har och be agenten kolla releasen senare. Om anvandaren
