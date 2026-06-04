@@ -120,6 +120,7 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "window.reportClientEvent = reportClientEvent;" in api
     assert "function isLikelyHtmlDocument" in api
     assert "function htmlErrorMessage" in api
+    assert 'link.dataset.trackIgnore = "true";' in api
     assert "Servern svarade med ${httpStatusLabel(status)}" in api
     assert "HTML-felsida fran servern" in api
     assert "logApiSuccess" in api
@@ -136,7 +137,7 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "incrementAppLogNotice" not in common
     assert "function recordWaitMetric" in common
     assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
-    assert 'const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in common
+    assert 'const COMMON_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in common
     assert "function flowTrack" in common
     assert "function initInteractionAutoCapture" in common
     assert "window.flowTrack = flowTrack;" in common
@@ -161,6 +162,30 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "desktop_file_select" in desktop_bridge
     assert "desktop_update_check_start" in desktop_app
     assert "desktop_update_download_success" in desktop_app
+
+
+def test_known_interaction_controls_match_frontend_control_ids():
+    from app.backend.routers.audit_logs import KNOWN_INTERACTION_CONTROLS
+
+    frontend_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for pattern in ("*.html", "*.js")
+        for path in (ROOT / "app" / "frontend").rglob(pattern)
+    )
+    semantic_controls = {
+        ("schedule", "schedule_cell_select"),
+        ("overview", "overview_day_select"),
+    }
+    missing = [
+        (item["view_id"], item["control_id"])
+        for item in KNOWN_INTERACTION_CONTROLS
+        if item["control_id"] not in frontend_text and (item["view_id"], item["control_id"]) not in semantic_controls
+    ]
+
+    assert not missing
+    control_ids = {item["control_id"] for item in KNOWN_INTERACTION_CONTROLS}
+    assert control_ids.isdisjoint({"newPerson", "bulkPersons", "importPersons", "newActivity", "bulkActivities", "newUser", "roleAccess"})
+    assert {"new-person", "bulk-persons", "import-persons", "new-act", "bulk-activities", "new-user", "role-view-access"} <= control_ids
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -1448,6 +1473,7 @@ def test_super_user_meta_view_lists_uploaded_media():
     frontend = ROOT / "app" / "frontend"
     html = (frontend / "meta.html").read_text(encoding="utf-8")
     js = (frontend / "js" / "meta.js").read_text(encoding="utf-8")
+    api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
@@ -1468,7 +1494,13 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert 'api.get("/api/meta/shipment-observations?limit=200"' in js
     assert "/api/meta/uploads/${encodeURIComponent(item.id)}/content" in js
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
-    assert "api.download(mediaUrl(item)" in js
+    assert "api.download(mediaUrl(item, { download: true })" in js
+    assert "appendQuery" in js
+    assert "download: true" in js
+    assert "{ direct: true }" in js
+    assert "variant: kind === \"video\" ? \"playable\" : \"\"" in js
+    assert "function downloadDirect" in api_js
+    assert 'fetch(path, { method: "HEAD", credentials: "include" })' in api_js
     assert "api.del(`/api/meta/uploads/${encodeURIComponent(item.id)}`" in js
     assert "Ladda ner" in js
     assert "Radera" in js

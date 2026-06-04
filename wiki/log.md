@@ -7,6 +7,16 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-04] fix | Meta-download och frontend-boot
+
+Meta-vyn laddar nu ner bilder och videor via browserns direkta
+nedladdningsflode med HEAD-kontroll och download=1, i stallet for att
+forst lasa hela mediafilen som JS-blob. Det minskar RAM-risk for stora videor
+och stoppar HTML-felsvar fran att visas som lang raw markup i en toast.
+Samtidigt namespacades common.js interaction-endpoints sa de inte krockar med
+api.js globala konstanter; krockan gjorde att vanliga sidor kunde sluta boota
+efter login och fallerade Playwright-testerna.
+
 ## [2026-06-04] feature | Windows kor Bearbeta och Produktivitet lokalt
 
 Windows-appen registrerar nu filval som lokala referenser via Qt-bron och later

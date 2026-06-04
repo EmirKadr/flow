@@ -10,8 +10,8 @@ const APP_LOG_STORAGE_KEY = "flow-app-log-v1";
 const APP_LOG_UNREAD_STORAGE_KEY = "flow-app-log-unread-v1";
 const APP_LOG_MAX_ENTRIES = 200;
 const COMMON_WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
-const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";
-const PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
+const COMMON_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";
+const COMMON_PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
 const WAIT_METRIC_FLUSH_MS = 10000;
 const WAIT_METRIC_MAX_QUEUE = 100;
 const INTERACTION_FLUSH_MS = 5000;
@@ -1464,7 +1464,7 @@ async function flushInteractions({ keepalive = false, publicOnly = false } = {})
   const items = interactionQueue.splice(0, INTERACTION_MAX_QUEUE);
   const isPublic = publicOnly || interactionClientSurface() === "public";
   const body = JSON.stringify({ items });
-  const path = isPublic ? PUBLIC_INTERACTION_EVENT_REPORT_PATH : INTERACTION_EVENT_REPORT_PATH;
+  const path = isPublic ? COMMON_PUBLIC_INTERACTION_EVENT_REPORT_PATH : COMMON_INTERACTION_EVENT_REPORT_PATH;
   if (keepalive && navigator.sendBeacon) {
     try {
       const blob = new Blob([body], { type: "application/json" });

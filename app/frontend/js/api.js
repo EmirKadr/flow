@@ -639,7 +639,91 @@ function filenameFromContentDisposition(value) {
   return match ? match[1].trim() : "";
 }
 
-async function download(path, fallbackFilename = "download") {
+function isHtmlContentType(value) {
+  return String(value || "").toLowerCase().includes("text/html");
+}
+
+function clickDownloadLink(path, filename) {
+  const link = document.createElement("a");
+  link.href = path;
+  link.download = filename || "download";
+  link.rel = "noopener";
+  link.dataset.trackIgnore = "true";
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => link.remove(), 1000);
+}
+
+async function downloadDirect(path, fallbackFilename = "download") {
+  const method = "GET";
+  const requestStartedAt = apiTelemetryNow();
+  const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
+  const interactionOptions = { logGetUserEvent: true, telemetryEventType: "download", telemetrySource: "foreground", trackGetInteraction: true };
+  let resp;
+  try {
+    resp = await fetch(path, { method: "HEAD", credentials: "include" });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    const err = connectionError(path, error);
+    reportApiError(path, {
+      method,
+      status: 0,
+      error_code: "network_error",
+      message: err.message,
+    });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
+      status_code: 0,
+      error_code: "network_error",
+    });
+    reportApiInteraction(path, method, "error", interactionOptions, {
+      status_code: 0,
+      error_code: "network_error",
+    });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
+    throw err;
+  }
+
+  if (resp.status === 401 && !isAuthPath(path)) {
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401 });
+    if (!window.location.pathname.endsWith("/login.html")) {
+      window.location.href = "/login.html";
+    }
+    throw new Error("Unauthorized");
+  }
+
+  const ct = resp.headers.get("content-type") || "";
+  if (!resp.ok || isHtmlContentType(ct)) {
+    const err = new Error(resp.ok ? htmlErrorMessage(resp.status) : httpStatusLabel(resp.status));
+    err.status = resp.status;
+    reportApiError(path, {
+      method,
+      status: resp.status,
+      body: isHtmlContentType(ct) ? "<html>" : null,
+      message: err.message,
+    });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
+      status_code: resp.status,
+      error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+    });
+    reportApiInteraction(path, method, "error", interactionOptions, {
+      status_code: resp.status,
+      error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+    });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
+    throw err;
+  }
+
+  const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
+  clickDownloadLink(path, filename);
+  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
+  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
+  apiUserLog(`Nedladdning startad: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
+  return { filename, direct: true };
+}
+
+async function download(path, fallbackFilename = "download", options = {}) {
+  if (options.direct) return downloadDirect(path, fallbackFilename);
   const method = "GET";
   const requestStartedAt = apiTelemetryNow();
   const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
@@ -703,15 +787,9 @@ async function download(path, fallbackFilename = "download") {
   const blob = await resp.blob();
   const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
   const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
+  clickDownloadLink(objectUrl, filename);
   setTimeout(() => {
     URL.revokeObjectURL(objectUrl);
-    link.remove();
   }, 1000);
   reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
   reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });

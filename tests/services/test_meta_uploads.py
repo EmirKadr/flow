@@ -492,7 +492,20 @@ def test_super_user_can_list_meta_uploads_and_stream_content():
         assert content.status_code == 206
         assert content.content == b"hello"
         assert content.headers["content-range"] == "bytes 0-4/11"
+        assert content.headers["content-disposition"].startswith("inline;")
         assert "20260531_120102_123456Z_01.mov" in content.headers["content-disposition"]
+
+        head = client.head(f"/api/meta/uploads/{row.id}/content?download=1")
+        assert head.status_code == 200
+        assert head.content == b""
+        assert head.headers["content-type"].startswith("video/quicktime")
+        assert head.headers["content-length"] == "11"
+        assert head.headers["content-disposition"].startswith("attachment;")
+
+        download = client.get(f"/api/meta/uploads/{row.id}/content?download=1", headers={"Range": "bytes=0-4"})
+        assert download.status_code == 206
+        assert download.content == b"hello"
+        assert download.headers["content-disposition"].startswith("attachment;")
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)

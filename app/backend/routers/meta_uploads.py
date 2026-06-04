@@ -638,9 +638,10 @@ def delete_meta_media_upload(
     db.commit()
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, *, attachment: bool = False) -> str:
     safe_filename = _clean_filename(filename)
-    return f"inline; filename*=UTF-8''{quote(safe_filename)}"
+    disposition = "attachment" if attachment else "inline"
+    return f"{disposition}; filename*=UTF-8''{quote(safe_filename)}"
 
 
 def _duplicate_item(
@@ -729,23 +730,24 @@ def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
         raise
 
 
-def _playable_video_response(row: MetaMediaUpload) -> Response:
+def _playable_video_response(row: MetaMediaUpload, *, as_attachment: bool = False) -> Response:
     output_path = _transcode_video_to_playable(row)
     filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
     return FileResponse(
         output_path,
         media_type="video/mp4",
         filename=_clean_filename(filename),
+        content_disposition_type="attachment" if as_attachment else "inline",
         background=BackgroundTask(_cleanup_path, output_path),
     )
 
 
-def _media_response(row: MetaMediaUpload, request: Request) -> Response:
+def _media_headers(row: MetaMediaUpload, *, as_attachment: bool = False) -> tuple[str, dict[str, str], int]:
     filename = row.stored_filename or row.original_filename
     content_type = _safe_media_content_type(filename, row.content_type, row.media_type)
     base_headers = {
         "Accept-Ranges": "bytes",
-        "Content-Disposition": _content_disposition(filename),
+        "Content-Disposition": _content_disposition(filename, attachment=as_attachment),
     }
 
     # All media strömmas från MediaStore — hela filen hamnar aldrig i RAM.
@@ -755,7 +757,15 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
     stat = store.stat(row.storage_key)
     if stat is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen hittades inte i lagringen.")
-    total = stat.size
+    base_headers["Content-Length"] = str(stat.size)
+    return content_type, base_headers, stat.size
+
+
+def _media_response(row: MetaMediaUpload, request: Request, *, as_attachment: bool = False) -> Response:
+    content_type, base_headers, total = _media_headers(row, as_attachment=as_attachment)
+
+    # All media strÃ¶mmas frÃ¥n MediaStore â€” hela filen hamnar aldrig i RAM.
+    store = get_media_store()
     range_header = request.headers.get("range") or request.headers.get("Range") or ""
     match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
     if match and total:
@@ -782,6 +792,22 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
     )
 
 
+def _meta_media_head_response(row: MetaMediaUpload, *, variant: str | None, as_attachment: bool = False) -> Response:
+    if variant == "playable" and row.media_type == "video":
+        if not _resolve_ffmpeg():
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ffmpeg saknas for spelbar video.")
+        filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
+        return Response(
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": _content_disposition(filename, attachment=as_attachment),
+            },
+        )
+    content_type, headers, _total = _media_headers(row, as_attachment=as_attachment)
+    return Response(media_type=content_type, headers=headers)
+
+
 def _resolve_range(groups: tuple[str, str], total: int) -> tuple[int | None, int | None]:
     start_text, end_text = groups
     if not start_text and end_text:
@@ -797,11 +823,26 @@ def _resolve_range(groups: tuple[str, str], total: int) -> tuple[int | None, int
     return start, end
 
 
+@router.head("/uploads/{upload_id}/content")
+def head_meta_media_content(
+    upload_id: int,
+    variant: str | None = Query(None, pattern="^(original|playable)$"),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_user),
+) -> Response:
+    row = db.get(MetaMediaUpload, upload_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
+    return _meta_media_head_response(row, variant=variant, as_attachment=download)
+
+
 @router.get("/uploads/{upload_id}/content")
 def get_meta_media_content(
     upload_id: int,
     request: Request,
     variant: str | None = Query(None, pattern="^(original|playable)$"),
+    download: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> Response:
@@ -809,5 +850,5 @@ def get_meta_media_content(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
     if variant == "playable" and row.media_type == "video":
-        return _playable_video_response(row)
-    return _media_response(row, request)
+        return _playable_video_response(row, as_attachment=download)
+    return _media_response(row, request, as_attachment=download)
