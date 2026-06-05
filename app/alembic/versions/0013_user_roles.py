@@ -24,8 +24,17 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("roles", column_type, nullable=True))
     if is_postgres:
         op.execute("UPDATE users SET roles = jsonb_build_array(role) WHERE roles IS NULL")
-    elif bind.dialect.name == "sqlite":
-        op.execute("UPDATE users SET roles = json_array(role) WHERE roles IS NULL")
+    else:
+        # SQLite/MSSQL m.fl. saknar jsonb_build_array — bygg JSON-värdet i Python
+        # och skriv tillbaka radvis. Dialekt-oberoende och injektionssäkert.
+        import json
+
+        rows = bind.execute(sa.text("SELECT id, role FROM users WHERE roles IS NULL")).fetchall()
+        for row_id, role in rows:
+            bind.execute(
+                sa.text("UPDATE users SET roles = :roles WHERE id = :id"),
+                {"roles": json.dumps([role]), "id": row_id},
+            )
 
 
 def downgrade() -> None:

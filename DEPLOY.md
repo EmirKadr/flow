@@ -5,9 +5,9 @@ och vad som krävs för att köra den i ett Kubernetes-kluster. Riktar sig till
 den som sätter upp deploymenten på företagets sida.
 
 Nuvarande produktion ligger på [Render](render.yaml) (Python web service +
-managed Postgres). Migrationen byter ut Render mot Kubernetes + en Postgres
-som ni tillhandahåller. Koden är oförändrad — bara packaging och
-miljövariabler skiljer sig.
+managed Postgres). Migrationen byter ut Render mot Kubernetes + en **Azure SQL**
+som ni tillhandahåller. Koden är oförändrad — skillnaden är packaging,
+miljövariabler och databasdriver (ODBC Driver 18, ingår i imagen).
 
 ---
 
@@ -18,8 +18,8 @@ miljövariabler skiljer sig.
 | Runtime | Python 3.12 |
 | Web-server | uvicorn (ASGI), lyssnar på `$PORT` (default `8000`) |
 | Healthcheck | `GET /api/health` → `{"status": "ok", ...}` |
-| Databas | PostgreSQL 14+ (testat mot Render managed Postgres) |
-| Migrationer | Alembic, körs automatiskt vid container-start |
+| Databas | Azure SQL Database (Microsoft SQL Server). ODBC Driver 18 ingår i imagen |
+| Migrationer | `backend.prestart` vid start: skapar schemat från modellerna + alembic-stamp (se avsnitt 4) |
 | Persistens utöver DB | `/repo/data` (uppladdade kärnfiler, se avsnitt 5) |
 | Image-användare | `flow` (uid 1000), kör inte som root |
 | Statiska filer | Serveras av appen själv från `/repo/app/frontend` |
@@ -46,7 +46,7 @@ Lokal smoke-test:
 
 ```bash
 docker run --rm -p 8000:8000 \
-  -e DATABASE_URL='postgresql+psycopg://USER:PASS@HOST:5432/flow' \
+  -e DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
   -e SECRET_KEY='något-långt-och-slumpat' \
   -e ENVIRONMENT='production' \
   flow:latest
@@ -62,7 +62,7 @@ När `GET http://localhost:8000/api/health` svarar `200 ok` är imagen frisk.
 
 | Variabel | Beskrivning |
 |---|---|
-| `DATABASE_URL` | SQLAlchemy URL till Postgres. Format: `postgresql+psycopg://user:pass@host:5432/dbname` |
+| `DATABASE_URL` | SQLAlchemy URL till Azure SQL. Format: `mssql+pyodbc://user:pass@server.database.windows.net:1433/dbname?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no` |
 | `SECRET_KEY` | Hemlig nyckel för session-cookies. Generera med `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `ENVIRONMENT` | Sätt till `production` (aktiverar https-only-cookies och cache-headers) |
 
@@ -122,52 +122,66 @@ hanteras som `Secret`. Det icke-känsliga (`ENVIRONMENT`, `PORT`,
 
 ### Krav
 
-- PostgreSQL 14 eller senare
-- Tom databas vid första start (Alembic skapar schemat)
+- Azure SQL Database (Microsoft SQL Server)
+- Tom databas vid första start (`backend.prestart` skapar schemat)
 - Användare med rättighet att skapa tabeller och index
 
-### Migrationer
+### Schema skapas vid start (inte via PG-migrationer)
 
-`alembic upgrade head` körs automatiskt i container-entrypoint vid varje
-start. Det är idempotent. Vid skarp omstart efter migration-tillägg behövs
-inget extra steg.
+Container-entrypoint kör `python -m backend.prestart` före uvicorn. Mot
+Azure SQL skapas schemat **från ORM-modellerna** (`Base.metadata.create_all`),
+inte genom att spela upp Alembic-migrationerna — migrationerna är skrivna för
+PostgreSQL (JSONB, `jsonb_build_array`, m.m.) och replikeras inte rent på
+SQL Server. Efter create_all sätts `alembic stamp head` så framtida
+migration-spårning fungerar. Operationen är idempotent: finns schemat redan
+görs ingenting.
 
-### Migrera data från Render
+> **Obs för framtida migrationer:** nya Alembic-revisioner måste skrivas
+> dialekt-neutralt (undvik `JSONB`, `jsonb_build_array`, `USING`-clauses)
+> för att kunna köras mot Azure SQL.
 
-För att flytta över befintlig data från nuvarande produktion:
+### Migrera data från Render (Postgres → Azure SQL)
 
-1. **Dumpa från Render** (från en maskin som når Render-DBn):
+`pg_dump`/`pg_restore` fungerar **inte** mot SQL Server. Datan kopieras
+istället radvis via `backend.migrate_pg_to_mssql`, som bevarar id:n
+(`IDENTITY_INSERT`), stänger av FK-kontroller under inläsningen och
+serialiserar JSONB-värden till JSON-text.
+
+1. **Skapa schemat på en tom Azure SQL-databas:**
 
    ```bash
-   pg_dump --no-owner --no-privileges --format=custom \
-     "postgresql://USER:PASS@HOST:5432/flow" \
-     > flow-render.dump
+   DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
+     python -m backend.prestart
    ```
 
-   Connection-strängen hämtas från Renders dashboard under `flow-db` →
-   "External Database URL".
-
-2. **Restore till nya DBn** (mot K8s-Postgres):
+2. **Kopiera över datan** (källan = Render-Postgrens "External Database URL"):
 
    ```bash
-   pg_restore --no-owner --no-privileges --clean --if-exists \
-     -d "postgresql://USER:PASS@HOST:5432/flow" \
-     flow-render.dump
+   SOURCE_DATABASE_URL='postgresql+psycopg://USER:PASS@HOST:5432/flow' \
+   DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
+     python -m backend.migrate_pg_to_mssql
    ```
 
-3. **Starta containern.** Alembic kör `upgrade head` men det är en no-op om
-   schemat redan är på senaste revisionen (vilket det är efter ett färskt
-   pg_restore från produktion).
+   Skriptet skriver ut antal kopierade rader per tabell. Kör enklast inuti
+   appens container (har både drivrutiner): `kubectl -n flow exec -it deploy/flow-web -- sh`.
+
+3. **Starta appen normalt.** `prestart` ser att schemat redan finns och gör
+   ingenting; appen kör vidare mot den ifyllda databasen.
+
+> **Testa mot en kopia först.** Kopieringen är inte verifierad skarpt mot er
+> Azure SQL-instans ännu. Kör den mot en tom test-databas och jämför radantal
+> innan ni gör cut-over på riktigt.
 
 ### Tidsplan för cut-over
 
-Eftersom restore lägger in *en ögonblicksbild* av Render-databasen är det
-viktigt att inte ta dumpen för tidigt — annars förloras allt som skrivs
-under tiden. Föreslagen ordning:
+Eftersom kopieringen lägger in *en ögonblicksbild* av Render-databasen är det
+viktigt att inte ta den för tidigt — annars förloras allt som skrivs under
+tiden. Föreslagen ordning:
 
-1. K8s-deploymenten reses upp med en *tom* databas och röktestas.
+1. K8s-deploymenten reses upp med en *tom* Azure SQL-databas och röktestas.
 2. När allt fungerar: stoppa Render-instansen (eller frys via ett
-   "underhåll pågår"-meddelande), ta pg_dump, kör pg_restore, starta K8s.
+   "underhåll pågår"-meddelande), kör `backend.migrate_pg_to_mssql` (se
+   avsnitt 4), starta om K8s-podden.
 3. Pekas DNS/intern URL om från Render till K8s-tjänsten.
 
 ---

@@ -16,6 +16,10 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# JSONB på PostgreSQL, vanlig JSON på övriga dialekter (Azure SQL -> NVARCHAR(max),
+# SQLite -> TEXT). Matchar JsonField i backend/models.py.
+JSON_TYPE = sa.JSON().with_variant(JSONB(), "postgresql")
+
 
 def upgrade() -> None:
     op.create_table(
@@ -43,7 +47,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("name", sa.String(120), nullable=False),
         sa.Column("home_area_id", sa.Integer(), sa.ForeignKey("areas.id")),
-        sa.Column("competencies", JSONB(), nullable=False, server_default="[]"),
+        sa.Column("competencies", JSON_TYPE, nullable=False, server_default="[]"),
         sa.Column("comment", sa.Text()),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
@@ -88,8 +92,8 @@ def upgrade() -> None:
         sa.Column("entity_type", sa.String(30), nullable=False),
         sa.Column("entity_id", sa.BigInteger(), nullable=False),
         sa.Column("action", sa.String(10), nullable=False),
-        sa.Column("old_value", JSONB()),
-        sa.Column("new_value", JSONB()),
+        sa.Column("old_value", JSON_TYPE),
+        sa.Column("new_value", JSON_TYPE),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )

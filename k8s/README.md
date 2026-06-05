@@ -36,7 +36,7 @@ databasmigrering från Render, resurser m.m.).
 # 1. Skapa hemligheterna (hamnar inte i git):
 kubectl create namespace flow
 kubectl -n flow create secret generic flow-secrets \
-  --from-literal=DATABASE_URL='postgresql+psycopg://USER:PASS@HOST:5432/flow' \
+  --from-literal=DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
   --from-literal=SECRET_KEY="$(python -c 'import secrets;print(secrets.token_hex(32))')" \
   --from-literal=EXCEL_API_TOKEN="$(python -c 'import secrets;print(secrets.token_hex(32))')"
 #   ...lägg till DATA_SOURCE_* / MINIMAX_API_KEY med fler --from-literal vid behov.
@@ -50,8 +50,12 @@ kubectl -n flow rollout status deployment/flow-web
 kubectl -n flow logs -f deployment/flow-web
 ```
 
-Alembic kör `upgrade head` automatiskt vid start. För att migrera befintlig
-data från Render — se [../DEPLOY.md](../DEPLOY.md) avsnitt 4 (pg_dump/pg_restore).
+Vid start kör containern `python -m backend.prestart`, som mot Azure SQL
+skapar schemat från modellerna och stämplar alembic (migrationerna är
+PG-specifika och spelas inte upp mot MSSQL). För att flytta över befintlig
+data från Render-Postgres — se [../DEPLOY.md](../DEPLOY.md) avsnitt 4
+(skriptet `backend.migrate_pg_to_mssql`, eftersom pg_restore inte funkar mot
+SQL Server).
 
 ## Verifiera
 
