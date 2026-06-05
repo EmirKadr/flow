@@ -145,7 +145,8 @@ def productivity_compiled_log_path(
     spec = COMPILED_PRODUCTIVITY_LOG_BY_SOURCE.get(file_type)
     if spec is None:
         raise ProductivitySourceError("Okänd produktivitetslogg")
-    return business_coredata_dir(reference_dir, business_code) / spec.filename
+    base_dir = Path(reference_dir) if reference_dir is not None else compiled_data_root()
+    return business_coredata_dir(base_dir, business_code) / spec.filename
 
 
 def build_productivity_compiled_data_status(
@@ -153,8 +154,9 @@ def build_productivity_compiled_data_status(
     business_code: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     files: dict[str, dict[str, Any]] = {}
+    base_dir = Path(reference_dir) if reference_dir is not None else compiled_data_root()
     for spec in COMPILED_PRODUCTIVITY_LOG_SPECS:
-        path = business_coredata_dir(reference_dir, business_code) / spec.filename
+        path = business_coredata_dir(base_dir, business_code) / spec.filename
         files[spec.key] = _compiled_status_payload(spec, path)
     return files
 

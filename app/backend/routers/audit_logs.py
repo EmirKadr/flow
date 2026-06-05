@@ -407,7 +407,10 @@ def _interaction_bucket_key(row: UserInteractionEvent, kind: str) -> str:
         if row.event_type not in {"copy_column", "auto_copy_column", "copy_text", "download", "export"}:
             return "-"
         if row.event_type in {"copy_column", "auto_copy_column"}:
-            return f"{row.event_type}: {row.flow_id or '-'} / {row.table_label or row.table_key or '-'} / {row.column_label or row.column_index or '-'}"
+            detail = row.detail if isinstance(row.detail, dict) else {}
+            copy_mode = _clean_text(detail.get("copy_mode"), max_length=80) if detail else ""
+            prefix = copy_mode or row.event_type
+            return f"{prefix}: {row.flow_id or '-'} / {row.table_label or row.table_key or '-'} / {row.column_label or row.column_index or '-'}"
         return row.event_type
     return "-"
 

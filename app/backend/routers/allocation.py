@@ -725,7 +725,10 @@ async def run_flow(
                 ensure_ascii=False,
             )
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
-            default_max_csv_path = bridge.business_allocation_data_paths(business_code)["article_max_path"]
+            try:
+                default_max_csv_path = bridge.business_article_max_path_for_flow(business_code)
+            except FileNotFoundError as exc:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if default_max_csv_path is not None:
             result = bridge.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max_csv_path)
         else:

@@ -508,12 +508,9 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
         assert kwargs == {"cache_scope": "user:7"}
         return {"orders": tmp_path / "orders.csv"}, {}, []
 
-    def fake_business_paths(business_code):
+    def fake_article_max_path(business_code):
         captured["business_code"] = business_code
-        return {
-            "observations_path": str(tmp_path / "r3" / "observations.csv.gz"),
-            "article_max_path": str(tmp_path / "r3" / "artikel_max.csv"),
-        }
+        return str(tmp_path / "r3" / "artikel_max.csv")
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -522,7 +519,7 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
         return {"flow_id": flow_id, "tables": [], "summary": {}}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
-    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -546,12 +543,9 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
         assert kwargs == {"cache_scope": "user:7"}
         return {"orders": tmp_path / "orders.csv"}, {bridge.PROCESS_AREA_FOCUS_PARAM: "R3"}, []
 
-    def fake_business_paths(business_code):
+    def fake_article_max_path(business_code):
         captured["business_code"] = business_code
-        return {
-            "observations_path": str(tmp_path / business_code.lower() / "observations.csv.gz"),
-            "article_max_path": str(tmp_path / business_code.lower() / "artikel_max.csv"),
-        }
+        return str(tmp_path / business_code.lower() / "artikel_max.csv")
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -560,7 +554,7 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
         return {"flow_id": flow_id, "tables": [], "summary": {}}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
-    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -570,6 +564,35 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
     assert captured["business_code"] == "R3"
     assert captured["default_max_csv_path"] == str(tmp_path / "r3" / "artikel_max.csv")
     assert captured["files"] == {"orders": tmp_path / "orders.csv"}
+
+
+def test_allocation_run_flow_requires_bufferpall_history_when_article_max_is_missing(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="R3")
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {"orders": tmp_path / "orders.csv"}, {}, []
+
+    def fake_article_max_path(_business_code):
+        raise FileNotFoundError("Ingen buffertpallhistorik finns for verksamheten. Ladda upp buffertpall forst.")
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
+
+    assert exc_info.value.status_code == 409
+    assert "buffertpallhistorik" in exc_info.value.detail
 
 
 def test_allocation_run_flow_uses_business_coredata_item_option(monkeypatch, tmp_path):

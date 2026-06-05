@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from .. import allocation_bridge as bridge
-from ..compiled_data_paths import article_max_path, legacy_article_max_path
+from ..compiled_data_paths import article_max_has_data, article_max_path
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, user_business_id
 from ..coredata_service import (
     CORE_DATA_SPEC_BY_KEY,
@@ -86,25 +86,8 @@ def _file_status_payload(*, key: str, label: str, prefix: str, path: Path | None
     return payload
 
 
-def _ensure_article_max_file(path: Path, business_code: str | None) -> Path:
-    if path.exists():
-        return path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    legacy_path = legacy_article_max_path(business_code)
-    if legacy_path.exists() and legacy_path.resolve() != path.resolve():
-        shutil.copy2(legacy_path, path)
-        return path
-    if normalize_business_code(business_code) == DEFAULT_BUSINESS_CODE:
-        legacy_root_path = legacy_path.parent.parent / "artikel_max.csv"
-        if legacy_root_path.exists() and legacy_root_path.resolve() != path.resolve():
-            shutil.copy2(legacy_root_path, path)
-            return path
-    path.write_text("artikelnummer,max,pallid\n", encoding="utf-8-sig")
-    return path
-
-
 def _article_max_path(business_code: str) -> Path:
-    return _ensure_article_max_file(article_max_path(business_code), business_code)
+    return article_max_path(business_code)
 
 
 def _article_max_status(business_code: str) -> dict[str, Any]:
@@ -119,6 +102,12 @@ def _article_max_status(business_code: str) -> dict[str, Any]:
         path=path,
     )
     payload["kind"] = "compiled_data"
+    if payload["uploaded"] and path is not None:
+        payload["has_data_rows"] = article_max_has_data(path)
+        if not payload["has_data_rows"]:
+            payload["uploaded"] = False
+            payload["status"] = "missing_data"
+            payload["message"] = "artikel_max.csv saknar datarader. Ladda upp buffertpall forst."
     return payload
 
 

@@ -279,6 +279,21 @@ def test_coredata_router_status_includes_business_article_max(monkeypatch, tmp_p
     assert status["files"]["productivity_pick_observations"]["kind"] == "compiled_data"
 
 
+def test_coredata_router_status_marks_header_only_article_max_as_missing_data(monkeypatch, tmp_path):
+    max_path = tmp_path / "r3" / "artikel_max.csv"
+    write(max_path, "artikelnummer,max,pallid\n")
+    monkeypatch.setattr(coredata_router, "_article_max_path", lambda business_code: max_path)
+    monkeypatch.setattr(coredata_router, "build_productivity_compiled_data_status", lambda business_code: {})
+
+    status = coredata_router._coredata_status("R3")
+
+    article_max = status["files"]["article_max"]
+    assert article_max["uploaded"] is False
+    assert article_max["has_data_rows"] is False
+    assert article_max["status"] == "missing_data"
+    assert "buffertpall" in article_max["message"]
+
+
 def test_coredata_preview_reads_compiled_gzip(monkeypatch, tmp_path):
     compiled = tmp_path / "v_ask_pick_log_full_observations.csv.gz"
     with gzip.open(compiled, "wt", encoding="utf-8") as handle:

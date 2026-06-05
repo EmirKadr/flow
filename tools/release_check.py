@@ -31,8 +31,6 @@ REQUIRED_PACKAGE_FILES = (
     "_internal/desktop/assets/flow_icon.svg",
     "_internal/warehouse_tools/vendor/allokering12.1.py",
     "_internal/warehouse_tools/vendor/wms_sok79.py",
-    "_internal/warehouse_tools/vendor/lowfreqdata/buffertpall/artikel_max.csv",
-    "_internal/warehouse_tools/vendor/lowfreqdata/buffertpall/observations.csv.gz",
 )
 
 

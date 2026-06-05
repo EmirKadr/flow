@@ -23,6 +23,24 @@ Interaction-coverage i Historik anvander nu samma faktiska kontroll-id:n som
 frontendens personer-, aktiviteter- och anvandarvyer. Det gor att
 known-controls-kontraktet i CI inte faller pa gamla camelCase-alias.
 
+## [2026-06-04] fix | Flyttar legacy-data mot DB och persistent disk
+
+Legacy-karnfiler och KPI kan nu migreras till `coredata_files` med
+`python -m backend.scripts.migrate_legacy_data_to_truth`, utan att scriptet
+raderar gamla repo-filer. Sammanstalld produktivitetsdata, buffertpall-
+observations och `artikel_max.csv` pekar mot `PRODUCTIVITY_DATA_DIR` eller
+`MEDIA_STORE_ROOT/flow-data`; lokal/dev faller tillbaka till den projektlokala
+ignorerade mappen `local_media/flow-data` i stallet for repo-kataloger.
+Release-checken kraver inte langre att gamla buffertpall-datafiler paketeras i
+Windows-bygget.
+
+## [2026-06-05] fix | Buffertpallhistorik kravs innan artikel_max anvands
+
+Lagerfloden som behover `artikel_max.csv` accepterar inte langre en tom/header-only
+fallback som giltig sammanstalld data. Saknas observationshistorik for
+verksamheten stoppas flodet med krav pa buffertpalluppladdning; observations kan
+starta tomt, men `artikel_max.csv` byggs forst nar buffertpallhistorik finns.
+
 ## [2026-06-04] feature | Windows kor Bearbeta och Produktivitet lokalt
 
 Windows-appen registrerar nu filval som lokala referenser via Qt-bron och later
@@ -879,3 +897,7 @@ Meta-uppladdningssidan later anvandaren valja hela filkon pa en gang och visar t
 ## [2026-06-04] feature | Historik far interaction-tracking
 
 Historik har nu ett separat `user_interaction_events`-lager bredvid audit och vantetider. Webben batchar klick, submit, change/contextmenu, API-resultat, nedladdningar och semantiska Bearbeta-events via `flowTrack`; desktop markerar `client_surface=desktop` och trackar appstart, lokala filval och update-floden. Historik har nya lagen Funktioner, Knappar, Kolumner, Floden och AI-analys med endpoints for raw events, summary, coverage och MiniMax-fragor. Backend sanerar payloaden och `TRACKING_ALLOW_VALUE_SAMPLES=false` strippar klartextprover som default; secrets, filnamn, filvagar, privata URL:er, request bodies och provider-detaljer far aldrig sparas.
+
+## [2026-06-04] test | Interaction-tracking far browserkontrakt
+
+Trackinglagret har nu Playwright-tester for auto-capture av klick/change/submit, API-koppling, nedladdning/export, Historik-dashboardens Funktioner/Knappar/Kolumner/Floden, Historik-AI och desktop-surface. Tester fangade och skyddar att interna download-lankar ignoreras av auto-tracking, att Pafyllnadsprio copy-patterns anvander `copy_mode`, och att kanda kontroll-id:n i coverage matchar frontendens faktiska id:n.

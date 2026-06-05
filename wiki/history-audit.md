@@ -31,7 +31,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `Analys`: statkort for antal handelser, senaste 24 h och unika anvandare samt topplistor for anvandare, atgarder och typer.
 - `Funktioner`: interaction-summary for mest anvanda funktioner, vyer och klientytor samt coverage for kanda knappar som inte anvants i urvalet. Coverage-kontraktet anvander frontendens faktiska kontroll-id:n sa gamla alias inte smyger in igen.
 - `Knappar`: topplista for kontroller och senaste trackingevents med vy, eventtyp, kontroll och status.
-- `Kolumner`: copy/export/download-monster och kolumnkopiering per flow, resultattabell, kolumnindex och kolumnnamn.
+- `Kolumner`: copy/export/download-monster och kolumnkopiering per flow, resultattabell, kolumnindex och kolumnnamn. Copy-monster anvander `detail.copy_mode` nar det finns, sa auto-copy av forsta kolumnen kan skiljas fran manuell/multikolumn-kopiering.
 - `Floden`: flow-anvandning och vilka resultatkolumner som kopieras per flow. Pa `pafyllnadsprio` gar det att se om anvandaren bara kopierar forsta kolumnen via auto-copy eller manuellt kopierar flera kolumner i samma resultat/session.
 - `AI-analys`: MiniMax-fragor om trackinghistorik, till exempel "Vilka funktioner anvands minst?", "Kopierar folk forsta kolumnen i Pafyllnadsprio eller flera?" och "Vilka vyer anvands i Windows men inte webben?".
 - `Felkoder`: statkort for felkoder, topplistor for felkod, vy/API och felatgard samt senaste felhandelser.
@@ -70,7 +70,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `POST /api/healthcheck/wait-metrics` samlar tysta vantetidsmatningar fran klienten utan att skriva i dokumentloggen.
 - `GET /api/healthcheck/wait-metrics/summary` driver Vantetider-fliken och CLI-analys for var anvandare vantar mest. Historik skickar valt `business_id` hit, men `GET /api/healthcheck` for Halsa forblir global.
 - Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget och exponerar `window.reportApiError` for sidmoduler med egna wrappers. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar. Icke-JSON/HTML-felsidor visas som kort HTTP-status och lagras inte som raw HTML.
-- Samma `api.js` skriver anvandarnara dokumentlogg for mutationer, nedladdningar och markerade GET-floden. Sidmoduler som anvander egna wrappers, till exempel Bearbeta, ska logga success/failure sjalva eller anropa `window.flowLog`.
+- Samma `api.js` skriver anvandarnara dokumentlogg for mutationer, nedladdningar och markerade GET-floden. Den interna, dolda download-lanken markeras med `data-track-ignore` sa exporttracking kopplas till anvandarens riktiga knappklick. Sidmoduler som anvander egna wrappers, till exempel Bearbeta, ska logga success/failure sjalva eller anropa `window.flowLog`.
 - `common.js` exponerar `window.flowTrack` och auto-capturar klick, submit, change, contextmenu, sidebar, tema, zoom, apphjalp, loggpanel och modaler. `api.js` kopplar API-resultat till senaste interaction-id sa dashboards kan visa vilka knappar som leder till API, fel, vantan och nedladdning.
 - Windows-appen anvander samma frontendtracking via QWebEngine och markerar `client_surface=desktop`. Desktop-bryggan trackar appstart, lokala filval och uppdateringsfloden med sanerad metadata.
 

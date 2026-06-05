@@ -414,6 +414,73 @@ def test_interaction_value_samples_require_backend_flag(audit_db_session, monkey
     assert event.detail == {"value_sample": "tillatet prov"}
 
 
+def test_interaction_secret_contract_blocks_private_payload_shapes(audit_db_session, monkeypatch):
+    _business, user = add_audit_user(audit_db_session)
+    monkeypatch.setattr(audit_logs.settings, "TRACKING_ALLOW_VALUE_SAMPLES", False)
+
+    audit_logs.record_interactions(
+        InteractionEventBatchIn(
+            items=[
+                InteractionEventIn(
+                    event_type="copy",
+                    view_id="allocationProcess",
+                    page_path="/bearbeta.html?api_key=secret",
+                    control_id="allocation-copy-column",
+                    feature="allocation",
+                    flow_id="pafyllnadsprio",
+                    detail={
+                        "password": "secret-password",
+                        "cookie": "flow_session=secret-cookie",
+                        "authorization_header": "Bearer secret-token",
+                        "api_key": "secret-api-key",
+                        "endpoint_url": "https://private.example/api",
+                        "request_body": {"order": "secret-order"},
+                        "file_name": "kundorder.csv",
+                        "file_path": "C:/privat/kundorder.csv",
+                        "localRef": "local-secret-ref",
+                        "value_sample": "hemligt cellvarde",
+                        "clipboard_text": "hemligt kopierat varde",
+                        "row_values": ["hemlig rad"],
+                        "column_label": "Order",
+                        "rows": 12,
+                        "selected_option_label": "Denna vecka",
+                        "nested": {
+                            "token": "nested-secret",
+                            "label": "ofarlig etikett",
+                            "value": "nested value",
+                        },
+                    },
+                )
+            ]
+        ),
+        db=audit_db_session,
+        user=user,
+    )
+
+    event = audit_db_session.query(UserInteractionEvent).one()
+    assert event.page_path == "/bearbeta.html"
+    assert event.detail == {
+        "value_sample_length": len("hemligt cellvarde"),
+        "clipboard_text_length": len("hemligt kopierat varde"),
+        "row_values_count": 1,
+        "column_label": "Order",
+        "rows": 12,
+        "selected_option_label": "Denna vecka",
+        "nested": {"label": "ofarlig etikett", "value_length": len("nested value")},
+    }
+    text = json.dumps(event.detail, ensure_ascii=False)
+    for forbidden in (
+        "secret",
+        "kundorder",
+        "private.example",
+        "C:/privat",
+        "local-secret-ref",
+        "hemlig rad",
+        "nested value",
+    ):
+        assert forbidden not in text
+
+
 def test_public_interaction_endpoint_only_persists_allowlisted_events(audit_db_session):
     audit_logs.record_public_interactions(
         InteractionEventBatchIn(
@@ -524,6 +591,8 @@ def test_interaction_summary_coverage_and_chat_context(audit_db_session, monkeyp
     assert summary.unique_users == 1
     assert summary.top_flows[0].key == "pafyllnadsprio"
     assert any("Prioritering / Order" in bucket.key for bucket in summary.top_columns)
+    assert any(bucket.key.startswith("first_column:") for bucket in summary.copy_patterns)
+    assert any(bucket.key.startswith("manual:") for bucket in summary.copy_patterns)
     assert summary.top_surfaces[0].key == "desktop"
     assert coverage.used_controls >= 1
     assert listed[0].username == "admin"
