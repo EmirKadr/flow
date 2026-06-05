@@ -1,0 +1,30 @@
+# Exponerar appen via HTTPS. Kräver en ingress-controller (t.ex. nginx) och
+# cert-hantering (t.ex. cert-manager). Appen sätter Secure-cookies i
+# production → den MÅSTE nås via HTTPS, annars går inloggning inte.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flow-web
+  namespace: flow
+  labels:
+    app.kubernetes.io/name: flow
+  annotations:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"   # om cert-manager används
+    nginx.ingress.kubernetes.io/proxy-body-size: "256m"     # tillåt video-uploads
+spec:
+  ingressClassName: nginx        # byt till er ingress-class
+  tls:
+    - hosts:
+        - flow.example.com       # <-- byt till er hostname
+      secretName: flow-tls
+  rules:
+    - host: flow.example.com     # <-- byt till er hostname
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flow-web
+                port:
+                  number: 80

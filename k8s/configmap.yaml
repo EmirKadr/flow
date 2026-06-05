@@ -1,0 +1,33 @@
+# Icke-känslig runtime-config. Hemligheter ligger i secret.example.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flow-config
+  namespace: flow
+  labels:
+    app.kubernetes.io/name: flow
+data:
+  # --- Kärna ---
+  ENVIRONMENT: "production"      # https-only cookies + cache-headers
+  PORT: "8000"
+  SUPER_USER_USERNAMES: "emikad,mikhal"
+
+  # --- Media-lagring (filer skrivs till PVC, se deployment) ---
+  MEDIA_STORE_BACKEND: "filesystem"
+  MEDIA_STORE_ROOT: "/var/flow-media"
+
+  # --- Extern datakälla (ASK/Nowaste): icke-känsliga delar ---
+  # Header-namnen och path-mallen är inte hemliga; nycklar ligger i Secret.
+  DATA_SOURCE_API_KEY_HEADER: "x-api-key"
+  DATA_SOURCE_API_CLIENT_HEADER: "x-api-key-client"
+  DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE: "/api/integration/views/{view}/data"
+  DATA_SOURCE_VERIFY_SSL: "true"
+  DATA_SOURCE_MAX_ROWS: "1000"
+
+  # --- AI-assistent (MiniMax): modellnamn är inte hemligt ---
+  MINIMAX_MODEL: "MiniMax-M2.7"
+
+  # --- Bakgrundsjobb / tuning (matchar render.yaml) ---
+  ALLOCATION_OBSERVATIONS_STARTUP_SYNC: "false"
+  TRACKING_ALLOW_VALUE_SAMPLES: "false"
+  META_ANALYSIS_AUTO_START: "false"

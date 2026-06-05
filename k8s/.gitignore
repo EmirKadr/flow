@@ -1,0 +1,3 @@
+# Riktiga hemligheter ska aldrig committas. Bara mallen (secret.example.yaml).
+secret.yaml
+*.secret.yaml

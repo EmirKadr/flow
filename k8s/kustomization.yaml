@@ -1,0 +1,11 @@
+# Applicera allt med:  kubectl apply -k k8s/
+# (secret.yaml ingår INTE här — skapa den separat, se README.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml

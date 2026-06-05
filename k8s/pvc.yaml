@@ -1,0 +1,33 @@
+# Två persistenta volymer:
+#  - flow-data: uppladdade kärnfiler som appen skriver till /repo/data
+#  - flow-media: uppladdad media (bilder/video) på /var/flow-media
+# Båda är ReadWriteOnce → kräver 1 replika (se DEPLOY.md avsnitt 6).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flow-data
+  namespace: flow
+  labels:
+    app.kubernetes.io/name: flow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: standard   # sätt klustrets storageClass om default saknas
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flow-media
+  namespace: flow
+  labels:
+    app.kubernetes.io/name: flow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: standard
