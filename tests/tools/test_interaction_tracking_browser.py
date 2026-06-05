@@ -144,7 +144,7 @@ def test_click_select_submit_and_api_result_are_tracked(local_tracking_server, c
               form.innerHTML = '<button id="tracking-test-api" type="submit" data-track-id="tracking-test-api" data-track-label="Tracking API test">Kör API-test</button>';
               form.addEventListener("submit", async (event) => {
                 event.preventDefault();
-                await window.api.post("/api/test-tracking", { secret: "frontend-request-body" }, { logUserEvent: false });
+                await window.api.post("/api/test-tracking", { privateField: "VALUE_TO_DROP" }, { logUserEvent: false });
               });
               document.querySelector("main")?.appendChild(form);
             }"""
@@ -172,7 +172,7 @@ def test_click_select_submit_and_api_result_are_tracked(local_tracking_server, c
         assert api_events[0]["interaction_id"] in {event["interaction_id"] for event in action_events}
         assert api_events[0]["status"] == "ok"
         assert api_events[0]["detail"]["status_code"] == 200
-        assert "frontend-request-body" not in json.dumps(api_events[0], ensure_ascii=False)
+        assert "VALUE_TO_DROP" not in json.dumps(api_events[0], ensure_ascii=False)
     finally:
         context.close()
 
@@ -305,7 +305,7 @@ def test_desktop_surface_marks_web_tracking_as_desktop(local_tracking_server, ch
               objects: {
                 flowDesktopBridge: {
                   chooseFiles: (_accept, _multiple, done) => done([
-                    { fileType: "text/csv", localRef: "local-secret-ref", name: "kundfil.csv", path: "C:/hemligt/kundfil.csv" }
+                    { fileType: "text/csv", localRef: "VALUE_TO_DROP", name: "drop-file.csv", path: "C:/example/drop-file.csv" }
                   ])
                 }
               }
@@ -331,8 +331,8 @@ def test_desktop_surface_marks_web_tracking_as_desktop(local_tracking_server, ch
         assert file_select["detail"]["file_count"] == 1
         assert file_select["detail"]["file_types"] == ["text/csv"]
         text = json.dumps(file_select, ensure_ascii=False)
-        assert "kundfil" not in text
-        assert "local-secret-ref" not in text
-        assert "C:/hemligt" not in text
+        assert "drop-file" not in text
+        assert "VALUE_TO_DROP" not in text
+        assert "C:/example" not in text
     finally:
         context.close()
