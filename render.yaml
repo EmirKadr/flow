@@ -64,7 +64,7 @@ services:
       - key: META_ANALYSIS_TIMEOUT_SECONDS
         value: "120"
       - key: META_ANALYSIS_AUTO_START
-        value: "true"
+        value: "false"
       - key: META_ANALYSIS_MAX_VIDEO_BYTES
         value: "268435456"
       - key: META_ANALYSIS_START_DELAY_SECONDS

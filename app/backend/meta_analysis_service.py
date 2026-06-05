@@ -794,6 +794,34 @@ def run_meta_analysis_background(upload_ids: list[int]) -> None:
                     logger.exception("Meta analysis background job failed for upload %s", upload_id)
 
 
+def queued_meta_analysis_upload_ids(db: Session, *, limit: int = 1) -> list[int]:
+    rows = (
+        db.query(MetaShipmentObservation.media_upload_id)
+        .filter(MetaShipmentObservation.analysis_status == "queued")
+        .order_by(MetaShipmentObservation.created_at.asc(), MetaShipmentObservation.id.asc())
+        .limit(max(1, int(limit)))
+        .all()
+    )
+    return [int(row[0]) for row in rows if row and row[0] is not None]
+
+
+def run_queued_meta_analysis_once(*, limit: int = 1, spacing_seconds: float | None = None) -> int:
+    processed = 0
+    spacing = float(settings.META_ANALYSIS_SPACING_SECONDS if spacing_seconds is None else spacing_seconds or 0)
+    with SessionLocal() as db:
+        upload_ids = queued_meta_analysis_upload_ids(db, limit=limit)
+        for index, upload_id in enumerate(upload_ids):
+            with _ANALYSIS_SEMAPHORE:
+                try:
+                    analyze_meta_upload(db, upload_id)
+                    processed += 1
+                    if spacing > 0 and index < len(upload_ids) - 1:
+                        time.sleep(spacing)
+                except Exception:
+                    logger.exception("Queued Meta analysis failed for upload %s", upload_id)
+    return processed
+
+
 def purge_expired_meta_media(retention_days: int | None = None) -> int:
     """Radera klaranalyserade meta-media äldre än retentiongränsen.
 

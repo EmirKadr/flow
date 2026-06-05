@@ -15,6 +15,17 @@ from app.backend.models import AuditLog
 from app.backend.routers import data_fetch
 
 
+@pytest.fixture(autouse=True)
+def clear_data_fetch_sessions():
+    for session in data_fetch.DATA_FETCH_SESSIONS.values():
+        data_fetch._remove_data_fetch_session(session)
+    data_fetch.DATA_FETCH_SESSIONS.clear()
+    yield
+    for session in data_fetch.DATA_FETCH_SESSIONS.values():
+        data_fetch._remove_data_fetch_session(session)
+    data_fetch.DATA_FETCH_SESSIONS.clear()
+
+
 SAMPLE_CATALOG = {
     "version": 1,
     "views": [
@@ -120,6 +131,30 @@ def test_validate_plan_normalizes_columns_and_filters():
     assert plan["view_label"] == "Aktivitetslogg"
     assert plan["output_column_labels"]["type"] == "Typ"
     assert plan["filters"] == [{"id": "type", "operator": "EQ", "value": "korrigering"}]
+
+
+def test_blank_max_rows_means_all_rows(monkeypatch):
+    monkeypatch.setattr(settings, "DATA_SOURCE_MAX_ROWS", 1)
+    rows = [
+        {"type": "korrigering", "item_num": "A1"},
+        {"type": "korrigering", "item_num": "A2"},
+        {"type": "korrigering", "item_num": "A3"},
+    ]
+
+    request = data_fetch.DataFetchRunRequest(plan={"status": "ok"})
+
+    assert request.max_rows is None
+    assert data_fetch._max_rows(None) is None
+    assert data_fetch._max_rows(5) == 1
+    assert service.project_rows(rows, ["type"], None) == [
+        {"type": "korrigering"},
+        {"type": "korrigering"},
+        {"type": "korrigering"},
+    ]
+    assert service.project_rows(rows, ["type"], 2) == [
+        {"type": "korrigering"},
+        {"type": "korrigering"},
+    ]
 
 
 def test_catalog_context_includes_month_period_hint_for_date_columns():
@@ -315,7 +350,10 @@ def test_run_data_fetch_uses_validated_llm_plan_and_projects_rows(monkeypatch):
         {"type": "korrigering", "item_num": "A2"},
     ]
     assert result["session_id"]
-    assert data_fetch.DATA_FETCH_SESSIONS[result["session_id"]]["user_key"] == "1"
+    session = data_fetch.DATA_FETCH_SESSIONS[result["session_id"]]
+    assert session["user_key"] == "1"
+    assert "rows" not in session
+    assert data_fetch._read_data_fetch_rows(session) == result["rows"]
     assert db.committed is True
     assert len(db.items) == 1
     assert isinstance(db.items[0], AuditLog)

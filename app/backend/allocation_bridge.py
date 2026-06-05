@@ -56,9 +56,13 @@ SESSIONS: dict[str, dict] = {}
 UPLOAD_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_upload_cache"
 UPLOAD_CACHE_TTL_SECONDS = 6 * 60 * 60
 UPLOAD_CACHE_MAX_FILES = 64
+UPLOAD_CACHE_MAX_BYTES = 512 * 1024 * 1024
 UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
+SESSION_CACHE_DIR = Path(tempfile.gettempdir()) / "flow_allocation_result_cache"
 SESSION_TTL_SECONDS = 2 * 60 * 60
 SESSION_MAX_COUNT = 12
+SESSION_MAX_BYTES = 512 * 1024 * 1024
+SESSION_ARTIFACT_INLINE_MAX_BYTES = 512 * 1024
 
 
 def _active_upload_cache_dir() -> Path:
@@ -71,6 +75,17 @@ def _active_upload_cache_dir() -> Path:
     if override is not None:
         return override / "allocation_upload_cache"
     return UPLOAD_CACHE_DIR
+
+
+def _active_session_cache_dir() -> Path:
+    try:
+        from .demo_session import demo_data_root_var
+    except Exception:
+        return SESSION_CACHE_DIR
+    override = demo_data_root_var.get()
+    if override is not None:
+        return override / "allocation_result_cache"
+    return SESSION_CACHE_DIR
 DEFAULT_MAX_CSV_PARAM = "__default_max_csv_path"
 PROCESS_AREA_FOCUS_PARAM = "__process_area_focus"
 YTGENERERING_UTL_MIN_PARAM = "__ytgenerering_utl_min"
@@ -800,6 +815,172 @@ def df_to_table(df, preview_limit: int = 1000) -> dict:
     }
 
 
+def _safe_session_key(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "table")).strip("._-")
+    return (safe or "table")[:80]
+
+
+def _session_file_path(session_id: str, key: str, suffix: str) -> Path:
+    return _active_session_cache_dir() / f"{session_id}_{_safe_session_key(key)}{suffix}"
+
+
+def _table_to_dataframe(table):
+    try:
+        import pandas as pd  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise AllocationBridgeUnavailable("Pandas saknas for lagerverktygsresultat.") from exc
+
+    if isinstance(table, pd.DataFrame):
+        return table
+    if _is_simple_table(table):
+        return pd.DataFrame(list(table.rows), columns=[str(column) for column in table.columns])
+    return pd.DataFrame(table)
+
+
+def _write_session_table(session_id: str, key: str, table) -> dict:
+    cache_dir = _active_session_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = _session_file_path(session_id, key, ".pkl")
+    df = _table_to_dataframe(table)
+    df.to_pickle(path)
+    return {
+        "__allocation_table_file__": True,
+        "format": "pickle",
+        "path": str(path),
+        "size_bytes": path.stat().st_size,
+        "columns": [str(column) for column in df.columns],
+        "row_count": int(len(df)),
+    }
+
+
+def _read_session_table(value):
+    if isinstance(value, dict) and value.get("__allocation_table_file__"):
+        path = Path(str(value.get("path") or ""))
+        if not path.is_file():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte (kör flödet igen).")
+        try:
+            import pandas as pd  # type: ignore
+        except Exception as exc:  # noqa: BLE001
+            raise AllocationBridgeUnavailable("Pandas saknas for lagerverktygsresultat.") from exc
+        return pd.read_pickle(path)
+    return value
+
+
+def session_table(session: dict | None, key: str):
+    if not session:
+        return None
+    tables = session.get("tables") or {}
+    if key not in tables:
+        return None
+    return _read_session_table(tables[key])
+
+
+def _json_payload_size(value: object) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _write_session_json(session_id: str, key: str, payload: object) -> dict:
+    cache_dir = _active_session_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = _session_file_path(session_id, key, ".json")
+    tmp = tempfile.NamedTemporaryFile(delete=False, dir=cache_dir, prefix="pending_", suffix=".json", mode="w", encoding="utf-8")
+    try:
+        json.dump(payload, tmp, ensure_ascii=False, default=str)
+        tmp.close()
+        Path(tmp.name).replace(path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+    return {
+        "__allocation_json_file__": True,
+        "path": str(path),
+        "size_bytes": path.stat().st_size,
+    }
+
+
+def _read_session_json(value: object) -> object:
+    if isinstance(value, dict) and value.get("__allocation_json_file__"):
+        path = Path(str(value.get("path") or ""))
+        if not path.is_file():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+    return value
+
+
+def _store_session_artifacts(session_id: str, artifacts: dict) -> dict:
+    stored: dict[str, object] = {}
+    for key, value in (artifacts or {}).items():
+        if _json_payload_size(value) > SESSION_ARTIFACT_INLINE_MAX_BYTES:
+            stored[key] = _write_session_json(session_id, f"artifact_{key}", value)
+        else:
+            stored[key] = value
+    return stored
+
+
+def session_artifacts(session: dict | None) -> dict:
+    artifacts = (session or {}).get("artifacts") or {}
+    return {key: _read_session_json(value) for key, value in artifacts.items()}
+
+
+def _store_session_download_files(session_id: str, download_files: dict) -> dict:
+    _active_session_cache_dir().mkdir(parents=True, exist_ok=True)
+    stored: dict[str, dict] = {}
+    for key, payload in (download_files or {}).items():
+        item = dict(payload or {})
+        content = item.pop("content", "")
+        filename = str(item.get("filename") or f"{key}.csv")
+        suffix = Path(filename).suffix or ".csv"
+        path = _session_file_path(session_id, f"download_{key}", suffix)
+        encoding = str(item.get("encoding") or "utf-8-sig")
+        with open(path, "wb") as handle:
+            if isinstance(content, bytes):
+                handle.write(content)
+            else:
+                handle.write(str(content).encode(encoding))
+        item["path"] = str(path)
+        item["size_bytes"] = path.stat().st_size
+        stored[key] = item
+    return stored
+
+
+def _session_file_paths(session: dict | None) -> list[Path]:
+    paths: list[Path] = []
+    for value in ((session or {}).get("tables") or {}).values():
+        if isinstance(value, dict) and value.get("path"):
+            paths.append(Path(str(value["path"])))
+    for value in ((session or {}).get("artifacts") or {}).values():
+        if isinstance(value, dict) and value.get("path"):
+            paths.append(Path(str(value["path"])))
+    for value in ((session or {}).get("download_files") or {}).values():
+        if isinstance(value, dict) and value.get("path"):
+            paths.append(Path(str(value["path"])))
+    return paths
+
+
+def _remove_session(session: dict | None) -> None:
+    for path in _session_file_paths(session):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            continue
+
+
+def _session_size_bytes(session: dict | None) -> int:
+    total = 0
+    for path in _session_file_paths(session):
+        try:
+            total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
 def _safe_upload_stem(filename: str | None) -> str:
     stem = Path(filename or "upload").stem or "upload"
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._-")
@@ -874,7 +1055,7 @@ def _cleanup_upload_cache(now: float | None = None) -> None:
         if not cache_dir.exists():
             return
         now_ts = time.time() if now is None else now
-        retained: list[tuple[float, Path]] = []
+        retained: list[tuple[float, int, Path]] = []
         for path in cache_dir.iterdir():
             try:
                 if not path.is_file():
@@ -883,17 +1064,29 @@ def _cleanup_upload_cache(now: float | None = None) -> None:
                 if now_ts - stat.st_mtime > UPLOAD_CACHE_TTL_SECONDS:
                     path.unlink(missing_ok=True)
                     continue
-                retained.append((stat.st_mtime, path))
+                retained.append((stat.st_mtime, stat.st_size, path))
             except OSError:
                 continue
 
         overflow = len(retained) - UPLOAD_CACHE_MAX_FILES
         if overflow > 0:
-            for _mtime, path in sorted(retained)[:overflow]:
+            for _mtime, _size, path in sorted(retained)[:overflow]:
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:
                     continue
+            retained = sorted(retained)[overflow:]
+
+        total_bytes = sum(size for _mtime, size, _path in retained)
+        if total_bytes > UPLOAD_CACHE_MAX_BYTES:
+            for _mtime, size, path in sorted(retained):
+                try:
+                    path.unlink(missing_ok=True)
+                    total_bytes -= size
+                except OSError:
+                    continue
+                if total_bytes <= UPLOAD_CACHE_MAX_BYTES:
+                    break
         index_dir = _upload_cache_index_dir()
         if index_dir.exists():
             existing = {path.name for path in cache_dir.iterdir() if path.is_file()}
@@ -959,8 +1152,7 @@ async def save_upload(upload: UploadFile, *, cache: bool = False, cache_key: str
 
 
 def _cleanup_sessions(now: float | None = None) -> None:
-    if not SESSIONS:
-        return
+    cache_dir = _active_session_cache_dir()
     now_ts = time.time() if now is None else now
     for session_id, session in list(SESSIONS.items()):
         try:
@@ -968,17 +1160,45 @@ def _cleanup_sessions(now: float | None = None) -> None:
         except (TypeError, ValueError):
             created_at = now_ts
         if now_ts - created_at > SESSION_TTL_SECONDS:
-            SESSIONS.pop(session_id, None)
+            removed = SESSIONS.pop(session_id, None)
+            _remove_session(removed)
 
     overflow = len(SESSIONS) - SESSION_MAX_COUNT
-    if overflow <= 0:
-        return
     ordered = sorted(
         SESSIONS.items(),
         key=lambda item: float(item[1].get("created_at") or now_ts),
     )
-    for session_id, _session in ordered[:overflow]:
-        SESSIONS.pop(session_id, None)
+    if overflow > 0:
+        for session_id, _session in ordered[:overflow]:
+            removed = SESSIONS.pop(session_id, None)
+            _remove_session(removed)
+        ordered = ordered[overflow:]
+
+    total_bytes = sum(_session_size_bytes(session) for _session_id, session in ordered)
+    if total_bytes > SESSION_MAX_BYTES:
+        for session_id, session in ordered:
+            if len(SESSIONS) <= 1:
+                break
+            removed = SESSIONS.pop(session_id, None)
+            total_bytes -= _session_size_bytes(session)
+            _remove_session(removed)
+            if total_bytes <= SESSION_MAX_BYTES:
+                break
+
+    try:
+        if cache_dir.exists():
+            active_paths = {path.resolve() for session in SESSIONS.values() for path in _session_file_paths(session)}
+            for path in cache_dir.iterdir():
+                try:
+                    if not path.is_file():
+                        continue
+                    stat = path.stat()
+                    if path.resolve() not in active_paths and now_ts - stat.st_mtime > SESSION_TTL_SECONDS:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    continue
+    except OSError:
+        return
 
 
 def open_path(path: str) -> None:
@@ -1123,14 +1343,17 @@ def run_flow_handler(
     download_files = result.get("download_files", {}) or {}
     _cleanup_sessions()
     session_id = uuid.uuid4().hex
+    table_files = {key: _write_session_table(session_id, key, df) for key, _label, df in tables}
     SESSIONS[session_id] = {
         "flow_id": flow_id,
         "created_at": time.time(),
-        "tables": {key: df for key, _label, df in tables},
+        "tables": table_files,
         "labels": {key: label for key, label, _df in tables},
-        "artifacts": artifacts,
-        "download_files": download_files,
+        "artifacts": _store_session_artifacts(session_id, artifacts),
+        "download_files": _store_session_download_files(session_id, download_files),
+        "size_bytes": sum(int(ref.get("size_bytes") or 0) for ref in table_files.values()),
     }
+    _cleanup_sessions()
     return {
         "flow_id": flow_id,
         "session_id": session_id,
@@ -1151,10 +1374,10 @@ def run_flow_handler(
 
 def open_excel_result(req: OpenAllocationExcelRequest) -> dict:
     session = SESSIONS.get(req.session_id)
-    if session is None or req.key not in session["tables"]:
+    table = session_table(session, req.key)
+    if session is None or table is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte (kör flödet igen).")
     label = session["labels"].get(req.key, req.key)
-    table = session["tables"][req.key]
     include_header = session.get("flow_id") != "split-values"
     try:
         path = write_table_to_excel(table, label, include_header=include_header)
@@ -1171,9 +1394,9 @@ def open_excel_result(req: OpenAllocationExcelRequest) -> dict:
 
 def table_column_text(session_id: str, key: str, column_index: int) -> dict:
     session = SESSIONS.get(session_id)
-    if session is None or key not in session["tables"]:
+    table = session_table(session, key)
+    if session is None or table is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
-    table = session["tables"][key]
     if column_index < 0 or column_index >= len(table.columns):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Kolumnen hittades inte.")
     if _is_simple_table(table):
@@ -1189,6 +1412,9 @@ def _download_file_response(payload: dict) -> FileResponse:
     filename = str(payload.get("filename") or "download.csv")
     suffix = Path(filename).suffix or ".csv"
     media_type = str(payload.get("media_type") or "text/csv")
+    path = payload.get("path")
+    if path:
+        return FileResponse(str(path), filename=filename, media_type=media_type)
     encoding = str(payload.get("encoding") or "utf-8-sig")
     content = payload.get("content", "")
 
@@ -1210,11 +1436,11 @@ def download_result(session_id: str, key: str):
     download_file = (session.get("download_files") or {}).get(key)
     if download_file is not None:
         return _download_file_response(download_file)
-    if key not in session["tables"]:
+    table = session_table(session, key)
+    if table is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte.")
     label = session["labels"].get(key, key)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-    table = session["tables"][key]
     if _is_simple_table(table):
         table.write_csv(tmp.name)
     else:

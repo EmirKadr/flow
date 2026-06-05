@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+import time
 import unicodedata
 import uuid
 from functools import lru_cache
@@ -71,6 +72,40 @@ YTGENERERING_UTL_MAX_PARAM = "__ytgenerering_utl_max"
 YTGENERERING_UTL_DEFAULT_MIN = 1
 YTGENERERING_UTL_DEFAULT_MAX = 652
 FileVersion = tuple[str, int, int]
+WAREHOUSE_RUNTIME_CACHE_TTL_SECONDS = 2 * 60 * 60
+WAREHOUSE_RUNTIME_CACHE_MAX_ITEMS = 48
+WAREHOUSE_RUNTIME_CACHE_APPROX_BYTES_PER_ITEM = 8 * 1024 * 1024
+WAREHOUSE_RUNTIME_CACHE_MAX_APPROX_BYTES = 384 * 1024 * 1024
+_WAREHOUSE_RUNTIME_CACHE_CREATED_AT = time.time()
+
+
+def _runtime_cache_info():
+    return (
+        _read_cached.cache_info(),
+        _prepared_locations_cached.cache_info(),
+        _normalized_saldo_cached.cache_info(),
+        _normalized_items_cached.cache_info(),
+        _normalized_not_putaway_cached.cache_info(),
+        _allocation_outputs_cached.cache_info(),
+    )
+
+
+def _maybe_trim_runtime_caches(now: float | None = None) -> None:
+    global _WAREHOUSE_RUNTIME_CACHE_CREATED_AT
+    now_ts = time.time() if now is None else now
+    infos = _runtime_cache_info()
+    total_items = sum(info.currsize for info in infos)
+    approx_bytes = total_items * WAREHOUSE_RUNTIME_CACHE_APPROX_BYTES_PER_ITEM
+    if (
+        now_ts - _WAREHOUSE_RUNTIME_CACHE_CREATED_AT <= WAREHOUSE_RUNTIME_CACHE_TTL_SECONDS
+        and total_items <= WAREHOUSE_RUNTIME_CACHE_MAX_ITEMS
+        and approx_bytes <= WAREHOUSE_RUNTIME_CACHE_MAX_APPROX_BYTES
+    ):
+        return
+    _read_cached.cache_clear()
+    clear_prepared_location_cache()
+    clear_allocation_cache()
+    _WAREHOUSE_RUNTIME_CACHE_CREATED_AT = now_ts
 
 
 @lru_cache(maxsize=32)
@@ -79,6 +114,7 @@ def _read_cached(path: str, size: int, mtime_ns: int) -> pd.DataFrame:
 
 
 def _read(path: Path) -> pd.DataFrame:
+    _maybe_trim_runtime_caches()
     source = Path(path).resolve()
     stat = source.stat()
     return _read_cached(str(source), stat.st_size, stat.st_mtime_ns).copy(deep=True)

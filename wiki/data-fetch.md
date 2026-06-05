@@ -1,7 +1,7 @@
 ---
 title: Hämta data
 status: aktiv
-updated: 2026-05-22
+updated: 2026-06-05
 tags: [datahamtning, extern-data, minimax, api]
 ---
 
@@ -21,8 +21,9 @@ miljövariabler och skickas aldrig till modellen.
 4. Backend validerar MiniMax-planen mot katalogen.
 5. Användaren ser vald vy, tekniska kolumner och filter.
 6. Användaren kan klicka bort utdataplanens kolumner och trycka `Uppdatera plan`.
-7. `Hämta data` kör API-anropet från backend.
-8. Resultatet visas som tabell och kan exporteras till Excel.
+7. Användaren kan fylla `Max rader` för att begränsa resultatet, eller lämna fältet tomt för att ta med alla hämtade rader.
+8. `Hämta data` kör API-anropet från backend.
+9. Resultatet visas som tabell och kan exporteras till Excel.
 
 ## Knappar och kontroller
 
@@ -30,6 +31,7 @@ miljövariabler och skickas aldrig till modellen.
 | --- | --- | --- | --- | --- | --- |
 | Hämta data | Sidebar | Super User eller roll med vyåtkomst `dataFetch` | Öppnar datahämtningsvyn | `common.js`, `hamta-data.html` | Om vyn saknas: kontrollera Vybehörigheter. |
 | Tolka | Promptpanelen | `dataFetch` view | Skickar prompt + katalogutdrag till MiniMax och visar validerad plan | `POST /api/query-data/plan` | Fel om `MINIMAX_API_KEY` saknas eller modellen väljer okänd vy/kolumn. |
+| Max rader | Promptpanelen | `dataFetch` view | Valfritt tal som begränsar tabell och Excel-export. Tomt fält betyder alla hämtade rader. | `data_fetch.js`, `POST /api/query-data/run` | Ogiltiga eller för stora tal normaliseras innan körning. |
 | Kolumnchip | Planpanelen | `dataFetch` view | Markerar kolumn för borttagning ur `output_columns` | `data_fetch.js` | Minst en kolumn måste vara kvar. |
 | Uppdatera plan | Planpanelen | `dataFetch` view | Skriver om planen lokalt med kvarvarande kolumner och rensar gammalt resultat | `data_fetch.js` | Knappen är spärrad tills minst en kolumn markerats. |
 | Hämta data | Promptpanelen | `dataFetch` view | Kör validerad plan mot extern datakälla | `POST /api/query-data/run` | Fel om `DATA_SOURCE_API_BASE_URL`, `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE` eller nyckel-/header-env saknas/fel. |
@@ -59,7 +61,8 @@ miljövariabler och skickas aldrig till modellen.
 - `app/backend/data_fetch_service.py` laddar katalog, bygger MiniMax-prompt, lägger till appklocka/periodhints, normaliserar koder som `company=GG` och validerar plan.
 - `app/frontend/js/data_fetch.js` låter användaren ta bort kolumner ur MiniMax-planens `output_columns` innan `/api/query-data/run` körs. Servern validerar fortfarande den inskickade planen vid hämtning.
 - `app/backend/routers/data_fetch.py` kör planering, datahämtning och Excel-export.
-- Resultat hålls i minne per `session_id`, på samma sätt som lagerverktygens exportflöden.
+- `max_rows` i `/api/query-data/run` är valfritt. `null` eller utelämnat värde betyder att backend inte beskär raderna efter fetch; ett ifyllt tal begränsas fortfarande av serverns maxinställning.
+- Resultatens export-rader skrivs till temporara serverfiler per `session_id` med TTL, maxantal och byte-budget. Sessionens RAM-del haller bara anvandarkoppling, plan, kolumner, radantal och filreferens; Excel-exporten laser filen vid behov.
 
 ## Felsökningssvar för framtida chat
 
@@ -77,6 +80,9 @@ Svar: Knappen spärras när katalogen saknas eller när `MINIMAX_API_KEY` inte �
 
 Fråga: Varför går det inte att klicka på Hämta data?
 Svar: Knappen kräver en godkänd plan från `Tolka` och att den externa datakällan är konfigurerad med alla obligatoriska `DATA_SOURCE_*`-värden i servermiljön: bas-URL, API-nyckel, klientvärde, headernamn för nyckel/klient och endpointmall. Health-raden visar exakt vilka variabelnamn som saknas.
+
+Fråga: Hur hämtar jag alla rader?
+Svar: Lämna `Max rader` tomt och klicka `Hämta data`. Då skickas inget radtak till backend, så tabellen och Excel-exporten innehåller alla rader som den externa datakällan returnerar.
 
 Fråga: Hur tar jag bort kolumner från resultatet?
 Svar: Klicka på kolumnchippen i planpanelen och tryck `Uppdatera plan`. Då tas kolumnerna bort från `output_columns`, gammalt resultat rensas och nästa `Hämta data` använder den uppdaterade planen. Det går inte att ta bort alla kolumner.

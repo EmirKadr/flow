@@ -20,8 +20,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(autouse=True)
 def clear_allocation_sessions():
+    for session in bridge.SESSIONS.values():
+        bridge._remove_session(session)
     bridge.SESSIONS.clear()
     yield
+    for session in bridge.SESSIONS.values():
+        bridge._remove_session(session)
     bridge.SESSIONS.clear()
 
 
@@ -1602,6 +1606,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
     assert result["tables"][0]["label"] == "Demoresultat"
     assert result["tables"][0]["table"]["row_count"] == 2
     assert result["session_id"] in bridge.SESSIONS
+    assert bridge.SESSIONS[result["session_id"]]["tables"]["main"]["__allocation_table_file__"] is True
     assert bridge.table_column_text(result["session_id"], "main", 0) == {"text": "A100"}
 
 
@@ -1620,7 +1625,8 @@ def test_run_overview_check_keeps_avvikelse_type_column_in_api_result():
 
     assert orderkontroll["table"]["columns"][0] == "Avvikelsetyp"
     assert orderkontroll["table"]["rows"][0][0] == "HIB \u00f6ver status 31 utan butikss\u00e4ndning"
-    assert list(bridge.SESSIONS[result["session_id"]]["tables"]["orderkontroll"].columns)[0] == "Avvikelsetyp"
+    stored_table = bridge.session_table(bridge.SESSIONS[result["session_id"]], "orderkontroll")
+    assert list(stored_table.columns)[0] == "Avvikelsetyp"
 
 
 def test_open_excel_result_writes_safe_xlsx_and_opens_path(monkeypatch):

@@ -268,6 +268,63 @@ def test_analyze_meta_upload_marks_audio_extraction_failure(monkeypatch):
         engine.dispose()
 
 
+def test_queued_meta_analysis_upload_ids_returns_oldest_queued_video():
+    engine, session = make_session()
+    first = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="first.mov",
+        stored_filename="first.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="1" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"first-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    second = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="second.mov",
+        stored_filename="second.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="2" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"second-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add_all([first, second])
+    session.commit()
+    session.refresh(first)
+    session.refresh(second)
+    session.add_all(
+        [
+            MetaShipmentObservation(
+                media_upload_id=first.id,
+                video_hash=first.content_hash,
+                record_hash="a" * 64,
+                analysis_status="queued",
+            ),
+            MetaShipmentObservation(
+                media_upload_id=second.id,
+                video_hash=second.content_hash,
+                record_hash="b" * 64,
+                analysis_status="manual_review",
+            ),
+        ]
+    )
+    session.commit()
+    try:
+        assert meta_analysis_service.queued_meta_analysis_upload_ids(session, limit=5) == [first.id]
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypatch):
     monkeypatch.setattr(meta_uploads, "_probe_video_duration_from_path", lambda path: 42.4)
     engine, session = make_session()

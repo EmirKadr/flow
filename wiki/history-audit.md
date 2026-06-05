@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-06-04
+updated: 2026-06-05
 tags: [historik, audit, ui]
 ---
 
@@ -36,7 +36,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `AI-analys`: MiniMax-fragor om trackinghistorik, till exempel "Vilka funktioner anvands minst?", "Kopierar folk forsta kolumnen i Pafyllnadsprio eller flera?" och "Vilka vyer anvands i Windows men inte webben?".
 - `Felkoder`: statkort for felkoder, topplistor for felkod, vy/API och felatgard samt senaste felhandelser.
 - `Vantetider`: p50/p95/max for vyload, API-anrop, nedladdningar och bakgrundsladdning, sa flaskhalsar syns utan manuell magkansla.
-- `Halsa`: app-, databas- och Render-status for lokal/serverdrift; samma signal anvands av `tools.healthcheck` och kan lasa Render build-loggar nar API-nyckel, service-id och ownerId finns.
+- `Halsa`: app-, databas- och Render-status for lokal/serverdrift; samma signal anvands av `tools.healthcheck`, visar processens RSS-minne och varnar nar webprocessen nar hog minnesniva. Render-loggar laser app-loggar forst och build-loggar som fallback nar API-nyckel, service-id och ownerId finns.
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, serverhanterade produktivitetsfiler och korda lagerverktygsfloden.
 - Misslyckade filuppladdningar som hinner na backend loggas som `productivity_file/upload_failed`, `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.

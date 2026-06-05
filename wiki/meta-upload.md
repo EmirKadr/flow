@@ -1,7 +1,7 @@
 ---
 title: Meta-uppladdning
 status: aktiv
-updated: 2026-06-04
+updated: 2026-06-05
 tags: [meta, media, publik, uppladdning]
 ---
 
@@ -21,7 +21,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 6. Under uppladdningen visas total progress, aktuell fil, filnummer i kon, kvarvarande mangd, estimerad tid och status per fil.
 7. Vid lyckad uppladdning visas hur manga filer som sparades och hur manga dubbletter som hoppades over. Vid fel visas ett kort felmeddelande pa sidan. Fel som hinner na backend audit-loggas som `meta_media_upload/upload_failed`, aven nar anvandaren inte ar inloggad.
 8. For varje ny video skapas en sändningsrad med video-hash och radhash.
-9. Om `GEMINI_API_KEY` finns koas videon for analys. Backend extraherar en temporar ljudfil och skickar bara rosten till Gemini. Analysen fyller ett tydligast hort pall-id och avvikelser; ordernummer, sandningsnummer, anvandarnamn och kund lamnas tomma.
+9. Om `GEMINI_API_KEY` finns koas videon for analys. Standard i drift ar att analysen inte autostartar i webprocessen (`META_ANALYSIS_AUTO_START=false`); Super User kan starta analysen manuellt eller en separat worker kan plocka koade jobb. Backend extraherar en temporar ljudfil och skickar bara rosten till Gemini. Analysen fyller ett tydligast hort pall-id och avvikelser; ordernummer, sandningsnummer, anvandarnamn och kund lamnas tomma.
 10. Super User kan oppna `Meta` i sidebaren, filtrera pa alla/videor/bilder, följa sändningstabellen och klicka ikonknappar for `Visa`, `Ladda ner`, `Analysera` eller `Radera`.
 
 ## Knappar och kontroller
@@ -32,7 +32,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 | Automatisk uppladdning | `meta-upload.html` | Alla med lank | Startar direkt efter filval/drag-drop, skickar valda filer en och en som multipart till backend och visar total progress via `XMLHttpRequest.upload` | `POST /api/meta/uploads`, `meta_upload.js` | Nekas om inga filer skickas, om filtypen inte ar bild/video eller om maxstorlek passeras. Exakta dubbletter sparas inte igen utan visas som overhoppade. Om en fil misslyckas fortsatter klienten med nasta och visar slutlig sammanfattning. |
 | Typ | `meta.html` | Super User | Filtrerar Meta-listan pa alla, videor eller bilder | `GET /api/meta/uploads?media_type=...` | Visar tomt lage om urvalet saknar uppladdningar. |
 | Uppdatera | `meta.html` | Super User | Laddar om listan och visar toast nar det ar klart | `meta.js`, `api.get` | API-fel visas via standardlogg/toast. |
-| Visa | `meta.html` | Super User | Oppnar modal med video eller bild via ikonknapp | `GET /api/meta/uploads/{upload_id}/content` | Stora videor strommas med byte-range men hamtas fran databasen. |
+| Visa | `meta.html` | Super User | Oppnar modal med video eller bild via ikonknapp | `GET /api/meta/uploads/{upload_id}/content` | Stora videor strommas med byte-range fran MediaStore. |
 | Ladda ner | `meta.html` | Super User | Startar en browser-nedladdning av mediafilen med serverns tidsstamplade filnamn via ikonknapp | `HEAD` + `GET /api/meta/uploads/{upload_id}/content?download=1`, `api.download(..., { direct: true })` | 403 om anvandaren inte ar Super User. 404 om lagrad media saknas. |
 | Radera | `meta.html` | Super User | Bekraftar och raderar media-raden inklusive blobben via ikonknapp | `DELETE /api/meta/uploads/{upload_id}` | Gar inte att angra. 404 om filen redan ar borttagen. |
 | Sändningsanalys | `meta.html` | Super User | Visar tomma framtida lookup-kolumner for ordernummer, sandningsnummer, anvandarnamn och kund, samt rosttolkat pall-id, avvikelser, status, video, videolangd, stillbild och hash | `GET /api/meta/shipment-observations` | Tom eller `LLM saknas` om Gemini inte ar konfigurerad. |
@@ -55,7 +55,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 - `content_hash` ar SHA-256 av filens bytes. Backend kollar bade redan sparade filer och filer i samma batch. Om hash finns sedan tidigare sparas inte blobben igen, och svaret far `skipped_count` samt poster med `reason=duplicate`.
 - Ny media far status `pending_analysis`. For videor skapas `meta_shipment_observations` med `video_hash` och `record_hash`. Meta-vyn visar samma korta Video-ID i videokortet och i sändningstabellen sa Super User kan se vilken rad som tillhor vilken video.
 - Gemini-konfigurationen ligger i `GEMINI_API_KEY`, `GEMINI_MODEL` och `GEMINI_API_BASE_URL`. Standardmodell ar `gemini-2.5-pro`. Backend extraherar ljud fran videon med ffmpeg eller `imageio-ffmpeg` och skickar bara den temporara ljudfilen via Gemini Files API.
-- Autoanalys ar lagbelastad: `META_ANALYSIS_MAX_CONCURRENCY=1`, `META_ANALYSIS_START_DELAY_SECONDS=30` och `META_ANALYSIS_SPACING_SECONDS=15` gor att videor koas och analyseras en i taget med paus.
+- Autoanalys ar avstangd som standard: `META_ANALYSIS_AUTO_START=false`. Nya videor far fortfarande `queued`/`needs_configuration` i DB, men webbtjansten startar inte ffmpeg/Gemini direkt efter uppladdning. `tools/meta_analysis_worker.py --loop --limit 1` kan plocka koade analyser utanfor requestflodet nar driftmiljon har lagring som workern kan lasa. Concurrency och spacing styrs fortsatt av `META_ANALYSIS_MAX_CONCURRENCY=1` och `META_ANALYSIS_SPACING_SECONDS`.
 - Stillbilden ar best-effort och tas fran videon vid `META_LABEL_STILL_TIME_SECONDS` (standard 1.0 sekund). Saknad stillbild blockerar inte en lyckad rostanalys.
 - Analys-prompten sager uttryckligen att Gemini inte ska tolka videobild, etiketter, transportetiketter eller innehallsforteckningar. Den ska bara anvanda rosten for ett tydligast hort pall-id och avvikelser. Om flera pall-id hors ska bara det tydligaste sparas och osakerheten skrivas i `uncertainty_notes`.
 - Backend forsoker ta ut en etikettstillbild vid `META_LABEL_STILL_TIME_SECONDS` med `ffmpeg` eller `imageio-ffmpeg`. Om bilden inte kan extraheras kan rostanalysen anda bli `Klar`.
@@ -83,7 +83,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 | "Varfor sparades inte alla filer?" | Om en fil ar exakt samma som en redan sparad fil hoppas den over som dubblett for att inte ta onodigt databas-utrymme. Sidan visar hur manga som hoppades over. |
 | "Varfor gick inte filen upp?" | Sidan accepterar bara bilder och videor. Backend kan ocksa neka tomma filer eller for stora batchar. |
 | "Varfor syns inte anvandaren i Felkoder?" | Den publika Meta-uppladdningen kraver inte login. Backend loggar darfor misslyckade uppladdningar som systemhandelser utan anvandarnamn. |
-| "Analyseras filerna direkt?" | Nya videor koas automatiskt nar `GEMINI_API_KEY` finns och `META_ANALYSIS_AUTO_START=true`, men analysen vantar enligt delay/spacing-settings och kors en video i taget. Bilder sparas bara som media. |
+| "Analyseras filerna direkt?" | Nej, inte som standard. Nya videor koas nar `GEMINI_API_KEY` finns, men `META_ANALYSIS_AUTO_START=false` gor att webbtjansten inte startar analysen direkt efter uppladdning. Super User kan klicka `Analysera`, eller drift kan kora `tools/meta_analysis_worker.py --loop --limit 1`. Bilder sparas bara som media. |
 
 ## Kallor
 
@@ -94,6 +94,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 - `../app/frontend/css/meta-upload.css`
 - `../app/backend/routers/meta_uploads.py`
 - `../app/backend/meta_analysis_service.py`
+- `../tools/meta_analysis_worker.py`
 - `../app/backend/models.py`
 - `../app/alembic/versions/0022_meta_media_uploads.py`
 - `../app/alembic/versions/0023_meta_upload_stored_filename.py`

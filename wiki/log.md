@@ -1,11 +1,29 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-04
+updated: 2026-06-05
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-05] fix | Minska serverminne for Bearbeta och Meta
+
+Bearbeta-resultat skrivs nu till temporara serverfiler i stallet for att fulla
+DataFrames ligger kvar i `allocation_bridge.SESSIONS`; sessionen haller metadata,
+filreferenser och agare med TTL/maxantal/byte-budget. Warehouse runtime-cacher,
+Bearbeta-uppladdningscache och Hamta data-exportsessioner har striktare
+rensning. Meta-autostart ar avstangd som standard med
+`META_ANALYSIS_AUTO_START=false`, och `tools/meta_analysis_worker.py` kan plocka
+koade audio-only-analyser utanfor web request-flodet nar lagringen stods.
+Halsa/healthcheck visar processminne och prioriterar Render app-loggar.
+
+## [2026-06-05] fix | Tomt Max rader hamtar alla rader
+
+Hamta data har nu tomt `Max rader` som standard. Nar faltet lamnas tomt skickar
+frontend `max_rows=null` och backend begransar inte resultatet efter extern
+fetch, sa tabell och Excel-export innehaller alla rader som datakallan
+returnerar. Ifyllt tal fungerar fortsatt som manuell begransning.
 
 ## [2026-06-04] fix | Meta-download och frontend-boot
 

@@ -93,8 +93,11 @@ function dataFetchSetBusy(active, text = "") {
 }
 
 function dataFetchMaxRows() {
-  const value = Number(document.getElementById("dataFetchMaxRows").value || 500);
-  return Math.min(5000, Math.max(1, Number.isFinite(value) ? value : 500));
+  const rawValue = document.getElementById("dataFetchMaxRows").value.trim();
+  if (!rawValue) return null;
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) return null;
+  return Math.min(5000, Math.max(1, Math.floor(value)));
 }
 
 function updateDataFetchPlanColumns() {

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-pro"
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
     META_ANALYSIS_TIMEOUT_SECONDS: int = 120
-    META_ANALYSIS_AUTO_START: bool = True
+    META_ANALYSIS_AUTO_START: bool = False
     META_ANALYSIS_MAX_VIDEO_BYTES: int = 256 * 1024 * 1024
     META_ANALYSIS_MAX_CONCURRENCY: int = 1
     META_ANALYSIS_START_DELAY_SECONDS: float = 30.0

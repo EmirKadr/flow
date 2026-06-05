@@ -112,8 +112,9 @@ Felkodsvyn ar en felsokningsvy ovanpa auditloggen. Den visar klientrapporterade 
 2. Skriv vilken extern data-vy du vill hamta, vilka kolumner du vill se och vilka filter som ska anvandas.
 3. Klicka `Tolka`.
 4. Kontrollera planen: vy, kolumner och filter visas innan data hamtas.
-5. Klicka `Hamta data`.
-6. Granska tabellpreviewn och klicka `Exportera Excel` om resultatet ska sparas.
+5. Lamna `Max rader` tomt for alla rader, eller fyll i ett tal om du vill begransa resultatet.
+6. Klicka `Hamta data`.
+7. Granska tabellpreviewn och klicka `Exportera Excel` om resultatet ska sparas.
 
 MiniMax far bara vy-/kolumnstruktur och exempel pa fragor. API-lank och nycklar ligger i servermiljon och skickas inte till modellen.
 

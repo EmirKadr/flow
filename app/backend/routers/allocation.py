@@ -415,12 +415,12 @@ def _attach_required_session_artifacts(flow_id: str, params: dict, user: User) -
     if session is None or session.get("flow_id") != "forecast":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Forecast-sessionen hittades inte.")
     submitted_clusters = str(params.get("carrier_clusters_json") or "").strip()
-    artifacts = session.get("artifacts") or {}
+    artifacts = bridge.session_artifacts(session)
     if submitted_clusters:
         params["__carrier_clusters_json"] = submitted_clusters
     elif artifacts.get("carrier_clusters"):
         params["__carrier_clusters_json"] = json.dumps(artifacts["carrier_clusters"], ensure_ascii=False)
-    forecast_df = (session.get("tables") or {}).get("forecast")
+    forecast_df = bridge.session_table(session, "forecast")
     if forecast_df is not None:
         params["__forecast_df"] = forecast_df
         return

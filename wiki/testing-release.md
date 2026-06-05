@@ -1,7 +1,7 @@
 ---
 title: Test och release
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-05
 tags: [test, release, agent]
 ---
 
@@ -39,7 +39,7 @@ python -m tools.desktop_app_probe
 | Frontend-JS | `node --check`, visuell smoke eller interaktiv E2E beroende pa risk |
 | Laddning/cache/UX-hastighet | `tools.performance_benchmark` for kall/varm navigation, bakgrundsladdning, toggle, import, drag och copy |
 | Anvandarsynlig loggning | `tests/tools/test_sidebar_user_browser.py` for dokumentlogg i browser + `tests/tools/test_visual_tools.py` for global logg-/API-wiring |
-| Halsa/vantetid/drift | `tools.healthcheck report --local --no-render` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar auth och Render-secrets finns |
+| Halsa/vantetid/drift | `tools.healthcheck report --local --no-render` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar auth och Render-secrets finns. Kontrollera `Serverminne` efter cache-, Bearbeta-, Meta- eller Forecast-andringar. |
 | flow/Oversikt | Interaktiv E2E for celler, drag, undo/redo och roller |
 | Sidebar/roller | Rolltester + visual smoke for flera roller |
 | Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots. Forecast-regler for orderoversikt, till exempel att status `11` filtrerar bort samma ordernummer ur detaljkundorder, ska ha riktat handler-/domantest. Ytgenereringens ytkartsinstallningar ska testas bade som handlerkapacitet/koordinater och som API-parametrar i `tests/services/test_allocation_bridge.py`. |

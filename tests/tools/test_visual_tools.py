@@ -792,9 +792,14 @@ def test_data_fetch_plan_columns_are_user_editable():
 
     assert ">Tolka</button>" in html
     assert "Tolka med MiniMax</button>" not in html
+    assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" />' in html
+    assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" value=' not in html
+    assert 'src="/js/data_fetch.js?v=20260605-max-rows"' in html
     assert 'id="dataFetchRun" type="button" disabled' in html
     assert 'id="dataFetchExport" type="button" disabled' in html
     assert "dataFetchUpdateActions" in data_fetch
+    assert 'document.getElementById("dataFetchMaxRows").value || 500' not in data_fetch
+    assert "if (!rawValue) return null;" in data_fetch
     assert "resetDataFetchForPromptEdit" in data_fetch
     assert '!dataFetchState.result?.session_id' in data_fetch
     assert "pendingRemovedColumns" in data_fetch
