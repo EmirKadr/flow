@@ -89,6 +89,7 @@ verksamheter.
 | `allocation.download` | `GET` | `/api/allokering/download/{session_id}/{key}` | Ladda ner Allokering-resultat |
 | `coredata.files` | `GET` | `/api/coredata/files` | Coredata-karnfiler fran Postgres/fallback och sammanstalld data for verksamheten |
 | `coredata.preview` | `GET` | `/api/coredata/files/{file_key}/preview` | Forhandsvisa coredata-karnfil eller sammanstalld data |
+| `coredata.download` | `GET` | `/api/coredata/files/{file_key}/download` | Ladda ner coredata-karnfil eller sammanstalld data |
 | `coredata.upload_raw` | `POST` | `/api/coredata/files/raw` | Ladda upp coredata-karnfil till Postgres eller sammanstalld datafil |
 | `areas.list` | `GET` | `/api/areas` | Lista områden |
 | `areas.create` | `POST` | `/api/areas` | Skapa område |
@@ -112,6 +113,14 @@ verksamheter.
 | `audit.errors` | `GET` | `/api/audit/errors` | Felkodsdashboard |
 | `audit.client_error` | `POST` | `/api/audit/client-error` | Logga användarens API-fel |
 | `audit.client_event` | `POST` | `/api/audit/client-event` | Logga tysta UI-händelser som vyöppning |
+| `audit.local_run` | `POST` | `/api/audit/local-run` | Logga sanerad Windows-korning |
+| `audit.interactions` | `POST` | `/api/audit/interactions` | Logga batchade anvandarinteraktioner |
+| `audit.interactions_public` | `POST` | `/api/audit/interactions/public` | Logga allowlistad publik meta-tracking |
+| `audit.interactions_list` | `GET` | `/api/audit/interactions` | Lista trackingevents |
+| `audit.interactions_summary` | `GET` | `/api/audit/interactions/summary` | Summera trackingevents |
+| `audit.interactions_coverage` | `GET` | `/api/audit/interactions/coverage` | Visa trackingtackning |
+| `audit.interactions_chat` | `POST` | `/api/audit/interactions/chat` | Fraga MiniMax om trackinghistorik |
+| `audit.interactions_chat_clear` | `POST` | `/api/audit/interactions/chat/clear` | Rensa Historik-AI |
 | `persons.list` | `GET` | `/api/persons` | Lista personer |
 | `persons.import_template` | `GET` | `/api/persons/import-template` | Hämta importmall för personer |
 | `persons.import` | `POST` | `/api/persons/import` | Importera personer |

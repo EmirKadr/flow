@@ -16,6 +16,7 @@ API_METHODS = {
     "put": "PUT",
     "del": "DELETE",
 }
+DESKTOP_LOCAL_API_PREFIXES = ("/api/desktop/",)
 
 
 def frontend_literal_api_calls() -> list[tuple[str, str, str]]:
@@ -28,6 +29,8 @@ def frontend_literal_api_calls() -> list[tuple[str, str, str]]:
         for match in pattern.finditer(source):
             method = API_METHODS[match.group(1)]
             api_path = match.group(3).split("?", 1)[0]
+            if api_path.startswith(DESKTOP_LOCAL_API_PREFIXES):
+                continue
             calls.append((path.relative_to(ROOT).as_posix(), method, api_path))
     return calls
 

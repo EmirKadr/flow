@@ -70,9 +70,17 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     api = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    meta_upload = (ROOT / "app" / "frontend" / "js" / "meta_upload.js").read_text(encoding="utf-8")
+    desktop_bridge = (ROOT / "app" / "frontend" / "js" / "desktop_bridge.js").read_text(encoding="utf-8")
+    desktop_app = (ROOT / "desktop" / "app.py").read_text(encoding="utf-8")
 
     assert 'data-history-mode="history"' in html
     assert 'data-history-mode="analysis"' in html
+    assert 'data-history-mode="functions"' in html
+    assert 'data-history-mode="buttons"' in html
+    assert 'data-history-mode="columns"' in html
+    assert 'data-history-mode="flows"' in html
+    assert 'data-history-mode="tracking-ai"' in html
     assert 'data-history-mode="errors"' in html
     assert 'data-history-mode="waits"' in html
     assert 'data-history-mode="health"' in html
@@ -80,6 +88,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'id="recentErrorBody"' in html
     assert 'id="slowWaitBody"' in html
     assert 'id="healthChecksBody"' in html
+    assert 'id="trackingTopFeaturesBody"' in html
+    assert 'id="trackingTopControlsBody"' in html
+    assert 'id="trackingTopColumnsBody"' in html
+    assert 'id="trackingTopFlowsBody"' in html
+    assert 'id="historyTrackingChatForm"' in html
     assert 'api.get("/api/businesses?include_inactive=true")' in analytics
     assert 'params.set("business_id", businessId)' in analytics
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
@@ -88,14 +101,28 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
+    assert "TRACKING_HISTORY_MODES" in analytics
+    assert "function interactionParams" in analytics
+    assert 'api.get(`/api/audit/interactions/summary?${trackingParams.toString()}`)' in analytics
+    assert 'api.get(`/api/audit/interactions/coverage?${interactionCoverageParams().toString()}`)' in analytics
+    assert 'api.get(`/api/audit/interactions?${interactionParams(200).toString()}`)' in analytics
+    assert 'api.post("/api/audit/interactions/chat"' in analytics
+    assert 'api.post("/api/audit/interactions/chat/clear"' in analytics
     assert 'const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";' in api
     assert 'const WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";' in api
+    assert 'const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in api
+    assert "function reportApiInteraction" in api
     assert "function reportApiWaitMetric" in api
     assert "function reportApiError" in api
     assert "window.reportApiError = reportApiError;" in api
     assert 'const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";' in api
     assert "function reportClientEvent" in api
     assert "window.reportClientEvent = reportClientEvent;" in api
+    assert "function isLikelyHtmlDocument" in api
+    assert "function htmlErrorMessage" in api
+    assert 'link.dataset.trackIgnore = "true";' in api
+    assert "Servern svarade med ${httpStatusLabel(status)}" in api
+    assert "HTML-felsida fran servern" in api
     assert "logApiSuccess" in api
     assert "logApiFailure" in api
     assert "apiResultSummary" in api
@@ -110,6 +137,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "incrementAppLogNotice" not in common
     assert "function recordWaitMetric" in common
     assert "window.flowRecordWaitMetric = recordWaitMetric;" in common
+    assert 'const COMMON_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";' in common
+    assert "function flowTrack" in common
+    assert "function initInteractionAutoCapture" in common
+    assert "window.flowTrack = flowTrack;" in common
+    assert "window.flowCurrentInteractionContext = currentInteractionContext;" in common
     assert "client_long_task" in common
     assert "reportPageOpen(user, activePage)" in common
     assert "reportPageLoadWaitMetric(activePage)" in common
@@ -117,6 +149,43 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "window.flowLog" in common
     assert "clearAppLog" in common
     assert "pathWithoutQuery(path)" in api
+    assert "allocationTrack(\"flow_run_start\"" in allocation
+    assert "allocationTrack(\"copy_column\"" in allocation
+    assert "allocationTrack(\"auto_copy_column\"" in allocation
+    assert "allocationTableEventMeta(key, columnIndex)" in allocation
+    assert "copy_mode: \"manual\"" in allocation
+    public_summary = meta_upload.split("function publicMetaFileSummary", 1)[1].split("function publicMetaTrack", 1)[0]
+    assert "publicMetaTrack(\"public_meta_file_select\"" in meta_upload
+    assert "public_meta_upload_success" in meta_upload
+    assert "file.name" not in public_summary
+    assert "client_surface: \"desktop\"" in desktop_bridge
+    assert "desktop_file_select" in desktop_bridge
+    assert "desktop_update_check_start" in desktop_app
+    assert "desktop_update_download_success" in desktop_app
+
+
+def test_known_interaction_controls_match_frontend_control_ids():
+    from app.backend.routers.audit_logs import KNOWN_INTERACTION_CONTROLS
+
+    frontend_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for pattern in ("*.html", "*.js")
+        for path in (ROOT / "app" / "frontend").rglob(pattern)
+    )
+    semantic_controls = {
+        ("schedule", "schedule_cell_select"),
+        ("overview", "overview_day_select"),
+    }
+    missing = [
+        (item["view_id"], item["control_id"])
+        for item in KNOWN_INTERACTION_CONTROLS
+        if item["control_id"] not in frontend_text and (item["view_id"], item["control_id"]) not in semantic_controls
+    ]
+
+    assert not missing
+    control_ids = {item["control_id"] for item in KNOWN_INTERACTION_CONTROLS}
+    assert control_ids.isdisjoint({"newPerson", "bulkPersons", "importPersons", "newActivity", "bulkActivities", "newUser", "roleAccess"})
+    assert {"new-person", "bulk-persons", "import-persons", "new-act", "bulk-activities", "new-user", "role-view-access"} <= control_ids
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -143,6 +212,11 @@ def test_visual_smoke_covers_critical_scenarios():
         "anvandare-vybehorigheter-modal",
         "verksamheter-ny-verksamhet-modal",
         "historik-filter",
+        "historik-funktioner",
+        "historik-knappar",
+        "historik-kolumner",
+        "historik-floden",
+        "historik-ai-analys",
         "historik-vantetider",
         "historik-halsa",
         "viewer-nekad-personer",
@@ -279,6 +353,26 @@ def test_project_protocol_documents_healthcheck_workflow():
     assert "storre push" in docs["AGENTS.md"]
     assert "error" in docs["AGENTS.md"]
     assert "warn" in docs["AGENTS.md"]
+
+
+def test_project_protocol_documents_release_polling_policy():
+    docs = {
+        "AGENTS.md": (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+        "TESTPROTOCOL.md": (ROOT / "TESTPROTOCOL.md").read_text(encoding="utf-8"),
+        "wiki/testing-release.md": (ROOT / "wiki" / "testing-release.md").read_text(encoding="utf-8"),
+    }
+
+    for name, text in docs.items():
+        assert "Releasepolling" in text, name
+        assert "workflowen har startat" in text, name
+        assert "be agenten kolla releasen senare" in text, name
+        assert "15 minuter" in text, name
+        assert "2 minuter" in text, name
+        assert "1 minut" in text, name
+        assert "30:e sekund" in text, name
+
+    testprotocol_one_line = re.sub(r"\s+", " ", docs["TESTPROTOCOL.md"])
+    assert "Ingen ny release eller tagg ska skapas om anvandaren bara ber om backend-push" in testprotocol_one_line
 
 
 def test_allocation_observations_github_sync_is_wired():
@@ -622,7 +716,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "data-productivity-upload-panel" not in allocation_tools
     assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation_tools
     assert "productivity_pallet" in allocation_tools
-    assert "Palllastningslogg" in allocation_tools
+    assert "Pallastningslogg" in allocation_tools
     assert "PRODUCTIVITY_SHARED_UPLOAD_WORDS" in allocation_tools
     assert "v_ask_booking_putaway" in allocation_tools
     assert "ALLOCATION_SLOT_MIRRORS" in allocation_tools
@@ -674,20 +768,20 @@ def test_frontend_theme_toggle_is_wired_globally():
         assert 'src="/js/common.js?v=20260601-coredata-types"' in html
 
 
-def test_uploads_preview_is_available_for_local_and_persistent_files():
+def test_uploads_file_actions_are_explicit_download_or_open():
     frontend = ROOT / "app" / "frontend"
     allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
-    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     coredata_router = (ROOT / "app" / "backend" / "routers" / "coredata.py").read_text(encoding="utf-8")
 
-    assert "data-preview-file-key" in allocation_tools
-    assert "openAllocationLocalFilePreview" in allocation_tools
-    assert "openAllocationPersistentFilePreview" in allocation_tools
-    assert "/api/coredata/files/${encodeURIComponent(key)}/preview" in allocation_tools
-    assert "Filförhandsvisning" in allocation_tools
-    assert "allocation-file-preview-modal" in styles
-    assert '@router.get("/files/{file_key}/preview")' in coredata_router
-    assert "_persistent_data_preview_payload" in coredata_router
+    assert "data-preview-file-key" not in allocation_tools
+    assert "data-preview-file-source" not in allocation_tools
+    assert "data-download-persistent-file" in allocation_tools
+    assert "data-download-local-file" in allocation_tools
+    assert "data-open-local-ref" in allocation_tools
+    assert "data-open-local-folder" in allocation_tools
+    assert "/api/desktop/files/${encodeURIComponent(entry.localRef)}/open" in allocation_tools
+    assert '@router.get("/files/{file_key}/download")' in coredata_router
+    assert "download_coredata_file" in coredata_router
 
 
 def test_data_fetch_plan_columns_are_user_editable():
@@ -698,9 +792,14 @@ def test_data_fetch_plan_columns_are_user_editable():
 
     assert ">Tolka</button>" in html
     assert "Tolka med MiniMax</button>" not in html
+    assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" />' in html
+    assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" value=' not in html
+    assert 'src="/js/data_fetch.js?v=20260605-max-rows"' in html
     assert 'id="dataFetchRun" type="button" disabled' in html
     assert 'id="dataFetchExport" type="button" disabled' in html
     assert "dataFetchUpdateActions" in data_fetch
+    assert 'document.getElementById("dataFetchMaxRows").value || 500' not in data_fetch
+    assert "if (!rawValue) return null;" in data_fetch
     assert "resetDataFetchForPromptEdit" in data_fetch
     assert '!dataFetchState.result?.session_id' in data_fetch
     assert "pendingRemovedColumns" in data_fetch
@@ -1337,13 +1436,17 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert '<link rel="apple-touch-icon" href="/app-icon-192.png" />' in html
     assert '<link rel="manifest" href="/manifest.webmanifest" />' in html
     assert 'type="file" accept="image/*,video/*" multiple' in html
-    assert "uppladdning startar direkt" in html
+    assert "uppladdningen kör en fil i taget" in html
     assert "metaUploadButton" not in html
     assert 'id="metaProgress"' in html
+    assert 'role="progressbar"' in html
     assert 'XMLHttpRequest' in js
     assert "META_UPLOAD_FILES_PER_REQUEST = 1" in js
     assert "start += META_UPLOAD_FILES_PER_REQUEST" in js
     assert "uploadWithProgress(batch" in js
+    assert "formatEta" in js
+    assert "uploadStartedAtMs" in js
+    assert "fil ${activeIndex + 1} av ${selectedFiles.length}" in js
     assert 'xhr.upload.addEventListener("progress"' in js
     assert 'xhr.open("POST", "/api/meta/uploads")' in js
     assert "FormData" in js
@@ -1375,6 +1478,7 @@ def test_super_user_meta_view_lists_uploaded_media():
     frontend = ROOT / "app" / "frontend"
     html = (frontend / "meta.html").read_text(encoding="utf-8")
     js = (frontend / "js" / "meta.js").read_text(encoding="utf-8")
+    api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
@@ -1395,7 +1499,13 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert 'api.get("/api/meta/shipment-observations?limit=200"' in js
     assert "/api/meta/uploads/${encodeURIComponent(item.id)}/content" in js
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
-    assert "api.download(mediaUrl(item)" in js
+    assert "api.download(mediaUrl(item, { download: true })" in js
+    assert "appendQuery" in js
+    assert "download: true" in js
+    assert "{ direct: true }" in js
+    assert "variant: kind === \"video\" ? \"playable\" : \"\"" in js
+    assert "function downloadDirect" in api_js
+    assert 'fetch(path, { method: "HEAD", credentials: "include" })' in api_js
     assert "api.del(`/api/meta/uploads/${encodeURIComponent(item.id)}`" in js
     assert "Ladda ner" in js
     assert "Radera" in js
@@ -1467,16 +1577,29 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "productivityUploads?.syncAllocationUploads" in allocation
     assert "Kunde inte synka produktivitetsfiler till Uppladdningar." in allocation
     assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation
-    assert "Palllastningslogg" in allocation
+    assert "Pallastningslogg" in allocation
     assert "data-productivity-upload-panel" not in allocation
     assert "allocationDropSlotsForTarget" in allocation
     assert "data-drop-slot" in allocation
     assert "fallbackSlotKey" in allocation
     assert 'data-allocation-drop data-drop-scope="flow"' in allocation
     assert "event.stopPropagation()" in allocation
-    assert "Detalj kundorder(alla)" in allocation
-    assert "Detalj kundorder(alla)" in catalog
-    assert "Detalj kundorder(alla)" in flows
+    assert "Detalj Kundorder (Alla)" in allocation
+    assert "Detalj Kundorder (Alla)" in catalog
+    assert "Detalj Kundorder (Alla)" in flows
+    assert "Detalj Kundorder (Alla) (kundnamn)" not in catalog
+    assert "Detalj Kundorder (Alla) (kundnamn)" not in flows
+    assert "Buffertpall" in allocation
+    assert "Buffertpall" in catalog
+    assert "Buffertpall" in flows
+    assert "Ej Inlagrade Artiklar" in allocation
+    assert "Ej Inlagrade Artiklar" in catalog
+    assert "Ej Inlagrade Artiklar" in flows
+    assert "Pallastningslogg" in allocation
+    assert "Palllastningslogg" not in allocation
+    assert '"pallastningslogg"' in allocation
+    assert '"pallastningslogg"' in common
+    assert "Plocklogg Full" in allocation
     assert "ALLOCATION_SLOT_LABEL_ALIASES" in allocation
     assert "function allocationUploadSlotLabel(slot)" in allocation
     assert "allocationUploadSlotLabel({ key, label: input.label })" in allocation
@@ -1486,8 +1609,14 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert '"detalj kundorder(alla)"' in common
     assert "Beställningslinjer" not in catalog
     assert "Beställningslinjer" not in flows
-    assert "Saldo ink. Automation" in allocation
-    assert "Saldo ink. Automation" in catalog
+    assert "Saldo Inkl. Automation" in allocation
+    assert "Saldo Inkl. Automation" in catalog
+    assert "Saldo Inkl. Automation" in flows
+    assert "Saldo Inkl. Automation (Utbest" not in catalog
+    assert "Saldo Inkl. Automation (Utbest" not in flows
+    assert "Item Option" in allocation
+    assert "Item Option" in catalog
+    assert "Item Option" in flows
     assert "Saldo / automation" not in catalog
     assert '"not_putaway", "wms_booking"' in catalog
     assert '"not_putaway", "wms_booking"' in flows
@@ -1524,11 +1653,11 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "const skipCache = options.skipCache !== false" in allocation
     assert 'loadAllocationCoreDataStatus({ skipCache: true })' in allocation
     assert 'window.api?.clearGetCache?.((key) => String(key || "").includes("/api/coredata/files"))' in allocation
-    assert "Alternativ leveransadress" in allocation
+    assert "Alternativ Leveransadress" in allocation
     assert "Godsdeklaration" in catalog
     assert "Godsdeklaration" in flows
     assert "Orderöversikt (adressnummer)" in catalog
-    assert "Alternativ leveransadress" in catalog
+    assert "Alternativ Leveransadress" in catalog
     assert "item_security_info" in catalog
     assert "flow_goods_declaration" in flows
 

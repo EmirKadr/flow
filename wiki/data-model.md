@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-04
 tags: [databas, modeller]
 ---
 
@@ -22,10 +22,11 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
 | `user_wait_metrics` | `UserWaitMetric` | Tyst vantetids- och klientprestanda for Historik/Halsa | `business_id`, `user_id`, `event_type`, `view_id`, `target`, `duration_ms`, `status`, `detail`, `created_at` |
+| `user_interaction_events` | `UserInteractionEvent` | Tyst interaction-tracking for Historik > Funktioner/Knappar/Kolumner/Floden/AI-analys | `business_id`, `user_id`, `event_type`, `view_id`, `control_id`, `feature`, `flow_id`, `table_key`, `column_label`, `client_surface`, `detail`, `created_at` |
 | `app_settings` | `AppSetting` | Verksamhetsspecifika settings JSON/text | `business_id`, `key`, `value`, `updated_by` |
 | `coredata_files` | `CoreDataFile` | Central sanning for uppladdade coredata-karnfiler | `business_code`, `file_type`, `filename`, `content_hash`, `data`, `uploaded_by`, `updated_at` |
 | `meta_media_uploads` | `MetaMediaUpload` | Publikt uppladdade bilder/videor for senare LLM-analys | `batch_id`, `original_filename`, `stored_filename`, `content_type`, `media_type`, `size_bytes`, `duration_seconds`, `content_hash`, `data`, `status`, `analysis`, `source`, `created_at` |
-| `meta_shipment_observations` | `MetaShipmentObservation` | Sändningsrader extraherade från Meta-videor | `media_upload_id`, `label_image_upload_id`, `video_hash`, `label_image_hash`, `record_hash`, `order_number`, `shipment_number`, `username`, `customer_name`, `pallet_id`, `deviations`, `analysis_status` |
+| `meta_shipment_observations` | `MetaShipmentObservation` | Analysrader for Meta-videor | `media_upload_id`, `label_image_upload_id`, `video_hash`, `label_image_hash`, `record_hash`, `order_number`, `shipment_number`, `username`, `customer_name`, `pallet_id`, `deviations`, `analysis_status` |
 
 ## Verksamheter
 
@@ -84,8 +85,8 @@ Viktiga settings:
 - `data` innehaller sjalva bilden/videon som blob. List-endpointen returnerar inte blobben; Super User hamtar/visar en fil via separat content-endpoint.
 - Super User kan radera en meta-rad via Meta-vyn. Da tas blobben bort och audit-loggen sparar bara metadata, inte filens bytes.
 - `status=pending_analysis` betyder att filen finns redo for ett senare LLM-flode. `analysis` ar reserverat for analysresultat.
-- `meta_shipment_observations` skapas for videor. Raden länkar till videon med `media_upload_id` och `video_hash`, kan länka till en stillbild på etiketten med `label_image_upload_id`, och har `record_hash` som hash av video-hash plus de normaliserade tabellfälten. `shipment_number` är sändningsnumret från `Sändnings-ID` på transportetiketten och ingår i `record_hash`. API:t returnerar ocksa videons filnamn och langd via relationen till `meta_media_uploads`.
-- Gemini-analysen ska fylla ordernummer, sändningsnummer, användarnamn, kund, pall-id och avvikelser genom att väga ihop både videobild och ljud. Transportetiketten är primär källa för `Sändnings-ID`, användare och avsändarreferens; innehållsförteckningen kan ge ordernummerlista, kund och Box ID/pall-id. Osäkra fält ger `analysis_status=manual_review` och `uncertainty_notes`.
+- `meta_shipment_observations` skapas for videor. Raden lankar till videon med `media_upload_id` och `video_hash`, kan lanka till en best-effort-stillbild med `label_image_upload_id`, och har `record_hash` som hash av video-hash, eventuell stillbild, pall-id och avvikelser. Ordernummer, sandningsnummer, anvandarnamn och kund ingar inte langre i hashen eftersom de ska fyllas fran uppladdad data via pall-id senare.
+- Gemini-analysen anvander bara extraherat ljud fran videon och ska fylla `pallet_id` och `deviations`. `order_number`, `shipment_number`, `username` och `customer_name` lamnas tomma. Osakra eller saknade pall-id/avvikelser ger `analysis_status=manual_review`; misslyckad ljudextraktion ger `analysis_status=analysis_failed`.
 
 ## Kallor
 
@@ -97,3 +98,4 @@ Viktiga settings:
 - `../app/backend/settings_service.py`
 - `../app/alembic/versions/0027_meta_shipment_number.py`
 - `../app/alembic/versions/0028_coredata_files.py`
+- `../app/alembic/versions/0032_user_interaction_events.py`

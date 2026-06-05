@@ -648,8 +648,8 @@ def _row_value(row: dict[str, Any], column_id: str) -> Any:
     return row.get(actual_key) if actual_key is not None else None
 
 
-def project_rows(rows: list[dict[str, Any]], output_columns: list[str], max_rows: int) -> list[dict[str, Any]]:
-    limited = rows[: max(0, max_rows)]
+def project_rows(rows: list[dict[str, Any]], output_columns: list[str], max_rows: int | None) -> list[dict[str, Any]]:
+    limited = rows if max_rows is None else rows[: max(0, max_rows)]
     return [
         {column_id: _row_value(row, column_id) for column_id in output_columns}
         for row in limited

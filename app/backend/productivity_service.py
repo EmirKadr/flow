@@ -14,6 +14,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .compiled_data_paths import compiled_data_root
 from .coredata_service import (
     business_coredata_dir,
     clear_coredata_file,
@@ -55,9 +56,9 @@ class SectionSpec:
 
 
 SOURCE_SPECS = (
-    SourceFileSpec("pick", "Plocklogg", "v_ask_pick_log_full"),
+    SourceFileSpec("pick", "Plocklogg Full", "v_ask_pick_log_full"),
     SourceFileSpec("trans", "Translogg", "v_ask_trans_log"),
-    SourceFileSpec("pallet", "Palllastningslogg", "v_ask_palletloading_log"),
+    SourceFileSpec("pallet", "Pallastningslogg", "v_ask_palletloading_log"),
     SourceFileSpec("kpi", "KPI-Mål", "v_ask_kpi_target", required=True, visible=False),
 )
 
@@ -78,7 +79,7 @@ COMPILED_PRODUCTIVITY_LOG_SPECS = (
     CompiledProductivityLogSpec(
         "productivity_pick_observations",
         "pick",
-        "Plocklogg sammanstalld data",
+        "Plocklogg Full sammanstalld data",
         "v_ask_pick_log_full_observations.csv.gz",
         "rowid",
     ),
@@ -92,7 +93,7 @@ COMPILED_PRODUCTIVITY_LOG_SPECS = (
     CompiledProductivityLogSpec(
         "productivity_pallet_observations",
         "pallet",
-        "Palllastningslogg sammanstalld data",
+        "Pallastningslogg sammanstalld data",
         "v_ask_palletloading_log_observations.csv.gz",
         "timestamp",
     ),
@@ -144,7 +145,8 @@ def productivity_compiled_log_path(
     spec = COMPILED_PRODUCTIVITY_LOG_BY_SOURCE.get(file_type)
     if spec is None:
         raise ProductivitySourceError("Okänd produktivitetslogg")
-    return business_coredata_dir(reference_dir, business_code) / spec.filename
+    base_dir = Path(reference_dir) if reference_dir is not None else compiled_data_root()
+    return business_coredata_dir(base_dir, business_code) / spec.filename
 
 
 def build_productivity_compiled_data_status(
@@ -152,8 +154,9 @@ def build_productivity_compiled_data_status(
     business_code: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     files: dict[str, dict[str, Any]] = {}
+    base_dir = Path(reference_dir) if reference_dir is not None else compiled_data_root()
     for spec in COMPILED_PRODUCTIVITY_LOG_SPECS:
-        path = business_coredata_dir(reference_dir, business_code) / spec.filename
+        path = business_coredata_dir(base_dir, business_code) / spec.filename
         files[spec.key] = _compiled_status_payload(spec, path)
     return files
 
@@ -175,6 +178,9 @@ def default_reference_dir() -> Path:
     configured_data_dir = (settings.PRODUCTIVITY_DATA_DIR or "").strip()
     if configured_data_dir:
         return Path(configured_data_dir)
+    persistent_root = compiled_data_root()
+    if persistent_root is not None:
+        return persistent_root
     configured = (settings.PRODUCTIVITY_REFERENCE_DIR or "").strip()
     if configured:
         return Path(configured)
@@ -721,7 +727,11 @@ def read_productivity_targets(
     *,
     db: Session | None = None,
 ) -> dict[str, Any]:
-    path = find_kpi_file(reference_dir, business_code, db=db)
+    return read_productivity_targets_from_file(find_kpi_file(reference_dir, business_code, db=db))
+
+
+def read_productivity_targets_from_file(path: Path | str) -> dict[str, Any]:
+    path = Path(path)
     rows = _read_csv(path)
     targets = _parse_kpi_rows(rows)
     return {

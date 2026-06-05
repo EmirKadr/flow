@@ -20,8 +20,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(autouse=True)
 def clear_allocation_sessions():
+    for session in bridge.SESSIONS.values():
+        bridge._remove_session(session)
     bridge.SESSIONS.clear()
     yield
+    for session in bridge.SESSIONS.values():
+        bridge._remove_session(session)
     bridge.SESSIONS.clear()
 
 
@@ -135,6 +139,40 @@ def test_save_upload_can_reuse_content_addressed_cache(tmp_path, monkeypatch):
         uncached.unlink(missing_ok=True)
 
 
+def test_save_upload_streams_content_without_full_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
+    monkeypatch.setattr(bridge, "UPLOAD_READ_CHUNK_SIZE", 4)
+
+    class ChunkedUpload:
+        filename = "orders.csv"
+
+        def __init__(self, content: bytes):
+            self.content = content
+            self.offset = 0
+            self.read_sizes: list[int] = []
+
+        async def read(self, size: int = -1) -> bytes:
+            self.read_sizes.append(size)
+            if size < 0:
+                raise AssertionError("save_upload should request bounded chunks")
+            if self.offset >= len(self.content):
+                return b""
+            end = min(self.offset + size, len(self.content))
+            chunk = self.content[self.offset:end]
+            self.offset = end
+            return chunk
+
+    content = b"Artikel;Antal\nA1;2\nA2;3\n"
+    upload = ChunkedUpload(content)
+
+    path = asyncio.run(bridge.save_upload(upload, cache=True))
+
+    assert path.is_file()
+    assert path.read_bytes() == content
+    assert len(upload.read_sizes) > 2
+    assert all(size == 4 for size in upload.read_sizes)
+
+
 def test_save_upload_replaces_previous_cache_for_same_scoped_name(tmp_path, monkeypatch):
     monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
     cache_key = "user:1:orders:orders.csv"
@@ -146,6 +184,32 @@ def test_save_upload_replaces_previous_cache_for_same_scoped_name(tmp_path, monk
     assert not first.exists()
     assert second.is_file()
     assert second.read_bytes() == b"Artikel;Antal\nA1;3\n"
+
+
+def test_run_flow_handler_prunes_old_sessions(monkeypatch):
+    bridge.SESSIONS["old-session"] = {
+        "flow_id": "forecast",
+        "created_at": 1,
+        "tables": {},
+        "labels": {},
+        "artifacts": {},
+        "download_files": {},
+    }
+    monkeypatch.setattr(bridge, "SESSION_TTL_SECONDS", 10)
+
+    def handler(_files, _params):
+        return {"summary": {}, "tables": [], "artifacts": {}, "log": []}
+
+    monkeypatch.setattr(
+        bridge,
+        "_native_flows",
+        lambda: SimpleNamespace(FLOW_BY_ID={"demo": {"handler": handler}}),
+    )
+
+    result = bridge.run_flow_handler("demo", {}, {})
+
+    assert "old-session" not in bridge.SESSIONS
+    assert result["session_id"] in bridge.SESSIONS
 
 
 def test_upload_cache_cleanup_expires_old_files(tmp_path, monkeypatch):
@@ -448,12 +512,9 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
         assert kwargs == {"cache_scope": "user:7"}
         return {"orders": tmp_path / "orders.csv"}, {}, []
 
-    def fake_business_paths(business_code):
+    def fake_article_max_path(business_code):
         captured["business_code"] = business_code
-        return {
-            "observations_path": str(tmp_path / "r3" / "observations.csv.gz"),
-            "article_max_path": str(tmp_path / "r3" / "artikel_max.csv"),
-        }
+        return str(tmp_path / "r3" / "artikel_max.csv")
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -462,7 +523,7 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
         return {"flow_id": flow_id, "tables": [], "summary": {}}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
-    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -486,12 +547,9 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
         assert kwargs == {"cache_scope": "user:7"}
         return {"orders": tmp_path / "orders.csv"}, {bridge.PROCESS_AREA_FOCUS_PARAM: "R3"}, []
 
-    def fake_business_paths(business_code):
+    def fake_article_max_path(business_code):
         captured["business_code"] = business_code
-        return {
-            "observations_path": str(tmp_path / business_code.lower() / "observations.csv.gz"),
-            "article_max_path": str(tmp_path / business_code.lower() / "artikel_max.csv"),
-        }
+        return str(tmp_path / business_code.lower() / "artikel_max.csv")
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -500,7 +558,7 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
         return {"flow_id": flow_id, "tables": [], "summary": {}}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
-    monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
 
@@ -510,6 +568,35 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
     assert captured["business_code"] == "R3"
     assert captured["default_max_csv_path"] == str(tmp_path / "r3" / "artikel_max.csv")
     assert captured["files"] == {"orders": tmp_path / "orders.csv"}
+
+
+def test_allocation_run_flow_requires_bufferpall_history_when_article_max_is_missing(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="R3")
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {"orders": tmp_path / "orders.csv"}, {}, []
+
+    def fake_article_max_path(_business_code):
+        raise FileNotFoundError("Ingen buffertpallhistorik finns for verksamheten. Ladda upp buffertpall forst.")
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
+
+    assert exc_info.value.status_code == 409
+    assert "buffertpallhistorik" in exc_info.value.detail
 
 
 def test_allocation_run_flow_uses_business_coredata_item_option(monkeypatch, tmp_path):
@@ -909,6 +996,47 @@ def test_run_flow_handler_stores_artifacts(monkeypatch):
     assert session["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S1"
 
 
+def test_flow_forecast_keeps_artifacts_light(monkeypatch, tmp_path):
+    pd = pytest.importorskip("pandas")
+    from warehouse_tools import flows as warehouse_flows
+    from warehouse_tools.mg_forecast import forecast as forecast_module
+
+    files = {}
+    for key in (
+        "orders",
+        "overview",
+        "buffer",
+        "custom",
+        "item",
+        "item_alias",
+        "dimension",
+        "pallet_type",
+        "item_option",
+    ):
+        path = tmp_path / f"{key}.csv"
+        path.write_text("", encoding="utf-8")
+        files[key] = path
+
+    def fake_stage_support_files(_file_map, staging_root):
+        return Path(staging_root) / "Fore"
+
+    def fake_run_forecast(_orders_path, *, data_fore):
+        assert data_fore is not None
+        return (
+            pd.DataFrame([{"SÃ¤ndningsnr": "S1", "Predikterade pallplatser": 1.5}]),
+            {"antal_grupper": 1, "summa_pallplatser": 1.5, "medel_pallplatser": 1.5, "max_pallplatser": 1.5},
+        )
+
+    monkeypatch.setattr(forecast_module, "stage_support_files", fake_stage_support_files)
+    monkeypatch.setattr(forecast_module, "run_forecast", fake_run_forecast)
+
+    result = warehouse_flows.flow_forecast(files, {})
+
+    assert "forecast_json" not in result["artifacts"]
+    assert result["tables"][0][0] == "forecast"
+    assert "session-tabell" in "\n".join(result["log"])
+
+
 def test_run_flow_handler_returns_friendly_error_without_trace(monkeypatch):
     def handler(_files, _params):
         raise ValueError("No objects to concatenate")
@@ -1245,11 +1373,15 @@ def test_native_detector_recognizes_current_upload_filename_hints(tmp_path):
     cases = {
         "customer_order_details_all-20260519090640.csv": "orders",
         "customer_order_details-20260519090640.csv": "orders",
-        "item_option-20260519090653.csv": "item",
+        "item_option-20260519090653.csv": "item_option",
         "v_ask_article_bufferpallet-20260519090645.csv": "buffer",
         "v_ask_article_buffertpallet-20260519090645.csv": "buffer",
         "v_ask_booking_putaway-20260519090707.csv": "wms_booking",
+        "Ej Inlagrade Artiklar-20260519090707.csv": "not_putaway",
         "v_ask_trans_log-20260519051930.csv": "wms_trans",
+        "Plocklogg Full-20260519051930.csv": "wms_pick",
+        "v_ask_palletloading_log-20260519051930.csv": "productivity_pallet",
+        "Pallastningslogg-20260519051930.csv": "productivity_pallet",
         "v_ask_custom_adr-20260526135512.csv": "custom_adr",
         "ej_inlagrade-20260519090707.csv": "not_putaway",
         "not_putaway-20260519090707.csv": "not_putaway",
@@ -1474,6 +1606,7 @@ def test_run_flow_handler_serializes_tables_and_keeps_session(monkeypatch):
     assert result["tables"][0]["label"] == "Demoresultat"
     assert result["tables"][0]["table"]["row_count"] == 2
     assert result["session_id"] in bridge.SESSIONS
+    assert bridge.SESSIONS[result["session_id"]]["tables"]["main"]["__allocation_table_file__"] is True
     assert bridge.table_column_text(result["session_id"], "main", 0) == {"text": "A100"}
 
 
@@ -1492,7 +1625,8 @@ def test_run_overview_check_keeps_avvikelse_type_column_in_api_result():
 
     assert orderkontroll["table"]["columns"][0] == "Avvikelsetyp"
     assert orderkontroll["table"]["rows"][0][0] == "HIB \u00f6ver status 31 utan butikss\u00e4ndning"
-    assert list(bridge.SESSIONS[result["session_id"]]["tables"]["orderkontroll"].columns)[0] == "Avvikelsetyp"
+    stored_table = bridge.session_table(bridge.SESSIONS[result["session_id"]], "orderkontroll")
+    assert list(stored_table.columns)[0] == "Avvikelsetyp"
 
 
 def test_open_excel_result_writes_safe_xlsx_and_opens_path(monkeypatch):

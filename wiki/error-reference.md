@@ -1,13 +1,13 @@
 ---
 title: Felkoder och felmeddelanden
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-03
 tags: [felkoder, http, support, api, chat]
 ---
 
 # Felkoder och felmeddelanden
 
-Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statuskod + text oversattas till enkel atgard. Super User kan se vanliga anvandartraffade fel i Historik > Felkoder.
+Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML-felsidor fran server/proxy till kort status som `HTTP 502 (Bad Gateway)`. I chatten ska statuskod + text oversattas till enkel atgard. Super User kan se vanliga anvandartraffade fel i Historik > Felkoder.
 
 ## HTTP/statuskoder i appen
 
@@ -26,7 +26,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | 413 | Request Entity Too Large | Excelimport ar for stor | Minska filen, dela upp importen. |
 | 422 | Validation Error | Pydantic/API-validering: fel typ, saknat falt, losenordslangd | Ratta formulardata eller API-payload. |
 | 500 | Server Error | Ohanterat serverfel, berakning eller datalasning misslyckades | Rapportera med exakt text, tidpunkt och vy. |
-| 502 | Bad Gateway | Extern modell/API gav fel svar, t.ex. MiniMax | Kontrollera API-nyckel, modellnamn, kvot och serverlogg. |
+| 502 | Bad Gateway | Proxy/server kunde inte na backend, ofta vid Render-omstart/OOM, eller extern modell/API gav fel svar, t.ex. MiniMax | Om flera vanliga API:er visar 502: kontrollera Render-events, minne, deploy och serverstatus. Om det bara galler modellflode: kontrollera API-nyckel, modellnamn, kvot och serverlogg. |
 | 503 | Service Unavailable | Lagerverktyg/offentlig token/beroende saknas eller appchatten saknar API-nyckel | Kontrollera serverkonfiguration eller forsok senare. |
 | 504 | Gateway Timeout | Extern modell/API svarade inte i tid | Forsok igen och kontrollera natverk/MiniMax om det upprepas. |
 
@@ -38,6 +38,7 @@ Kort svar: frontend visar oftast serverns `detail` direkt. I chatten ska statusk
 | "Kunde inte ansluta till servern..." | `api.js` | Fetch kunde inte na backend | Kontrollera adress, backend och natverk. |
 | "Unauthorized" | `api.js` | 401 pa skyddad API-vag | Logga in igen. |
 | "password_setup_required" | `api.js` | API kraver forsta losenord | Skapa losenord. |
+| "Servern svarade med HTTP NNN (...)" | `api.js` | Server/proxy svarade med text eller HTML utan JSON-detail | Be anvandaren ange statuskod, vy och tidpunkt. Raw HTML visas inte langre i dokumentloggen eller Felkoder. |
 | "HTTP NNN" | `api.js`/lager | Server svarade utan tydligt detail | Be anvandaren ange Network-status och vy. |
 
 ## Meta-uppladdning

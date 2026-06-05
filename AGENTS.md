@@ -126,6 +126,14 @@ anvandarhandling ska darfor ha synlig loggning nar det ar relevant:
 - loggar far inte innehalla losenord, cookies, API-nycklar, privata URL:er,
   request bodies eller privata rad-/kunddata
 
+Smal tracking-exception for Historik/interaction-events: klartext-vardeprov far
+bara sparas for uttryckligt trackade anvandarinteraktioner och bara nar
+backend-flaggan `TRACKING_ALLOW_VALUE_SAMPLES=true` ar satt. Default ar false
+och backend ska da strippa eller ersatta vardeprover med langd/antal aven om
+klienten skickar dem. Undantaget galler aldrig losenord, cookies, tokens,
+API-nycklar, privata URL:er, filnamn, filvagar, request bodies,
+provider-detaljer eller privata externa API-kontrakt.
+
 Backend-audit och frontendens dokumentlogg ar olika saker. Audit ar sparad
 historik for felsokning och uppfoljning. Dokumentloggen ar anvandarnara feedback
 i aktuell browser/session. Nar ett flode paverkar anvandaren ska bada anvandas

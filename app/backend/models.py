@@ -201,6 +201,40 @@ class UserWaitMetric(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UserInteractionEvent(Base):
+    __tablename__ = "user_interaction_events"
+    __table_args__ = (
+        Index("ix_user_interaction_events_created_at", "created_at"),
+        Index("ix_user_interaction_events_business_created", "business_id", "created_at"),
+        Index("ix_user_interaction_events_user_created", "user_id", "created_at"),
+        Index("ix_user_interaction_events_view_control", "view_id", "control_id"),
+        Index("ix_user_interaction_events_feature_flow", "feature", "flow_id"),
+        Index("ix_user_interaction_events_table_column", "table_key", "column_label"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    view_id: Mapped[str | None] = mapped_column(String(80))
+    page_path: Mapped[str | None] = mapped_column(String(300))
+    control_id: Mapped[str | None] = mapped_column(String(160))
+    control_label: Mapped[str | None] = mapped_column(String(180))
+    control_role: Mapped[str | None] = mapped_column(String(80))
+    feature: Mapped[str | None] = mapped_column(String(80))
+    flow_id: Mapped[str | None] = mapped_column(String(120))
+    table_key: Mapped[str | None] = mapped_column(String(120))
+    table_label: Mapped[str | None] = mapped_column(String(160))
+    column_index: Mapped[int | None] = mapped_column(Integer)
+    column_label: Mapped[str | None] = mapped_column(String(180))
+    row_count: Mapped[int | None] = mapped_column(Integer)
+    client_surface: Mapped[str | None] = mapped_column(String(40))
+    interaction_id: Mapped[str | None] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")
+    detail: Mapped[dict | None] = mapped_column(JsonField)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CoreDataFile(Base):
     __tablename__ = "coredata_files"
     __table_args__ = (

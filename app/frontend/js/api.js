@@ -21,6 +21,42 @@ function connectionError(path, originalError) {
   return err;
 }
 
+const HTTP_STATUS_LABELS = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  409: "Conflict",
+  413: "Request Entity Too Large",
+  422: "Validation Error",
+  429: "Too Many Requests",
+  500: "Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
+function httpStatusLabel(status) {
+  const code = Number(status || 0);
+  if (!code) return "serverfel";
+  const label = HTTP_STATUS_LABELS[code];
+  return label ? `HTTP ${code} (${label})` : `HTTP ${code}`;
+}
+
+function isLikelyHtmlDocument(value) {
+  const text = String(value || "").trim().slice(0, 1000).toLowerCase();
+  return (
+    text.startsWith("<!doctype html") ||
+    text.startsWith("<html") ||
+    /<html[\s>]/.test(text) ||
+    /<body[\s>]/.test(text)
+  );
+}
+
+function htmlErrorMessage(status) {
+  return `Servern svarade med ${httpStatusLabel(status)}.`;
+}
+
 function errorMessageFromBody(body, status) {
   const detail = body?.detail ?? body?.error;
   if (typeof detail === "string") return detail;
@@ -32,13 +68,18 @@ function errorMessageFromBody(body, status) {
       return `HTTP ${status}`;
     }
   }
-  if (typeof body === "string" && body.trim()) return body;
-  return `HTTP ${status}`;
+  if (typeof body === "string" && body.trim()) {
+    if (isLikelyHtmlDocument(body)) return htmlErrorMessage(status);
+    return truncateErrorText(body, 500) || httpStatusLabel(status);
+  }
+  return httpStatusLabel(status);
 }
 
 const CLIENT_ERROR_REPORT_PATH = "/api/audit/client-error";
 const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";
 const WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
+const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";
+const PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
 const API_PREFETCH_DEFAULT_TTL_MS = 45 * 1000;
 const API_GET_CACHE_STORAGE_PREFIX = "flow-api-get-cache-v1:";
 const API_NETWORK_ERROR_REPORT_DEDUPE_MS = 60 * 1000;
@@ -160,7 +201,7 @@ function pathWithoutQuery(path) {
   }
 }
 
-function errorDetailForReport(body) {
+function errorDetailForReport(body, status = 0) {
   const detail = body?.detail ?? body?.error;
   if (typeof detail === "string") return truncateErrorText(detail);
   if (Array.isArray(detail)) return `${detail.length} valideringsfel`;
@@ -169,7 +210,10 @@ function errorDetailForReport(body) {
     const keys = Object.keys(detail).slice(0, 6).join(", ");
     return keys ? `Detaljfält: ${keys}` : null;
   }
-  if (typeof body === "string") return truncateErrorText(body);
+  if (typeof body === "string") {
+    if (isLikelyHtmlDocument(body)) return `HTML-felsida fran servern: ${httpStatusLabel(status)}`;
+    return truncateErrorText(body);
+  }
   return null;
 }
 
@@ -190,6 +234,8 @@ function shouldReportApiError(path, status) {
   if (safePath === CLIENT_ERROR_REPORT_PATH) return false;
   if (safePath === CLIENT_EVENT_REPORT_PATH) return false;
   if (safePath === WAIT_METRIC_REPORT_PATH) return false;
+  if (safePath === INTERACTION_EVENT_REPORT_PATH) return false;
+  if (safePath === PUBLIC_INTERACTION_EVENT_REPORT_PATH) return false;
   if (safePath === "/api/auth/me") return false;
   if (status === 401) return false;
   return true;
@@ -206,6 +252,8 @@ function shouldRecordApiWaitMetric(path, options = {}) {
   if (safePath === CLIENT_ERROR_REPORT_PATH) return false;
   if (safePath === CLIENT_EVENT_REPORT_PATH) return false;
   if (safePath === WAIT_METRIC_REPORT_PATH) return false;
+  if (safePath === INTERACTION_EVENT_REPORT_PATH) return false;
+  if (safePath === PUBLIC_INTERACTION_EVENT_REPORT_PATH) return false;
   if (safePath === "/api/auth/me") return false;
   return typeof window.flowRecordWaitMetric === "function";
 }
@@ -238,7 +286,7 @@ function reportApiError(path, details = {}) {
     status,
     error_code: truncateErrorText(details.error_code || errorCodeForReport(details.body, status), 120),
     message: truncateErrorText(details.message),
-    detail: errorDetailForReport(details.body) || truncateErrorText(details.detail),
+    detail: errorDetailForReport(details.body, status) || truncateErrorText(details.detail),
     page_path: pathWithoutQuery(window.location?.pathname || "/"),
   };
   if (status === 0) {
@@ -275,6 +323,46 @@ function reportClientEvent(eventType, details = {}) {
   }).catch(() => {});
 }
 
+function shouldTrackApiInteraction(path, method, options = {}) {
+  if (options.trackInteraction === false) return false;
+  const safePath = pathWithoutQuery(path);
+  if (!safePath.startsWith("/api/")) return false;
+  if (safePath === CLIENT_ERROR_REPORT_PATH) return false;
+  if (safePath === CLIENT_EVENT_REPORT_PATH) return false;
+  if (safePath === WAIT_METRIC_REPORT_PATH) return false;
+  if (safePath === INTERACTION_EVENT_REPORT_PATH) return false;
+  if (safePath === PUBLIC_INTERACTION_EVENT_REPORT_PATH) return false;
+  if (safePath === "/api/auth/me") return false;
+  if (String(method || "GET").toUpperCase() === "GET" && !options.logGetUserEvent && options.trackGetInteraction !== true) {
+    return false;
+  }
+  return typeof window.flowTrack === "function";
+}
+
+function reportApiInteraction(path, method, status, options = {}, detail = {}) {
+  if (!shouldTrackApiInteraction(path, method, options)) return;
+  const safePath = pathWithoutQuery(path);
+  const context = typeof window.flowCurrentInteractionContext === "function"
+    ? window.flowCurrentInteractionContext()
+    : null;
+  window.flowTrack(options.telemetryEventType === "download" ? "download" : "api_request", {
+    interaction_id: context?.interaction_id,
+    control_id: context?.control_id || `api:${String(method || "GET").toUpperCase()}:${safePath}`,
+    control_label: context?.control_label || apiActionLabel(path, method),
+    feature: context?.feature || "api",
+    status: status || "ok",
+    detail: {
+      api_route: safePath,
+      method: String(method || "GET").toUpperCase(),
+      status_code: detail.status_code || 0,
+      error_code: detail.error_code || "",
+      cache_hit: Boolean(detail.cache_hit),
+      shared_in_flight: Boolean(detail.shared_in_flight),
+      source: options.telemetrySource || "foreground",
+    },
+  });
+}
+
 function apiLogTarget() {
   return window.flowLog?.append || window.appendAppLog || null;
 }
@@ -298,6 +386,8 @@ function apiActionLabel(path, method = "GET") {
   if (safePath === CLIENT_ERROR_REPORT_PATH) return "";
   if (safePath === CLIENT_EVENT_REPORT_PATH) return "";
   if (safePath === WAIT_METRIC_REPORT_PATH) return "";
+  if (safePath === INTERACTION_EVENT_REPORT_PATH) return "";
+  if (safePath === PUBLIC_INTERACTION_EVENT_REPORT_PATH) return "";
   if (safePath === "/api/auth/logout") return "Utloggning";
   if (safePath.startsWith("/api/assistant/chat")) return "Apphjälp";
   if (safePath.startsWith("/api/assistant/clear")) return "Apphjälpsdialog";
@@ -379,6 +469,8 @@ function shouldLogApiUserEvent(path, method, options = {}) {
   if (safePath === CLIENT_ERROR_REPORT_PATH) return false;
   if (safePath === CLIENT_EVENT_REPORT_PATH) return false;
   if (safePath === WAIT_METRIC_REPORT_PATH) return false;
+  if (safePath === INTERACTION_EVENT_REPORT_PATH) return false;
+  if (safePath === PUBLIC_INTERACTION_EVENT_REPORT_PATH) return false;
   if (safePath === "/api/auth/me") return false;
   if (String(method || "GET").toUpperCase() === "GET") return Boolean(options.logGetUserEvent);
   return true;
@@ -415,6 +507,7 @@ async function request(path, options = {}) {
   } = options;
   const logOptions = { logLabel, logUserEvent, logGetUserEvent, logSuccess, logFailure };
   const telemetryOptions = { telemetryEnabled, telemetryEventType, telemetrySource };
+  const interactionOptions = { ...options, logGetUserEvent, telemetryEventType, telemetrySource };
   const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
   const requestHeaders = isFormData ? headers : { "Content-Type": "application/json", ...headers };
   const method = String(rest.method || "GET").toUpperCase();
@@ -426,6 +519,7 @@ async function request(path, options = {}) {
     const cached = readApiGetCache(path);
     if (cached !== null) {
       reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { cache_hit: true });
+      reportApiInteraction(path, method, "ok", interactionOptions, { cache_hit: true });
       return cached;
     }
     if (useSharedInFlight) {
@@ -433,6 +527,7 @@ async function request(path, options = {}) {
       if (inFlight) {
         const body = await inFlight;
         reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { shared_in_flight: true });
+        reportApiInteraction(path, method, "ok", interactionOptions, { shared_in_flight: true });
         return cloneApiCacheValue(body);
       }
     }
@@ -459,12 +554,17 @@ async function request(path, options = {}) {
         status_code: 0,
         error_code: "network_error",
       });
+      reportApiInteraction(path, method, "error", interactionOptions, {
+        status_code: 0,
+        error_code: "network_error",
+      });
       logApiFailure(path, method, err, logOptions);
       throw err;
     }
 
     if (resp.status === 204) {
       reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: 204 });
+      reportApiInteraction(path, method, "ok", interactionOptions, { status_code: 204 });
       logApiSuccess(path, method, null, logOptions);
       return null;
     }
@@ -502,6 +602,10 @@ async function request(path, options = {}) {
         status_code: resp.status,
         error_code: errorCodeForReport(body, resp.status),
       });
+      reportApiInteraction(path, method, "error", interactionOptions, {
+        status_code: resp.status,
+        error_code: errorCodeForReport(body, resp.status),
+      });
       logApiFailure(path, method, err, logOptions);
       throw err;
     }
@@ -509,6 +613,7 @@ async function request(path, options = {}) {
       writeApiGetCache(path, body, cacheTtlMs);
     }
     reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
+    reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
     logApiSuccess(path, method, body, logOptions);
     return body;
   };
@@ -534,10 +639,95 @@ function filenameFromContentDisposition(value) {
   return match ? match[1].trim() : "";
 }
 
-async function download(path, fallbackFilename = "download") {
+function isHtmlContentType(value) {
+  return String(value || "").toLowerCase().includes("text/html");
+}
+
+function clickDownloadLink(path, filename) {
+  const link = document.createElement("a");
+  link.href = path;
+  link.download = filename || "download";
+  link.rel = "noopener";
+  link.dataset.trackIgnore = "true";
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => link.remove(), 1000);
+}
+
+async function downloadDirect(path, fallbackFilename = "download") {
   const method = "GET";
   const requestStartedAt = apiTelemetryNow();
   const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
+  const interactionOptions = { logGetUserEvent: true, telemetryEventType: "download", telemetrySource: "foreground", trackGetInteraction: true };
+  let resp;
+  try {
+    resp = await fetch(path, { method: "HEAD", credentials: "include" });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    const err = connectionError(path, error);
+    reportApiError(path, {
+      method,
+      status: 0,
+      error_code: "network_error",
+      message: err.message,
+    });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
+      status_code: 0,
+      error_code: "network_error",
+    });
+    reportApiInteraction(path, method, "error", interactionOptions, {
+      status_code: 0,
+      error_code: "network_error",
+    });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
+    throw err;
+  }
+
+  if (resp.status === 401 && !isAuthPath(path)) {
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401 });
+    if (!window.location.pathname.endsWith("/login.html")) {
+      window.location.href = "/login.html";
+    }
+    throw new Error("Unauthorized");
+  }
+
+  const ct = resp.headers.get("content-type") || "";
+  if (!resp.ok || isHtmlContentType(ct)) {
+    const err = new Error(resp.ok ? htmlErrorMessage(resp.status) : httpStatusLabel(resp.status));
+    err.status = resp.status;
+    reportApiError(path, {
+      method,
+      status: resp.status,
+      body: isHtmlContentType(ct) ? "<html>" : null,
+      message: err.message,
+    });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
+      status_code: resp.status,
+      error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+    });
+    reportApiInteraction(path, method, "error", interactionOptions, {
+      status_code: resp.status,
+      error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+    });
+    logApiFailure(path, method, err, { logGetUserEvent: true });
+    throw err;
+  }
+
+  const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
+  clickDownloadLink(path, filename);
+  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
+  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
+  apiUserLog(`Nedladdning startad: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
+  return { filename, direct: true };
+}
+
+async function download(path, fallbackFilename = "download", options = {}) {
+  if (options.direct) return downloadDirect(path, fallbackFilename);
+  const method = "GET";
+  const requestStartedAt = apiTelemetryNow();
+  const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
+  const interactionOptions = { logGetUserEvent: true, telemetryEventType: "download", telemetrySource: "foreground", trackGetInteraction: true };
   let resp;
   try {
     resp = await fetch(path, { credentials: "include" });
@@ -551,6 +741,10 @@ async function download(path, fallbackFilename = "download") {
       message: err.message,
     });
     reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
+      status_code: 0,
+      error_code: "network_error",
+    });
+    reportApiInteraction(path, method, "error", interactionOptions, {
       status_code: 0,
       error_code: "network_error",
     });
@@ -582,6 +776,10 @@ async function download(path, fallbackFilename = "download") {
       status_code: resp.status,
       error_code: errorCodeForReport(body, resp.status),
     });
+    reportApiInteraction(path, method, "error", interactionOptions, {
+      status_code: resp.status,
+      error_code: errorCodeForReport(body, resp.status),
+    });
     logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
   }
@@ -589,17 +787,12 @@ async function download(path, fallbackFilename = "download") {
   const blob = await resp.blob();
   const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
   const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
+  clickDownloadLink(objectUrl, filename);
   setTimeout(() => {
     URL.revokeObjectURL(objectUrl);
-    link.remove();
   }, 1000);
   reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
+  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
   apiUserLog(`Nedladdning klar: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
   return { filename };
 }

@@ -16,6 +16,7 @@ from .config import settings
 
 ERROR_WORDS = ("error", "exception", "traceback", "failed", "panic", "out of memory", "oom", "killed")
 WARNING_WORDS = ("warn", "warning", "timeout", "retry", "slow", "memory", "cpu", "connection")
+PROCESS_MEMORY_WARN_MB = 1536
 SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key|token|secret|password)=([^&\s]+)"),
     re.compile(r"(?i)(bearer\s+)[a-z0-9._~+/=-]+"),
@@ -222,9 +223,9 @@ def collect_render_logs(client: RenderClient, sid: str, oid: str, checks: list[d
         return {"lines": [], "error": "owner_id_missing"}
     start_time = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     attempts = (
-        ("/logs", {"ownerId": oid, "resource": [sid], "type": ["build"], "direction": "backward", "startTime": start_time, "limit": 100}),
         ("/logs", {"ownerId": oid, "resource": [sid], "type": ["app"], "direction": "backward", "startTime": start_time, "limit": 100}),
         (f"/services/{sid}/events", {"limit": 100}),
+        ("/logs", {"ownerId": oid, "resource": [sid], "type": ["build"], "direction": "backward", "startTime": start_time, "limit": 100}),
     )
     errors: list[str] = []
     for path, params in attempts:
@@ -427,11 +428,23 @@ def collect_app(base_url: str | None, checks: list[dict[str, Any]]) -> dict[str,
     try:
         import resource
 
+        current_rss_mb = None
+        statm_path = "/proc/self/statm"
+        if os.path.exists(statm_path):
+            try:
+                with open(statm_path, encoding="utf-8") as handle:
+                    parts = handle.read().split()
+                rss_pages = int(parts[1]) if len(parts) > 1 else 0
+                current_rss_mb = rss_pages * os.sysconf("SC_PAGE_SIZE") / 1024 / 1024
+            except (OSError, ValueError, IndexError):
+                current_rss_mb = None
         rss_kb = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss or 0)
         # Linux reports KB, macOS bytes. Render runs Linux, but keep a guard for local tooling.
         rss_mb = rss_kb / 1024 if rss_kb < 10_000_000 else rss_kb / 1024 / 1024
         process["max_rss_mb"] = round(rss_mb, 2)
-        if rss_mb >= 450:
+        if current_rss_mb is not None:
+            process["current_rss_mb"] = round(current_rss_mb, 2)
+        if rss_mb >= PROCESS_MEMORY_WARN_MB:
             checks.append(check("Serverminne", "warn", f"Processen har toppat {round(rss_mb, 1)} MB RSS."))
         else:
             checks.append(check("Serverminne", "ok", f"Processen har toppat {round(rss_mb, 1)} MB RSS."))
@@ -475,7 +488,7 @@ def build_recommendations(checks: list[dict[str, Any]], report: dict[str, Any]) 
         if latest_status and latest_status not in {"live", "succeeded", "success", "deployed", "available"}:
             recs.append(recommendation("error", f"Senaste deploy ar inte frisk ({latest_status}). Oppna deploy-loggen i Render."))
     rss_mb = safe_float(report.get("app", {}).get("process", {}).get("max_rss_mb"))
-    if rss_mb is not None and rss_mb >= 450:
+    if rss_mb is not None and rss_mb >= PROCESS_MEMORY_WARN_MB:
         recs.append(recommendation("warn", "Serverprocessen ligger hogt i minne. Jamfor med Render-planens grans och undersok cache/prefetch-volym."))
     db = report.get("database", {})
     conn = db.get("connections") or {}

@@ -124,8 +124,19 @@ function hydrateVideoDurations() {
   });
 }
 
-function mediaUrl(item) {
-  return `/api/meta/uploads/${encodeURIComponent(item.id)}/content`;
+function appendQuery(url, params = {}) {
+  const entries = Object.entries(params).filter(([_key, value]) => value != null && value !== false && value !== "");
+  if (!entries.length) return url;
+  const query = new URLSearchParams();
+  entries.forEach(([key, value]) => query.set(key, value === true ? "1" : String(value)));
+  return `${url}${String(url).includes("?") ? "&" : "?"}${query.toString()}`;
+}
+
+function mediaUrl(item, options = {}) {
+  return appendQuery(`/api/meta/uploads/${encodeURIComponent(item.id)}/content`, {
+    download: options.download ? "1" : "",
+    variant: options.variant || "",
+  });
 }
 
 function shipmentMediaFilename(item, fallback = "meta-fil") {
@@ -136,18 +147,21 @@ function shipmentMediaFilename(item, fallback = "meta-fil") {
 async function downloadMetaItem(item) {
   if (!item) return;
   try {
-    await api.download(mediaUrl(item), item.filename || "meta-upload");
+    await api.download(mediaUrl(item, { download: true }), item.filename || "meta-upload", { direct: true });
   } catch (error) {
     showToast(error.message || "Kunde inte ladda ner filen.", "error", 7000);
   }
 }
 
 async function downloadShipmentMedia(item, kind) {
-  const url = kind === "label" ? item?.label_still_url : item?.video_url;
+  const baseUrl = kind === "label" ? item?.label_still_url : item?.video_url;
+  const url = baseUrl
+    ? appendQuery(baseUrl, { download: "1", variant: kind === "video" ? "playable" : "" })
+    : null;
   if (!url) return;
   const fallback = kind === "label" ? "etikett.jpg" : "meta-video";
   try {
-    await api.download(url, shipmentMediaFilename(item, fallback));
+    await api.download(url, shipmentMediaFilename(item, fallback), { direct: true });
   } catch (error) {
     showToast(error.message || "Kunde inte ladda ner filen.", "error", 7000);
   }
@@ -234,10 +248,10 @@ function renderShipmentRows() {
     const labelDownloadLabel = `Ladda ner stillbild för ${videoTitle || "video"}`;
     return `
       <tr>
-        <td>${escapeHtml(item.order_number || "-")}</td>
-        <td>${escapeHtml(item.shipment_number || "-")}</td>
-        <td>${escapeHtml(item.username || "-")}</td>
-        <td>${escapeHtml(item.customer_name || "-")}</td>
+        <td>${escapeHtml(item.order_number || "")}</td>
+        <td>${escapeHtml(item.shipment_number || "")}</td>
+        <td>${escapeHtml(item.username || "")}</td>
+        <td>${escapeHtml(item.customer_name || "")}</td>
         <td>${escapeHtml(item.pallet_id || "-")}</td>
         <td title="${escapeHtml(deviations)}">${escapeHtml(deviations)}</td>
         <td>

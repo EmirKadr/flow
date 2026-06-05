@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import logging
+import mimetypes
+import os
 from pathlib import Path
 import re
 import shutil
@@ -16,9 +18,10 @@ import threading
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
+from starlette.background import BackgroundTask
 
 from ..audit import log as audit_log, log_and_commit as audit_log_and_commit
 from ..config import settings
@@ -112,6 +115,36 @@ def _media_type(filename: str, content_type: str | None) -> str:
     if suffix in VIDEO_EXTENSIONS:
         return "video"
     raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bara bilder och videor kan laddas upp.")
+
+
+def _safe_media_content_type(filename: str | None, content_type: str | None, media_type: str | None) -> str:
+    normalized_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    expected_prefix = f"{media_type}/" if media_type in {"image", "video"} else ""
+    if expected_prefix and normalized_type.startswith(expected_prefix):
+        return normalized_type
+    guessed = mimetypes.guess_type(_clean_filename(filename))[0]
+    if guessed and expected_prefix and guessed.startswith(expected_prefix):
+        return guessed
+    if media_type == "video":
+        return "video/mp4"
+    if media_type == "image":
+        return "image/jpeg"
+    return normalized_type or "application/octet-stream"
+
+
+def _imageio_ffmpeg_exe() -> str | None:
+    try:
+        import imageio_ffmpeg
+    except Exception:
+        return None
+    try:
+        return str(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return None
+
+
+def _resolve_ffmpeg() -> str | None:
+    return shutil.which("ffmpeg") or _imageio_ffmpeg_exe()
 
 
 def _format_size(bytes_count: int) -> str:
@@ -365,6 +398,7 @@ async def upload_meta_media(
             filename = _clean_filename(upload.filename)
             content_type = str(upload.content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
             media_type = _media_type(filename, content_type)
+            safe_content_type = _safe_media_content_type(filename, content_type, media_type)
             stored, size = await _stream_upload_to_store(upload, store=store, batch_total=batch_total)
             batch_total += size
             content_hash = stored.sha256
@@ -374,7 +408,7 @@ async def upload_meta_media(
                 skipped.append(
                     _duplicate_item(
                         filename=filename,
-                        content_type=content_type or "application/octet-stream",
+                        content_type=safe_content_type,
                         media_type=media_type,
                         size=size,
                         duplicate_of_id=None,
@@ -387,7 +421,7 @@ async def upload_meta_media(
                 skipped.append(
                     _duplicate_item(
                         filename=filename,
-                        content_type=content_type or "application/octet-stream",
+                        content_type=safe_content_type,
                         media_type=media_type,
                         size=size,
                         duplicate_of_id=existing.id,
@@ -407,7 +441,7 @@ async def upload_meta_media(
                 batch_id=batch_id,
                 original_filename=filename,
                 stored_filename=stored_filename,
-                content_type=content_type or "application/octet-stream",
+                content_type=safe_content_type,
                 media_type=media_type,
                 size_bytes=size,
                 duration_seconds=duration_seconds,
@@ -424,7 +458,7 @@ async def upload_meta_media(
                     "filename": stored_filename,
                     "stored_filename": stored_filename,
                     "original_filename": filename,
-                    "content_type": row.content_type,
+                    "content_type": safe_content_type,
                     "media_type": media_type,
                     "size_bytes": size,
                     "size_label": _format_size(size),
@@ -604,9 +638,10 @@ def delete_meta_media_upload(
     db.commit()
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, *, attachment: bool = False) -> str:
     safe_filename = _clean_filename(filename)
-    return f"inline; filename*=UTF-8''{quote(safe_filename)}"
+    disposition = "attachment" if attachment else "inline"
+    return f"{disposition}; filename*=UTF-8''{quote(safe_filename)}"
 
 
 def _duplicate_item(
@@ -631,11 +666,88 @@ def _duplicate_item(
     }
 
 
-def _media_response(row: MetaMediaUpload, request: Request) -> Response:
+def _cleanup_path(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.info("Could not remove temporary playable meta video %s", path)
+
+
+def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
+    ffmpeg = _resolve_ffmpeg()
+    if not ffmpeg:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ffmpeg saknas for spelbar video.")
+    if not row.storage_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen saknar lagringsreferens.")
+    source_path = get_media_store().materialize_to_temp(row.storage_key)
+    fd, output_name = tempfile.mkstemp(prefix="flow_meta_playable_", suffix=".mp4")
+    try:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        output_path = Path(output_name)
+        output_path.unlink(missing_ok=True)
+        command = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a?",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "24",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+        completed = subprocess.run(command, capture_output=True, timeout=240, check=False)
+        if completed.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
+            _cleanup_path(output_path)
+            detail = (completed.stderr or b"").decode("utf-8", errors="replace")[:500]
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Kunde inte skapa spelbar video. {detail}".strip(),
+            )
+        return output_path
+    except BaseException:
+        try:
+            Path(output_name).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _playable_video_response(row: MetaMediaUpload, *, as_attachment: bool = False) -> Response:
+    output_path = _transcode_video_to_playable(row)
+    filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
+    return FileResponse(
+        output_path,
+        media_type="video/mp4",
+        filename=_clean_filename(filename),
+        content_disposition_type="attachment" if as_attachment else "inline",
+        background=BackgroundTask(_cleanup_path, output_path),
+    )
+
+
+def _media_headers(row: MetaMediaUpload, *, as_attachment: bool = False) -> tuple[str, dict[str, str], int]:
     filename = row.stored_filename or row.original_filename
+    content_type = _safe_media_content_type(filename, row.content_type, row.media_type)
     base_headers = {
         "Accept-Ranges": "bytes",
-        "Content-Disposition": _content_disposition(filename),
+        "Content-Disposition": _content_disposition(filename, attachment=as_attachment),
     }
 
     # All media strömmas från MediaStore — hela filen hamnar aldrig i RAM.
@@ -645,7 +757,15 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
     stat = store.stat(row.storage_key)
     if stat is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen hittades inte i lagringen.")
-    total = stat.size
+    base_headers["Content-Length"] = str(stat.size)
+    return content_type, base_headers, stat.size
+
+
+def _media_response(row: MetaMediaUpload, request: Request, *, as_attachment: bool = False) -> Response:
+    content_type, base_headers, total = _media_headers(row, as_attachment=as_attachment)
+
+    # All media strÃ¶mmas frÃ¥n MediaStore â€” hela filen hamnar aldrig i RAM.
+    store = get_media_store()
     range_header = request.headers.get("range") or request.headers.get("Range") or ""
     match = re.match(r"bytes=(\d*)-(\d*)$", range_header.strip())
     if match and total:
@@ -658,7 +778,7 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
         return StreamingResponse(
             store.open_range(row.storage_key, start, end),
             status_code=status.HTTP_206_PARTIAL_CONTENT,
-            media_type=row.content_type,
+            media_type=content_type,
             headers={
                 **base_headers,
                 "Content-Range": f"bytes {start}-{end}/{total}",
@@ -667,9 +787,25 @@ def _media_response(row: MetaMediaUpload, request: Request) -> Response:
         )
     return StreamingResponse(
         store.open_all(row.storage_key),
-        media_type=row.content_type,
+        media_type=content_type,
         headers={**base_headers, "Content-Length": str(total)},
     )
+
+
+def _meta_media_head_response(row: MetaMediaUpload, *, variant: str | None, as_attachment: bool = False) -> Response:
+    if variant == "playable" and row.media_type == "video":
+        if not _resolve_ffmpeg():
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ffmpeg saknas for spelbar video.")
+        filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
+        return Response(
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": _content_disposition(filename, attachment=as_attachment),
+            },
+        )
+    content_type, headers, _total = _media_headers(row, as_attachment=as_attachment)
+    return Response(media_type=content_type, headers=headers)
 
 
 def _resolve_range(groups: tuple[str, str], total: int) -> tuple[int | None, int | None]:
@@ -687,14 +823,32 @@ def _resolve_range(groups: tuple[str, str], total: int) -> tuple[int | None, int
     return start, end
 
 
-@router.get("/uploads/{upload_id}/content")
-def get_meta_media_content(
+@router.head("/uploads/{upload_id}/content")
+def head_meta_media_content(
     upload_id: int,
-    request: Request,
+    variant: str | None = Query(None, pattern="^(original|playable)$"),
+    download: bool = Query(False),
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> Response:
     row = db.get(MetaMediaUpload, upload_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
-    return _media_response(row, request)
+    return _meta_media_head_response(row, variant=variant, as_attachment=download)
+
+
+@router.get("/uploads/{upload_id}/content")
+def get_meta_media_content(
+    upload_id: int,
+    request: Request,
+    variant: str | None = Query(None, pattern="^(original|playable)$"),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_user),
+) -> Response:
+    row = db.get(MetaMediaUpload, upload_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
+    if variant == "playable" and row.media_type == "video":
+        return _playable_video_response(row, as_attachment=download)
+    return _media_response(row, request, as_attachment=download)

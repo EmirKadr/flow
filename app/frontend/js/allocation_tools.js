@@ -7,12 +7,6 @@ const ALLOCATION_WORK_STATE_PREFIX = "flow-allocation-work-state-v1:";
 const ALLOCATION_FILE_METADATA_CACHE_KEY = "flow-allocation-file-metadata-v1";
 const ALLOCATION_BOOT_CACHE_KEY = "flow-allocation-boot-cache-v1";
 const ALLOCATION_BOOT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
-const ALLOCATION_FILE_PREVIEW_MAX_BYTES = 256 * 1024;
-const ALLOCATION_FILE_PREVIEW_MAX_ROWS = 120;
-const ALLOCATION_FILE_PREVIEW_MAX_COLUMNS = 40;
-const ALLOCATION_FILE_PREVIEW_BINARY_EXTENSIONS = new Set([
-  ".xls", ".xlsx", ".xlsm", ".zip", ".parquet", ".pdf",
-]);
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus";
 const ALLOCATION_YTGENERERING_UTL_MIN = 1;
@@ -93,13 +87,13 @@ const ALLOCATION_FILE_WORDS = {
   saldo: ["v_ask_item_summary_stock_automation", "item_summary_stock_automation", "saldo ink", "automation"],
   items: ["item_option", "item option"],
   max_csv: ["artikel_max", "article_max"],
-  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
+  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade", "ej inlagrade artiklar"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
+  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "pallastningslogg", "palllastningslogg"],
   remote_file: ["observations", "observationer"],
   values_file: ["values", "varden", "värden"],
 };
@@ -116,21 +110,21 @@ const PRODUCTIVITY_SHARED_UPLOAD_WORDS = [
   "v_ask_kpi_target",
 ];
 const ALLOCATION_SLOT_LABELS = {
-  orders: "Detalj kundorder(alla)",
-  buffer: "Buffertpallar",
+  orders: "Detalj Kundorder (Alla)",
+  buffer: "Buffertpall",
   overview: "Orderöversikt",
   dispatch: "Dispatchpallar",
-  custom_adr: "Alternativ leveransadress",
-  saldo: "Saldo ink. Automation",
-  items: "Item option",
-  not_putaway: "Ej inlagrade",
+  custom_adr: "Alternativ Leveransadress",
+  saldo: "Saldo Inkl. Automation",
+  items: "Item Option",
+  not_putaway: "Ej Inlagrade Artiklar",
   prognos: "Prognosfil",
   campaign: "Kampanjfil",
   max_csv: "artikel_max.csv",
   wms_booking: "Inlagringslogg",
-  wms_trans: "Transaktionslogg",
-  wms_pick: "Plocklogg",
-  productivity_pallet: "Palllastningslogg",
+  wms_trans: "Translogg",
+  wms_pick: "Plocklogg Full",
+  productivity_pallet: "Pallastningslogg",
   remote_file: "Observationsfil",
   values_file: "Textfil med värden",
 };
@@ -144,6 +138,18 @@ function allocationSlotAliasKey(value) {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 }
+
+function allocationDesktopAvailable() {
+  return Boolean(window.flowDesktop?.isDesktop?.());
+}
+
+function allocationIsDesktopEntry(entry) {
+  return Boolean(entry?.localRef);
+}
+
+function allocationLocalRefValue(entry) {
+  return entry?.localRef ? `__flow_local_ref:${entry.localRef}` : "";
+}
 const ALLOCATION_SLOT_LABEL_ALIASES = Object.fromEntries(
   Object.entries(ALLOCATION_FILE_WORDS).flatMap(([key, words]) => [
     [allocationSlotAliasKey(key), key],
@@ -156,7 +162,7 @@ const ALLOCATION_SLOT_ORDER = [
   "productivity_pallet", "remote_file", "values_file",
 ];
 const PRODUCTIVITY_UPLOAD_SLOTS = [
-  { key: "productivity_pallet", label: "Palllastningslogg", detect: [] },
+  { key: "productivity_pallet", label: "Pallastningslogg", detect: [] },
 ];
 const ALLOCATION_PRODUCTIVITY_KEYS = {
   wms_pick: "pick",
@@ -221,22 +227,22 @@ const ALLOCATION_PERSISTENT_DATA_DISPLAY_ORDER = [
 ];
 const ALLOCATION_PERSISTENT_DATA_LABELS = {
   article_max: "artikel_max.csv",
-  productivity_pick_observations: "Plocklogg sammanställd data",
+  productivity_pick_observations: "Plocklogg Full sammanställd data",
   productivity_trans_observations: "Translogg sammanställd data",
-  productivity_pallet_observations: "Palllastningslogg sammanställd data",
-  custom: "Custom",
-  dimension: "Dimension",
-  dispatch_template: "Dispatch template",
-  item: "Item",
-  item_alias: "Item alias",
-  item_attribute: "Item attribute",
-  item_security_info: "Artikel säkerhetsinformation",
-  item_option: "Item option",
-  kpi_target_rule: "KPI target rule",
-  location: "Location",
-  location_cost: "Location cost",
-  pallet_type: "Pallet type",
-  trans_agency: "Transportörer",
+  productivity_pallet_observations: "Pallastningslogg sammanställd data",
+  custom: "Kund",
+  dimension: "Dimensioner",
+  dispatch_template: "Avgångsmallar",
+  item: "Artiklar (Item)",
+  item_alias: "Item Alias",
+  item_attribute: "Item Attribute",
+  item_security_info: "Artikel Säkerhetsinformation",
+  item_option: "Item Option",
+  kpi_target_rule: "KPI-Målregler",
+  location: "Lagerplatser",
+  location_cost: "Lagerplatsavstånd",
+  pallet_type: "Palltyp",
+  trans_agency: "Transportör",
   kpi: "KPI-Mål",
 };
 const ALLOCATION_COMPILED_DATA_KEYS = new Set([
@@ -321,170 +327,6 @@ function allocationEscape(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]
   );
-}
-
-function allocationFileExtension(name) {
-  const lower = String(name || "").toLowerCase();
-  if (lower.endsWith(".csv.gz")) return ".csv.gz";
-  const dot = lower.lastIndexOf(".");
-  return dot >= 0 ? lower.slice(dot) : "";
-}
-
-function allocationFileLooksBinaryByName(name, type = "") {
-  const lowerType = String(type || "").toLowerCase();
-  if (lowerType.startsWith("text/") || lowerType.includes("csv") || lowerType.includes("json")) return false;
-  return ALLOCATION_FILE_PREVIEW_BINARY_EXTENSIONS.has(allocationFileExtension(name));
-}
-
-function allocationBytesLookBinary(bytes) {
-  const sampleLength = Math.min(bytes?.length || 0, 2048);
-  if (!sampleLength) return false;
-  let suspicious = 0;
-  for (let index = 0; index < sampleLength; index += 1) {
-    const value = bytes[index];
-    if (value === 0) return true;
-    if (value < 8 || (value > 13 && value < 32)) suspicious += 1;
-  }
-  return suspicious / sampleLength > 0.15;
-}
-
-function allocationDecodePreviewBytes(bytes) {
-  try {
-    return {
-      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-      encoding: "utf-8",
-    };
-  } catch (_error) {
-    return {
-      text: new TextDecoder("windows-1252").decode(bytes),
-      encoding: "windows-1252",
-    };
-  }
-}
-
-function allocationParseDelimitedLine(line, delimiter) {
-  const cells = [];
-  let cell = "";
-  let quoted = false;
-  const text = String(line ?? "");
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === '"') {
-      if (quoted && text[index + 1] === '"') {
-        cell += '"';
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (char === delimiter && !quoted) {
-      cells.push(cell);
-      cell = "";
-    } else {
-      cell += char;
-    }
-  }
-  cells.push(cell);
-  return cells;
-}
-
-function allocationPreviewDelimiter(text) {
-  const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-    .split("\n")
-    .filter((line) => line.trim())
-    .slice(0, 20);
-  if (!lines.length) return "";
-  let bestDelimiter = "";
-  let bestScore = 0;
-  for (const delimiter of ["\t", ";", ","]) {
-    const score = lines.reduce((sum, line) => sum + Math.max(0, allocationParseDelimitedLine(line, delimiter).length - 1), 0);
-    if (score > bestScore) {
-      bestDelimiter = delimiter;
-      bestScore = score;
-    }
-  }
-  return bestScore >= Math.max(1, Math.floor(lines.length / 2)) ? bestDelimiter : "";
-}
-
-function allocationPreviewContentHtml(text) {
-  const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  if (!normalized) return `<p class="allocation-file-preview-message">Filen är tom.</p>`;
-  const lines = normalized.split("\n").slice(0, ALLOCATION_FILE_PREVIEW_MAX_ROWS);
-  const delimiter = allocationPreviewDelimiter(normalized);
-  if (!delimiter) {
-    return `<pre class="allocation-file-preview-pre">${allocationEscape(lines.join("\n"))}</pre>`;
-  }
-  const rows = lines
-    .map((line) => allocationParseDelimitedLine(line, delimiter).slice(0, ALLOCATION_FILE_PREVIEW_MAX_COLUMNS))
-    .filter((row) => row.some((cell) => String(cell || "").trim()));
-  if (!rows.length || rows.every((row) => row.length <= 1)) {
-    return `<pre class="allocation-file-preview-pre">${allocationEscape(lines.join("\n"))}</pre>`;
-  }
-  const header = rows[0];
-  const bodyRows = rows.slice(1);
-  return `
-    <table class="allocation-file-preview-table">
-      <thead>
-        <tr>${header.map((cell, index) => `<th>${allocationEscape(cell || `Kolumn ${index + 1}`)}</th>`).join("")}</tr>
-      </thead>
-      <tbody>
-        ${bodyRows.map((row) => `
-          <tr>${header.map((_cell, index) => `<td>${allocationEscape(row[index] ?? "")}</td>`).join("")}</tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
-}
-
-function openAllocationFilePreviewModal(preview) {
-  document.querySelector("[data-allocation-preview-modal]")?.remove();
-  const objectUrl = preview.objectUrl || "";
-  const meta = [
-    preview.sizeLabel || allocationFileSize(preview.size),
-    preview.kind === "compiled_data" ? ALLOCATION_COMPILED_DATA_LABEL : preview.kind === "coredata" ? ALLOCATION_CORE_DATA_LABEL : "Vanlig fil",
-    preview.encoding ? `Text: ${preview.encoding}` : "",
-  ].filter(Boolean);
-  const content = preview.unsupported
-    ? `<p class="allocation-file-preview-message">Filen kan inte förhandsvisas direkt i appen. Öppna originalet för att se hela filen.</p>`
-    : allocationPreviewContentHtml(preview.text || "");
-  const backdrop = document.createElement("div");
-  backdrop.className = "modal-backdrop";
-  backdrop.dataset.allocationPreviewModal = "true";
-  backdrop.innerHTML = `
-    <div class="modal wide allocation-file-preview-modal" role="dialog" aria-modal="true" aria-labelledby="allocationFilePreviewTitle">
-      <h2 id="allocationFilePreviewTitle">${allocationEscape(preview.title || preview.name || "Fil")}</h2>
-      <div class="allocation-file-preview-meta">
-        <strong>${allocationEscape(preview.name || preview.title || "Fil")}</strong>
-        ${meta.length ? `<span>${allocationEscape(meta.join(" · "))}</span>` : ""}
-      </div>
-      ${preview.truncated ? `<p class="allocation-status">Visar första delen av filen.</p>` : ""}
-      <div class="modal-table-scroll allocation-file-preview-scroll">
-        ${content}
-      </div>
-      <div class="actions">
-        ${objectUrl ? `<button type="button" data-open-preview-original>Öppna original</button>` : ""}
-        <button type="button" class="primary" data-close-preview>Stäng</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(backdrop);
-
-  const close = () => {
-    document.removeEventListener("keydown", onKeyDown);
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    backdrop.remove();
-  };
-  function onKeyDown(event) {
-    if (event.key === "Escape") close();
-  }
-
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) close();
-  });
-  backdrop.querySelectorAll("[data-close-preview]").forEach((button) => button.addEventListener("click", close));
-  backdrop.querySelector("[data-open-preview-original]")?.addEventListener("click", () => {
-    window.open(objectUrl, "_blank", "noopener");
-  });
-  document.addEventListener("keydown", onKeyDown);
 }
 
 function allocationLogicalKey(key) {
@@ -1072,6 +914,7 @@ async function loadStoredAllocationFiles() {
           size: item.size || blob?.size || 0,
           type: item.type || blob?.type || "",
           lastModified: item.lastModified || Date.now(),
+          localRef: item.localRef || "",
           blob,
         };
       }
@@ -1095,16 +938,17 @@ async function loadStoredAllocationFileEntry(key) {
       const item = request.result;
       const blob = item?.blob;
       db.close();
-      if (!item || !blob) {
+      if (!item || (!blob && !item.localRef)) {
         resolve(null);
         return;
       }
       resolve({
         key: item.key,
         name: item.name,
-        size: item.size || blob.size || 0,
-        type: item.type || blob.type || "",
-        lastModified: item.lastModified || Date.now(),
+        size: item.size || blob?.size || 0,
+        type: item.type || blob?.type || "",
+        lastModified: item.lastModified || blob?.lastModified || Date.now(),
+        localRef: item.localRef || "",
         blob,
       });
     };
@@ -1122,7 +966,8 @@ async function saveAllocationFile(key, file) {
     size: file.size || 0,
     type: file.type || "",
     lastModified: file.lastModified || Date.now(),
-    blob: file,
+    localRef: file.localRef || "",
+    blob: file.localRef ? null : file,
   };
   await allocationStore("readwrite", (store) => store.put(entry));
   allocationState.files[key] = entry;
@@ -1142,89 +987,51 @@ async function deleteAllocationFile(key) {
 
 function allocationFileForForm(entry) {
   if (!entry) return null;
+  if (allocationIsDesktopEntry(entry)) return null;
   return entry.blob || entry.file || null;
 }
 
-async function readAllocationLocalFilePreview(entry) {
+function appendAllocationFileField(fd, fieldKey, entry) {
+  if (!entry) return false;
+  if (allocationIsDesktopEntry(entry)) {
+    fd.append(fieldKey, allocationLocalRefValue(entry));
+    return true;
+  }
   const file = allocationFileForForm(entry);
-  if (!file) throw new Error("Filen hittades inte lokalt.");
-  let unsupported = allocationFileLooksBinaryByName(entry.name, entry.type);
-  let text = "";
-  let encoding = "";
-  let truncated = false;
-  if (!unsupported) {
-    const buffer = await file.slice(0, ALLOCATION_FILE_PREVIEW_MAX_BYTES + 1).arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    truncated = bytes.length > ALLOCATION_FILE_PREVIEW_MAX_BYTES || Number(file.size || 0) > ALLOCATION_FILE_PREVIEW_MAX_BYTES;
-    const previewBytes = bytes.slice(0, ALLOCATION_FILE_PREVIEW_MAX_BYTES);
-    unsupported = allocationBytesLookBinary(previewBytes);
-    if (!unsupported) {
-      const decoded = allocationDecodePreviewBytes(previewBytes);
-      text = decoded.text;
-      encoding = decoded.encoding;
-    }
-  }
-  return {
-    name: entry.name,
-    title: allocationSlotLabel(entry.key),
-    size: entry.size || file.size || 0,
-    sizeLabel: allocationFileSize(entry.size || file.size || 0),
-    kind: "local",
-    text,
-    encoding,
-    truncated,
-    unsupported,
-    objectUrl: URL.createObjectURL(file),
-  };
+  if (!file) return false;
+  fd.append(fieldKey, file, entry.name);
+  return true;
 }
 
-async function openAllocationLocalFilePreview(slotKey) {
-  const key = allocationLogicalKey(slotKey);
-  let entry = allocationState.files[key];
-  if (!entry || !allocationFileForForm(entry)) {
-    entry = await loadStoredAllocationFileEntry(key);
-    if (entry) allocationState.files[key] = entry;
-  }
-  if (!entry) throw new Error("Filen hittades inte lokalt.");
-  openAllocationFilePreviewModal(await readAllocationLocalFilePreview(entry));
-}
-
-async function openAllocationPersistentFilePreview(fileKey) {
+async function downloadAllocationPersistentFile(fileKey) {
   const key = String(fileKey || "").trim();
   if (!key) return;
-  const preview = await allocationJson(`/api/coredata/files/${encodeURIComponent(key)}/preview`, {
-    skipCache: true,
-    logGetUserEvent: true,
-    logLabel: "Filförhandsvisning",
-  });
-  openAllocationFilePreviewModal({
-    title: preview.label || preview.name || key,
-    name: preview.name || key,
-    size: Number(preview.size || 0),
-    sizeLabel: preview.size_label || "",
-    kind: preview.kind || "coredata",
-    text: preview.text || "",
-    encoding: preview.encoding || "",
-    truncated: Boolean(preview.truncated),
-  });
+  await api.download(`/api/coredata/files/${encodeURIComponent(key)}/download`, `${key}.csv`);
 }
 
-async function handleAllocationPreviewClick(button) {
-  const originalText = button.textContent;
-  button.disabled = true;
-  button.textContent = "Öppnar...";
-  try {
-    if (button.dataset.previewFileSource === "persistent") {
-      await openAllocationPersistentFilePreview(button.dataset.previewFileKey);
-    } else {
-      await openAllocationLocalFilePreview(button.dataset.previewFileKey);
-    }
-  } catch (error) {
-    showToast(error.message || "Kunde inte öppna filen.", "error", 7000);
-  } finally {
-    button.disabled = false;
-    button.textContent = originalText;
+async function downloadAllocationLocalFile(slotKey) {
+  const key = allocationLogicalKey(slotKey);
+  let entry = allocationState.files[key] || await loadStoredAllocationFileEntry(key);
+  if (!entry) throw new Error("Filen hittades inte lokalt.");
+  if (allocationIsDesktopEntry(entry)) {
+    await allocationJson(`/api/desktop/files/${encodeURIComponent(entry.localRef)}/open`, { method: "POST" });
+    return;
   }
+  const file = allocationFileForForm(entry);
+  if (!file) throw new Error("Filen hittades inte lokalt.");
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = entry.name || `${key}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function openAllocationDesktopRef(ref, folder = false) {
+  if (!ref) return;
+  await allocationJson(`/api/desktop/files/${encodeURIComponent(ref)}/${folder ? "open-folder" : "open"}`, { method: "POST" });
 }
 
 function allocationFileSize(size) {
@@ -1456,6 +1263,13 @@ function classifyAllocationCoreDataFile(file) {
 }
 
 async function uploadAllocationCoreDataFile(file) {
+  if (file?.localRef) {
+    return await allocationJson("/api/desktop/sync/coredata", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localRef: file.localRef, filename: file.name || "coredata.csv" }),
+    });
+  }
   return await api.postFile(
     `/api/coredata/files/raw?filename=${encodeURIComponent(file.name || "coredata.csv")}`,
     file,
@@ -1481,6 +1295,9 @@ async function routeProductivityFilesFromSharedUpload(files) {
 }
 
 async function detectAllocationFile(file) {
+  if (file?.localRef) {
+    return await allocationJson(`/api/desktop/files/${encodeURIComponent(file.localRef)}/detect`);
+  }
   const fd = new FormData();
   fd.append("file", file, file.name);
   return allocationPostForm(`${ALLOCATION_API}/detect`, fd);
@@ -1649,11 +1466,17 @@ function allocationFileRows(slots) {
     const entry = allocationState.files[slot.key];
     const persistentEntry = entry ? null : allocationPersistentDataFile(slot.key);
     const displayEntry = entry || persistentEntry;
-    const previewKey = entry ? slot.key : persistentEntry?.key || allocationLogicalKey(slot.key);
-    const previewSource = entry ? "local" : "persistent";
-    const canPreview = allocationState.page === "uploads";
+    const actionKey = entry ? slot.key : persistentEntry?.key || allocationLogicalKey(slot.key);
+    const canFileAction = allocationState.page === "uploads";
     const sizeLabel = allocationDisplaySizeLabel(entry, persistentEntry);
     const inputId = `allocation-file-${slot.key}`;
+    const fileAction = !displayEntry || !canFileAction
+      ? ""
+      : entry && allocationIsDesktopEntry(entry)
+        ? `<button type="button" data-open-local-ref="${allocationEscape(entry.localRef)}">Öppna fil</button><button type="button" data-open-local-folder="${allocationEscape(entry.localRef)}">Mapp</button>`
+        : entry
+          ? `<button type="button" data-download-local-file="${allocationEscape(actionKey)}">Ladda ner</button>`
+          : `<button type="button" data-download-persistent-file="${allocationEscape(actionKey)}">Ladda ner</button>`;
     return `
       <div class="allocation-file-slot ${displayEntry ? "filled" : ""}" data-allocation-drop data-drop-slot="${allocationEscape(slot.key)}">
         <div>
@@ -1662,7 +1485,7 @@ function allocationFileRows(slots) {
         </div>
         <div class="allocation-file-actions">
           <span class="allocation-file-badge">${entry ? "Inlagd" : persistentEntry ? persistentEntry.badge : "Ej fil"}</span>
-          ${displayEntry && canPreview ? `<button type="button" data-preview-file-key="${allocationEscape(previewKey)}" data-preview-file-source="${allocationEscape(previewSource)}">Visa</button>` : ""}
+          ${fileAction}
           <label class="button-like" for="${inputId}">Välj</label>
           <input id="${inputId}" type="file" hidden data-slot="${allocationEscape(slot.key)}" />
           <button type="button" class="ghost danger" data-clear-slot="${allocationEscape(slot.key)}" ${entry ? "" : "disabled"}>×</button>
@@ -1694,6 +1517,26 @@ function allocationDropSlotsForTarget(target) {
 }
 
 function bindAllocationCommonEvents(root) {
+  root.querySelectorAll("label[for]").forEach((label) => {
+    const input = document.getElementById(label.getAttribute("for") || "");
+    if (!input || input.type !== "file") return;
+    label.addEventListener("click", async (event) => {
+      if (!allocationDesktopAvailable()) return;
+      event.preventDefault();
+      const entries = await window.flowDesktop.pickFiles({
+        accept: input.getAttribute("accept") || "",
+        multiple: Boolean(input.multiple),
+      });
+      if (!entries.length) return;
+      const slot = input.dataset.slot || "";
+      const targetSlot = slot ? currentAllocationSlots().find((item) => item.key === slot) : null;
+      await routeAllocationFiles(
+        entries,
+        targetSlot ? [targetSlot] : allocationDropSlotsForTarget(input.closest("[data-allocation-drop]") || root),
+        { fallbackSlotKey: slot },
+      );
+    });
+  });
   root.querySelectorAll("input[type='file'][data-slot]").forEach((input) => {
     input.addEventListener("change", async () => {
       const slot = input.dataset.slot;
@@ -1710,8 +1553,41 @@ function bindAllocationCommonEvents(root) {
       renderAllocationPage();
     });
   });
-  root.querySelectorAll("[data-preview-file-key]").forEach((button) => {
-    button.addEventListener("click", () => handleAllocationPreviewClick(button));
+  root.querySelectorAll("[data-download-persistent-file]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await downloadAllocationPersistentFile(button.dataset.downloadPersistentFile);
+      } catch (error) {
+        showToast(error.message || "Kunde inte ladda ner filen.", "error", 7000);
+      }
+    });
+  });
+  root.querySelectorAll("[data-download-local-file]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await downloadAllocationLocalFile(button.dataset.downloadLocalFile);
+      } catch (error) {
+        showToast(error.message || "Kunde inte öppna filen.", "error", 7000);
+      }
+    });
+  });
+  root.querySelectorAll("[data-open-local-ref]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await openAllocationDesktopRef(button.dataset.openLocalRef, false);
+      } catch (error) {
+        showToast(error.message || "Kunde inte öppna filen.", "error", 7000);
+      }
+    });
+  });
+  root.querySelectorAll("[data-open-local-folder]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await openAllocationDesktopRef(button.dataset.openLocalFolder, true);
+      } catch (error) {
+        showToast(error.message || "Kunde inte öppna mappen.", "error", 7000);
+      }
+    });
   });
   const dropTargets = root.querySelectorAll("[data-allocation-drop]");
   dropTargets.forEach((target) => {
@@ -1789,7 +1665,7 @@ function renderPersistentDataGroup(title, items) {
             </div>
             <div class="allocation-file-actions">
               <span class="allocation-file-badge">${item.uploaded ? allocationEscape(item.badge) : "Saknas"}</span>
-              ${item.uploaded ? `<button type="button" data-preview-file-key="${allocationEscape(item.key)}" data-preview-file-source="persistent">Visa</button>` : ""}
+              ${item.uploaded ? `<button type="button" data-download-persistent-file="${allocationEscape(item.key)}">Ladda ner</button>` : ""}
             </div>
           </div>
         `).join("")}
@@ -1957,6 +1833,46 @@ function bindFlowFields(root) {
   });
 }
 
+function allocationTrack(eventType, details = {}) {
+  if (typeof window.flowTrack !== "function") return "";
+  const data = allocationState.result?.data || {};
+  return window.flowTrack(eventType, {
+    view_id: allocationPageActiveName(allocationState.page || "process"),
+    feature: "allocation",
+    flow_id: details.flow_id || details.flowId || data.flow_id || allocationState.busyId || "",
+    status: details.status || "ok",
+    table_key: details.table_key || details.tableKey || "",
+    table_label: details.table_label || details.tableLabel || "",
+    column_index: Number.isInteger(details.column_index) ? details.column_index : Number.isInteger(details.columnIndex) ? details.columnIndex : null,
+    column_label: details.column_label || details.columnLabel || "",
+    row_count: Number.isFinite(Number(details.row_count ?? details.rowCount)) ? Number(details.row_count ?? details.rowCount) : null,
+    control_id: details.control_id || details.controlId || "",
+    control_label: details.control_label || details.controlLabel || "",
+    interaction_id: details.interaction_id || details.interactionId || "",
+    detail: {
+      page: allocationState.page || "",
+      area_focus: typeof window.readAreaFocus === "function" ? window.readAreaFocus() : "",
+      session_id_present: Boolean(data.session_id),
+      ...details.detail,
+    },
+  });
+}
+
+function allocationTableEventMeta(tableKey, columnIndex = null) {
+  const data = allocationState.result?.data || {};
+  const entry = (data.tables || []).find((item) => item.key === tableKey) || {};
+  const table = entry.table || {};
+  const columns = Array.isArray(table.columns) ? table.columns : [];
+  const index = Number(columnIndex);
+  return {
+    table_key: tableKey || "",
+    table_label: entry.label || tableKey || "",
+    column_index: Number.isInteger(index) && index >= 0 ? index : null,
+    column_label: Number.isInteger(index) && index >= 0 ? (columns[index] || "") : "",
+    row_count: Number(table.row_count ?? table.rows?.length ?? 0) || 0,
+  };
+}
+
 function refreshAllocationRunButtons(root) {
   root.querySelectorAll("[data-run-flow]").forEach((button) => {
     const flow = flowById(button.dataset.runFlow);
@@ -1969,7 +1885,26 @@ function refreshAllocationRunButtons(root) {
 async function runAllocationFlow(flow) {
   if (!flow || allocationState.busyId) return;
   const missing = missingForFlow(flow);
-  if (missing.length) return;
+  if (missing.length) {
+    allocationTrack("flow_blocked_missing_inputs", {
+      flow_id: flow.id,
+      control_id: "allocation-flow-run",
+      control_label: flow.label,
+      status: "blocked",
+      detail: { missing_count: missing.length, missing_labels: missing.map((item) => item.label || item.key || "") },
+    });
+    return;
+  }
+  const runInteractionId = allocationTrack("flow_run_start", {
+    flow_id: flow.id,
+    control_id: "allocation-flow-run",
+    control_label: flow.label,
+    detail: {
+      input_count: (flow.inputs || []).length,
+      file_slots: (flow.inputs || []).filter((input) => input.type === "file").map((input) => input.key),
+      param_keys: (flow.inputs || []).filter((input) => input.type !== "file").map((input) => input.key),
+    },
+  });
   allocationState.busyId = flow.id;
   allocationState.status = flow.id === "split-values" ? "Delar värden..." : `Kör ${flow.label}...`;
   allocationState.result = null;
@@ -1988,8 +1923,7 @@ async function runAllocationFlow(flow) {
   for (const input of flow.inputs || []) {
     if (input.type === "file") {
       const entry = allocationState.files[allocationFileInputKey(input)];
-      const file = allocationFileForForm(entry);
-      if (entry && file) fd.append(input.key, file, entry.name);
+      appendAllocationFileField(fd, input.key, entry);
     } else {
       const value = allocationState.values[input.key] ?? input.default ?? "";
       if (value !== "") fd.append(input.key, value);
@@ -2004,9 +1938,28 @@ async function runAllocationFlow(flow) {
       allocationState.carrierClusters = normalizeAllocationCarrierClusters(data.carrier_clusters);
     }
     allocationState.status = `Klart: ${flow.label}`;
+    allocationTrack("flow_run_success", {
+      flow_id: data.flow_id || flow.id,
+      control_id: "allocation-flow-run",
+      control_label: flow.label,
+      interaction_id: runInteractionId,
+      detail: {
+        table_count: Array.isArray(data.tables) ? data.tables.length : 0,
+        has_session: Boolean(data.session_id),
+        auto_downloads: Array.isArray(data.auto_downloads) ? data.auto_downloads.length : 0,
+      },
+    });
     await copyAutoFlowColumn(data);
     await downloadAllocationAutoDownloads(data);
   } catch (error) {
+    allocationTrack("flow_run_error", {
+      flow_id: flow.id,
+      control_id: "allocation-flow-run",
+      control_label: flow.label,
+      interaction_id: runInteractionId,
+      status: "error",
+      detail: { error_type: error?.name || "Error", message: error?.message || "" },
+    });
     showToast(error.message, "error");
     allocationState.status = "";
   } finally {
@@ -2025,8 +1978,23 @@ async function downloadAllocationAutoDownloads(data) {
     if (!key) continue;
     const filename = entry?.filename || `${key}.csv`;
     try {
+      allocationTrack("auto_download", {
+        flow_id: data.flow_id || "",
+        table_key: key,
+        control_id: "allocation-auto-download",
+        control_label: "Automatisk nedladdning",
+        detail: { filename_extension: String(filename || "").split(".").pop() || "" },
+      });
       await api.download(`${ALLOCATION_API}/download/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`, filename);
     } catch (error) {
+      allocationTrack("auto_download_error", {
+        flow_id: data.flow_id || "",
+        table_key: key,
+        control_id: "allocation-auto-download",
+        control_label: "Automatisk nedladdning",
+        status: "error",
+        detail: { error_type: error?.name || "Error", message: error?.message || "" },
+      });
       showToast(error.message || "Kunde inte ladda ner importfilen automatiskt.", "error", 7000);
     }
   }
@@ -2038,6 +2006,13 @@ async function copyAutoFlowColumn(data) {
   const targetTable = (data.tables || []).find((entry) => entry.key === rule.tableKey);
   const orderCount = Number(targetTable?.table?.row_count || 0);
   if (!data.session_id || !orderCount) {
+    allocationTrack("auto_copy_column_empty", {
+      flow_id: data?.flow_id || "",
+      ...allocationTableEventMeta(rule.tableKey, 0),
+      control_id: "allocation-auto-copy-column",
+      control_label: "Automatisk kolumnkopiering",
+      status: "empty",
+    });
     showToast(rule.emptyToast, "info", 2500);
     return;
   }
@@ -2046,8 +2021,26 @@ async function copyAutoFlowColumn(data) {
       `${ALLOCATION_API}/table-column/${encodeURIComponent(data.session_id)}/${encodeURIComponent(rule.tableKey)}/0`,
     );
     await writeClipboardText(columnData.text || "");
+    allocationTrack("auto_copy_column", {
+      flow_id: data?.flow_id || "",
+      ...allocationTableEventMeta(rule.tableKey, 0),
+      control_id: "allocation-auto-copy-column",
+      control_label: "Automatisk kolumnkopiering",
+      detail: {
+        copied_line_count: String(columnData.text || "").split("\n").filter(Boolean).length,
+        copy_mode: "first_column",
+      },
+    });
     showToast(`${orderCount} ${rule.successLabel} kopierade`, "success", 2500);
   } catch (error) {
+    allocationTrack("auto_copy_column_error", {
+      flow_id: data?.flow_id || "",
+      ...allocationTableEventMeta(rule.tableKey, 0),
+      control_id: "allocation-auto-copy-column",
+      control_label: "Automatisk kolumnkopiering",
+      status: "error",
+      detail: { error_type: error?.name || "Error", message: error?.message || "" },
+    });
     showToast(error.message || rule.errorToast, "error", 7000);
   }
 }
@@ -3284,10 +3277,21 @@ async function writeClipboardText(text) {
 function bindResultActions(root) {
   initializeAllocationResultMaps(root);
   root.querySelector("[data-edit-carrier-clusters]")?.addEventListener("click", () => {
+    allocationTrack("settings_modal_open", {
+      control_id: "allocation-edit-carrier-clusters",
+      control_label: "Transportörskluster",
+      detail: { modal: "carrier_clusters" },
+    });
     openAllocationCarrierClusterModal();
   });
   root.querySelectorAll("[data-follow-up-flow]").forEach((button) => {
     button.addEventListener("click", async () => {
+      allocationTrack("follow_up_flow_start", {
+        flow_id: button.dataset.followUpFlow || "",
+        control_id: "allocation-follow-up-flow",
+        control_label: button.textContent || "Foljdflode",
+        detail: { follow_up_flow: button.dataset.followUpFlow || "" },
+      });
       await runAllocationFlow(flowById(button.dataset.followUpFlow));
     });
   });
@@ -3296,52 +3300,129 @@ function bindResultActions(root) {
       try {
         const text = button.closest(".allocation-text-result-wrap")?.querySelector("[data-result-text]")?.textContent || "";
         await writeClipboardText(text);
+        allocationTrack("copy_text", {
+          control_id: "allocation-copy-text-result",
+          control_label: button.getAttribute("aria-label") || "Kopiera text",
+          detail: {
+            copied_length: text.length,
+            copied_line_count: text ? text.split(/\r?\n/).filter((line) => line.trim()).length : 0,
+          },
+        });
         showToast("Text kopierad", "success", 2000);
       } catch (error) {
+        allocationTrack("copy_text_error", {
+          control_id: "allocation-copy-text-result",
+          control_label: button.getAttribute("aria-label") || "Kopiera text",
+          status: "error",
+          detail: { error_type: error?.name || "Error", message: error?.message || "" },
+        });
         showToast(error.message || "Kunde inte kopiera texten.", "error", 7000);
       }
     });
   });
   root.querySelectorAll("[data-copy-column]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const key = button.dataset.copyKey;
+      const columnIndex = button.dataset.copyColumn;
+      const columnMeta = allocationTableEventMeta(key, columnIndex);
       try {
         const sessionId = allocationState.result?.data?.session_id;
-        const key = button.dataset.copyKey;
-        const columnIndex = button.dataset.copyColumn;
-        if (!sessionId || !key || columnIndex == null) throw new Error("Resultatet kunde inte hittas.");
+        if (!sessionId || !key || columnIndex == null) {
+          allocationTrack("copy_column_blocked", {
+            ...columnMeta,
+            control_id: "allocation-copy-column",
+            control_label: button.getAttribute("aria-label") || "Kopiera kolumn",
+            status: "blocked",
+            detail: { reason: "missing_result" },
+          });
+          throw new Error("Resultatet kunde inte hittas.");
+        }
         const data = await allocationJson(
           `${ALLOCATION_API}/table-column/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}/${encodeURIComponent(columnIndex)}`,
         );
         await writeClipboardText(data.text || "");
+        allocationTrack("copy_column", {
+          ...columnMeta,
+          control_id: "allocation-copy-column",
+          control_label: button.getAttribute("aria-label") || "Kopiera kolumn",
+          detail: {
+            copy_mode: "manual",
+            copied_line_count: String(data.text || "").split(/\r?\n/).filter((line) => line.trim()).length,
+          },
+        });
         showToast("Kolumn kopierad", "success", 2000);
       } catch (error) {
+        allocationTrack("copy_column_error", {
+          ...columnMeta,
+          control_id: "allocation-copy-column",
+          control_label: button.getAttribute("aria-label") || "Kopiera kolumn",
+          status: "error",
+          detail: { error_type: error?.name || "Error", message: error?.message || "" },
+        });
         showToast(error.message || "Kunde inte kopiera kolumnen.", "error", 7000);
       }
     });
   });
   root.querySelectorAll("[data-open-excel]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const key = button.dataset.openExcel;
+      const tableMeta = allocationTableEventMeta(key);
       try {
         await allocationJson(`${ALLOCATION_API}/open-excel`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: allocationState.result.data.session_id, key: button.dataset.openExcel }),
+          body: JSON.stringify({ session_id: allocationState.result.data.session_id, key }),
+        });
+        allocationTrack("open_excel", {
+          ...tableMeta,
+          control_id: "allocation-open-excel",
+          control_label: button.textContent || "Oppna i Excel",
         });
         showToast("Excel öppnas", "success", 2500);
       } catch (error) {
+        allocationTrack("open_excel_error", {
+          ...tableMeta,
+          control_id: "allocation-open-excel",
+          control_label: button.textContent || "Oppna i Excel",
+          status: "error",
+          detail: { error_type: error?.name || "Error", message: error?.message || "" },
+        });
         showToast(error.message, "error");
       }
     });
   });
   root.querySelectorAll("[data-download-csv]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const key = button.dataset.downloadCsv;
+      const tableMeta = allocationTableEventMeta(key);
       try {
         const sessionId = allocationState.result?.data?.session_id;
-        const key = button.dataset.downloadCsv;
-        if (!sessionId || !key) throw new Error("Resultatet kunde inte hittas.");
+        if (!sessionId || !key) {
+          allocationTrack("download_blocked", {
+            ...tableMeta,
+            control_id: "allocation-download-csv",
+            control_label: button.textContent || "Ladda ner CSV",
+            status: "blocked",
+            detail: { reason: "missing_result" },
+          });
+          throw new Error("Resultatet kunde inte hittas.");
+        }
         const filename = `${button.dataset.downloadLabel || key}.csv`;
         await api.download(`${ALLOCATION_API}/download/${encodeURIComponent(sessionId)}/${encodeURIComponent(key)}`, filename);
+        allocationTrack("export", {
+          ...tableMeta,
+          control_id: "allocation-download-csv",
+          control_label: button.textContent || "Ladda ner CSV",
+          detail: { format: "csv" },
+        });
       } catch (error) {
+        allocationTrack("download_error", {
+          ...tableMeta,
+          control_id: "allocation-download-csv",
+          control_label: button.textContent || "Ladda ner CSV",
+          status: "error",
+          detail: { error_type: error?.name || "Error", message: error?.message || "" },
+        });
         showToast(error.message || "Kunde inte ladda ner CSV-filen.", "error");
       }
     });
@@ -5194,6 +5275,11 @@ async function initAllocationPage() {
           console.warn("Kunde inte synka produktivitetsfiler till Uppladdningar.", error);
         }
       })();
+    }
+    if (allocationDesktopAvailable()) {
+      void allocationJson("/api/desktop/cache/sync", { method: "POST" }).catch((error) => {
+        console.warn("Kunde inte synka lokal desktop-cache.", error);
+      });
     }
     restoreWorkStateOnce();
     renderAllocationPage();

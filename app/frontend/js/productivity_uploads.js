@@ -6,7 +6,7 @@
   const SOURCE_SPECS = [
     {
       key: "pick",
-      label: "Plocklogg",
+      label: "Plocklogg Full",
       prefix: "v_ask_pick_log_full",
       required: true,
       visible: true,
@@ -22,7 +22,7 @@
     },
     {
       key: "pallet",
-      label: "Palllastningslogg",
+      label: "Pallastningslogg",
       prefix: "v_ask_palletloading_log",
       required: true,
       visible: true,
@@ -53,6 +53,28 @@
     if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
     if (size >= 1024) return `${(size / 1024).toFixed(1)} kB`;
     return `${size || 0} B`;
+  }
+
+  function desktopAvailable() {
+    return Boolean(window.flowDesktop?.isDesktop || window.flowDesktopBridge);
+  }
+
+  function isDesktopEntry(entry) {
+    return Boolean(entry?.localRef);
+  }
+
+  function normalizeDetectedType(value) {
+    const normalized = String(value || "").trim();
+    const aliases = {
+      wms_pick: "pick",
+      wms_trans: "trans",
+      productivity_pallet: "pallet",
+      v_ask_pick_log_full: "pick",
+      v_ask_trans_log: "trans",
+      v_ask_palletloading_log: "pallet",
+      v_ask_kpi_target: "kpi",
+    };
+    return aliases[normalized] || normalized;
   }
 
   function escapeRegExp(value) {
@@ -125,7 +147,20 @@
   }
 
   function entryFromStoredItem(item) {
+    if (!item) return null;
+    if (item.localRef) {
+      return {
+        key: item.key,
+        localRef: item.localRef,
+        name: item.name || item.key,
+        size: item.size || 0,
+        type: item.type || "",
+        lastModified: item.lastModified || Date.now(),
+        fileType: item.fileType || item.key,
+      };
+    }
     const blob = item.blob;
+    if (!blob) return null;
     const file = blob instanceof File
       ? blob
       : new File([blob], item.name || item.key, { type: item.type || blob?.type || "", lastModified: item.lastModified || Date.now() });
@@ -148,7 +183,7 @@
         const files = {};
         for (const item of request.result || []) {
           const entry = entryFromStoredItem(item);
-          files[entry.key] = entry;
+          if (entry?.key) files[entry.key] = entry;
         }
         database.close();
         resolve(files);
@@ -167,7 +202,9 @@
       size: file.size || 0,
       type: file.type || "",
       lastModified: file.lastModified || Date.now(),
-      blob: file,
+      fileType: file.fileType || key,
+      localRef: file.localRef || "",
+      blob: file.localRef ? null : file,
     };
     await store("readwrite", (objectStore) => objectStore.put(entry));
     return entry;
@@ -182,6 +219,7 @@
   }
 
   async function readFileSample(file) {
+    if (isDesktopEntry(file)) return "";
     return await file.slice(0, 8192).text();
   }
 
@@ -202,6 +240,15 @@
   }
 
   async function classifyFile(file) {
+    const hintedType = normalizeDetectedType(file?.fileType);
+    if (hintedType && SOURCE_BY_KEY[hintedType]) return hintedType;
+    if (isDesktopEntry(file)) {
+      const result = await api.get(`/api/desktop/files/${encodeURIComponent(file.localRef)}/detect`, {
+        skipCache: true,
+      });
+      const detectedType = normalizeDetectedType(result?.file_type || result?.entry?.fileType);
+      if (detectedType && SOURCE_BY_KEY[detectedType]) return detectedType;
+    }
     return classifyFileFromSample(file, await readFileSample(file));
   }
 
@@ -223,6 +270,12 @@
   }
 
   async function uploadProductivityRawFile(file) {
+    if (isDesktopEntry(file)) {
+      return await api.post("/api/desktop/sync/productivity", {
+        localRef: file.localRef,
+        filename: file.name || "productivity.csv",
+      });
+    }
     return await api.postFile(
       `/api/productivity/files/raw?filename=${encodeURIComponent(file.name)}`,
       file,
@@ -233,16 +286,18 @@
     const visibleFiles = Object.fromEntries(VISIBLE_SPECS.map((spec) => {
       const entry = files[spec.key];
       const file = entry?.file;
+      const uploaded = Boolean(file || entry?.localRef);
+      const size = Number(entry?.size || file?.size || 0);
       return [spec.key, {
         key: spec.key,
         label: spec.label,
         required: spec.required,
         visible: spec.visible,
-        uploaded: Boolean(file),
+        uploaded,
         name: entry?.name || file?.name || null,
         modified_at: entry?.lastModified ? new Date(entry.lastModified).toISOString() : null,
-        size: entry?.size || file?.size || null,
-        size_label: file ? formatFileSize(entry?.size || file.size) : null,
+        size: size || null,
+        size_label: uploaded ? formatFileSize(size) : null,
       }];
     }));
     const missing = Object.values(visibleFiles)
@@ -327,7 +382,8 @@
       setupDropTarget(slot, (files) => handleFiles(panel, files, slot.dataset.fileKey || ""));
     });
     panel.querySelectorAll(".productivity-slot-upload").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
+        if (await pickDesktopFiles(panel, button.dataset.fileKey || "")) return;
         const input = panel.querySelector("#productivityUploadInput");
         input.dataset.targetKey = button.dataset.fileKey || "";
         input.click();
@@ -351,10 +407,22 @@
     }
   }
 
+  async function pickDesktopFiles(panel, targetKey = "") {
+    if (!desktopAvailable() || !window.flowDesktop?.pickFiles) return false;
+    const entries = await window.flowDesktop.pickFiles({
+      accept: ".csv,.txt",
+      multiple: !targetKey,
+    });
+    if (!entries.length) return true;
+    await handleFiles(panel, entries, targetKey);
+    return true;
+  }
+
   function storedFilesSignature(files) {
     return Object.values(files || {})
       .map((entry) => {
         const file = entry?.file;
+        if (entry?.localRef) return `${entry.key}:${entry.localRef}:${entry.name}:${entry.size}:${entry.lastModified}`;
         return file ? `${entry.key}:${file.name}:${file.size}:${file.lastModified}` : "";
       })
       .filter(Boolean)
@@ -373,7 +441,9 @@
     if (!signature || signature === lastAllocationSyncSignature) {
       return { saved: [], recognized: [], unknown: [], mappings: 0 };
     }
-    const fileList = Object.values(stored).map((entry) => entry?.file).filter(Boolean);
+    const fileList = Object.values(stored)
+      .map((entry) => entry?.localRef ? entry : entry?.file)
+      .filter(Boolean);
     const result = await window.sharedAllocationUploads.saveFiles(fileList, { clearGeneration });
     if (!result?.stale) lastAllocationSyncSignature = signature;
     return result;
@@ -410,12 +480,19 @@
       recognized.push(file.name || fileType);
       if (fileType === "kpi") {
         if (statusElement) statusElement.textContent = `Uppdaterar KPI-mål: ${file.name}`;
+        const entry = isDesktopEntry(file) ? await saveFile(fileType, file) : null;
+        if (entry?.localRef) {
+          await api.post("/api/desktop/productivity/files/register", { files: { [fileType]: entry.localRef } });
+        }
         const result = await uploadProductivityRawFile(file);
         hiddenSaved += (result.saved || []).length;
         if (reportUnknown) unknown.push(...(result.unknown || []));
         continue;
       }
-      await saveFile(fileType, file);
+      const entry = await saveFile(fileType, file);
+      if (entry.localRef) {
+        await api.post("/api/desktop/productivity/files/register", { files: { [fileType]: entry.localRef } });
+      }
       try {
         const result = await uploadProductivityRawFile(file);
         for (const item of result.saved || []) {
@@ -425,7 +502,7 @@
         console.warn("Kunde inte uppdatera sammanställd produktivitetsdata.", error);
         compiledFailed.push(file.name || fileType);
       }
-      saved.push(file.name);
+      saved.push(file.name || fileType);
     }
 
     if (syncAllocationUploads && window.sharedAllocationUploads?.saveFiles) {
@@ -516,7 +593,12 @@
     `;
     setupDropzone(panel);
     const input = panel.querySelector("#productivityUploadInput");
-    panel.querySelector('label[for="productivityUploadInput"]').addEventListener("click", () => {
+    panel.querySelector('label[for="productivityUploadInput"]').addEventListener("click", async (event) => {
+      if (desktopAvailable() && window.flowDesktop?.pickFiles) {
+        event.preventDefault();
+        await pickDesktopFiles(panel, "");
+        return;
+      }
       input.dataset.targetKey = "";
     });
     input.addEventListener("change", async () => {

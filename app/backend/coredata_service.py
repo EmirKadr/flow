@@ -36,20 +36,20 @@ def _normalize_coredata_prefix(value: str | None) -> str:
 
 
 CORE_DATA_SPECS = (
-    CoreDataFileSpec("custom", "Custom", "custom"),
-    CoreDataFileSpec("dimension", "Dimension", "dimension"),
-    CoreDataFileSpec("dispatch_template", "Dispatch template", "dispatch_template"),
-    CoreDataFileSpec("item", "Item", "item"),
-    CoreDataFileSpec("item_alias", "Item alias", "item_alias"),
-    CoreDataFileSpec("item_attribute", "Item attribute", "item_attribute"),
-    CoreDataFileSpec("item_option", "Item option", "item_option"),
-    CoreDataFileSpec("item_security_info", "Artikel säkerhetsinformation", "item_security_info"),
-    CoreDataFileSpec("kpi_target_rule", "KPI target rule", "kpi_target_rule"),
-    CoreDataFileSpec("location", "Location", "location", ("lagerplats", "lagerplatser")),
-    CoreDataFileSpec("location_cost", "Location cost", "location_cost"),
-    CoreDataFileSpec("pallet_type", "Pallet type", "pallet_type"),
-    CoreDataFileSpec("trans_agency", "Transport agency", "trans_agency", ("transportorer", "transportor", "agency", "agencies")),
-    CoreDataFileSpec("kpi", "KPI-Mal", "v_ask_kpi_target"),
+    CoreDataFileSpec("custom", "Kund", "custom"),
+    CoreDataFileSpec("dimension", "Dimensioner", "dimension"),
+    CoreDataFileSpec("dispatch_template", "Avgångsmallar", "dispatch_template"),
+    CoreDataFileSpec("item", "Artiklar (Item)", "item"),
+    CoreDataFileSpec("item_alias", "Item Alias", "item_alias"),
+    CoreDataFileSpec("item_attribute", "Item Attribute", "item_attribute"),
+    CoreDataFileSpec("item_option", "Item Option", "item_option"),
+    CoreDataFileSpec("item_security_info", "Artikel Säkerhetsinformation", "item_security_info"),
+    CoreDataFileSpec("kpi_target_rule", "KPI-Målregler", "kpi_target_rule"),
+    CoreDataFileSpec("location", "Lagerplatser", "location", ("lagerplats", "lagerplatser")),
+    CoreDataFileSpec("location_cost", "Lagerplatsavstånd", "location_cost"),
+    CoreDataFileSpec("pallet_type", "Palltyp", "pallet_type"),
+    CoreDataFileSpec("trans_agency", "Transportör", "trans_agency", ("transportorer", "transportor", "agency", "agencies")),
+    CoreDataFileSpec("kpi", "KPI-Mål", "v_ask_kpi_target"),
 )
 
 CORE_DATA_SPEC_BY_KEY = {spec.key: spec for spec in CORE_DATA_SPECS}

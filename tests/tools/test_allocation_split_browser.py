@@ -398,7 +398,7 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
         expect(page.locator(".allocation-result")).to_contain_text("O-1")
 
-        page.goto(f"{local_allocation_server}/historik.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/historik.html", wait_until="domcontentloaded")
         page.wait_for_selector("#auditBody", timeout=15000)
         page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)

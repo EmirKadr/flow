@@ -91,9 +91,9 @@ def _save_session_log_file(
     return {
         "key": file_type,
         "label": {
-            "pick": "Plocklogg",
+            "pick": "Plocklogg Full",
             "trans": "Translogg",
-            "pallet": "Palllastningslogg",
+            "pallet": "Pallastningslogg",
         }.get(file_type, file_type),
         "visible": True,
         "name": target_path.name,

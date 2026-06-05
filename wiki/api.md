@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-04
 tags: [api, backend]
 ---
 
@@ -68,19 +68,27 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/audit`, `GET /api/audit/summary`, `GET /api/audit/errors` - historik, analytics och felkodsdashboard. Super User kan filtrera med `business_id`.
 - `POST /api/audit/client-error` - tyst klientrapportering av API-fel som anvandaren traffar, inklusive sidmoduler med egen fetch-wrapper via `window.reportApiError`; sparar sanerad path/status/felkod utan request body eller queryvarden.
 - `POST /api/audit/client-event` - tyst klientrapportering av auditbara UI-handlingar som sidoppning; sparar sanerad path och vyinfo utan att skriva i dokumentloggen.
+- `POST /api/audit/local-run` - tar emot sanerad Windows-metadata for lokala Bearbeta-/Produktivitet-korningar: feature, flode, status, filslotar, varaktighet och rad-/resultatraknare utan localRef, sokvag, filnamn eller filinnehall.
+- `POST /api/audit/interactions` - batchar inloggade UI-interaktioner fran webb och desktop. Backend satter `business_id`/`user_id`, sanerar detail och sparar i `user_interaction_events`.
+- `POST /api/audit/interactions/public` - allowlistad anonym tracking for den publika Meta-uppladdningen. Endast `public_meta_*`-events sparas och payloaden far inte innehalla filnamn, filvagar eller request body.
+- `GET /api/audit/interactions`, `GET /api/audit/interactions/summary`, `GET /api/audit/interactions/coverage` - Super User-endpoints for Historik > Funktioner/Knappar/Kolumner/Floden med filter for period, verksamhet, anvandare, vy, eventtyp, feature, flow och fritext.
+- `POST /api/audit/interactions/chat`, `POST /api/audit/interactions/chat/clear` - Historik-AI via MiniMax for trackingfragor. Chatten far aggregeringar och raw events inom limit men ska bara svara om historik/tracking och inte visa hemligheter eller blockerade falt.
+- `TRACKING_ALLOW_VALUE_SAMPLES=false` ar default. Om flaggan inte satts till true strippar backend klartext-vardeprover eller ersatter dem med langd/antal aven om klienten skickar dem.
 - `GET /api/healthcheck` - Super User-halsa for app, databas och Render-koppling. Render-data hamtas bara nar `RENDER_API_KEY` och resurs-id finns i secrets; build-loggar anvander Render `ownerId` + service-id och kan falla tillbaka pa `RENDER_OWNER_ID`.
 - `POST /api/healthcheck/wait-metrics` - tyst insamling av anvandarens vantetider for vyload, API-anrop, nedladdningar och bakgrundsladdning. Payloaden ar sanerad till event, vy, steg, duration, status och begransad teknisk detalj.
 - `GET /api/healthcheck/wait-metrics/summary` - Super User-summering for Historik-fliken `Vantetider` och CLI-verktyget `tools.healthcheck`; accepterar `business_id`.
 - `GET /api/productivity/files`, `GET /api/productivity/targets`, `GET /api/productivity` - produktivitet, kraver `productivity=view`.
-- `POST /api/productivity/files`, `POST /api/productivity/files/raw`, `DELETE /api/productivity/files/{file_type}` - serverhanterade produktivitetsfiler, kraver `productivity=edit`. Raw-upload av Plocklogg, Translogg och Palllastningslogg uppdaterar dessutom verksamhetens sammanstallda csv.gz-observationer.
+- `POST /api/productivity/files`, `POST /api/productivity/files/raw`, `DELETE /api/productivity/files/{file_type}` - serverhanterade produktivitetsfiler, kraver `productivity=edit`. Raw-upload av Plocklogg Full, Translogg och Pallastningslogg uppdaterar dessutom verksamhetens sammanstallda csv.gz-observationer.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler fran Postgres-tabellen `coredata_files` med filbaserad fallback, samt sammanstalld data som `artikel_max.csv`, `productivity_pick_observations`, `productivity_trans_observations` och `productivity_pallet_observations`.
 - `GET /api/coredata/files/{file_key}/preview` - forhandsvisar en serverlagrad coredata-karnfil eller sammanstalld datafil for anvandarens verksamhet. Svaret innehaller begransad textpreview, filnamn, storlek och metadata men ska inte anvandas for full nedladdning.
+- `GET /api/coredata/files/{file_key}/download` - laddar ner serverlagrad coredata-karnfil eller sammanstalld data forst nar anvandaren klickar explicit nedladdning.
 - `POST /api/coredata/files/raw` - laddar upp en coredata-karnfil eller sammanstalld datafil till anvandarens verksamhet och ersatter aldre fil med samma prefix, kraver `allocationUploads=edit`. Coredata-karnfiler sparas som blobbar i Postgres; sammanstalld data behaller sitt befintliga lagringsflode.
 - `GET /api/allokering/health`, `/flows`, `/pool`, `GET/PUT /process-matrix`, `GET/PUT /ytgenerering-map-layout`, `POST /detect`, `POST /flow/{flow_id}`, `POST /open-excel`, `GET /table-column/...`, `GET /download/...` - lagerverktyg. `ytgenerering-map-layout` kraver `allocationSettings` och returnerar aven `available_locations` fran aktiv verksamhets `location`-karnfil.
+- Desktop-only lokala endpoints finns bara i Windows-proxyn: `/api/desktop/capabilities`, `/api/desktop/jobs`, `/api/desktop/cache/sync`, `/api/desktop/files/{ref}/detect|open|open-folder`, `/api/desktop/sync/coredata`, `/api/desktop/sync/productivity` och `/api/desktop/productivity/files/register`. De proxas inte som centrala serverkontrakt.
 - `GET /api/public/...` - publika text/CSV-summeringar for timmar/personer. Queryparametern `business` defaultar till `STIGAMO`; publika endpoints summerar inte globalt.
 - `POST /api/meta/uploads` - publik multipart-uppladdning for flera bilder/videor utan inloggning. Sparar filer i `meta_media_uploads` med tidsstamplat `stored_filename`, `content_hash`, eventuell `duration_seconds` och status `pending_analysis`. Exakta dubbletter hoppas over och returneras i `skipped`. Fel som hinner na backend loggas sanerat som `meta_media_upload/upload_failed`, sa anonyma 4xx/5xx fran den publika sidan syns i Historik > Felkoder utan filnamn eller filinnehall.
-- `GET /api/meta/uploads`, `GET /api/meta/uploads/{upload_id}/content`, `DELETE /api/meta/uploads/{upload_id}` - Super User-endpoints for Meta-vyn. Listan returnerar metadata utan blobbinnehall, inklusive hash och videolangd nar den finns; content-endpointen kan visa/ladda ner bild/video och stoder byte-range for videospelning. Delete-endpointen raderar raden och blobben.
-- `GET /api/meta/shipment-observations`, `POST /api/meta/uploads/{upload_id}/analyze` - Super User-endpoints for sändningsanalys av Meta-videor. Analyslistan returnerar ordernummer, sändningsnummer, videons filnamn, Video-ID/hash och langd via kopplad media-rad. Analysen använder Gemini när `GEMINI_API_KEY` finns och ska väga ihop både video, ljud, transportetikett och innehållsförteckning.
+- `GET /api/meta/uploads`, `HEAD/GET /api/meta/uploads/{upload_id}/content`, `DELETE /api/meta/uploads/{upload_id}` - Super User-endpoints for Meta-vyn. Listan returnerar metadata utan blobbinnehall, inklusive hash och videolangd nar den finns; content-endpointen kan visa bild/video inline, ladda ner med `download=1` och stoder byte-range for videospelning. Delete-endpointen raderar raden och blobben.
+- `GET /api/meta/shipment-observations`, `POST /api/meta/uploads/{upload_id}/analyze` - Super User-endpoints for Meta-videoanalys. Response-shapen ar oforandrad, men LLM fyller bara `pallet_id` och `deviations` fran extraherat ljud. `order_number`, `shipment_number`, `username` och `customer_name` lamnas tomma tills de kan hamtas via pall-id fran uppladdad data. Videons filnamn, Video-ID/hash och langd returneras fortsatt via kopplad media-rad.
 
 ## Agentkommandon
 

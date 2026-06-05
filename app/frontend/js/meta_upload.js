@@ -10,11 +10,47 @@ const progressRemaining = document.getElementById("metaProgressRemaining");
 const statusBox = document.getElementById("metaStatus");
 
 const META_UPLOAD_FILES_PER_REQUEST = 1;
+const PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
 let selectedFiles = [];
 let fileUploadStates = [];
 let uploading = false;
+let uploadStartedAtMs = 0;
 const selectedVideoDurations = new WeakMap();
 let durationProbeGeneration = 0;
+
+function publicMetaFileSummary(files) {
+  const items = Array.from(files || []).filter(Boolean);
+  return {
+    file_count: items.length,
+    total_bytes: items.reduce((sum, file) => sum + (Number(file.size) || 0), 0),
+    image_count: items.filter((file) => String(file.type || "").toLowerCase().startsWith("image/")).length,
+    video_count: items.filter((file) => isVideoFile(file)).length,
+  };
+}
+
+function publicMetaTrack(eventType, detail = {}) {
+  const body = JSON.stringify({
+    items: [{
+      event_type: eventType,
+      view_id: "metaUpload",
+      page_path: "/meta-upload.html",
+      control_id: "metaUploadForm",
+      control_label: "Meta-uppladdning",
+      control_role: "form",
+      feature: "meta",
+      client_surface: "public",
+      status: detail.status || "ok",
+      detail,
+    }],
+  });
+  fetch(PUBLIC_INTERACTION_EVENT_REPORT_PATH, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: body.length < 60000,
+  }).catch(() => {});
+}
 
 function formatBytes(bytes) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -33,6 +69,18 @@ function formatDuration(seconds) {
   const hours = Math.floor(minutesTotal / 60);
   if (hours > 0) return `${hours}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${min}:${String(sec).padStart(2, "0")}`;
+}
+
+function formatEta(seconds) {
+  const value = Math.ceil(Number(seconds) || 0);
+  if (value <= 0) return "";
+  if (value < 60) return `ca ${value} sek kvar`;
+  const minutes = Math.floor(value / 60);
+  const sec = value % 60;
+  if (minutes < 60) return sec ? `ca ${minutes} min ${sec} sek kvar` : `ca ${minutes} min kvar`;
+  const hours = Math.floor(minutes / 60);
+  const min = minutes % 60;
+  return min ? `ca ${hours} h ${min} min kvar` : `ca ${hours} h kvar`;
 }
 
 function isVideoFile(file) {
@@ -164,6 +212,7 @@ function resetProgress() {
   progressPercent.textContent = "0%";
   progressLabel.textContent = "Laddar upp";
   progressRemaining.textContent = "";
+  uploadStartedAtMs = 0;
 }
 
 function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
@@ -174,13 +223,20 @@ function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
   const offsets = fileOffsets();
   let activeIndex = offsets.findIndex((item) => loaded >= item.start && loaded < item.end);
   if (activeIndex === -1 && loaded >= total && offsets.length) activeIndex = offsets.length - 1;
+  const elapsedSeconds = uploadStartedAtMs ? (Date.now() - uploadStartedAtMs) / 1000 : 0;
+  const bytesPerSecond = elapsedSeconds > 1 && loaded > 0 ? loaded / elapsedSeconds : 0;
+  const eta = bytesPerSecond > 0 && remaining > 0 ? formatEta(remaining / bytesPerSecond) : "";
+  const queueLabel = activeIndex >= 0 && selectedFiles.length
+    ? `fil ${activeIndex + 1} av ${selectedFiles.length}`
+    : `${selectedFiles.length} filer`;
 
   progressPanel.hidden = false;
   progressBar.style.width = `${percent}%`;
+  progressBar.parentElement?.setAttribute("aria-valuenow", String(percent));
   progressPercent.textContent = `${percent}%`;
   progressRemaining.textContent = remaining > 0
-    ? `${formatBytes(remaining)} kvar av ${formatBytes(total)}`
-    : `${formatBytes(total)} uppladdat`;
+    ? `${queueLabel} - ${formatBytes(remaining)} kvar av ${formatBytes(total)}${eta ? ` - ${eta}` : ""}`
+    : `${selectedFiles.length} filer klara - ${formatBytes(total)} uppladdat`;
   progressLabel.textContent = activeIndex >= 0
     ? `Laddar upp ${selectedFiles[activeIndex]?.name || "fil"}`
     : "Laddar upp";
@@ -215,6 +271,9 @@ function setFiles(files) {
   renderFiles();
   void loadSelectedVideoDurations();
   setStatus(selectedFiles.length ? `${selectedFiles.length} filer valda. Startar uppladdning...` : "");
+  if (selectedFiles.length) {
+    publicMetaTrack("public_meta_file_select", publicMetaFileSummary(selectedFiles));
+  }
   if (selectedFiles.length) void startUpload();
 }
 
@@ -242,15 +301,20 @@ async function startUpload() {
   if (!selectedFiles.length || uploading) return;
 
   setUploadControlsLocked(true);
+  uploadStartedAtMs = Date.now();
   fileUploadStates = selectedFiles.map(() => ({ label: "Väntar", type: "" }));
   renderFiles();
   updateProgress(0);
-  setStatus("Laddar upp...");
+  setStatus(`Laddar upp ${selectedFiles.length} filer i kö, en fil i taget...`);
   const totalBytes = totalSelectedBytes();
   let uploadedBeforeBytes = 0;
   let savedTotal = 0;
   let skippedTotal = 0;
   const failed = [];
+  publicMetaTrack("public_meta_upload_start", {
+    ...publicMetaFileSummary(selectedFiles),
+    batch_size: META_UPLOAD_FILES_PER_REQUEST,
+  });
   try {
     for (let start = 0; start < selectedFiles.length; start += META_UPLOAD_FILES_PER_REQUEST) {
       const batch = selectedFiles.slice(start, start + META_UPLOAD_FILES_PER_REQUEST);
@@ -265,6 +329,12 @@ async function startUpload() {
         const skippedCount = Number(payload.skipped_count || 0);
         savedTotal += savedCount;
         skippedTotal += skippedCount;
+        publicMetaTrack("public_meta_upload_progress", {
+          ...publicMetaFileSummary(batch),
+          batch_index: start,
+          saved_count: savedCount,
+          skipped_count: skippedCount,
+        });
         batch.forEach((_file, offset) => {
           const index = start + offset;
           setFileUploadState(index, skippedCount ? "Dubblett" : "Klar", "success");
@@ -272,6 +342,13 @@ async function startUpload() {
       } catch (error) {
         const message = error.message || "Uppladdningen misslyckades.";
         failed.push({ index: start, message });
+        publicMetaTrack("public_meta_upload_error", {
+          ...publicMetaFileSummary(batch),
+          batch_index: start,
+          status: "error",
+          error_type: error?.name || "Error",
+          message_length: message.length,
+        });
         batch.forEach((_file, offset) => setFileUploadState(start + offset, "Fel", "error"));
       }
       uploadedBeforeBytes += batchBytes;
@@ -279,22 +356,44 @@ async function startUpload() {
     }
     input.value = "";
     if (failed.length) {
+      publicMetaTrack("public_meta_upload_error", {
+        ...publicMetaFileSummary(selectedFiles),
+        status: "error",
+        saved_count: savedTotal,
+        skipped_count: skippedTotal,
+        failed_count: failed.length,
+      });
       const completedParts = [];
       if (savedTotal) completedParts.push(`${savedTotal} filer uppladdade`);
       if (skippedTotal) completedParts.push(`${skippedTotal} dubbletter hoppades över`);
       const successText = completedParts.length ? `${completedParts.join(". ")}. ` : "";
       setStatus(`${successText}${failed.length} filer misslyckades. Försök igen med de filerna.`, "error");
     } else if (skippedTotal && savedTotal) {
+      publicMetaTrack("public_meta_upload_success", {
+        ...publicMetaFileSummary(selectedFiles),
+        saved_count: savedTotal,
+        skipped_count: skippedTotal,
+      });
       setStatus(`${savedTotal} filer uppladdade. ${skippedTotal} dubbletter hoppades över.`, "success");
       selectedFiles = [];
       fileUploadStates = [];
       renderFiles();
     } else if (skippedTotal) {
+      publicMetaTrack("public_meta_upload_success", {
+        ...publicMetaFileSummary(selectedFiles),
+        saved_count: savedTotal,
+        skipped_count: skippedTotal,
+      });
       setStatus(`Inga nya filer sparades. ${skippedTotal} dubbletter fanns redan.`, "success");
       selectedFiles = [];
       fileUploadStates = [];
       renderFiles();
     } else {
+      publicMetaTrack("public_meta_upload_success", {
+        ...publicMetaFileSummary(selectedFiles),
+        saved_count: savedTotal,
+        skipped_count: skippedTotal,
+      });
       setStatus(`${savedTotal} filer uppladdade.`, "success");
       selectedFiles = [];
       fileUploadStates = [];
@@ -304,6 +403,12 @@ async function startUpload() {
     setUploadControlsLocked(false);
     input.value = "";
     renderFiles();
+    publicMetaTrack("public_meta_upload_error", {
+      ...publicMetaFileSummary(selectedFiles),
+      status: "error",
+      error_type: error?.name || "Error",
+      message_length: String(error?.message || "").length,
+    });
     setStatus(error.message || "Uppladdningen misslyckades.", "error");
     return;
   }

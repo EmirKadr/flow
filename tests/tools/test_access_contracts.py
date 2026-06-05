@@ -172,6 +172,10 @@ def test_frontend_prefetch_cache_is_available_for_visible_pages_and_uploads():
     assert "flow-api-get-cache-v1" in api_js
     assert "enqueueVisiblePagePrefetches" in common
     assert "scheduleNextBackgroundPrefetch" in common
+    assert "BACKGROUND_PREFETCH_ERROR_DEDUPE_MS" in common
+    assert "shouldLogBackgroundPrefetchError" in common
+    assert "backgroundPrefetchErrorMessage" in common
+    assert 'console.warn("Bakgrundsladdning misslyckades"' in common
     assert "if (areaQuery) {" in common
     assert "`/api/schedule?year=${year}&week=${week}&weekday=${weekday}`" in common
     assert "`/api/overview?year=${year}&week=${week}`" in common

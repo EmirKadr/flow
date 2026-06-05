@@ -11,9 +11,12 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineSettings,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWidgets import QDialog
 
 from core.app_info import APP_NAME
+from desktop.file_bridge import DesktopFileBridge
+from desktop.local_runtime import DesktopLocalRuntime
 
 
 def default_download_dir() -> Path:
@@ -59,7 +62,7 @@ def configure_printing(
     view._flow_active_printer = None
 
 
-def create_web_view(parent=None) -> QWebEngineView:
+def create_web_view(parent=None, *, desktop_runtime: DesktopLocalRuntime | None = None) -> QWebEngineView:
     view = QWebEngineView(parent)
 
     app_data_dir = Path(
@@ -79,6 +82,13 @@ def create_web_view(parent=None) -> QWebEngineView:
 
     page = QWebEnginePage(profile, view)
     view.setPage(page)
+    if desktop_runtime is not None:
+        channel = QWebChannel(page)
+        bridge = DesktopFileBridge(desktop_runtime, page)
+        channel.registerObject("flowDesktopBridge", bridge)
+        page.setWebChannel(channel)
+        page._flow_desktop_channel = channel
+        page._flow_desktop_bridge = bridge
     configure_printing(view)
 
     settings = view.settings()

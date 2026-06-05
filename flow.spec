@@ -31,6 +31,7 @@ a = Analysis(
     hiddenimports=[
         "PyQt6.QtWebEngineCore",
         "PyQt6.QtWebEngineWidgets",
+        "PyQt6.QtWebChannel",
         "PyQt6.QtPrintSupport",
         "PyQt6.QtSvg",
         "lightgbm",

@@ -214,8 +214,38 @@ def _resolve_path(value: str, base: Path | None = None) -> Path:
     return path
 
 
+def _flow_file_defs(flow: dict) -> list[dict]:
+    defs: list[dict] = []
+    seen: set[str] = set()
+    for input_def in flow.get("inputs") or []:
+        if input_def.get("type") != "file":
+            continue
+        key = str(input_def["key"])
+        defs.append(input_def)
+        seen.add(key)
+    for core_def in flow.get("coredata") or []:
+        key = str(core_def["key"])
+        if key in seen:
+            continue
+        defs.append(
+            {
+                **core_def,
+                "key": key,
+                "type": "file",
+                "detect": [key],
+            }
+        )
+        seen.add(key)
+    return defs
+
+
 def _validate_payload(flow: dict, files: dict[str, Path], params: dict[str, str]) -> list[str]:
     errors: list[str] = []
+    input_file_keys = {
+        str(item.get("key"))
+        for item in flow.get("inputs") or []
+        if item.get("type") == "file"
+    }
     for input_def in flow.get("inputs") or []:
         key = str(input_def["key"])
         input_type = input_def.get("type")
@@ -227,13 +257,22 @@ def _validate_payload(flow: dict, files: dict[str, Path], params: dict[str, str]
                 errors.append(f"Filen finns inte for {key}: {path}")
         elif input_def.get("required") and not str(params.get(key, "")).strip():
             errors.append(f"Saknar parameter: {key}")
+    for file_def in _flow_file_defs(flow):
+        key = str(file_def["key"])
+        if key in input_file_keys:
+            continue
+        path = files.get(key)
+        if file_def.get("required") and path is None:
+            errors.append(f"Saknar fil: {key}")
+        if path is not None and not path.exists():
+            errors.append(f"Filen finns inte for {key}: {path}")
     return errors
 
 
 def _apply_auto_files(flow: dict, files: dict[str, Path], auto_files: list[str] | None) -> None:
     if not auto_files:
         return
-    file_inputs = [item for item in (flow.get("inputs") or []) if item.get("type") == "file"]
+    file_inputs = _flow_file_defs(flow)
     for value in auto_files:
         path = Path(value)
         if not path.exists():
@@ -257,6 +296,33 @@ def _apply_auto_files(flow: dict, files: dict[str, Path], auto_files: list[str] 
         if key in files:
             raise SystemExit(f"Input {key} har redan en fil. Ange bara en fil per input.")
         files[key] = path
+
+
+def _apply_auto_dirs(flow: dict, files: dict[str, Path], auto_dirs: list[str] | None) -> None:
+    if not auto_dirs:
+        return
+    file_inputs = _flow_file_defs(flow)
+    for value in auto_dirs:
+        directory = Path(value)
+        if not directory.exists():
+            raise SystemExit(f"Mappen finns inte: {directory}")
+        if not directory.is_dir():
+            raise SystemExit(f"Auto-dir ar inte en mapp: {directory}")
+        for path in sorted(item for item in directory.iterdir() if item.is_file()):
+            file_type = detect.detect_file_type(path)
+            if not file_type:
+                continue
+            matches = [
+                str(input_def["key"])
+                for input_def in file_inputs
+                if file_type in (input_def.get("detect") or [])
+            ]
+            if len(matches) != 1:
+                continue
+            key = matches[0]
+            if key in files:
+                continue
+            files[key] = path
 
 
 def _run_flow(
@@ -289,6 +355,13 @@ def _files_params_from_dynamic_args(flow: dict, args: argparse.Namespace) -> tup
                 files[key] = Path(value)
         elif value is not None and str(value) != "":
             params[key] = str(value)
+    for file_def in _flow_file_defs(flow):
+        key = str(file_def["key"])
+        if key in files:
+            continue
+        value = getattr(args, f"input_{key}", None)
+        if value:
+            files[key] = Path(value)
     return files, params
 
 
@@ -306,6 +379,7 @@ def _run_dynamic_command(args: argparse.Namespace) -> int:
     flow = _flow_by_id(args.flow_id)
     files, params = _files_params_from_dynamic_args(flow, args)
     _apply_auto_files(flow, files, args.auto_file)
+    _apply_auto_dirs(flow, files, args.auto_dir)
     out_dir = Path(args.out) if args.out else _default_out_dir(args.flow_id)
     payload = _run_flow(
         flow_id=args.flow_id,
@@ -326,6 +400,7 @@ def _run_generic(args: argparse.Namespace) -> int:
     flow = _flow_by_id(args.flow_id)
     files = {key: Path(value) for key, value in _parse_key_values(args.file, "file").items()}
     _apply_auto_files(flow, files, args.auto_file)
+    _apply_auto_dirs(flow, files, args.auto_dir)
     params = _parse_key_values(args.param, "param")
     out_dir = Path(args.out) if args.out else _default_out_dir(args.flow_id)
     payload = _run_flow(
@@ -408,6 +483,11 @@ def _add_auto_file_arg(parser: argparse.ArgumentParser) -> None:
         action="append",
         help="Fil som matchas automatiskt mot flodets inputs via samma detektor som UI:t.",
     )
+    parser.add_argument(
+        "--auto-dir",
+        action="append",
+        help="Mapp vars filer matchas automatiskt. Orelaterade filer ignoreras och redan ifyllda inputs behalls.",
+    )
 
 
 def _flag_for_key(key: str) -> str:
@@ -428,6 +508,16 @@ def _add_dynamic_flow_parser(subparsers: argparse._SubParsersAction, flow: dict)
         if input_type == "number":
             kwargs["type"] = str
         parser.add_argument(_flag_for_key(key), **kwargs)
+    input_keys = {str(input_def["key"]) for input_def in flow.get("inputs") or []}
+    for file_def in _flow_file_defs(flow):
+        key = str(file_def["key"])
+        if key in input_keys:
+            continue
+        parser.add_argument(
+            _flag_for_key(key),
+            dest=f"input_{key}",
+            help=str(file_def.get("label") or key),
+        )
     _add_auto_file_arg(parser)
     _add_output_args(parser)
 

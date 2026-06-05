@@ -53,6 +53,8 @@ services:
         sync: false
       - key: MINIMAX_MODEL
         value: MiniMax-M2.7
+      - key: TRACKING_ALLOW_VALUE_SAMPLES
+        value: "false"
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
@@ -62,9 +64,15 @@ services:
       - key: META_ANALYSIS_TIMEOUT_SECONDS
         value: "120"
       - key: META_ANALYSIS_AUTO_START
-        value: "true"
+        value: "false"
       - key: META_ANALYSIS_MAX_VIDEO_BYTES
         value: "268435456"
+      - key: META_ANALYSIS_START_DELAY_SECONDS
+        value: "30"
+      - key: META_ANALYSIS_SPACING_SECONDS
+        value: "15"
+      - key: META_LABEL_STILL_TIME_SECONDS
+        value: "1.0"
       - key: DATA_SOURCE_API_BASE_URL
         sync: false
       - key: DATA_SOURCE_API_KEY

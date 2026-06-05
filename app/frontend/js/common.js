@@ -10,8 +10,13 @@ const APP_LOG_STORAGE_KEY = "flow-app-log-v1";
 const APP_LOG_UNREAD_STORAGE_KEY = "flow-app-log-unread-v1";
 const APP_LOG_MAX_ENTRIES = 200;
 const COMMON_WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
+const COMMON_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";
+const COMMON_PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
 const WAIT_METRIC_FLUSH_MS = 10000;
 const WAIT_METRIC_MAX_QUEUE = 100;
+const INTERACTION_FLUSH_MS = 5000;
+const INTERACTION_MAX_QUEUE = 100;
+const INTERACTION_CONTEXT_MS = 3500;
 const FLOW_PAGE_STARTED_AT = typeof performance !== "undefined" && performance.now
   ? performance.now()
   : Date.now();
@@ -74,13 +79,13 @@ const SHARED_ALLOCATION_FILE_WORDS = {
   saldo: ["v_ask_item_summary_stock_automation", "item_summary_stock_automation", "saldo ink", "automation"],
   items: ["item_option", "item option"],
   max_csv: ["artikel_max", "article_max"],
-  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade"],
+  not_putaway: ["not_putaway", "not putaway", "ej_inlag", "ej inlag", "ejinlag", "ej inlagrade", "ej inlagrade artiklar"],
   campaign: ["kampanjplock", "kampanj", "campaign"],
   prognos: ["prognos idag", "prognos", "forecast"],
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "palllastningslogg"],
+  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "pallastningslogg", "palllastningslogg"],
 };
 const AREA_FOCUS_STORAGE_KEY = "flow-area-focus";
 const AREA_FOCUS_OPTIONS = [
@@ -103,6 +108,10 @@ let appLogSignalTimer = null;
 let waitMetricQueue = [];
 let waitMetricFlushTimer = null;
 let waitMetricInFlight = false;
+let interactionQueue = [];
+let interactionFlushTimer = null;
+let interactionInFlight = false;
+let lastInteractionContext = null;
 
 const THEME_ICONS = {
   light: `
@@ -1315,6 +1324,271 @@ try {
     waitLongTaskObserver.observe({ entryTypes: ["longtask"] });
   }
 } catch (_error) {}
+
+function interactionNow() {
+  return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+}
+
+function interactionUuid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `i-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function interactionPath(value) {
+  try {
+    const url = new URL(value || window.location?.pathname || "/", window.location.origin);
+    return url.pathname || "/";
+  } catch (_error) {
+    return String(value || "/").split("?")[0].split("#")[0] || "/";
+  }
+}
+
+function interactionText(value, maxLength = 180) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function interactionClientSurface() {
+  if (window.flowDesktop?.isDesktop?.() || window.flowDesktopBridge || window.qt?.webChannelTransport) return "desktop";
+  if (window.location?.pathname?.includes("meta-upload")) return "public";
+  return "web";
+}
+
+function interactionViewId() {
+  return interactionText(document.body?.dataset.activePage || window.flowActivePage || "", 80)
+    || (window.location?.pathname?.includes("meta-upload") ? "metaUpload" : "");
+}
+
+function interactionDetailValue(value) {
+  if (value == null || typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value === "string") return interactionText(value, 500);
+  if (Array.isArray(value)) return value.slice(0, 30).map(interactionDetailValue);
+  if (typeof value === "object") {
+    const result = {};
+    Object.entries(value).slice(0, 50).forEach(([key, item]) => {
+      const safeKey = interactionText(key, 80);
+      if (safeKey) result[safeKey] = interactionDetailValue(item);
+    });
+    return result;
+  }
+  return interactionText(value, 200);
+}
+
+function interactionCleanDetail(detail) {
+  if (!detail || typeof detail !== "object") return null;
+  const cleaned = {};
+  Object.entries(detail).slice(0, 60).forEach(([key, value]) => {
+    const safeKey = interactionText(key, 80);
+    if (!safeKey) return;
+    cleaned[safeKey] = interactionDetailValue(value);
+  });
+  return Object.keys(cleaned).length ? cleaned : null;
+}
+
+function interactionControlLabel(element) {
+  if (!element) return "";
+  const direct = element.getAttribute?.("data-track-label")
+    || element.getAttribute?.("aria-label")
+    || element.getAttribute?.("title")
+    || element.labels?.[0]?.textContent
+    || element.textContent
+    || element.value;
+  return interactionText(direct, 180);
+}
+
+function interactionControlId(element) {
+  if (!element) return "";
+  const dataset = element.dataset || {};
+  const dataKey = dataset.trackId || dataset.runFlow || dataset.copyColumn || dataset.openExcel || dataset.downloadCsv
+    || dataset.historyMode || dataset.flowField || dataset.bulkKey || dataset.copyTextResult;
+  return interactionText(
+    element.id || dataKey || element.name || element.getAttribute?.("aria-label") || element.className || element.tagName,
+    160,
+  );
+}
+
+function interactionFeatureForElement(element) {
+  if (!element) return "";
+  const dataset = element.dataset || {};
+  if (dataset.runFlow || dataset.followUpFlow || dataset.copyColumn || dataset.openExcel || dataset.downloadCsv) return "allocation";
+  if (dataset.historyMode || interactionViewId() === "analytics") return "history";
+  if (element.closest?.(".sidebar")) return "sidebar";
+  return interactionViewId();
+}
+
+function interactionRoleForElement(element) {
+  if (!element) return "";
+  const role = element.getAttribute?.("role");
+  const tag = String(element.tagName || "").toLowerCase();
+  const type = String(element.type || "").toLowerCase();
+  return role || (tag === "input" ? `input:${type || "text"}` : tag);
+}
+
+function interactionValueMeta(element) {
+  if (!element) return {};
+  const tag = String(element.tagName || "").toLowerCase();
+  const type = String(element.type || "").toLowerCase();
+  if (type === "password" || type === "hidden") return {};
+  if (type === "file") return { file_count: element.files?.length || 0 };
+  if (type === "checkbox" || type === "radio") return { checked: Boolean(element.checked) };
+  if (tag === "select") {
+    const selected = element.selectedOptions?.[0];
+    return {
+      selected_index: element.selectedIndex,
+      selected_option_label: interactionText(selected?.textContent || "", 180),
+      value_sample: interactionText(element.value || "", 300),
+    };
+  }
+  const value = typeof element.value === "string" ? element.value : "";
+  return {
+    value_length: value.length,
+    value_sample: interactionText(value, 300),
+  };
+}
+
+function scheduleInteractionFlush() {
+  if (interactionFlushTimer || interactionInFlight || !interactionQueue.length) return;
+  interactionFlushTimer = setTimeout(() => {
+    interactionFlushTimer = null;
+    void flushInteractions();
+  }, INTERACTION_FLUSH_MS);
+}
+
+async function flushInteractions({ keepalive = false, publicOnly = false } = {}) {
+  if (interactionFlushTimer) {
+    clearTimeout(interactionFlushTimer);
+    interactionFlushTimer = null;
+  }
+  if (interactionInFlight || !interactionQueue.length) return;
+  const items = interactionQueue.splice(0, INTERACTION_MAX_QUEUE);
+  const isPublic = publicOnly || interactionClientSurface() === "public";
+  const body = JSON.stringify({ items });
+  const path = isPublic ? COMMON_PUBLIC_INTERACTION_EVENT_REPORT_PATH : COMMON_INTERACTION_EVENT_REPORT_PATH;
+  if (keepalive && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([body], { type: "application/json" });
+      if (navigator.sendBeacon(path, blob)) return;
+    } catch (_error) {}
+  }
+  interactionInFlight = true;
+  try {
+    await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: keepalive && body.length < 60000,
+    });
+  } catch (_error) {
+    // Tracking far aldrig blockera anvandaren. Misslyckade batches slapps.
+  } finally {
+    interactionInFlight = false;
+    if (interactionQueue.length) scheduleInteractionFlush();
+  }
+}
+
+function flowTrack(eventType, details = {}) {
+  const interactionId = details.interaction_id || details.interactionId || interactionUuid();
+  const item = {
+    event_type: interactionText(eventType || details.event_type || "interaction", 80) || "interaction",
+    view_id: interactionText(details.view_id || details.viewId || interactionViewId(), 80),
+    page_path: interactionPath(details.page_path || details.pagePath || window.location?.pathname || "/"),
+    control_id: interactionText(details.control_id || details.controlId || "", 160),
+    control_label: interactionText(details.control_label || details.controlLabel || "", 180),
+    control_role: interactionText(details.control_role || details.controlRole || "", 80),
+    feature: interactionText(details.feature || interactionFeatureForElement(details.element), 80),
+    flow_id: interactionText(details.flow_id || details.flowId || "", 120),
+    table_key: interactionText(details.table_key || details.tableKey || "", 120),
+    table_label: interactionText(details.table_label || details.tableLabel || "", 160),
+    column_index: Number.isInteger(details.column_index) ? details.column_index : Number.isInteger(details.columnIndex) ? details.columnIndex : null,
+    column_label: interactionText(details.column_label || details.columnLabel || "", 180),
+    row_count: Number.isFinite(Number(details.row_count ?? details.rowCount)) ? Number(details.row_count ?? details.rowCount) : null,
+    client_surface: interactionText(details.client_surface || details.clientSurface || interactionClientSurface(), 40),
+    interaction_id: interactionText(interactionId, 80),
+    status: interactionText(details.status || "ok", 20) || "ok",
+    detail: interactionCleanDetail(details.detail || {}),
+  };
+  interactionQueue.push(item);
+  if (interactionQueue.length > INTERACTION_MAX_QUEUE) interactionQueue = interactionQueue.slice(-INTERACTION_MAX_QUEUE);
+  if (item.event_type !== "api_request" && item.event_type !== "download") {
+    lastInteractionContext = {
+      interaction_id: item.interaction_id,
+      event_type: item.event_type,
+      control_id: item.control_id,
+      control_label: item.control_label,
+      feature: item.feature,
+      at: interactionNow(),
+    };
+  }
+  if (interactionQueue.length >= 20) void flushInteractions();
+  else scheduleInteractionFlush();
+  return item.interaction_id;
+}
+
+function currentInteractionContext() {
+  if (!lastInteractionContext) return null;
+  if (interactionNow() - lastInteractionContext.at > INTERACTION_CONTEXT_MS) return null;
+  return { ...lastInteractionContext };
+}
+
+function shouldIgnoreAutoInteraction(element) {
+  if (!element) return true;
+  if (element.closest?.("[data-track-ignore]")) return true;
+  const type = String(element.type || "").toLowerCase();
+  if (type === "password" || type === "hidden") return true;
+  return false;
+}
+
+function trackElementInteraction(eventType, element, extraDetail = {}) {
+  if (shouldIgnoreAutoInteraction(element)) return;
+  const dataset = element.dataset || {};
+  flowTrack(eventType, {
+    element,
+    control_id: interactionControlId(element),
+    control_label: interactionControlLabel(element),
+    control_role: interactionRoleForElement(element),
+    feature: interactionFeatureForElement(element),
+    flow_id: dataset.runFlow || dataset.followUpFlow || "",
+    table_key: dataset.copyKey || dataset.openExcel || dataset.downloadCsv || "",
+    column_index: dataset.copyColumn != null ? Number(dataset.copyColumn) : null,
+    column_label: dataset.copyLabel || "",
+    detail: {
+      tag: String(element.tagName || "").toLowerCase(),
+      type: element.type || "",
+      ...interactionValueMeta(element),
+      ...extraDetail,
+    },
+  });
+}
+
+function initInteractionAutoCapture() {
+  document.addEventListener("click", (event) => {
+    const element = event.target?.closest?.("button, a[href], [role='button'], input[type='button'], input[type='submit'], summary, [data-track-click]");
+    if (!element) return;
+    trackElementInteraction("click", element, { href: interactionPath(element.getAttribute?.("href") || "") });
+  }, true);
+  document.addEventListener("contextmenu", (event) => {
+    const element = event.target?.closest?.("button, a[href], [role='button'], td, th, .allocation-map-location, [data-track-context]");
+    if (!element) return;
+    trackElementInteraction("contextmenu", element);
+  }, true);
+  document.addEventListener("change", (event) => {
+    const element = event.target?.closest?.("input, select, textarea");
+    if (!element) return;
+    trackElementInteraction("change", element);
+  }, true);
+  document.addEventListener("submit", (event) => {
+    const element = event.target?.closest?.("form");
+    if (!element) return;
+    trackElementInteraction("submit", element);
+  }, true);
+  window.addEventListener("pagehide", () => {
+    void flushInteractions({ keepalive: true });
+  });
+}
+
+initInteractionAutoCapture();
 
 const CLIENT_RUNTIME_LOGGED_MESSAGES = new Set();
 
@@ -3129,11 +3403,13 @@ async function maybeShowDemoTourPrompt(user, activePage) {
 
 const BACKGROUND_PREFETCH_TTL_MS = 60 * 1000;
 const BACKGROUND_PREFETCH_DELAY_MS = 250;
+const BACKGROUND_PREFETCH_ERROR_DEDUPE_MS = 60 * 1000;
 const backgroundPrefetchState = {
   queue: [],
   seen: new Set(),
   running: false,
   waiters: [],
+  lastErrorLogAt: new Map(),
 };
 
 function currentIsoWeekParts(date = new Date()) {
@@ -3193,6 +3469,27 @@ function waitForBackgroundPrefetchIdle(timeoutMs = 12000) {
   });
 }
 
+function backgroundPrefetchErrorKey(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || error?.name || "unknown").trim();
+  return `${status || "unknown"}|${message || "unknown"}`;
+}
+
+function shouldLogBackgroundPrefetchError(error) {
+  const key = backgroundPrefetchErrorKey(error);
+  const now = Date.now();
+  const lastAt = backgroundPrefetchState.lastErrorLogAt.get(key) || 0;
+  if (now - lastAt < BACKGROUND_PREFETCH_ERROR_DEDUPE_MS) return false;
+  backgroundPrefetchState.lastErrorLogAt.set(key, now);
+  return true;
+}
+
+function backgroundPrefetchErrorMessage(item, error) {
+  const target = item?.path || item?.key || "okänt underlag";
+  const detail = error?.message ? `. ${error.message}` : ".";
+  return `Bakgrundsladdning misslyckades: ${target}${detail} Liknande bakgrundsfel döljs en stund för att hålla loggen läsbar.`;
+}
+
 function scheduleNextBackgroundPrefetch() {
   if (backgroundPrefetchState.running || !backgroundPrefetchState.queue.length) return;
   backgroundPrefetchState.running = true;
@@ -3207,11 +3504,11 @@ function scheduleNextBackgroundPrefetch() {
           telemetrySource: "idle_prefetch",
         });
       } catch (error) {
-        appendAppLog(
-          `Bakgrundsladdning misslyckades: ${item.path || item.key || "okänt underlag"}${error?.message ? ` (${error.message})` : ""}`,
-          "warn",
-          "Bakgrund",
-        );
+        if (shouldLogBackgroundPrefetchError(error)) {
+          appendAppLog(backgroundPrefetchErrorMessage(item, error), "warn", "Bakgrund");
+        } else {
+          console.warn("Bakgrundsladdning misslyckades", item.path || item.key, error);
+        }
       }
     }
     backgroundPrefetchState.running = false;
@@ -3685,6 +3982,9 @@ window.appendAppLog = appendAppLog;
 window.clearAppLog = clearAppLog;
 window.flowRecordWaitMetric = recordWaitMetric;
 window.flowFlushWaitMetrics = flushWaitMetrics;
+window.flowTrack = flowTrack;
+window.flowFlushInteractions = flushInteractions;
+window.flowCurrentInteractionContext = currentInteractionContext;
 window.flowLog = {
   append: appendAppLog,
   info: (message, title = "Info") => appendAppLog(message, "info", title),

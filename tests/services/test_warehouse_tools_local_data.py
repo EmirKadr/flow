@@ -469,7 +469,7 @@ def test_warehouse_registry_is_loaded_from_flow_package():
     goods_declaration = next(flow for flow in public_registry if flow["id"] == "goods-declaration")
     assert [input_def["key"] for input_def in goods_declaration["inputs"]] == ["orders", "overview", "custom_adr"]
     assert goods_declaration["coredata"] == [
-        {"key": "item_security_info", "label": "Artikel s\u00e4kerhetsinformation", "required": True}
+        {"key": "item_security_info", "label": "Artikel S\u00e4kerhetsinformation", "required": True}
     ]
 
 
@@ -618,7 +618,8 @@ def test_forecast_flow_returns_table_and_json_artifact(monkeypatch, tmp_path):
         "Max pallplatser": 2.5,
     }
     assert result["tables"][0][0:2] == ("forecast", "Forecast")
-    assert result["artifacts"]["forecast_json"]["rows"][0]["Sändningsnr"] == "S-1"
+    assert result["tables"][0][2].iloc[0]["Sändningsnr"] == "S-1"
+    assert "forecast_json" not in result.get("artifacts", {})
     assert result["artifacts"]["carrier_clusters"]["rows"][0]["clusterGroup"] == "Schenker"
     assert result["carrier_clusters"]["source"]["name"] == "trans_agency.csv"
     assert captured["file_map"]["buffert"] == required["buffer"]

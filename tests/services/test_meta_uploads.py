@@ -1,5 +1,6 @@
 import asyncio
 import io
+from pathlib import Path
 import re
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.datastructures import Headers, UploadFile
 
-from app.backend.config import settings
+from app.backend.config import Settings, settings
 from app.backend.database import Base
 from app.backend.deps import get_current_user, get_db
 from app.backend.main import app
@@ -61,6 +62,13 @@ def store_bytes(content: bytes, suffix: str = ".bin") -> str:
     return writer.commit().key
 
 
+def test_meta_upload_default_rate_limit_allows_long_sequential_queues(monkeypatch):
+    monkeypatch.delenv("META_UPLOAD_RATE_LIMIT_PER_MINUTE", raising=False)
+    defaults = Settings(_env_file=None)
+    assert defaults.META_UPLOAD_RATE_LIMIT_PER_MINUTE == 0
+    assert defaults.MAX_META_UPLOAD_FILES >= 1
+
+
 def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
     monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-2.5-pro")
@@ -90,14 +98,14 @@ def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
     )
     fields = meta_analysis_service.normalize_meta_analysis(extracted)
 
-    assert fields["order_number"] == "12345"
-    assert fields["shipment_number"] == "RIG-REF-260601-0000000-0"
-    assert fields["username"] == "lots1"
-    assert fields["customer_name"] == "Kund AB"
+    assert fields["order_number"] is None
+    assert fields["shipment_number"] is None
+    assert fields["username"] is None
+    assert fields["customer_name"] is None
     assert fields["pallet_id"] == "PALL-1"
     assert fields["deviations"] == ["Dåligt byggd pall"]
     assert fields["uncertainty_notes"] == "Kontrollera kundnamn"
-    assert fields["label_frame_time_seconds"] == "2.5"
+    assert fields["label_frame_time_seconds"] is None
     assert re.fullmatch(
         r"[0-9a-f]{64}",
         meta_analysis_service.calculate_record_hash(
@@ -112,27 +120,27 @@ def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
     )
 
 
-def test_meta_analysis_normalizes_reference_label_fields():
+def test_meta_analysis_normalizes_audio_only_fields():
     fields = meta_analysis_service.normalize_meta_analysis(
         {
             "order_numbers": ["100001", "100002"],
             "sändnings-id": "RIG-REF-260601-0000000-0",
             "användarnamn": "LOTS01",
             "kund": "Kund AB",
-            "pallid": "BOX-001",
+            "pallet_ids": ["BOX-001", "BOX-002"],
             "avvikelser": [{"description": "Pall behöver plastas"}],
         }
     )
 
-    assert fields["order_number"] == "100001, 100002"
-    assert fields["shipment_number"] == "RIG-REF-260601-0000000-0"
-    assert fields["username"] == "LOTS01"
-    assert fields["customer_name"] == "Kund AB"
+    assert fields["order_number"] is None
+    assert fields["shipment_number"] is None
+    assert fields["username"] is None
+    assert fields["customer_name"] is None
     assert fields["pallet_id"] == "BOX-001"
     assert fields["deviations"] == ["Pall behöver plastas"]
 
 
-def test_meta_record_hash_includes_shipment_number():
+def test_meta_record_hash_ignores_future_lookup_fields():
     base = {
         "video_hash": "b" * 64,
         "order_number": "100001",
@@ -144,10 +152,177 @@ def test_meta_record_hash_includes_shipment_number():
 
     first = meta_analysis_service.calculate_record_hash(**base, shipment_number="RIG-REF-260601-0000000-0")
     second = meta_analysis_service.calculate_record_hash(**base, shipment_number="RIG-REF-260601-0000001-0")
+    third = meta_analysis_service.calculate_record_hash(**{**base, "pallet_id": "BOX-002"})
 
     assert re.fullmatch(r"[0-9a-f]{64}", first)
     assert re.fullmatch(r"[0-9a-f]{64}", second)
-    assert first != second
+    assert first == second
+    assert first != third
+
+
+def test_meta_analysis_status_requires_only_pallet_id_and_deviations():
+    assert meta_analysis_service._status_for_analysis(
+        {"pallet_id": "BOX-001", "deviations": ["Pall lutar"], "uncertainty_notes": None},
+        None,
+    ) == "analyzed"
+    assert meta_analysis_service._status_for_analysis(
+        {"pallet_id": None, "deviations": ["Pall lutar"], "uncertainty_notes": None},
+        None,
+    ) == "manual_review"
+    assert meta_analysis_service._status_for_analysis(
+        {"pallet_id": "BOX-001", "deviations": [], "uncertainty_notes": None},
+        None,
+    ) == "manual_review"
+    assert meta_analysis_service._status_for_analysis(
+        {"pallet_id": "BOX-001", "deviations": ["Pall lutar"], "uncertainty_notes": "Flera pall-id hors."},
+        None,
+    ) == "manual_review"
+
+
+def test_meta_ffmpeg_resolver_uses_imageio_fallback(monkeypatch):
+    monkeypatch.setattr(meta_analysis_service.shutil, "which", lambda name: None)
+    monkeypatch.setattr(meta_analysis_service, "_imageio_ffmpeg_exe", lambda: "bundled-ffmpeg")
+
+    assert meta_analysis_service._resolve_ffmpeg() == "bundled-ffmpeg"
+
+
+def test_analyze_meta_upload_keeps_future_lookup_fields_blank_and_allows_missing_still(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "META_LABEL_STILL_TIME_SECONDS", 1.0)
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {
+            "order_number": "100001",
+            "shipment_number": "RIG-REF-1",
+            "username": "lots1",
+            "customer_name": "Kund AB",
+            "pallet_id": "BOX-001",
+            "deviations": ["Pall lutar"],
+        },
+    )
+    monkeypatch.setattr(meta_analysis_service, "extract_label_still_bytes", lambda upload, seconds: None)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="b" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "analyzed"
+        assert result.order_number is None
+        assert result.shipment_number is None
+        assert result.username is None
+        assert result.customer_name is None
+        assert result.pallet_id == "BOX-001"
+        assert result.deviations == ["Pall lutar"]
+        assert result.label_image_upload_id is None
+        assert result.label_frame_time_seconds == "1"
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_analyze_meta_upload_marks_audio_extraction_failure(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(meta_analysis_service, "_resolve_ffmpeg", lambda: None)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="silent.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="b" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "analysis_failed"
+        assert "ffmpeg saknas" in (result.analysis_error or "")
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_queued_meta_analysis_upload_ids_returns_oldest_queued_video():
+    engine, session = make_session()
+    first = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="first.mov",
+        stored_filename="first.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="1" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"first-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    second = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="second.mov",
+        stored_filename="second.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="2" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"second-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add_all([first, second])
+    session.commit()
+    session.refresh(first)
+    session.refresh(second)
+    session.add_all(
+        [
+            MetaShipmentObservation(
+                media_upload_id=first.id,
+                video_hash=first.content_hash,
+                record_hash="a" * 64,
+                analysis_status="queued",
+            ),
+            MetaShipmentObservation(
+                media_upload_id=second.id,
+                video_hash=second.content_hash,
+                record_hash="b" * 64,
+                analysis_status="manual_review",
+            ),
+        ]
+    )
+    session.commit()
+    try:
+        assert meta_analysis_service.queued_meta_analysis_upload_ids(session, limit=5) == [first.id]
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypatch):
@@ -374,7 +549,143 @@ def test_super_user_can_list_meta_uploads_and_stream_content():
         assert content.status_code == 206
         assert content.content == b"hello"
         assert content.headers["content-range"] == "bytes 0-4/11"
+        assert content.headers["content-disposition"].startswith("inline;")
         assert "20260531_120102_123456Z_01.mov" in content.headers["content-disposition"]
+
+        head = client.head(f"/api/meta/uploads/{row.id}/content?download=1")
+        assert head.status_code == 200
+        assert head.content == b""
+        assert head.headers["content-type"].startswith("video/quicktime")
+        assert head.headers["content-length"] == "11"
+        assert head.headers["content-disposition"].startswith("attachment;")
+
+        download = client.get(f"/api/meta/uploads/{row.id}/content?download=1", headers={"Range": "bytes=0-4"})
+        assert download.status_code == 206
+        assert download.content == b"hello"
+        assert download.headers["content-disposition"].startswith("attachment;")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_meta_video_content_response_normalizes_audio_mime_from_upload_client():
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-audio-mime",
+        original_filename="metavideo.mp4",
+        stored_filename="20260531_120102_123456Z_01.mp4",
+        content_type="audio/mp4",
+        media_type="video",
+        size_bytes=11,
+        duration_seconds=65.1,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mp4"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        content = client.get(f"/api/meta/uploads/{row.id}/content")
+
+        assert content.status_code == 200
+        assert content.content == b"hello-video"
+        assert content.headers["content-type"].startswith("video/mp4")
+        assert "20260531_120102_123456Z_01.mp4" in content.headers["content-disposition"]
+
+        ranged = client.get(f"/api/meta/uploads/{row.id}/content", headers={"Range": "bytes=0-4"})
+        assert ranged.status_code == 206
+        assert ranged.headers["content-type"].startswith("video/mp4")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_public_meta_upload_normalizes_audio_mp4_content_type_for_video_filename():
+    engine, session = make_session()
+
+    def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/meta/uploads",
+            files=[("files", ("film.mp4", b"video-bytes", "audio/mp4"))],
+        )
+
+        assert response.status_code == 201
+        row = session.query(MetaMediaUpload).one()
+        assert row.media_type == "video"
+        assert row.content_type == "video/mp4"
+        assert response.json()["saved"][0]["content_type"] == "video/mp4"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeypatch):
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-playable",
+        original_filename="metavideo.mp4",
+        stored_filename="20260531_120102_123456Z_01.mp4",
+        content_type="video/mp4",
+        media_type="video",
+        size_bytes=11,
+        duration_seconds=65.1,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"source-video", ".mp4"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+
+    def fake_run(command, capture_output, timeout, check):
+        Path(command[-1]).write_bytes(b"playable-video")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(meta_uploads, "_resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(meta_uploads.subprocess, "run", fake_run)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        content = client.get(f"/api/meta/uploads/{row.id}/content?variant=playable")
+
+        assert content.status_code == 200
+        assert content.content == b"playable-video"
+        assert content.headers["content-type"].startswith("video/mp4")
+        assert "20260531_120102_123456Z_01.mp4" in content.headers["content-disposition"]
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -407,10 +718,10 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         media_upload_id=row.id,
         video_hash=row.content_hash,
         record_hash="c" * 64,
-        order_number="12345",
-        shipment_number="RIG-REF-260601-0000000-0",
-        username="lots1",
-        customer_name="Kund AB",
+        order_number=None,
+        shipment_number=None,
+        username=None,
+        customer_name=None,
         pallet_id="PALL-1",
         deviations=["Dåligt byggd pall"],
         analysis_status="manual_review",
@@ -431,10 +742,10 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         response = client.get("/api/meta/shipment-observations")
         assert response.status_code == 200
         item = response.json()["items"][0]
-        assert item["order_number"] == "12345"
-        assert item["shipment_number"] == "RIG-REF-260601-0000000-0"
-        assert item["username"] == "lots1"
-        assert item["customer_name"] == "Kund AB"
+        assert item["order_number"] is None
+        assert item["shipment_number"] is None
+        assert item["username"] is None
+        assert item["customer_name"] is None
         assert item["pallet_id"] == "PALL-1"
         assert item["deviations"] == ["Dåligt byggd pall"]
         assert item["video_url"] == f"/api/meta/uploads/{row.id}/content"

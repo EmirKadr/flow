@@ -1,11 +1,116 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-05
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-05] fix | Minska serverminne for Bearbeta och Meta
+
+Bearbeta-resultat skrivs nu till temporara serverfiler i stallet for att fulla
+DataFrames ligger kvar i `allocation_bridge.SESSIONS`; sessionen haller metadata,
+filreferenser och agare med TTL/maxantal/byte-budget. Warehouse runtime-cacher,
+Bearbeta-uppladdningscache och Hamta data-exportsessioner har striktare
+rensning. Meta-autostart ar avstangd som standard med
+`META_ANALYSIS_AUTO_START=false`, och `tools/meta_analysis_worker.py` kan plocka
+koade audio-only-analyser utanfor web request-flodet nar lagringen stods.
+Halsa/healthcheck visar processminne och prioriterar Render app-loggar.
+
+## [2026-06-05] fix | Tomt Max rader hamtar alla rader
+
+Hamta data har nu tomt `Max rader` som standard. Nar faltet lamnas tomt skickar
+frontend `max_rows=null` och backend begransar inte resultatet efter extern
+fetch, sa tabell och Excel-export innehaller alla rader som datakallan
+returnerar. Ifyllt tal fungerar fortsatt som manuell begransning.
+
+## [2026-06-04] fix | Meta-download och frontend-boot
+
+Meta-vyn laddar nu ner bilder och videor via browserns direkta
+nedladdningsflode med HEAD-kontroll och download=1, i stallet for att
+forst lasa hela mediafilen som JS-blob. Det minskar RAM-risk for stora videor
+och stoppar HTML-felsvar fran att visas som lang raw markup i en toast.
+Samtidigt namespacades common.js interaction-endpoints sa de inte krockar med
+api.js globala konstanter; krockan gjorde att vanliga sidor kunde sluta boota
+efter login och fallerade Playwright-testerna.
+
+## [2026-06-04] fix | Historik-kontroller matchar frontend-idn
+
+Interaction-coverage i Historik anvander nu samma faktiska kontroll-id:n som
+frontendens personer-, aktiviteter- och anvandarvyer. Det gor att
+known-controls-kontraktet i CI inte faller pa gamla camelCase-alias.
+
+## [2026-06-04] fix | Flyttar legacy-data mot DB och persistent disk
+
+Legacy-karnfiler och KPI kan nu migreras till `coredata_files` med
+`python -m backend.scripts.migrate_legacy_data_to_truth`, utan att scriptet
+raderar gamla repo-filer. Sammanstalld produktivitetsdata, buffertpall-
+observations och `artikel_max.csv` pekar mot `PRODUCTIVITY_DATA_DIR` eller
+`MEDIA_STORE_ROOT/flow-data`; lokal/dev faller tillbaka till den projektlokala
+ignorerade mappen `local_media/flow-data` i stallet for repo-kataloger.
+Release-checken kraver inte langre att gamla buffertpall-datafiler paketeras i
+Windows-bygget.
+
+## [2026-06-05] fix | Buffertpallhistorik kravs innan artikel_max anvands
+
+Lagerfloden som behover `artikel_max.csv` accepterar inte langre en tom/header-only
+fallback som giltig sammanstalld data. Saknas observationshistorik for
+verksamheten stoppas flodet med krav pa buffertpalluppladdning; observations kan
+starta tomt, men `artikel_max.csv` byggs forst nar buffertpallhistorik finns.
+
+## [2026-06-04] feature | Windows kor Bearbeta och Produktivitet lokalt
+
+Windows-appen registrerar nu filval som lokala referenser via Qt-bron och later
+desktop-local-servern fanga Bearbeta- och Produktivitet-endpoints. Berakningen
+laser aktuell fil fran disk och koar bakgrundssync av karnfiler/KPI och
+sammanstalld data utan att starta alla tunga jobb samtidigt. Uppladdningars
+`Visa`-preview ar ersatt av explicita `Ladda ner`, `Oppna fil` och `Mapp`-
+atgarder sa filer bara hamtas eller oppnas nar anvandaren klickar. Lokala
+korningar auditloggas centralt som sanerad metadata utan sokvagar eller
+filinnehall.
+
+## [2026-06-03] fix | Minskar 502 vid Render-OOM
+
+Render-startsyncen for allokeringsobservationer ar nu avstangd som standard med
+`ALLOCATION_OBSERVATIONS_STARTUP_SYNC=false`, sa servern inte gor tung
+observationssync direkt efter omstart. Coredata-status for `artikel_max.csv`
+raknar sin path utan att ladda legacy-lagerbryggan, och Windows-klientens
+health check forsoker om korta 502/503/504-fonster innan felvyn visas.
+
+## [2026-06-03] fix | Gor Forecast-CLI mappbaserad
+
+`warehouse_tools.cli forecast` kan nu ta Forecasts coredata-filer som egna
+argument och `--auto-dir` for att matcha en hel testdatamapp. Orelaterade filer
+i mappen ignoreras och tidigare matchade inputs behalls, sa en aktuell
+`item_option` i testmappen vinner over fallbacken i `data/coredata/Stigamo`.
+
+## [2026-06-03] fix | Minskar Forecast-minne efter korning
+
+Bearbeta-uppladdningar streamas nu till serverns temporara cache i bitar i
+stallet for att lasas som en enda bytes-klump. Forecast sparar fortsatt
+resultatet som sessionstabell for Ytgenerering, men skapar inte langre en full
+`forecast_json`-kopia av alla rader bredvid DataFrame-tabellen. Gamla
+Bearbeta-resultatsessioner stadas opportunistiskt for att minska risken for
+Render-minnesspik efter flera stora korningar.
+
+## [2026-06-03] fix | Sanerar 502-HTML i dokumentloggen
+
+Frontendens `api.js` visar inte langre raw HTML nar server/proxy svarar med en
+HTML-felsida, utan kort status som `HTTP 502 (Bad Gateway)`. Bakgrundsprefetch
+dolder likadana fel i 60 sekunder efter forsta warn-raden, sa dokumentloggen
+inte fylls av samma serverfel nar flera forvarmda API:er misslyckas samtidigt.
+`user-events.md`, `history-audit.md` och `error-reference.md` beskriver det nya
+felsokningsbeteendet.
+
+## [2026-06-02] fix | Synkar uppladdningsnamn mot filkunskap
+
+Uppladdningar, Bearbeta och Produktivitet använder nu svenska `label_sv` från
+filkunskapen för kända vyfiler. Exempel: `v_ask_booking_putaway` visas som
+`Ej Inlagrade Artiklar`, `v_ask_customer_order_details_all` som
+`Detalj Kundorder (Alla)` och `v_ask_palletloading_log` som
+`Pallastningslogg`. Prognosfil, Kampanjfil och Textfil med värden lämnas som
+Flow-egna namn eftersom de inte finns i filkunskapen.
 
 ## [2026-06-02] docs | Synkar releasepolling for agenter
 
@@ -19,7 +124,7 @@ workflowen ar klar eller failad.
 
 Uppladdningars filrader normaliserar nu rubriken via filkunskapen innan den
 ritas. Tekniska alias som `customer_order_details_all` visas darfor som
-`Detalj kundorder(alla)` i stallet for databasnamnet.
+`Detalj Kundorder (Alla)` i stallet for databasnamnet.
 
 ## [2026-06-02] change | Samma datamappar for alla verksamheter
 
@@ -769,7 +874,7 @@ Ytgenerering-kartan visar nu kundnamn (största kunden per sändning) som huvudt
 
 ## [2026-06-01] feature | Uppladdningar kan forhandsvisa filer
 
-Alla fyllda filrader i Uppladdningar har nu `Visa`. Lokala arbetsfiler lases fran IndexedDB och visas som tabell/text nar formatet ar textlikt, med originaloppning for binara filer. Serverlagrade karnfiler, `artikel_max.csv` och produktivitetens sammanstallda csv.gz-filer kan forhandsvisas via `GET /api/coredata/files/{file_key}/preview`, som returnerar en begransad textpreview utan att logga filinnehall.
+Denna historiska andring lade till `Visa` for filrader. Funktionen ersattes 2026-06-04 av explicita download/open-atgarder, sa dagens Uppladdningar forhandsvisar inte langre filinnehall.
 
 ## [2026-06-01] feature | Installningar for Ytgenereringens ytkarta
 
@@ -790,3 +895,27 @@ Ytgenerering-kartans sidolista kopierar nu radens sandningsnummer till urklipp n
 ## [2026-06-02] feature | Personliga schema- och produktivitetsvyer
 
 Flow har nu rollen `person`, vyerna `Mitt schema` och `Min produktivitet` samt `/api/personal/...`-endpoints. En person kan logga in med sitt `noman`-namn; om anvandaren saknas skapas kontot automatiskt med `person_id`, verksamhet och hemomrade fran personregistret och skickas till forsta losenord. Personrollen ser bara sin egen vy, medan Super User kan valja person i rullista.
+
+## [2026-06-04] feature | Meta-analys anvander bara rost
+
+Meta-videoanalysen extraherar nu en temporar ljudfil fran videon och skickar bara rosten till Gemini. Analysen fyller ett tydligast hort pall-id och avvikelser, medan ordernummer, sandningsnummer, anvandarnamn och kund lamnas tomma tills de kan hamtas via pall-id fran uppladdad data. Autoanalys ar fortsatt ko-ad med en video i taget, delay/spacing-settings och best-effort stillbild fran video.
+
+## [2026-06-04] fix | Meta-video laddas ner som video
+
+Meta-uppladdningar normaliserar nu videoandelse + ljud-MIME, till exempel `.mp4` med `audio/mp4`, till video-MIME vid sparande. Content-endpointen normaliserar ocksa befintliga rader vid streaming, sa live-rader som sparats med fel MIME laddas ner och spelas som video.
+
+## [2026-06-04] fix | Meta-videopil laddar spelbar MP4
+
+Videopilen i Meta-analystabellen anvander nu `variant=playable` pa content-endpointen. Backend transkodar da temporart originalvideon till H.264/AAC-MP4 och raderar tempfilen efter svaret, sa filmer fran Meta-glasogon som annars bara ger ljudikon i Windows Media Player kan ses utan att originalfilen skrivs over.
+
+## [2026-06-04] feature | Meta-uppladdning koar obegransat klientval
+
+Meta-uppladdningssidan later anvandaren valja hela filkon pa en gang och visar total progress med aktuell fil, filnummer, kvarvarande mangd och ETA. Klienten skickar fortsatt en fil per request och backend streamar varje fil i chunks till MediaStore, sa langa koer inte kraver att hela batchen ligger i RAM. Standard-rate-limit for Meta-uppladdning ar avstangd for att sekventiella koer inte ska stoppas efter ett visst antal filer per minut.
+
+## [2026-06-04] feature | Historik far interaction-tracking
+
+Historik har nu ett separat `user_interaction_events`-lager bredvid audit och vantetider. Webben batchar klick, submit, change/contextmenu, API-resultat, nedladdningar och semantiska Bearbeta-events via `flowTrack`; desktop markerar `client_surface=desktop` och trackar appstart, lokala filval och update-floden. Historik har nya lagen Funktioner, Knappar, Kolumner, Floden och AI-analys med endpoints for raw events, summary, coverage och MiniMax-fragor. Backend sanerar payloaden och `TRACKING_ALLOW_VALUE_SAMPLES=false` strippar klartextprover som default; secrets, filnamn, filvagar, privata URL:er, request bodies och provider-detaljer far aldrig sparas.
+
+## [2026-06-04] test | Interaction-tracking far browserkontrakt
+
+Trackinglagret har nu Playwright-tester for auto-capture av klick/change/submit, API-koppling, nedladdning/export, Historik-dashboardens Funktioner/Knappar/Kolumner/Floden, Historik-AI och desktop-surface. Tester fangade och skyddar att interna download-lankar ignoreras av auto-tracking, att Pafyllnadsprio copy-patterns anvander `copy_mode`, och att kanda kontroll-id:n i coverage matchar frontendens faktiska id:n.

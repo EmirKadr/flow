@@ -131,7 +131,7 @@ def test_healthcheck_redacts_secret_like_text():
     assert "abc123" not in clean_text("token=abc123")
 
 
-def test_render_logs_use_owner_id_and_build_log_type():
+def test_render_logs_use_owner_id_and_app_log_type_first():
     calls = []
 
     class FakeRenderClient:
@@ -152,7 +152,7 @@ def test_render_logs_use_owner_id_and_build_log_type():
     assert calls[0][0] == "/logs"
     assert calls[0][1]["ownerId"] == "tea-test"
     assert calls[0][1]["resource"] == ["srv-test"]
-    assert calls[0][1]["type"] == ["build"]
+    assert calls[0][1]["type"] == ["app"]
     assert result["error_count"] == 1
     assert result["source"] == "/logs"
 

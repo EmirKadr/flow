@@ -3,7 +3,16 @@ demo/
 referens/
 testdata/
 private-data/
+local_media/
 data/external_data_catalog.local*.json
+tmp_screenshots/
+data/coredata/
+data/stigamo/
+data/v_ask_kpi_target*.csv
+warehouse_tools/vendor/lowfreqdata/buffertpall/*.csv
+warehouse_tools/vendor/lowfreqdata/buffertpall/*.csv.gz
+warehouse_tools/vendor/lowfreqdata/buffertpall/**/*.csv
+warehouse_tools/vendor/lowfreqdata/buffertpall/**/*.csv.gz
 
 # Lokala felsokningsinspelningar
 FELSÖK/*.mp4

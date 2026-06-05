@@ -22,19 +22,22 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-pro"
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
     META_ANALYSIS_TIMEOUT_SECONDS: int = 120
-    META_ANALYSIS_AUTO_START: bool = True
+    META_ANALYSIS_AUTO_START: bool = False
     META_ANALYSIS_MAX_VIDEO_BYTES: int = 256 * 1024 * 1024
     META_ANALYSIS_MAX_CONCURRENCY: int = 1
+    META_ANALYSIS_START_DELAY_SECONDS: float = 30.0
+    META_ANALYSIS_SPACING_SECONDS: float = 15.0
+    META_LABEL_STILL_TIME_SECONDS: float = 1.0
     # Media-lagring (videor/bilder) — strömmas alltid, hålls aldrig i sin helhet i RAM.
     MEDIA_STORE_BACKEND: str = "filesystem"
     MEDIA_STORE_ROOT: str = ""  # tom => <tempdir>/flow_media_store; i prod: monterad disk
     MEDIA_STORE_CHUNK_BYTES: int = 8 * 1024 * 1024
     META_MEDIA_RETENTION_DAYS: int = 30
-    # Meta-uppladdningsgränser (publik endpoint) — strömmande, så lågt tak räcker.
+    # Meta-uppladdningsgränser (publik endpoint) — klienten köar en fil i taget och backend strömmar chunks.
     MAX_META_UPLOAD_FILES: int = 6
     MAX_META_UPLOAD_FILE_BYTES: int = 96 * 1024 * 1024
     MAX_META_UPLOAD_BATCH_BYTES: int = 192 * 1024 * 1024
-    META_UPLOAD_RATE_LIMIT_PER_MINUTE: int = 10
+    META_UPLOAD_RATE_LIMIT_PER_MINUTE: int = 0
     DATA_SOURCE_API_BASE_URL: str = ""
     DATA_SOURCE_API_KEY: str = ""
     DATA_SOURCE_API_CLIENT: str = ""
@@ -58,6 +61,7 @@ class Settings(BaseSettings):
     RENDER_POSTGRES_ID: str = ""
     RENDER_DATABASE_ID: str = ""
     HEALTHCHECK_PUBLIC_URL: str = ""
+    TRACKING_ALLOW_VALUE_SAMPLES: bool = False
     ALLOCATION_OBSERVATIONS_STARTUP_SYNC: bool = False
     ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS: float = 180.0
     ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS: float = 30.0

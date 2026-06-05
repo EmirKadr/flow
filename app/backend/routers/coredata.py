@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .. import audit
 from .. import allocation_bridge as bridge
+from ..compiled_data_paths import article_max_has_data, article_max_path
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, user_business_id
 from ..coredata_service import (
     CORE_DATA_SPEC_BY_KEY,
@@ -85,7 +87,7 @@ def _file_status_payload(*, key: str, label: str, prefix: str, path: Path | None
 
 
 def _article_max_path(business_code: str) -> Path:
-    return Path(bridge.business_allocation_data_paths(business_code)["article_max_path"])
+    return article_max_path(business_code)
 
 
 def _article_max_status(business_code: str) -> dict[str, Any]:
@@ -100,6 +102,12 @@ def _article_max_status(business_code: str) -> dict[str, Any]:
         path=path,
     )
     payload["kind"] = "compiled_data"
+    if payload["uploaded"] and path is not None:
+        payload["has_data_rows"] = article_max_has_data(path)
+        if not payload["has_data_rows"]:
+            payload["uploaded"] = False
+            payload["status"] = "missing_data"
+            payload["message"] = "artikel_max.csv saknar datarader. Ladda upp buffertpall forst."
     return payload
 
 
@@ -282,6 +290,23 @@ def preview_coredata_file(
         return _persistent_data_preview_payload(file_key, business_code, db)
     except CoreDataError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Filen hittades inte.") from exc
+
+
+@router.get("/files/{file_key}/download")
+def download_coredata_file(
+    file_key: str,
+    user: User = Depends(require_view_access("allocationUploads", "view")),
+    db: Session = Depends(get_db),
+):
+    business_code = _coredata_business_code(db, user)
+    try:
+        path, meta = _persistent_data_preview_path(file_key, business_code, db)
+    except CoreDataError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Filen hittades inte.") from exc
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Filen hittades inte.")
+    media_type = "application/gzip" if path.name.lower().endswith(".gz") else "text/csv"
+    return FileResponse(path, media_type=media_type, filename=path.name or f"{meta.get('key') or file_key}.csv")
 
 
 @router.post("/files/raw")

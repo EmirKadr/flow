@@ -14,6 +14,7 @@ from urllib.parse import unquote, urljoin, urlsplit
 import requests
 
 from core.app_info import DESKTOP_LOCAL_HOST, DESKTOP_LOCAL_PORT, SERVER_BASE_URL
+from desktop.local_runtime import DesktopLocalRuntime, local_response_for_request
 
 
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
@@ -85,7 +86,12 @@ def _clear_session_cookies(session: requests.Session) -> None:
         cookies.clear()
 
 
-def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.Session):
+def make_handler(
+    frontend_dir: Path,
+    upstream_base_url: str,
+    session: requests.Session,
+    local_runtime: DesktopLocalRuntime | None = None,
+):
     frontend_root = frontend_dir.resolve()
     upstream_root = upstream_base_url.rstrip("/") + "/"
 
@@ -122,6 +128,21 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
         def _handle_request(self, *, with_body: bool, head_only: bool = False) -> None:
             parsed = urlsplit(self.path)
             if parsed.path == "/api" or parsed.path.startswith("/api/"):
+                if local_runtime is not None and not head_only:
+                    local_response = local_response_for_request(
+                        local_runtime,
+                        self,
+                        parsed=parsed,
+                        upstream_root=upstream_root,
+                    )
+                    if local_response is not None:
+                        status_code, content_type, body = local_response
+                        self.send_response(status_code)
+                        self.send_header("Content-Type", content_type)
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self._write_body(body)
+                        return
                 self._proxy_api(parsed, with_body=with_body, head_only=head_only)
                 return
             self._serve_static(parsed.path, head_only=head_only)
@@ -203,6 +224,7 @@ def make_handler(frontend_dir: Path, upstream_base_url: str, session: requests.S
 class LocalAppServer:
     upstream_base_url: str = SERVER_BASE_URL
     frontend_dir: Path | None = None
+    local_runtime: DesktopLocalRuntime | None = None
     host: str = DESKTOP_LOCAL_HOST
     preferred_port: int = DESKTOP_LOCAL_PORT
 
@@ -229,6 +251,7 @@ class LocalAppServer:
             frontend_dir=self.frontend_dir,
             upstream_base_url=self.upstream_base_url,
             session=self._session,
+            local_runtime=self.local_runtime,
         )
         self._httpd = self._bind_server(handler)
         self._thread = threading.Thread(

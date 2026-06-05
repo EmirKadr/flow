@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import logging
+from pathlib import Path
 import tempfile
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -45,14 +48,114 @@ class DataFetchPromptRequest(BaseModel):
 class DataFetchRunRequest(BaseModel):
     plan: dict | None = None
     prompt: str | None = Field(default=None, max_length=4000)
-    max_rows: int = Field(default=500, ge=1, le=5000)
+    max_rows: int | None = Field(default=None, ge=1, le=5000)
 
 
 DATA_FETCH_SESSIONS: dict[str, dict] = {}
+DATA_FETCH_SESSION_DIR = Path(tempfile.gettempdir()) / "flow_data_fetch_sessions"
+DATA_FETCH_SESSION_TTL_SECONDS = 2 * 60 * 60
+DATA_FETCH_SESSION_MAX_COUNT = 12
+DATA_FETCH_SESSION_MAX_BYTES = 128 * 1024 * 1024
 
 
 def _user_session_key(user: User) -> str:
     return str(getattr(user, "id", "") or getattr(user, "username", ""))
+
+
+def _data_fetch_session_path(session_id: str) -> Path:
+    return DATA_FETCH_SESSION_DIR / f"{session_id}.json"
+
+
+def _write_data_fetch_rows(session_id: str, rows: list[dict]) -> dict:
+    DATA_FETCH_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    path = _data_fetch_session_path(session_id)
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=DATA_FETCH_SESSION_DIR,
+        prefix="pending_",
+        suffix=".json",
+        mode="w",
+        encoding="utf-8",
+    )
+    try:
+        json.dump(rows, tmp, ensure_ascii=False, default=str)
+        tmp.close()
+        Path(tmp.name).replace(path)
+    except Exception:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+    return {"rows_path": str(path), "rows_size_bytes": path.stat().st_size}
+
+
+def _read_data_fetch_rows(session: dict) -> list[dict]:
+    if "rows" in session:
+        return list(session.get("rows") or [])
+    path = Path(str(session.get("rows_path") or ""))
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte. Kör hämtningen igen.")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte. Kör hämtningen igen.") from exc
+    return payload if isinstance(payload, list) else []
+
+
+def _remove_data_fetch_session(session: dict | None) -> None:
+    if not session:
+        return
+    path = session.get("rows_path")
+    if path:
+        try:
+            Path(str(path)).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _cleanup_data_fetch_sessions(now: float | None = None) -> None:
+    now_ts = time.time() if now is None else now
+    for session_id, session in list(DATA_FETCH_SESSIONS.items()):
+        try:
+            created_at = float(session.get("created_at") or now_ts)
+        except (TypeError, ValueError):
+            created_at = now_ts
+        if now_ts - created_at > DATA_FETCH_SESSION_TTL_SECONDS:
+            _remove_data_fetch_session(DATA_FETCH_SESSIONS.pop(session_id, None))
+
+    ordered = sorted(
+        DATA_FETCH_SESSIONS.items(),
+        key=lambda item: float(item[1].get("created_at") or now_ts),
+    )
+    overflow = len(ordered) - DATA_FETCH_SESSION_MAX_COUNT
+    if overflow > 0:
+        for session_id, _session in ordered[:overflow]:
+            _remove_data_fetch_session(DATA_FETCH_SESSIONS.pop(session_id, None))
+        ordered = ordered[overflow:]
+
+    total_bytes = sum(int(session.get("rows_size_bytes") or 0) for _session_id, session in ordered)
+    if total_bytes > DATA_FETCH_SESSION_MAX_BYTES:
+        for session_id, session in ordered:
+            if len(DATA_FETCH_SESSIONS) <= 1:
+                break
+            _remove_data_fetch_session(DATA_FETCH_SESSIONS.pop(session_id, None))
+            total_bytes -= int(session.get("rows_size_bytes") or 0)
+            if total_bytes <= DATA_FETCH_SESSION_MAX_BYTES:
+                break
+
+    try:
+        if DATA_FETCH_SESSION_DIR.exists():
+            active = {
+                Path(str(session.get("rows_path"))).resolve()
+                for session in DATA_FETCH_SESSIONS.values()
+                if session.get("rows_path")
+            }
+            for path in DATA_FETCH_SESSION_DIR.iterdir():
+                try:
+                    if path.is_file() and path.resolve() not in active and now_ts - path.stat().st_mtime > DATA_FETCH_SESSION_TTL_SECONDS:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    continue
+    except OSError:
+        return
 
 
 def _catalog_or_503():
@@ -62,7 +165,9 @@ def _catalog_or_503():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
-def _max_rows(value: int) -> int:
+def _max_rows(value: int | None) -> int | None:
+    if value is None:
+        return None
     configured = max(1, int(settings.DATA_SOURCE_MAX_ROWS or 1000))
     return min(max(1, value), configured)
 
@@ -208,7 +313,7 @@ def _write_excel(session: dict) -> str:
     sheet = workbook.active
     sheet.title = "Data"
     columns = session["columns"]
-    rows = session["rows"]
+    rows = _read_data_fetch_rows(session)
     sheet.append([column["label"] for column in columns])
     for row in rows:
         sheet.append([_safe_cell(row.get(column["id"])) for column in columns])
@@ -329,14 +434,19 @@ async def run_data_fetch(
     max_rows = _max_rows(payload.max_rows)
     projected_rows = project_rows(rows, plan["output_columns"], max_rows)
     columns = columns_for_response(plan)
+    _cleanup_data_fetch_sessions()
     session_id = uuid4().hex
+    row_storage = _write_data_fetch_rows(session_id, projected_rows)
     DATA_FETCH_SESSIONS[session_id] = {
         "user_key": _user_session_key(current_user),
+        "created_at": time.time(),
         "plan": plan,
         "columns": columns,
-        "rows": projected_rows,
+        **row_storage,
         "total_rows": len(rows),
+        "shown_rows": len(projected_rows),
     }
+    _cleanup_data_fetch_sessions()
     _audit_data_fetch(
         db,
         current_user,

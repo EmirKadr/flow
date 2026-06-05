@@ -580,6 +580,103 @@ class AuditClientEventIn(BaseModel):
     page_path: str | None = Field(default=None, max_length=300)
 
 
+class AuditLocalRunIn(BaseModel):
+    feature: str = Field(max_length=40)
+    flow_id: str | None = Field(default=None, max_length=120)
+    status: str = Field(default="ok", max_length=20)
+    error_type: str | None = Field(default=None, max_length=120)
+    duration_ms: int | None = Field(default=None, ge=0, le=60 * 60 * 1000)
+    file_types: list[str] = Field(default_factory=list, max_length=40)
+    row_counts: dict[str, int] = Field(default_factory=dict)
+    result_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class InteractionEventIn(BaseModel):
+    event_type: str = Field(max_length=80)
+    view_id: str | None = Field(default=None, max_length=80)
+    page_path: str | None = Field(default=None, max_length=300)
+    control_id: str | None = Field(default=None, max_length=160)
+    control_label: str | None = Field(default=None, max_length=180)
+    control_role: str | None = Field(default=None, max_length=80)
+    feature: str | None = Field(default=None, max_length=80)
+    flow_id: str | None = Field(default=None, max_length=120)
+    table_key: str | None = Field(default=None, max_length=120)
+    table_label: str | None = Field(default=None, max_length=160)
+    column_index: int | None = Field(default=None, ge=0, le=500)
+    column_label: str | None = Field(default=None, max_length=180)
+    row_count: int | None = Field(default=None, ge=0, le=10_000_000)
+    client_surface: str | None = Field(default=None, max_length=40)
+    interaction_id: str | None = Field(default=None, max_length=80)
+    status: str = Field(default="ok", max_length=20)
+    detail: dict | None = None
+
+
+class InteractionEventBatchIn(BaseModel):
+    items: list[InteractionEventIn] = Field(default_factory=list, max_length=100)
+
+
+class InteractionEventOut(BaseModel):
+    id: int
+    created_at: datetime
+    business_id: int | None = None
+    user_id: int | None = None
+    username: str | None = None
+    display_name: str | None = None
+    event_type: str
+    view_id: str | None = None
+    page_path: str | None = None
+    control_id: str | None = None
+    control_label: str | None = None
+    control_role: str | None = None
+    feature: str | None = None
+    flow_id: str | None = None
+    table_key: str | None = None
+    table_label: str | None = None
+    column_index: int | None = None
+    column_label: str | None = None
+    row_count: int | None = None
+    client_surface: str | None = None
+    interaction_id: str | None = None
+    status: str
+    detail: dict | None = None
+
+
+class InteractionSummaryOut(BaseModel):
+    total_events: int
+    events_last_24h: int
+    unique_users: int
+    top_users: list[AuditSummaryBucket]
+    top_views: list[AuditSummaryBucket]
+    top_features: list[AuditSummaryBucket]
+    top_controls: list[AuditSummaryBucket]
+    top_flows: list[AuditSummaryBucket]
+    top_columns: list[AuditSummaryBucket]
+    top_surfaces: list[AuditSummaryBucket]
+    copy_patterns: list[AuditSummaryBucket]
+    recent: list[InteractionEventOut]
+
+
+class InteractionCoverageOut(BaseModel):
+    total_known_controls: int
+    used_controls: int
+    unused_controls: list[dict[str, str]]
+    used_unknown_controls: list[AuditSummaryBucket]
+
+
+class InteractionChatRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=1600)
+    period: str = Field(default="30d", max_length=20)
+    business_id: int | None = None
+    user_id: int | None = None
+    q: str | None = Field(default=None, max_length=120)
+
+
+class InteractionChatResponse(BaseModel):
+    answer: str
+    model: str
+    event_count: int
+
+
 class WaitMetricIn(BaseModel):
     event_type: str = Field(max_length=80)
     view_id: str | None = Field(default=None, max_length=80)

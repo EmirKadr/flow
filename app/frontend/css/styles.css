@@ -2606,6 +2606,23 @@ body.dragging-ov select { pointer-events: none; }
   margin-top: 14px;
 }
 
+.analytics-chat-form {
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-chat-form textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.history-ai-answer {
+  margin-top: 14px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 .wait-card-wide {
   grid-column: span 2;
 }

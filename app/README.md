@@ -46,11 +46,13 @@ Chattknappen i sidomenyn fungerar när backend har en MiniMax-nyckel. Sätt `MIN
 ## Meta-analys / Gemini
 
 Meta-vyn kan skapa sändningsrader för uppladdade videor och skicka dem till
-Gemini. Analysen använder både video och ljud och förväntar JSON med
-ordernummer, sändningsnummer, användarnamn, kund, pall-id, avvikelser,
-osäkerheter och eventuell tidpunkt för en tydlig etikettbild. Sändningsnummer
-hämtas från `Sändnings-ID` på transportetiketten; innehållsförteckningen kan
-hjälpa med ordernummer, kund och Box ID/pall-id när transportetiketten är otydlig.
+Gemini. Analysen är audio-only: backend extraherar en temporär ljudfil ur
+videon och Gemini ska bara tolka rösten för pall-id och avvikelser. Ordernummer,
+sändningsnummer, användarnamn och kund lämnas tomma tills de kan fyllas från
+uppladdad data. Automatisk analys efter upload är avstängd som standard med
+`META_ANALYSIS_AUTO_START=false`; köade analyser kan startas manuellt i Meta-vyn
+eller plockas av `python -m tools.meta_analysis_worker --loop --limit 1` när
+driftmiljön har lagring som workern kan läsa.
 Lägg Gemini-nyckeln i `.env` lokalt eller i
 Render secrets:
 
