@@ -79,6 +79,9 @@ verksamheter.
 | `allocation.pool` | `GET` | `/api/allokering/pool` | Lista lagerverktygens uppladdningsslots |
 | `allocation.process_matrix_get` | `GET` | `/api/allokering/process-matrix` | Hämta Bearbeta-matris |
 | `allocation.process_matrix_update` | `PUT` | `/api/allokering/process-matrix` | Uppdatera Bearbeta-matris |
+| `allocation.filter_profile_get` | `GET` | `/api/allokering/filter-profile` | Hamta personliga Bearbeta-profiler |
+| `allocation.filter_profile_update` | `PUT` | `/api/allokering/filter-profile` | Spara personliga Bearbeta-profiler |
+| `allocation.filter_profile_import` | `POST` | `/api/allokering/filter-profile/import` | Kopiera Bearbeta-profil fran anvandare |
 | `allocation.map_layout_get` | `GET` | `/api/allokering/ytgenerering-map-layout` | Hamta Ytgenerering-kartlayout |
 | `allocation.map_layout_update` | `PUT` | `/api/allokering/ytgenerering-map-layout` | Uppdatera Ytgenerering-kartlayout |
 | `allocation.detect` | `POST` | `/api/allokering/detect` | Identifiera lagerverktygsfil |
@@ -87,6 +90,7 @@ verksamheter.
 | `allocation.open_excel` | `POST` | `/api/allokering/open-excel` | Öppna lagerverktygsresultat i Excel |
 | `allocation.table_column` | `GET` | `/api/allokering/table-column/{session_id}/{key}/{column_index}` | Hämta resultatkolumn |
 | `allocation.download` | `GET` | `/api/allokering/download/{session_id}/{key}` | Ladda ner Allokering-resultat |
+| `workflow_data.source` | `POST` | `/api/workflow-data/source` | Hamta workflow-kalla som temporar CSV |
 | `coredata.files` | `GET` | `/api/coredata/files` | Coredata-karnfiler fran Postgres/fallback och sammanstalld data for verksamheten |
 | `coredata.preview` | `GET` | `/api/coredata/files/{file_key}/preview` | Forhandsvisa coredata-karnfil eller sammanstalld data |
 | `coredata.download` | `GET` | `/api/coredata/files/{file_key}/download` | Ladda ner coredata-karnfil eller sammanstalld data |
@@ -95,12 +99,12 @@ verksamheter.
 | `areas.create` | `POST` | `/api/areas` | Skapa område |
 | `areas.update` | `PUT` | `/api/areas/{area_id}` | Uppdatera område |
 | `areas.delete` | `DELETE` | `/api/areas/{area_id}` | Ta bort eller inaktivera område |
-| `activities.list` | `GET` | `/api/activities` | Lista aktiviteter |
+| `activities.list` | `GET` | `/api/activities` | Lista aktiviteter med KPI Mal-processnamn |
 | `activities.import_template` | `GET` | `/api/activities/import-template` | Hämta importmall för aktiviteter |
 | `activities.import` | `POST` | `/api/activities/import` | Importera aktiviteter |
-| `activities.import_rows` | `POST` | `/api/activities/import-rows` | Importera aktivitetsrader |
-| `activities.create` | `POST` | `/api/activities` | Skapa aktivitet |
-| `activities.update` | `PUT` | `/api/activities/{activity_id}` | Uppdatera aktivitet |
+| `activities.import_rows` | `POST` | `/api/activities/import-rows` | Importera aktivitetsrader med valfria KPI Mal-processnamn |
+| `activities.create` | `POST` | `/api/activities` | Skapa aktivitet med valfria KPI Mal-processnamn |
+| `activities.update` | `PUT` | `/api/activities/{activity_id}` | Uppdatera aktivitet med valfria KPI Mal-processnamn |
 | `activities.delete` | `DELETE` | `/api/activities/{activity_id}` | Ta bort aktivitet |
 | `settings.get` | `GET` | `/api/settings` | Hämta verksamhetens inställningar |
 | `settings.update` | `PUT` | `/api/settings` | Uppdatera verksamhetens inställningar |
@@ -143,6 +147,13 @@ verksamheter.
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |
 | `schedule.fill_from_left` | `POST` | `/api/schedule/fill-from-left` | Fyll från vänster |
+
+Schema-celler i svar fran `schedule.get`, `schedule.bulk_cells`,
+`schedule.set_cell` och `schedule.restore_hours` kan ha `loan_area_id`.
+`schedule.bulk_cells` och `schedule.restore_hours` kan ocksa satta faltet.
+Det anvands for tomma utlanade timmar: `activity_id=null` och
+`loan_area_id=<omrade>` gor personen synlig i mottagande omrade utan att skapa
+aktivitetstimmar.
 | `personal.persons` | `GET` | `/api/personal/persons` | Personval för personliga vyer |
 | `personal.schedule` | `GET` | `/api/personal/schedule` | Mitt schema för en person |
 | `personal.productivity` | `GET` | `/api/personal/productivity` | Min produktivitet för en person |
@@ -174,6 +185,7 @@ verksamheter.
 | `meta.uploads` | `POST` | `/api/meta/uploads` | Publik meta-uppladdning av bilder och videor; backendfel auditloggas sanerat som `meta_media_upload/upload_failed` |
 | `meta.list_uploads` | `GET` | `/api/meta/uploads` | Super User-lista över meta-uppladdningar |
 | `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | Sändningsanalys för Meta-videor |
+| `meta.shipment_observations_export` | `GET` | `/api/meta/shipment-observations/export` | Excel-export for Meta-sandningsanalys |
 | `meta.analyze` | `POST` | `/api/meta/uploads/{upload_id}/analyze` | Analysera Meta-video |
 | `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Visa eller spela upp meta-uppladdning |
 | `meta.delete` | `DELETE` | `/api/meta/uploads/{upload_id}` | Radera meta-uppladdning |

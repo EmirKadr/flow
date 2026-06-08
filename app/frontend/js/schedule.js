@@ -27,6 +27,7 @@ const state = {
   undoStack: [],
   redoStack: [],
   focusedCell: null,
+  selectedPersonId: null,
   clipboard: null,
   nameFilter: "",
   sortKey: "sort_order",
@@ -181,6 +182,7 @@ function filterScheduleDataForArea(data, areaId) {
   const selectedAreaCellPersonIds = new Set(
     cells
       .filter((cell) => {
+        if (Number(cell.loan_area_id) === selectedAreaId) return true;
         const activity = activityById(Number(cell.activity_id));
         return activity && Number(activity.area_id) === selectedAreaId;
       })
@@ -283,6 +285,7 @@ function normalizeScheduleSegment(segment) {
     minute_start: Number(segment.minute_start),
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
+    loan_area_id: segment.loan_area_id == null ? null : Number(segment.loan_area_id),
     empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
@@ -296,6 +299,7 @@ function scheduleSegmentSignature(segment) {
     normalized.minute_start,
     normalized.minute_end,
     normalized.activity_id ?? "",
+    normalized.loan_area_id ?? "",
     normalized.empty_override ? 1 : 0,
     normalized.version,
     normalized.updated_at || "",
@@ -415,6 +419,17 @@ function ymdString(date) {
   return `${y}-${m}-${d}`;
 }
 
+function localYmdString(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function selectedScheduleYmdString() {
+  return ymdString(dateFromYWD(state.year, state.week, state.weekday));
+}
+
 function dateFromYmd(str) {
   const [y, m, d] = String(str).split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -440,8 +455,7 @@ function buildHeader() {
 
 function currentHourIfToday() {
   const now = new Date();
-  const today = isoWeek(now);
-  if (today.year !== state.year || today.week !== state.week || today.weekday !== state.weekday) return null;
+  if (selectedScheduleYmdString() !== localYmdString(now)) return null;
   return now.getHours();
 }
 
@@ -540,11 +554,7 @@ function scheduleLoanTargetOptions(person) {
       if (String(area?.code || "").trim().toUpperCase() === "ANNAT") return false;
       return scheduleSameBusiness(area.business_id, person?.business_id);
     })
-    .map((area) => {
-      const activity = scheduleLoanActivityForArea(area, person);
-      return activity ? { area, activity } : null;
-    })
-    .filter(Boolean)
+    .map((area) => ({ area }))
     .sort((a, b) =>
       (Number(a.area.sort_order) || 0) - (Number(b.area.sort_order) || 0)
       || String(a.area.name || a.area.code || "").localeCompare(String(b.area.name || b.area.code || ""))
@@ -553,11 +563,28 @@ function scheduleLoanTargetOptions(person) {
 
 function scheduleLoanHoursForPerson(personId) {
   const scheduled = state.scheduledHours[Number(personId)];
-  if (scheduled?.size) return HOURS.filter((hour) => scheduled.has(hour));
-  return HOURS.filter((hour) => segmentsForHour(personId, hour).length > 0);
+  return HOURS.filter((hour) => scheduled?.has(hour) || segmentsForHour(personId, hour).length > 0);
 }
 
-function scheduleLoanCellsForHour(personId, hour, activityId) {
+function scheduleLoanStartHour() {
+  const current = currentHourIfToday();
+  if (current != null) return Math.max(HOURS[0], Math.min(HOURS[HOURS.length - 1], current));
+  const focusedHour = Number(state.focusedCell?.hour);
+  if (Number.isFinite(focusedHour) && HOURS.includes(focusedHour)) return focusedHour;
+  return null;
+}
+
+function scheduleLoanHourLabel(hour) {
+  if (hour == null || !Number.isFinite(Number(hour))) return "";
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function scheduleLoanStartHint() {
+  const startHour = scheduleLoanStartHour();
+  return startHour == null ? "Klicka först på starttimme" : `Tomt från ${scheduleLoanHourLabel(startHour)}`;
+}
+
+function scheduleLoanCellsForHour(personId, hour, areaId) {
   const segments = segmentsForHour(personId, hour);
   const fullSegment = segments.find((segment) => segment.minute_start === 0 && segment.minute_end === 60) || null;
   const targetRanges = (isSplitHour(segments) || segments.some((segment) => segment.minute_end - segment.minute_start === 30))
@@ -578,7 +605,8 @@ function scheduleLoanCellsForHour(personId, hour, activityId) {
       minute_start,
       minute_end,
       person_id: Number(personId),
-      activity_id: Number(activityId),
+      activity_id: null,
+      loan_area_id: Number(areaId),
       expected_version: expectedVersion,
     };
   });
@@ -620,7 +648,7 @@ function openScheduleLoanMenu(event, person) {
 
   const options = scheduleLoanTargetOptions(person);
   if (!options.length) {
-    showToast("Inga andra aktiva områden med aktivitet finns för personen.", "warn", 5000);
+    showToast("Inga andra aktiva områden finns för personen.", "warn", 5000);
     return;
   }
 
@@ -645,7 +673,7 @@ function openScheduleLoanMenu(event, person) {
     button.appendChild(label);
 
     const meta = document.createElement("small");
-    meta.textContent = option.activity.label || option.activity.code || "";
+    meta.textContent = scheduleLoanStartHint();
     button.appendChild(meta);
 
     button.addEventListener("click", () => {
@@ -679,13 +707,18 @@ async function sendPersonToArea(personId, areaId) {
   const person = personById(Number(personId));
   const option = scheduleLoanTargetOptions(person).find((item) => Number(item.area.id) === Number(areaId));
   if (!person || !option) {
-    showToast("Kunde inte hitta område eller aktivitet för utlåningen.", "error", 6000);
+    showToast("Kunde inte hitta område för utlåningen.", "error", 6000);
     return;
   }
 
-  const hours = scheduleLoanHoursForPerson(person.id);
+  const startHour = scheduleLoanStartHour();
+  if (startHour == null) {
+    showToast("Klicka först på timmen där flytten ska börja, eller välj dagens datum så aktuell timme kan användas.", "warn", 7000);
+    return;
+  }
+  const hours = scheduleLoanHoursForPerson(person.id).filter((hour) => hour >= startHour);
   if (!hours.length) {
-    showToast("Personen saknar schemalagda timmar den här dagen.", "warn", 5000);
+    showToast(`Personen saknar schemalagda timmar från ${scheduleLoanHourLabel(startHour)} den här dagen.`, "warn", 5000);
     return;
   }
 
@@ -696,7 +729,7 @@ async function sendPersonToArea(personId, areaId) {
       lockedHours.push(hour);
       return;
     }
-    cells.push(...scheduleLoanCellsForHour(person.id, hour, option.activity.id));
+    cells.push(...scheduleLoanCellsForHour(person.id, hour, option.area.id));
   });
 
   if (!cells.length) {
@@ -734,8 +767,8 @@ async function sendPersonToArea(personId, areaId) {
     const changedHours = new Set(cells.map((cell) => hourKey(cell.person_id, cell.hour))).size;
     showToast(
       lockedHours.length
-        ? `Skickade ${person.name} till ${option.area.name || option.area.code} (${changedHours} tim), hoppade över ${lockedHours.length} låsta`
-        : `Skickade ${person.name} till ${option.area.name || option.area.code} (${changedHours} tim)`,
+        ? `Skickade ${person.name} till ${option.area.name || option.area.code} från ${scheduleLoanHourLabel(startHour)} (${changedHours} tim), hoppade över ${lockedHours.length} låsta`
+        : `Skickade ${person.name} till ${option.area.name || option.area.code} från ${scheduleLoanHourLabel(startHour)} (${changedHours} tim)`,
       "success"
     );
   } catch (error) {
@@ -986,6 +1019,7 @@ function setAllSegments(cells) {
       minute_start: Number(cell.minute_start),
       minute_end: Number(cell.minute_end),
       activity_id: cell.activity_id == null ? null : Number(cell.activity_id),
+      loan_area_id: cell.loan_area_id == null ? null : Number(cell.loan_area_id),
       empty_override: !!cell.empty_override,
       version: Number(cell.version) || 0,
       updated_at: cell.updated_at || null,
@@ -1016,6 +1050,7 @@ function replaceHourSegments(personId, hour, segments) {
     minute_start: Number(segment.minute_start),
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
+    loan_area_id: segment.loan_area_id == null ? null : Number(segment.loan_area_id),
     empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
@@ -1043,6 +1078,7 @@ function currentSegment(personId, hour, minuteStart, minuteEnd) {
     minute_start: minuteStart,
     minute_end: minuteEnd,
     activity_id: null,
+    loan_area_id: null,
     empty_override: false,
     version: 0,
   };
@@ -1081,6 +1117,7 @@ function cloneSegment(segment) {
     minute_start: Number(segment.minute_start),
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
+    loan_area_id: segment.loan_area_id == null ? null : Number(segment.loan_area_id),
     empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
@@ -1160,6 +1197,7 @@ function restoreSegmentPayload(segments) {
     minute_start: segment.minute_start,
     minute_end: segment.minute_end,
     activity_id: segment.activity_id,
+    loan_area_id: segment.loan_area_id,
     empty_override: !!segment.empty_override,
   }));
 }
@@ -1307,6 +1345,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_start: 0,
         minute_end: 60,
         activity_id: items[0].activity_id == null ? null : Number(items[0].activity_id),
+        loan_area_id: items[0].loan_area_id == null ? null : Number(items[0].loan_area_id),
         empty_override: items[0].activity_id == null && scheduled,
         version: current[0]?.version || 0,
         updated_at: current[0]?.updated_at || null,
@@ -1324,6 +1363,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_start,
         minute_end,
         activity_id: null,
+        loan_area_id: null,
         empty_override: scheduled,
         version: 0,
         updated_at: null,
@@ -1341,6 +1381,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_start,
         minute_end,
         activity_id: source.activity_id,
+        loan_area_id: source.loan_area_id,
         empty_override: source.empty_override,
         version: source.version,
         updated_at: source.updated_at || null,
@@ -1362,6 +1403,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_start,
         minute_end,
         activity_id: null,
+        loan_area_id: null,
         empty_override: scheduled,
         version: 0,
         updated_at: null,
@@ -1378,6 +1420,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
       minute_start: Number(item.minute_start),
       minute_end: Number(item.minute_end),
       activity_id: null,
+      loan_area_id: null,
       empty_override: scheduled,
       version: 0,
       updated_at: null,
@@ -1386,6 +1429,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
     byRange.set(key, {
       ...existing,
       activity_id: item.activity_id == null ? null : Number(item.activity_id),
+      loan_area_id: item.loan_area_id == null ? null : Number(item.loan_area_id),
       empty_override: item.activity_id == null && scheduled,
     });
   });
@@ -2108,6 +2152,26 @@ function renderHourCell(td) {
   if (td.classList.contains("pending-save")) setHourPending(td, true);
 }
 
+function applySelectedPersonRow() {
+  const selectedId = Number(state.selectedPersonId);
+  document.querySelectorAll("#scheduleBody tr.person-row-selected").forEach((row) => {
+    row.classList.remove("person-row-selected");
+    row.removeAttribute("aria-selected");
+  });
+  if (!Number.isInteger(selectedId)) return;
+  const row = document.querySelector(`#scheduleBody tr[data-person-id="${selectedId}"]`);
+  if (!row) return;
+  row.classList.add("person-row-selected");
+  row.setAttribute("aria-selected", "true");
+}
+
+function selectPersonRow(personId) {
+  const nextId = Number(personId);
+  if (!Number.isInteger(nextId)) return;
+  state.selectedPersonId = nextId;
+  applySelectedPersonRow();
+}
+
 function buildRows() {
   const body = document.getElementById("scheduleBody");
   const fragment = document.createDocumentFragment();
@@ -2145,6 +2209,7 @@ function buildRows() {
   });
 
   body.replaceChildren(fragment);
+  applySelectedPersonRow();
 }
 
 function clearSummaryRefreshTimer() {
@@ -2706,6 +2771,7 @@ async function finishDrag() {
             minute_end,
             person_id: personId,
             activity_id: sourceActivityId,
+            loan_area_id: null,
             expected_version: expectedVersion,
           };
         });
@@ -2851,6 +2917,8 @@ function setupDrag() {
 
   body.addEventListener("click", (e) => {
     if (drag.suppressClick) return;
+    const row = e.target.closest("tr[data-person-id]");
+    if (row && body.contains(row)) selectPersonRow(row.dataset.personId);
     const td = e.target.closest("td[data-hour]");
     if (!td) return;
     if (td.dataset.split === "1") {

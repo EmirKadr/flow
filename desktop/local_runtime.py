@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, quote, urljoin
 import requests
 
 from app.backend import allocation_bridge as allocation
+from app.backend import workflow_data
 from app.backend.productivity_service import (
     ProductivitySourceError,
     build_productivity_report_from_files,
@@ -37,20 +38,47 @@ LOCAL_REF_PREFIX = "__flow_local_ref:"
 PRODUCTIVITY_KEYS = {"pick", "trans", "pallet", "kpi"}
 ARTICLE_MAX_KEY = "article_max"
 BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
+FORECAST_COREDATA_DEFAULTS = {
+    "custom": "custom",
+    "item": "item",
+    "item_alias": "item_alias",
+    "dimension": "dimension",
+    "pallet_type": "pallet_type",
+    "item_option": "item_option",
+    "trans_agency": "trans_agency",
+}
 BUSINESS_COREDATA_FLOW_DEFAULTS = {
     "allocate": {"items": "item_option"},
     "goods-declaration": {"item_security_info": "item_security_info"},
-    "forecast": {
-        "custom": "custom",
-        "item": "item",
-        "item_alias": "item_alias",
-        "dimension": "dimension",
-        "pallet_type": "pallet_type",
-        "item_option": "item_option",
-        "trans_agency": "trans_agency",
-    },
-    "ytgenerering": {"location": "location"},
+    "forecast": FORECAST_COREDATA_DEFAULTS,
+    "ytgenerering": {**FORECAST_COREDATA_DEFAULTS, "location": "location"},
 }
+
+
+def _allocation_required_file_keys(flow_id: str) -> set[str]:
+    for flow in allocation.public_registry():
+        if str(flow.get("id") or "") != str(flow_id or ""):
+            continue
+        required: set[str] = set()
+        for item in flow.get("inputs") or []:
+            if item.get("type") == "file" and item.get("required"):
+                required.add(str(item.get("key") or ""))
+        for item in flow.get("coredata") or []:
+            if item.get("required"):
+                required.add(str(item.get("key") or ""))
+        return {key for key in required if key}
+    return set()
+
+
+def _response_detail(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    return f"Extern datakälla kunde inte nås. Servern svarade HTTP {response.status_code}."
 
 
 @dataclass(frozen=True)
@@ -223,23 +251,178 @@ class DesktopLocalRuntime:
                 params[key] = value
         return files, params
 
-    def run_allocation_flow(self, flow_id: str, fields: dict[str, str], uploads: dict[str, Path]) -> dict[str, Any]:
+    def _download_workflow_source(
+        self,
+        *,
+        upstream_root: str,
+        headers: dict[str, str],
+        feature: str,
+        flow_id: str,
+        source_key: str,
+    ) -> tuple[Path, int]:
+        if not str(upstream_root or "").strip():
+            raise RuntimeError("Extern datakälla kunde inte nås.")
+        response = requests.post(
+            urljoin(upstream_root, "api/workflow-data/source"),
+            data=json.dumps(
+                {
+                    "feature": feature,
+                    "flow_id": flow_id,
+                    "source_key": source_key,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers=_forward_headers(headers, content_type="application/json"),
+            timeout=(8, 180),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(_response_detail(response))
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{source_key}.csv")
+        path = Path(tmp.name)
+        try:
+            tmp.write(response.content)
+        finally:
+            tmp.close()
+        return path, int(response.headers.get("X-Flow-Source-Rows") or 0)
+
+    def _resolve_api_first_sources(
+        self,
+        *,
+        feature: str,
+        flow_id: str,
+        source_map: dict[str, str],
+        files: dict[str, Path],
+        required_keys: set[str],
+        local_ref_keys: set[str],
+        upstream_root: str,
+        headers: dict[str, str],
+    ) -> workflow_data.WorkflowResolution:
+        resolved = dict(files)
+        temp_paths: list[Path] = []
+        entries: list[workflow_data.WorkflowSourceEntry] = []
+        for file_key, source_key in source_map.items():
+            spec = workflow_data.source_spec(source_key)
+            required = file_key in required_keys
+            try:
+                path, row_count = self._download_workflow_source(
+                    upstream_root=upstream_root,
+                    headers=headers,
+                    feature=feature,
+                    flow_id=flow_id,
+                    source_key=source_key,
+                )
+                resolved[file_key] = path
+                temp_paths.append(path)
+                entries.append(
+                    workflow_data.WorkflowSourceEntry(
+                        key=file_key,
+                        label=spec.label,
+                        view=spec.view,
+                        status="api",
+                        row_count=row_count,
+                    )
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001
+                fallback = None
+                if file_key in files:
+                    fallback = "local_ref_fallback" if file_key in local_ref_keys else "upload_fallback"
+                if fallback:
+                    entries.append(
+                        workflow_data.WorkflowSourceEntry(
+                            key=file_key,
+                            label=spec.label,
+                            view=spec.view,
+                            status=fallback,
+                            message=str(exc),
+                        )
+                    )
+                    continue
+                if not required:
+                    entries.append(
+                        workflow_data.WorkflowSourceEntry(
+                            key=file_key,
+                            label=spec.label,
+                            view=spec.view,
+                            status="optional_skipped",
+                            message=str(exc),
+                        )
+                    )
+                    continue
+                for temp_path in temp_paths:
+                    temp_path.unlink(missing_ok=True)
+                raise RuntimeError(f"{exc} Ladda upp {spec.label} och kör igen.") from exc
+        return workflow_data.WorkflowResolution(files=resolved, temp_paths=temp_paths, entries=entries)
+
+    def run_allocation_flow(
+        self,
+        flow_id: str,
+        fields: dict[str, str],
+        uploads: dict[str, Path],
+        *,
+        upstream_root: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         files, params = self._resolve_flow_files(fields, uploads)
+        raw_filter_profile = params.pop(allocation.USER_FILTERS_PARAM, "")
+        try:
+            user_filter_profile = allocation.normalize_user_filter_profile(json.loads(raw_filter_profile)) if raw_filter_profile else {}
+        except Exception:
+            user_filter_profile = {}
+        local_ref_keys = {key for key, value in fields.items() if _is_local_ref(value)}
         for file_key, coredata_type in BUSINESS_COREDATA_FLOW_DEFAULTS.get(flow_id, {}).items():
             if file_key in files:
                 continue
             try:
                 files[file_key] = self._cached_coredata_file(coredata_type)
+                local_ref_keys.add(file_key)
             except Exception:
                 pass
         default_max = None
         if flow_id in BUSINESS_ARTICLE_MAX_FLOW_IDS and "max_csv" not in files:
             default_max = self._cached_article_max()
-        result = allocation.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max)
-        result["local_run"] = True
-        result["duration_ms"] = int((time.perf_counter() - started) * 1000)
-        return result
+        source_resolution: workflow_data.WorkflowResolution | None = None
+        try:
+            source_map = allocation.api_source_map_for_user_profile(
+                workflow_data.allocation_api_source_map(flow_id),
+                flow_id,
+                user_filter_profile,
+            )
+            if source_map:
+                source_resolution = self._resolve_api_first_sources(
+                    feature="allocation",
+                    flow_id=flow_id,
+                    source_map=source_map,
+                    files=files,
+                    required_keys=_allocation_required_file_keys(flow_id),
+                    local_ref_keys=local_ref_keys,
+                    upstream_root=upstream_root,
+                    headers=headers or {},
+                )
+                files = source_resolution.files
+            files, user_filter_temp_paths, user_filter_log = allocation.apply_user_flow_filters(files, flow_id, user_filter_profile)
+            if flow_id == "ytgenerering":
+                allocation.apply_ytgenerering_user_settings(
+                    params,
+                    user_filter_profile,
+                    area_focus=params.get(allocation.PROCESS_AREA_FOCUS_PARAM, "") or "ALLT",
+                )
+            result = allocation.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max)
+            if user_filter_log:
+                result["log"] = user_filter_log + list(result.get("log") or [])
+                result["user_filter"] = {"lines": user_filter_log}
+            if source_resolution is not None:
+                result["log"] = source_resolution.log_lines + list(result.get("log") or [])
+                result["source_status"] = source_resolution.audit_entries
+            result["local_run"] = True
+            result["duration_ms"] = int((time.perf_counter() - started) * 1000)
+            return result
+        finally:
+            for temp_path in (source_resolution.temp_paths if source_resolution is not None else []):
+                temp_path.unlink(missing_ok=True)
+            for temp_path in locals().get("user_filter_temp_paths", []):
+                temp_path.unlink(missing_ok=True)
 
     def register_productivity_refs(self, mapping: dict[str, str]) -> dict[str, Any]:
         saved = []
@@ -283,13 +466,40 @@ class DesktopLocalRuntime:
             return read_productivity_targets_from_file(kpi_path)
         return read_productivity_targets(reference_dir=self.cache_dir)
 
-    def productivity_report(self, report_date: date | None = None) -> dict[str, Any]:
+    def productivity_report(
+        self,
+        report_date: date | None = None,
+        *,
+        upstream_root: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         files = self.productivity_files()
         kpi_path = self._kpi_path()
-        if kpi_path is None:
-            raise ProductivitySourceError("Saknar KPI-mål i lokal cache.")
-        files["kpi"] = kpi_path
-        return build_productivity_report_from_files(files, report_date=report_date)
+        if kpi_path is not None:
+            files["kpi"] = kpi_path
+        source_resolution: workflow_data.WorkflowResolution | None = None
+        try:
+            source_map = workflow_data.productivity_api_source_map()
+            source_resolution = self._resolve_api_first_sources(
+                feature="productivity",
+                flow_id="productivity",
+                source_map=source_map,
+                files=files,
+                required_keys=set(source_map),
+                local_ref_keys=set(files),
+                upstream_root=upstream_root,
+                headers=headers or {},
+            )
+            files = source_resolution.files
+            if "kpi" not in files:
+                raise ProductivitySourceError("Saknar KPI-mål i lokal cache.")
+            report = build_productivity_report_from_files(files, report_date=report_date)
+            report["source_status"] = source_resolution.audit_entries
+            report["log"] = source_resolution.log_lines + list(report.get("log") or [])
+            return report
+        finally:
+            for temp_path in (source_resolution.temp_paths if source_resolution is not None else []):
+                temp_path.unlink(missing_ok=True)
 
     def enqueue_upload(
         self,
@@ -518,6 +728,23 @@ def _productivity_audit_payload(
     return payload
 
 
+def _upstream_json(upstream_root: str, path: str, headers: dict[str, str]) -> dict[str, Any] | None:
+    if not str(upstream_root or "").strip():
+        return None
+    try:
+        response = requests.get(
+            urljoin(upstream_root, path.lstrip("/")),
+            headers=_forward_headers(headers),
+            timeout=(4, 30),
+        )
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def local_response_for_request(
     runtime: DesktopLocalRuntime,
     handler,
@@ -573,6 +800,9 @@ def local_response_for_request(
         if path == "/api/desktop/productivity/files/register" and method == "POST":
             return 200, "application/json; charset=utf-8", _json_bytes(runtime.register_productivity_refs(_read_json_body(handler).get("files") or {}))
         if path == "/api/productivity/files" and method == "GET":
+            upstream_status = _upstream_json(upstream_root, "/api/productivity/files", headers)
+            if upstream_status and upstream_status.get("api_first"):
+                return 200, "application/json; charset=utf-8", _json_bytes(upstream_status)
             return 200, "application/json; charset=utf-8", _json_bytes(runtime.productivity_status())
         if path == "/api/productivity/targets" and method == "GET":
             return 200, "application/json; charset=utf-8", _json_bytes(runtime.productivity_targets())
@@ -583,7 +813,7 @@ def local_response_for_request(
             started = time.perf_counter()
             file_types = list(runtime.productivity_files().keys())
             try:
-                report = runtime.productivity_report(report_date)
+                report = runtime.productivity_report(report_date, upstream_root=upstream_root, headers=headers)
                 runtime.enqueue_local_audit(
                     upstream_root=upstream_root,
                     headers=headers,
@@ -613,7 +843,7 @@ def local_response_for_request(
             fields, uploads, temp_paths = parse_multipart(handler)
             started = time.perf_counter()
             try:
-                result = runtime.run_allocation_flow(flow_id, fields, uploads)
+                result = runtime.run_allocation_flow(flow_id, fields, uploads, upstream_root=upstream_root, headers=headers)
                 runtime.enqueue_local_audit(
                     upstream_root=upstream_root,
                     headers=headers,

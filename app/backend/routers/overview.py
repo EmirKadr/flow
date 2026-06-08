@@ -15,7 +15,7 @@ from ..home_activity import build_home_activity_resolver, person_out_with_home_a
 from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..schemas import PersonOut
-from ..template_service import get_template_hours_map
+from ..template_service import get_template_hours_map_for_dates
 
 logger = logging.getLogger("overview")
 
@@ -154,6 +154,13 @@ def _month_days(year: int, month: int) -> list[MonthDay]:
         )
         current_day += timedelta(days=1)
     return days_list
+
+
+def _overview_date(year: int, week: int, weekday: int) -> date:
+    try:
+        return date.fromisocalendar(year, week, weekday)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltig ISO-vecka eller dag")
 
 
 class OverviewDayRequest(BaseModel):
@@ -655,12 +662,13 @@ def get_overview(
         activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
         area_query = area_query.filter(Area.business_id == scoped_business_id)
     home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
-    template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
+    week_dates = {weekday: _overview_date(year, week, weekday) for weekday in range(1, 8)}
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, week_dates.values())
     matrix: list[OverviewCell] = []
     for person in persons:
         home_activity_id = home_activity_for(person)
         for weekday in range(1, 8):
-            template_hours = template_hours_map.get((person.id, weekday))
+            template_hours = template_hours_map.get((person.id, week_dates[weekday]))
             template_count = 0 if template_hours is None else len(template_hours)
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((person.id, weekday), {}),
@@ -775,12 +783,13 @@ def get_month_overview(
         activity_query = activity_query.filter(Activity.business_id == scoped_business_id)
         area_query = area_query.filter(Area.business_id == scoped_business_id)
     home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
-    template_hours_map = get_template_hours_map(db, person_ids, range(1, 8))
+    date_by_iso = {day_info.date: date.fromisoformat(day_info.date) for day_info in days_list}
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, date_by_iso.values())
     matrix: list[MonthOverviewCell] = []
     for person in persons:
         home_activity_id = home_activity_for(person)
         for day_info in days_list:
-            template_hours = template_hours_map.get((person.id, day_info.weekday))
+            template_hours = template_hours_map.get((person.id, date_by_iso[day_info.date]))
             template_count = 0 if template_hours is None else len(template_hours)
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((person.id, day_info.year, day_info.week, day_info.weekday), {}),
@@ -827,11 +836,12 @@ def set_day(
             if activity.business_id != person.business_id:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
-        template_hours = get_template_hours_map(
+        selected_date = _overview_date(payload.year, payload.week, payload.weekday)
+        template_hours = get_template_hours_map_for_dates(
             db,
             [payload.person_id],
-            [payload.weekday],
-        ).get((payload.person_id, payload.weekday))
+            [selected_date],
+        ).get((payload.person_id, selected_date))
         result = _apply_day_impl(
             payload,
             db,
@@ -868,7 +878,10 @@ def set_days_bulk(
 
     person_ids = {item.person_id for item in payload.days}
     activity_ids = {item.activity_id for item in payload.days if item.activity_id is not None}
-    weekdays = {item.weekday for item in payload.days}
+    dates_by_ywd = {
+        (item.year, item.week, item.weekday): _overview_date(item.year, item.week, item.weekday)
+        for item in payload.days
+    }
 
     scoped_business_id = visible_business_id(db, user)
     person_query = select(Person).where(Person.id.in_(person_ids))
@@ -901,7 +914,7 @@ def set_days_bulk(
             if activities_by_id[item.activity_id].business_id != persons_by_id[item.person_id].business_id:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
-    template_hours_map = get_template_hours_map(db, person_ids, weekdays)
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, dates_by_ywd.values())
     applied: list[dict] = []
     errors: list[dict] = []
     total_written = 0
@@ -910,7 +923,8 @@ def set_days_bulk(
 
     try:
         for item in payload.days:
-            template_hours = template_hours_map.get((item.person_id, item.weekday))
+            selected_date = dates_by_ywd[(item.year, item.week, item.weekday)]
+            template_hours = template_hours_map.get((item.person_id, selected_date))
             if payload.atomic:
                 result = _apply_day_impl(
                     item,

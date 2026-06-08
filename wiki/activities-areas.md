@@ -1,13 +1,13 @@
 ---
 title: Aktiviteter och omraden
 status: aktiv
-updated: 2026-05-25
+updated: 2026-06-08
 tags: [aktiviteter, omraden, ui, import]
 ---
 
 # Aktiviteter och omraden
 
-Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje aktivitet har etikett, farg, omrade, kategori, sortering och eventuell summeringsaktivitet.
+Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje aktivitet har etikett, verksamhet, farg, omrade, KPI Mal/processnamn, kategori, sortering och eventuell summeringsaktivitet. KPI Mal kan innehalla flera processnamn separerade med komma.
 
 ## Knappar och kontroller
 
@@ -18,6 +18,7 @@ Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje a
 | Ladda ner importmall | Hamter Excelmall | Laddar ner mall | `GET /api/activities/import-template` | Dold utan `activityImport` edit. |
 | Importera Excel | Oppnar filval | Importerar aktiviteter | `POST /api/activities/import` | Max 5 MB; dubblettkod stoppas. |
 | Hjalp med import | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
+| Tabellrubriker | Klickar pa t.ex. Etikett, Verksamhet, Omrade, Kategori eller Sortering | Sorterar synliga aktivitetsrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus eller sparad sorteringsordning. |
 | Redigera | Oppnar modal for befintlig aktivitet | Sparar andringar | `PUT /api/activities/{id}` | Kod kan vara read-only for icke-super-user. |
 | Ta bort | Bekraftar | Inaktiverar aktivitet | `DELETE /api/activities/{id}` | Text sager permanent men beteendet ar soft delete. |
 
@@ -30,6 +31,7 @@ Falt:
 - Kod: visas/hanteras bara for anvandare som far se koder.
 - Omrade: kopplar aktiviteten till MG/GG/AS/EH eller inget omrade.
 - Summeras som: pekar pa annan aktivitet for summering.
+- KPI Mal: ett eller flera valfria processnamn fran KPI-malet, t.ex. `dekant, plock`. Bolag skrivs inte i faltet.
 - Farg: anvands i schema och oversikt.
 - Kategori: t.ex. work/annan kategori enligt UI.
 - Sortering: ordning i listor/dropdowns.
@@ -53,11 +55,13 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 
 ## Importregler
 
-- Direktimporten `Flera nya aktiviteter` har samma falt som Excelmallen: verksamhet vid behov, etikett, omrade, summeras som och sortering.
+- Direktimporten `Flera nya aktiviteter` har samma falt som Excelmallen: verksamhet vid behov, etikett, omrade, summeras som, KPI Mal/processnamn och sortering.
 - Varje kolumn i direkttabellen visar om faltet ar `Obligatoriskt` eller `Frivilligt` i rubriken.
 - Vanliga anvandare importerar alltid till egen verksamhet. Super User kan ange verksamhet med kod, namn eller id, eller lata omrade/summeringsaktivitet harleda den.
+- KPI Mal ar bara processnamn. Flera processer separeras med komma och normaliseras till `dekant, plock`. Format med bolag, till exempel `GG:decanting`, stoppas eftersom verksamheten redan kommer fran aktiviteten.
 - Importerade aktiviteter far vit standardfarg, kategori `work` och aktiv status.
 - Dubbletter i fil, i direkttabellen eller mot befintliga aktiviteter stoppas och visas i resultatmodalen.
+- Befintliga aktiviteter fick initiala KPI Mal-processer via engangsmigrationen `0036_backfill_activity_kpi_processes`. Den skapar inga nya aktiviteter och fyller bara tomma falt; efter det andrar anvandarna vardena fritt i Aktiviteter.
 
 ## Felsokningssvar for framtida chat
 

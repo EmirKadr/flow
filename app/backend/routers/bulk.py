@@ -21,6 +21,7 @@ def _segment_to_dict(cell: ScheduleCell) -> dict:
         "minute_start": cell.minute_start,
         "minute_end": cell.minute_end,
         "activity_id": cell.activity_id,
+        "loan_area_id": cell.loan_area_id,
         "empty_override": cell.empty_override,
         "version": cell.version,
         "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
@@ -112,6 +113,7 @@ def copy_schedule(
                             "minute_start": target.minute_start,
                             "minute_end": target.minute_end,
                             "activity_id": target.activity_id,
+                            "loan_area_id": target.loan_area_id,
                             "version": target.version,
                         },
                         new_value=None,
@@ -130,6 +132,7 @@ def copy_schedule(
                         minute_end=src.minute_end,
                         person_id=src.person_id,
                         activity_id=src.activity_id,
+                        loan_area_id=src.loan_area_id,
                         empty_override=src.empty_override,
                         version=1,
                         updated_by=user.id,
@@ -155,6 +158,7 @@ def copy_schedule(
                         "minute_start": new_cell.minute_start,
                         "minute_end": new_cell.minute_end,
                         "activity_id": new_cell.activity_id,
+                        "loan_area_id": new_cell.loan_area_id,
                         "version": 1,
                     },
                     user_id=user.id,
@@ -194,7 +198,7 @@ def clear_schedule(
             entity_type="schedule_cell",
             entity_id=c.id,
             action="clear",
-            old_value={"activity_id": c.activity_id, "version": c.version},
+            old_value={"activity_id": c.activity_id, "loan_area_id": c.loan_area_id, "version": c.version},
             new_value=None,
             user_id=user.id,
         )
@@ -259,10 +263,12 @@ def fill_from_left(
                         "minute_start": existing.minute_start,
                         "minute_end": existing.minute_end,
                         "activity_id": existing.activity_id,
+                        "loan_area_id": existing.loan_area_id,
                         "version": existing.version,
                     }
                     existing.minute_end = minute_end
                     existing.activity_id = activity_id
+                    existing.loan_area_id = None
                     existing.version += 1
                     existing.updated_by = user.id
                     db.flush()
@@ -276,6 +282,7 @@ def fill_from_left(
                             "minute_start": existing.minute_start,
                             "minute_end": existing.minute_end,
                             "activity_id": existing.activity_id,
+                            "loan_area_id": existing.loan_area_id,
                             "version": existing.version,
                         },
                         user_id=user.id,
@@ -292,6 +299,7 @@ def fill_from_left(
                         minute_end=minute_end,
                         person_id=pid,
                         activity_id=activity_id,
+                        loan_area_id=None,
                         empty_override=False,
                         version=1,
                         updated_by=user.id,
@@ -308,6 +316,7 @@ def fill_from_left(
                             "minute_start": new_cell.minute_start,
                             "minute_end": new_cell.minute_end,
                             "activity_id": new_cell.activity_id,
+                            "loan_area_id": new_cell.loan_area_id,
                             "version": 1,
                         },
                         user_id=user.id,
@@ -328,6 +337,7 @@ def fill_from_left(
                         "minute_start": existing.minute_start,
                         "minute_end": existing.minute_end,
                         "activity_id": existing.activity_id,
+                        "loan_area_id": existing.loan_area_id,
                         "version": existing.version,
                     },
                     new_value=None,

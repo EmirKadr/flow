@@ -19,6 +19,7 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
+from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
@@ -48,6 +49,8 @@ PUBLIC_UPLOAD_FAILURE_DETAIL = (
 # Enkel per-IP rate-limit (fast fönster) för den publika uppladdningsendpointen.
 _RATE_LOCK = threading.Lock()
 _RATE_HITS: dict[str, list[float]] = {}
+META_PLAYABLE_TRANSCODE_LIMIT = 1
+_PLAYABLE_TRANSCODE_SEMAPHORE = threading.BoundedSemaphore(META_PLAYABLE_TRANSCODE_LIMIT)
 
 
 def _enforce_upload_rate_limit(request: Request) -> None:
@@ -331,6 +334,93 @@ def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
     }
 
 
+META_SHIPMENT_EXPORT_HEADERS = [
+    "Ordernummer",
+    "Sändningsnummer",
+    "Användarnamn",
+    "Kund",
+    "Pall-ID",
+    "Avvikelser",
+    "Status",
+    "Osäkerhet",
+    "Uppdaterad",
+    "Video",
+    "Längd",
+    "Etikett",
+    "Rad-ID",
+]
+
+
+def _safe_excel_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        value = ", ".join(str(item) for item in value if str(item or "").strip())
+    if isinstance(value, (int, float, datetime)):
+        return value
+    text = str(value)
+    if text.startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
+
+
+def _shipment_export_row(row: MetaShipmentObservation) -> list[Any]:
+    video = row.media_upload
+    return [
+        row.order_number,
+        row.shipment_number,
+        row.username,
+        row.customer_name,
+        row.pallet_id,
+        row.deviations or [],
+        row.analysis_status,
+        row.uncertainty_notes,
+        row.updated_at.isoformat(sep=" ", timespec="seconds") if row.updated_at else "",
+        (video.stored_filename or video.original_filename) if video else "",
+        _format_duration(video.duration_seconds) if video else "",
+        "Finns" if row.label_image_upload_id else "",
+        row.record_hash,
+    ]
+
+
+def _write_shipment_observations_excel(rows: list[MetaShipmentObservation]) -> Path:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Sändningsanalys"
+    sheet.append(META_SHIPMENT_EXPORT_HEADERS)
+    for row in rows:
+        sheet.append([_safe_excel_value(value) for value in _shipment_export_row(row)])
+    for column_cells in sheet.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column_cells)
+        sheet.column_dimensions[column_cells[0].column_letter].width = min(max(12, max_length + 2), 42)
+    fd, output_name = tempfile.mkstemp(prefix="flow_meta_sandningsanalys_", suffix=".xlsx")
+    os.close(fd)
+    output_path = Path(output_name)
+    workbook.save(output_path)
+    workbook.close()
+    return output_path
+
+
+def _parse_export_ids(raw_ids: str | None) -> list[int]:
+    if not raw_ids:
+        return []
+    result: list[int] = []
+    for part in raw_ids.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Exporten innehåller ogiltiga rad-id:n.") from exc
+        if value <= 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Exporten innehåller ogiltiga rad-id:n.")
+        result.append(value)
+    if len(result) > 500:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Du kan exportera max 500 filtrerade rader åt gången.")
+    return result
+
+
 async def _stream_upload_to_store(upload: UploadFile, *, store, batch_total: int):
     """Strömma en uppladdad fil direkt till MediaStore.
 
@@ -574,6 +664,36 @@ def list_meta_shipment_observations(
     }
 
 
+@router.get("/shipment-observations/export")
+def export_meta_shipment_observations(
+    ids: str | None = Query(None, max_length=8000),
+    limit: int = Query(5000, ge=1, le=10000),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_user),
+) -> FileResponse:
+    export_ids = _parse_export_ids(ids)
+    query = db.query(MetaShipmentObservation).options(joinedload(MetaShipmentObservation.media_upload))
+    if export_ids:
+        rows = query.filter(MetaShipmentObservation.id.in_(export_ids)).all()
+        by_id = {int(row.id): row for row in rows}
+        rows = [by_id[row_id] for row_id in export_ids if row_id in by_id]
+        filename = "meta-sandningsanalys-filtrerad.xlsx"
+    else:
+        rows = (
+            query.order_by(MetaShipmentObservation.updated_at.desc(), MetaShipmentObservation.id.desc())
+            .limit(limit)
+            .all()
+        )
+        filename = "meta-sandningsanalys.xlsx"
+    output_path = _write_shipment_observations_excel(rows)
+    return FileResponse(
+        output_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+        background=BackgroundTask(_cleanup_path, output_path),
+    )
+
+
 @router.post("/uploads/{upload_id}/analyze")
 def analyze_meta_media_upload(
     upload_id: int,
@@ -730,8 +850,13 @@ def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
         raise
 
 
+def _transcode_video_to_playable_queued(row: MetaMediaUpload) -> Path:
+    with _PLAYABLE_TRANSCODE_SEMAPHORE:
+        return _transcode_video_to_playable(row)
+
+
 def _playable_video_response(row: MetaMediaUpload, *, as_attachment: bool = False) -> Response:
-    output_path = _transcode_video_to_playable(row)
+    output_path = _transcode_video_to_playable_queued(row)
     filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
     return FileResponse(
         output_path,

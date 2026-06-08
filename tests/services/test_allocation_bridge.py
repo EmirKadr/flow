@@ -9,9 +9,13 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.backend import allocation_bridge as bridge
+from app.backend.database import Base
+from app.backend.models import AllocationUserFilterProfile, Business, User
 from app.backend.routers import allocation as allocation_router
 
 
@@ -57,6 +61,10 @@ def business_user(user_id: int, business_id: int, role: str = "super_user"):
         business_id=business_id,
         is_active=True,
     )
+
+
+def disable_allocation_api_sources(monkeypatch):
+    monkeypatch.setattr(allocation_router, "allocation_api_source_map", lambda _flow_id: {})
 
 
 class FakeQuery:
@@ -268,8 +276,7 @@ def test_form_to_flow_payload_uses_cached_uploads_without_temp_cleanup(tmp_path,
     assert temp_paths == []
 
 
-def test_process_area_filter_filters_gg_company_and_customer(tmp_path):
-    pd = pytest.importorskip("pandas")
+def test_process_area_filter_no_longer_filters_uploaded_rows(tmp_path):
     source = tmp_path / "orders.csv"
     source.write_text(
         "Bolag\tKund\tArtikel\n"
@@ -281,6 +288,36 @@ def test_process_area_filter_filters_gg_company_and_customer(tmp_path):
     )
 
     files, temp_paths, log = bridge.apply_process_area_filters({"orders": source}, "GG")
+
+    assert files == {"orders": source}
+    assert temp_paths == []
+    assert log == []
+
+
+def test_user_flow_filter_filters_uploaded_file_by_column_and_operator(tmp_path):
+    pd = pytest.importorskip("pandas")
+    source = tmp_path / "orders.csv"
+    source.write_text(
+        "Bolag\tKund\tArtikel\n"
+        "GG\t6005\tA1\n"
+        "GG\t1234\tA2\n"
+        "MG\t1234\tA3\n",
+        encoding="utf-8",
+    )
+    profile = {
+        "flows": {
+            "vecka27-check": {
+                "files": {
+                    "orders": [
+                        {"column": "Bolag", "operator": "EQ", "value": "GG"},
+                        {"columnLabel": "Kund", "operator": "NotIn", "value": ["6005"]},
+                    ]
+                }
+            }
+        }
+    }
+
+    files, temp_paths, log = bridge.apply_user_flow_filters({"orders": source}, "vecka27-check", profile)
     try:
         filtered = pd.read_csv(files["orders"], dtype=str, sep="\t")
     finally:
@@ -288,64 +325,111 @@ def test_process_area_filter_filters_gg_company_and_customer(tmp_path):
             path.unlink(missing_ok=True)
 
     assert filtered["Artikel"].tolist() == ["A2"]
-    assert log == [
-        "Omradesfilter GG: Bolag=GG, Kundnr!=6005.",
-        "orders: 4 -> 1 rader (Bolag, Kund).",
-    ]
+    assert log == ["Anvandarfilter orders: 3 -> 1 rader (2 villkor)."]
 
 
-def test_process_area_filter_filters_mg_excluded_customers(tmp_path):
+def test_user_flow_filter_supports_numeric_between(tmp_path):
     pd = pytest.importorskip("pandas")
-    source = tmp_path / "overview.csv"
+    source = tmp_path / "orders.csv"
     source.write_text(
-        "company;custom_num;order_num\n"
-        "MG;40002;O1\n"
-        "MG;90002;O2\n"
-        "MG;50000;O3\n"
-        "GG;50000;O4\n",
+        "Artikel\tPall\n"
+        "A1\t1\n"
+        "A2\t4\n"
+        "A3\t8\n",
         encoding="utf-8",
     )
+    profile = {
+        "flows": {
+            "allocate": {
+                "files": {
+                    "orders": [
+                        {"columnLabel": "Pall", "operator": "Between", "value": "2\n6"},
+                    ]
+                }
+            }
+        }
+    }
 
-    files, temp_paths, _log = bridge.apply_process_area_filters({"overview": source}, "MG")
+    files, temp_paths, _log = bridge.apply_user_flow_filters({"orders": source}, "allocate", profile)
     try:
-        filtered = pd.read_csv(files["overview"], dtype=str, sep="\t")
+        filtered = pd.read_csv(files["orders"], dtype=str, sep="\t")
     finally:
         for path in temp_paths:
             path.unlink(missing_ok=True)
 
-    assert filtered["order_num"].tolist() == ["O3"]
-
-
-def test_process_area_filter_reuses_cached_filtered_file(tmp_path, monkeypatch):
-    pd = pytest.importorskip("pandas")
-    monkeypatch.setattr(bridge, "UPLOAD_CACHE_DIR", tmp_path / "upload-cache")
-    source = tmp_path / "orders.csv"
-    source.write_text(
-        "Bolag\tKund\tArtikel\n"
-        "GG\t6005\tA1\n"
-        "GG\t1234\tA2\n",
-        encoding="utf-8",
-    )
-
-    first_files, first_temp_paths, first_log = bridge.apply_process_area_filters({"orders": source}, "GG")
-    second_files, second_temp_paths, second_log = bridge.apply_process_area_filters({"orders": source}, "GG")
-
-    assert first_files["orders"] == second_files["orders"]
-    assert first_temp_paths == []
-    assert second_temp_paths == []
-    assert first_log == second_log
-    filtered = pd.read_csv(second_files["orders"], dtype=str, sep="\t")
     assert filtered["Artikel"].tolist() == ["A2"]
 
-    source.write_text(
-        "Bolag\tKund\tArtikel\n"
-        "GG\t6005\tA1\n"
-        "GG\t1234\tA333\n",
-        encoding="utf-8",
-    )
-    third_files, _third_temp_paths, _third_log = bridge.apply_process_area_filters({"orders": source}, "GG")
 
-    assert third_files["orders"] != first_files["orders"]
+def test_user_filter_profile_preserves_source_modes():
+    profile = bridge.normalize_user_filter_profile(
+        {
+            "flows": {
+                "hib-koppling": {
+                    "sources": {"details": "upload", "overview": "api", "bad key!": "upload"},
+                }
+            }
+        }
+    )
+
+    assert profile["flows"]["hib-koppling"]["sources"] == {
+        "details": "upload",
+        "overview": "api",
+    }
+    assert bridge.user_filter_profile_count(profile) == 2
+    assert bridge.api_source_map_for_user_profile(
+        {"details": "orders", "overview": "overview"},
+        "hib-koppling",
+        profile,
+    ) == {"overview": "overview"}
+
+
+def test_filter_profiles_are_saved_per_user_and_importable(monkeypatch):
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = SessionLocal()
+    try:
+        business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+        session.add(business)
+        session.flush()
+        alice = User(username="alice", role="leader", roles=["leader"], business_id=business.id, is_active=True)
+        bob = User(username="bob", role="leader", roles=["leader"], business_id=business.id, is_active=True)
+        session.add_all([alice, bob])
+        session.flush()
+        monkeypatch.setattr(bridge, "public_registry", lambda: [{"id": "allocate", "label": "Allokering"}])
+        monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: None)
+        profile = {
+            "flows": {
+                "allocate": {
+                    "files": {
+                        "orders": [
+                            {"column": "Bolag", "operator": "EQ", "value": "GG"},
+                        ]
+                    }
+                }
+            }
+        }
+
+        saved = allocation_router._set_user_filter_profile(session, alice, profile)
+        session.commit()
+
+        assert bridge.user_filter_profile_count(saved) == 1
+        assert session.query(AllocationUserFilterProfile).filter_by(user_id=bob.id).first() is None
+        response = allocation_router.import_filter_profile(
+            allocation_router.AllocationFilterProfileImport(user_id=alice.id),
+            db=session,
+            user=bob,
+        )
+
+        assert response["profile"] == saved
+        users = {item["username"]: item for item in response["users"]}
+        assert users["alice"]["has_filters"] is True
+        assert users["bob"]["has_filters"] is True
+        assert users["bob"]["is_current"] is True
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_process_area_filter_other_toggles_see_everything(tmp_path):
@@ -365,9 +449,6 @@ def test_process_flow_visibility_matrix_defaults_to_all_flows(monkeypatch):
         bridge.PROCESS_AREA_RULES,
         "GG",
         {
-            "company": "GG",
-            "exclude_customers": {"6005"},
-            "label": "test",
             "visible_flow_ids": {"allocate"},
         },
     )
@@ -376,7 +457,7 @@ def test_process_flow_visibility_matrix_defaults_to_all_flows(monkeypatch):
     assert not bridge.process_flow_visible("ordersaldo", "GG")
 
 
-def test_process_matrix_override_controls_filter_and_visibility(tmp_path):
+def test_process_matrix_override_controls_visibility_not_row_filters(tmp_path):
     pd = pytest.importorskip("pandas")
     source = tmp_path / "orders.csv"
     source.write_text(
@@ -406,8 +487,9 @@ def test_process_matrix_override_controls_filter_and_visibility(tmp_path):
         for path in temp_paths:
             path.unlink(missing_ok=True)
 
-    assert filtered["Artikel"].tolist() == ["A2"]
-    assert log[:1] == ["Omradesfilter AS: Bolag=GG, Kundnr!=6005."]
+    assert filtered["Artikel"].tolist() == ["A1", "A2", "A3"]
+    assert temp_paths == []
+    assert log == []
 
 
 def test_process_matrix_public_payload_exposes_editable_rules():
@@ -422,33 +504,45 @@ def test_process_matrix_public_payload_exposes_editable_rules():
     assert payload["flows"] == flows
     assert {"code": "GG", "label": "GG"} in payload["areas"]
     assert payload["matrix"]["GG"] == {
-        "company": "GG",
-        "excludeCustomers": ["6005"],
         "visibleFlowIds": ["allocate"],
-        "ytgenereringUtlMin": 1,
-        "ytgenereringUtlMax": 652,
-        "label": "Bolag=GG, Kundnr!=6005",
-        "filterLabel": "Filter: Bolag GG, exkl. kundnr 6005",
     }
 
 
-def test_process_matrix_controls_ytgenerering_utl_range():
-    matrix = bridge.normalize_process_matrix(
+def test_ytgenerering_user_profile_controls_utl_range_and_carrier_clusters():
+    profile = bridge.normalize_user_filter_profile(
         {
-            "MG": {"company": "MG"},
-            "AS": {"ytgenereringUtlMin": "310", "ytgenereringUtlMax": "220"},
+            "flows": {
+                "ytgenerering": {
+                    "settings": {
+                        "ytgenerering": {
+                            "areas": {
+                                "MG": {"utlMin": "310", "utlMax": "220"},
+                            },
+                            "carrierClusters": {
+                                "rows": [
+                                    {
+                                        "carrierNum": "39",
+                                        "clusterGroup": "Freja",
+                                        "startSeq": "600",
+                                        "endSeq": "652",
+                                    }
+                                ]
+                            },
+                        }
+                    }
+                }
+            }
         }
     )
+    params = {}
 
-    assert bridge.process_ytgenerering_utl_range("MG", matrix) == (205, 652)
-    assert bridge.process_ytgenerering_utl_range("AS", matrix) == (220, 310)
-    assert bridge.process_matrix_storage_payload(matrix)["AS"] == {
-        "company": "",
-        "excludeCustomers": [],
-        "visibleFlowIds": None,
-        "ytgenereringUtlMin": 220,
-        "ytgenereringUtlMax": 310,
-    }
+    settings = bridge.apply_ytgenerering_user_settings(params, profile, area_focus="MG")
+
+    assert settings["utlRange"] == (220, 310)
+    assert params[bridge.YTGENERERING_UTL_MIN_PARAM] == "220"
+    assert params[bridge.YTGENERERING_UTL_MAX_PARAM] == "310"
+    assert '"Freja"' in params["__carrier_clusters_json"]
+    assert bridge.process_matrix_storage_payload({"AS": {"ytgenereringUtlMin": "310"}})["AS"] == {"visibleFlowIds": None}
 
 
 def test_process_matrix_empty_visible_flow_list_hides_all_flows():
@@ -489,6 +583,7 @@ def test_allocation_run_flow_stores_session_owner(monkeypatch):
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=object()))
 
@@ -526,6 +621,7 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
 
@@ -561,6 +657,7 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeBusinessScopeDb()))
 
@@ -591,6 +688,7 @@ def test_allocation_run_flow_requires_bufferpall_history_when_article_max_is_mis
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
@@ -633,6 +731,7 @@ def test_allocation_run_flow_uses_business_coredata_item_option(monkeypatch, tmp
     monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=FakeDb()))
 
@@ -642,7 +741,7 @@ def test_allocation_run_flow_uses_business_coredata_item_option(monkeypatch, tmp
     assert captured["default_max_csv_path"] is None
 
 
-def test_allocation_run_flow_filters_uploaded_files_from_area_focus(monkeypatch, tmp_path):
+def test_allocation_run_flow_filters_uploaded_files_from_user_profile(monkeypatch, tmp_path):
     pd = pytest.importorskip("pandas")
     user = business_user(7, 20)
     source = tmp_path / "orders.csv"
@@ -665,7 +764,24 @@ def test_allocation_run_flow_filters_uploaded_files_from_area_focus(monkeypatch,
 
     async def fake_form_to_flow_payload(_form, **kwargs):
         assert kwargs == {"cache_scope": "user:7"}
-        return {"orders": source}, {bridge.PROCESS_AREA_FOCUS_PARAM: "GG"}, []
+        profile = {
+            "flows": {
+                "vecka27-check": {
+                    "files": {
+                        "orders": [
+                            {"column": "Bolag", "operator": "EQ", "value": "GG"},
+                            {"column": "Kund", "operator": "NotIn", "value": ["6005"]},
+                        ]
+                    }
+                }
+            }
+        }
+        return {
+            "orders": source,
+        }, {
+            bridge.PROCESS_AREA_FOCUS_PARAM: "GG",
+            bridge.USER_FILTERS_PARAM: json.dumps(profile),
+        }, []
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -676,16 +792,67 @@ def test_allocation_run_flow_filters_uploaded_files_from_area_focus(monkeypatch,
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("vecka27-check", FakeRequest(), user=user, db=FakeDb()))
 
     assert result["flow_id"] == "vecka27-check"
     assert captured["params"] == {}
     assert captured["rows"] == ["A2"]
-    assert result["log"][:2] == [
-        "Omradesfilter GG: Bolag=GG, Kundnr!=6005.",
-        "orders: 3 -> 1 rader (Bolag, Kund).",
-    ]
+    assert result["log"][:1] == ["Anvandarfilter orders: 3 -> 1 rader (2 villkor)."]
+    assert result["user_filter"]["lines"] == ["Anvandarfilter orders: 3 -> 1 rader (2 villkor)."]
+
+
+def test_allocation_run_flow_skips_api_for_upload_source_mode(monkeypatch, tmp_path):
+    user = business_user(7, 20)
+    details_path = tmp_path / "details.csv"
+    overview_path = tmp_path / "overview.csv"
+    details_path.write_text("Ordernr\n1\n", encoding="utf-8")
+    overview_path.write_text("Ordernr\n1\n", encoding="utf-8")
+    profile = {
+        "flows": {
+            "hib-koppling": {
+                "sources": {"details": "upload", "overview": "upload"},
+            }
+        }
+    }
+    captured = {}
+
+    class FakeDb:
+        def get(self, model, object_id):
+            return SimpleNamespace(code="STIGAMO")
+
+        def query(self, model):
+            return FakeQuery(None)
+
+    class FakeRequest:
+        async def form(self):
+            return object()
+
+    async def fake_form_to_flow_payload(_form, **kwargs):
+        assert kwargs == {"cache_scope": "user:7"}
+        return {
+            "details": details_path,
+            "overview": overview_path,
+        }, {
+            bridge.USER_FILTERS_PARAM: json.dumps(profile),
+        }, []
+
+    def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
+        captured["flow_id"] = flow_id
+        captured["files"] = dict(files)
+        return {"flow_id": flow_id, "tables": [], "summary": {}, "log": []}
+
+    monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
+    monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
+    monkeypatch.setattr(allocation_router, "resolve_sources", lambda *args, **kwargs: pytest.fail("API-resolver ska hoppas over"))
+    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+
+    result = asyncio.run(allocation_router.run_flow("hib-koppling", FakeRequest(), user=user, db=FakeDb()))
+
+    assert result["flow_id"] == "hib-koppling"
+    assert captured["files"] == {"details": details_path, "overview": overview_path}
 
 
 def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_path):
@@ -707,7 +874,26 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
 
     async def fake_form_to_flow_payload(_form, **kwargs):
         assert kwargs == {"cache_scope": "user:7"}
-        return {"location": location_path}, {bridge.PROCESS_AREA_FOCUS_PARAM: "MG"}, []
+        profile = {
+            "flows": {
+                "ytgenerering": {
+                    "settings": {
+                        "ytgenerering": {
+                            "areas": {"MG": {"utlMin": 310, "utlMax": 330}},
+                            "carrierClusters": {
+                                "rows": [{"carrierNum": "39", "clusterGroup": "Freja", "startSeq": "600", "endSeq": "652"}]
+                            },
+                        }
+                    }
+                }
+            }
+        }
+        return {
+            "location": location_path
+        }, {
+            bridge.PROCESS_AREA_FOCUS_PARAM: "MG",
+            bridge.USER_FILTERS_PARAM: json.dumps(profile),
+        }, []
 
     def fake_run_flow_handler(flow_id, files, params, *, default_max_csv_path=None):
         captured["flow_id"] = flow_id
@@ -717,14 +903,10 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    def fake_get_json_setting(_db, key, **kwargs):
-        if key == allocation_router.ALLOCATION_PROCESS_MATRIX_KEY:
-            return {"MG": {"ytgenereringUtlMin": 310, "ytgenereringUtlMax": 330}}
-        return kwargs.get("default")
-
-    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_router, "get_json_setting", lambda _db, _key, **kwargs: kwargs.get("default"))
     monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
 
@@ -733,6 +915,7 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
     assert captured["params"][bridge.PROCESS_AREA_FOCUS_PARAM] == "MG"
     assert captured["params"][bridge.YTGENERERING_UTL_MIN_PARAM] == "310"
     assert captured["params"][bridge.YTGENERERING_UTL_MAX_PARAM] == "330"
+    assert '"Freja"' in captured["params"]["__carrier_clusters_json"]
     assert captured["params"]["__ytgenerering_map_locations_json"] == "[]"
 
 
@@ -782,6 +965,7 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
     monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
     monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
 
@@ -891,7 +1075,7 @@ def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(mo
     assert captured["committed"] is True
 
 
-def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
+def test_allocation_run_flow_uses_saved_process_matrix_for_visibility_only(monkeypatch, tmp_path):
     pd = pytest.importorskip("pandas")
     user = business_user(7, 20)
     source = tmp_path / "orders.csv"
@@ -935,12 +1119,13 @@ def test_allocation_run_flow_uses_saved_process_matrix(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("vecka27-check", FakeRequest(), user=user, db=FakeDb()))
 
     assert result["flow_id"] == "vecka27-check"
-    assert captured["rows"] == ["A2"]
-    assert result["area_filter"]["area_focus"] == "AS"
+    assert captured["rows"] == ["A1", "A2", "A3"]
+    assert "area_filter" not in result
 
 
 def test_run_flow_handler_passes_business_default_article_max(monkeypatch, tmp_path):
@@ -1120,6 +1305,15 @@ def test_ytgenerering_uses_submitted_transport_clusters_over_session_artifact():
     assert "Original" not in params["__carrier_clusters_json"]
 
 
+def test_ytgenerering_session_artifacts_are_optional_for_combined_flow():
+    user = business_user(1, 10)
+    params = {}
+
+    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+
+    assert params == {}
+
+
 def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeypatch, tmp_path):
     captured = []
 
@@ -1144,7 +1338,7 @@ def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeyp
         "item_option",
         "trans_agency",
     }
-    assert set(ytgenerering_defaults) == {"location"}
+    assert set(ytgenerering_defaults) == set(forecast_defaults) | {"location"}
     assert set(goods_declaration_defaults) == {"item_security_info"}
     assert ("location", "R3") in captured
     assert ("item_security_info", "R3") in captured
@@ -1352,7 +1546,7 @@ def test_allocation_catalog_loads_without_pandas_when_started_from_app_root():
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().split() == ["16", "11"]
+    assert result.stdout.strip().split() == ["15", "11"]
 
 
 def test_native_detector_recognizes_wms_csv_without_pandas(tmp_path):
@@ -1745,6 +1939,34 @@ def test_allocation_router_exposes_flow_registry_and_pool(monkeypatch):
     assert allocation_router.list_pool(user=route_user("super_user")) == {"pool": [{"key": "orders", "label": "Bestallningslinjer"}]}
 
 
+def test_allocation_router_marks_api_first_sources(monkeypatch):
+    monkeypatch.setattr(
+        bridge,
+        "public_registry",
+        lambda: [
+            {
+                "id": "prognos-report",
+                "label": "Prognosrapport",
+                "inputs": [
+                    {"key": "prognos", "label": "Prognosfil", "type": "file", "required": False},
+                    {"key": "campaign", "label": "Kampanjfil", "type": "file", "required": False},
+                    {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True},
+                    {"key": "buffer", "label": "Buffertpall", "type": "file", "required": False},
+                ],
+            }
+        ],
+    )
+
+    flow = allocation_router.list_flows(user=route_user("super_user"))["flows"][0]
+    inputs = {item["key"]: item for item in flow["inputs"]}
+
+    assert flow["apiFirstSources"] == {"saldo": "saldo", "buffer": "buffer"}
+    assert inputs["saldo"]["apiPreferred"] is True
+    assert inputs["buffer"]["apiPreferred"] is True
+    assert "apiPreferred" not in inputs["prognos"]
+    assert "apiPreferred" not in inputs["campaign"]
+
+
 def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flows(monkeypatch):
     monkeypatch.setattr(
         bridge,
@@ -1781,6 +2003,7 @@ def test_allocation_router_honors_bearbeta_view_access_for_lagerkontorist(monkey
         "get_role_view_access",
         lambda _db, business_id=None: {"warehouse_clerk": {"allocationProcess": "edit"}},
     )
+    disable_allocation_api_sources(monkeypatch)
 
     user = route_user("warehouse_clerk")
 

@@ -12,7 +12,7 @@ from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
 from ..models import Activity, Area, Business, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
-from ..template_service import get_template_hours, get_template_hours_map
+from ..template_service import get_template_hours_for_date, get_template_hours_map_for_dates
 from ..schemas import (
     BulkCellRequest,
     CellOut,
@@ -62,12 +62,12 @@ def _visible_schedule_persons(
         if year is not None and week is not None and weekdays:
             assigned_person_ids = (
                 select(ScheduleCell.person_id)
-                .join(Activity, ScheduleCell.activity_id == Activity.id)
+                .outerjoin(Activity, ScheduleCell.activity_id == Activity.id)
                 .where(
                     ScheduleCell.year == year,
                     ScheduleCell.week == week,
                     ScheduleCell.weekday.in_(weekdays),
-                    Activity.area_id == area_id,
+                    or_(Activity.area_id == area_id, ScheduleCell.loan_area_id == area_id),
                 )
                 .distinct()
             )
@@ -270,6 +270,7 @@ def _cell_to_dict(cell: ScheduleCell) -> dict:
         "minute_start": cell.minute_start,
         "minute_end": cell.minute_end,
         "activity_id": cell.activity_id,
+        "loan_area_id": cell.loan_area_id,
         "empty_override": cell.empty_override,
         "version": cell.version,
         "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
@@ -284,6 +285,7 @@ def _empty_segment_dict(person_id: int, hour: int, minute_start: int, minute_end
         "minute_start": minute_start,
         "minute_end": minute_end,
         "activity_id": None,
+        "loan_area_id": None,
         "empty_override": False,
         "version": 0,
         "updated_at": None,
@@ -366,8 +368,8 @@ def _hours_from_minutes(total_minutes: int) -> float:
     return round(float(total_minutes) / 60.0, 2)
 
 
-def _is_scheduled_hour(db: Session, person_id: int, weekday: int, hour: int) -> bool:
-    template = get_template_hours(db, person_id, weekday)
+def _is_scheduled_hour(db: Session, person_id: int, year: int, week: int, weekday: int, hour: int) -> bool:
+    template = get_template_hours_for_date(db, person_id, _schedule_date(year, week, weekday))
     return bool(template and hour in template)
 
 
@@ -375,11 +377,13 @@ def _empty_override_for(
     db: Session,
     *,
     person_id: int,
+    year: int,
+    week: int,
     weekday: int,
     hour: int,
     activity_id: int | None,
 ) -> bool:
-    return activity_id is None and _is_scheduled_hour(db, person_id, weekday, hour)
+    return activity_id is None and _is_scheduled_hour(db, person_id, year, week, weekday, hour)
 
 
 def _empty_override_for_template(
@@ -506,11 +510,11 @@ def get_schedule_presence(
     businesses_by_id = {business.id: business for business in businesses}
     home_activity_for = build_home_activity_resolver(activities, areas)
     home_activity_by_person_id = {person.id: home_activity_for(person) for person in persons}
-    template_hours_map = get_template_hours_map(db, person_ids, [weekday])
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, [selected_date])
 
     groups_by_business_id: dict[int | None, PresenceBusinessGroup] = {}
     for person in persons:
-        template_hours = template_hours_map.get((person.id, weekday))
+        template_hours = template_hours_map.get((person.id, selected_date))
         home_activity_id = home_activity_by_person_id.get(person.id)
 
         effective_by_hour = {
@@ -576,6 +580,7 @@ def get_schedule(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("schedule", "view")),
 ) -> ScheduleOut:
+    selected_date = _schedule_date(year, week, weekday)
     persons, scoped_business_id = _visible_schedule_persons(
         db,
         user,
@@ -602,7 +607,7 @@ def get_schedule(
             .all()
         )
 
-    template_hours_map = get_template_hours_map(db, person_ids, [weekday])
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, [selected_date])
     activity_query = db.query(Activity)
     area_query = db.query(Area)
     if scoped_business_id is not None:
@@ -614,7 +619,7 @@ def get_schedule(
     scheduled_hours: dict[int, list[int]] = {}
     scheduled_defaults: dict[int, dict[int, int]] = {}
     for p in persons:
-        hrs = template_hours_map.get((p.id, weekday))
+        hrs = template_hours_map.get((p.id, selected_date))
         if hrs:
             sorted_hours = sorted(hrs)
             scheduled_hours[p.id] = sorted_hours
@@ -687,9 +692,12 @@ def update_cell(
             minute_end=payload.minute_end,
             person_id=payload.person_id,
             activity_id=payload.activity_id,
+            loan_area_id=None,
             empty_override=_empty_override_for(
                 db,
                 person_id=payload.person_id,
+                year=payload.year,
+                week=payload.week,
                 weekday=payload.weekday,
                 hour=payload.hour,
                 activity_id=payload.activity_id,
@@ -714,15 +722,22 @@ def update_cell(
         desired_empty_override = _empty_override_for(
             db,
             person_id=payload.person_id,
+            year=payload.year,
+            week=payload.week,
             weekday=payload.weekday,
             hour=payload.hour,
             activity_id=payload.activity_id,
         )
-        if cell.activity_id == payload.activity_id and cell.empty_override == desired_empty_override:
+        if (
+            cell.activity_id == payload.activity_id
+            and cell.loan_area_id is None
+            and cell.empty_override == desired_empty_override
+        ):
             return {"cell": _cell_to_dict(cell)}
         assert_can_modify_schedule_cells([cell], user, owner_lock_enabled)
         old = _cell_to_dict(cell)
         cell.activity_id = payload.activity_id
+        cell.loan_area_id = None
         cell.empty_override = desired_empty_override
         cell.version += 1
         cell.updated_by = user.id
@@ -797,6 +812,7 @@ def split_cell(
 
         preferred.minute_start = 0
         preferred.minute_end = 60
+        preferred.loan_area_id = None if preferred.activity_id is not None else (preferred.loan_area_id or other.loan_area_id)
         preferred.empty_override = preferred.empty_override or other.empty_override
         preferred.version += 1
         preferred.updated_by = user.id
@@ -829,6 +845,7 @@ def split_cell(
                 minute_end=minute_end,
                 person_id=payload.person_id,
                 activity_id=None,
+                loan_area_id=None,
                 empty_override=False,
                 version=1,
                 updated_by=user.id,
@@ -877,6 +894,7 @@ def split_cell(
         minute_end=60,
         person_id=source.person_id,
         activity_id=source.activity_id,
+        loan_area_id=source.loan_area_id,
         empty_override=source.empty_override,
         version=1,
         updated_by=user.id,
@@ -913,15 +931,26 @@ def bulk_update_cells(
     grouped_items: dict[tuple[int, int, int, int, int], list] = defaultdict(list)
     person_ids: set[int] = set()
     activity_ids: set[int] = set()
-    weekdays: set[int] = set()
+    loan_area_ids: set[int] = set()
+    dates_by_ywd: dict[tuple[int, int, int], date] = {}
 
     for item in payload.cells:
         _validate_segment(item.hour, item.minute_start, item.minute_end)
+        if item.activity_id is not None and item.loan_area_id is not None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Aktivitet och låneområde kan inte sättas samtidigt.",
+            )
         grouped_items[(item.person_id, item.year, item.week, item.weekday, item.hour)].append(item)
         person_ids.add(item.person_id)
-        weekdays.add(item.weekday)
+        dates_by_ywd.setdefault(
+            (item.year, item.week, item.weekday),
+            _schedule_date(item.year, item.week, item.weekday),
+        )
         if item.activity_id is not None:
             activity_ids.add(item.activity_id)
+        if item.loan_area_id is not None:
+            loan_area_ids.add(item.loan_area_id)
 
     scoped_business_id = visible_business_id(db, user)
     person_query = select(Person).where(Person.id.in_(person_ids))
@@ -954,7 +983,28 @@ def bulk_update_cells(
             if activities_by_id[item.activity_id].business_id != persons_by_id[item.person_id].business_id:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
-    template_hours_map = get_template_hours_map(db, person_ids, weekdays)
+    if loan_area_ids:
+        area_query = select(Area).where(Area.id.in_(loan_area_ids))
+        if scoped_business_id is not None:
+            area_query = area_query.where(Area.business_id == scoped_business_id)
+        areas_by_id = {area.id: area for area in db.execute(area_query).scalars().all()}
+        existing_area_ids = set(areas_by_id)
+        missing_area_ids = sorted(loan_area_ids - existing_area_ids)
+        if missing_area_ids:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f"Område {missing_area_ids[0]} hittades inte",
+            )
+        for item in payload.cells:
+            if item.loan_area_id is None:
+                continue
+            loan_area = areas_by_id[item.loan_area_id]
+            if loan_area.is_active is not True:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
+            if loan_area.business_id != persons_by_id[item.person_id].business_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och område tillhör olika verksamheter")
+
+    template_hours_map = get_template_hours_map_for_dates(db, person_ids, dates_by_ywd.values())
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
 
     try:
@@ -970,7 +1020,8 @@ def bulk_update_cells(
                     )
                 seen_ranges.add(range_key)
 
-            template_hours = template_hours_map.get((person_id, weekday))
+            selected_date = dates_by_ywd[(year, week, weekday)]
+            template_hours = template_hours_map.get((person_id, selected_date))
             hour_segments = _load_hour_segments(
                 db,
                 year=year,
@@ -1012,6 +1063,7 @@ def bulk_update_cells(
                     assert_can_modify_schedule_cells([full_segment], user, owner_lock_enabled)
                     old_full = _cell_to_dict(full_segment)
                     original_activity_id = full_segment.activity_id
+                    original_loan_area_id = full_segment.loan_area_id
                     original_empty_override = full_segment.empty_override
                     full_segment.minute_start = 0
                     full_segment.minute_end = 30
@@ -1027,6 +1079,7 @@ def bulk_update_cells(
                         minute_end=60,
                         person_id=person_id,
                         activity_id=original_activity_id,
+                        loan_area_id=original_loan_area_id,
                         empty_override=original_empty_override,
                         version=1,
                         updated_by=user.id,
@@ -1073,6 +1126,9 @@ def bulk_update_cells(
                         desired_activity_id = (
                             desired_item.activity_id if desired_item is not None else None
                         )
+                        desired_loan_area_id = (
+                            desired_item.loan_area_id if desired_item is not None else None
+                        )
                         cell = ScheduleCell(
                             year=year,
                             week=week,
@@ -1082,6 +1138,7 @@ def bulk_update_cells(
                             minute_end=minute_end,
                             person_id=person_id,
                             activity_id=desired_activity_id,
+                            loan_area_id=desired_loan_area_id,
                             empty_override=_empty_override_for_template(
                                 template_hours,
                                 hour=hour,
@@ -1144,6 +1201,7 @@ def bulk_update_cells(
                         minute_end=item.minute_end,
                         person_id=person_id,
                         activity_id=item.activity_id,
+                        loan_area_id=item.loan_area_id,
                         empty_override=desired_empty_override,
                         version=1,
                         updated_by=user.id,
@@ -1156,6 +1214,7 @@ def bulk_update_cells(
 
                 if (
                     matching.activity_id == item.activity_id
+                    and matching.loan_area_id == item.loan_area_id
                     and matching.empty_override == desired_empty_override
                 ):
                     continue
@@ -1163,6 +1222,7 @@ def bulk_update_cells(
                 assert_can_modify_schedule_cells([matching], user, owner_lock_enabled)
                 old = _cell_to_dict(matching)
                 matching.activity_id = item.activity_id
+                matching.loan_area_id = item.loan_area_id
                 matching.empty_override = desired_empty_override
                 matching.version += 1
                 matching.updated_by = user.id
@@ -1223,6 +1283,7 @@ def restore_hours(
     seen_hours: set[tuple[int, int, int, int, int]] = set()
     person_ids: set[int] = set()
     activity_ids: set[int] = set()
+    loan_area_ids: set[int] = set()
     for item in payload.hours:
         _validate_segment(item.hour, 0, 60)
         _validate_restore_segments(item)
@@ -1231,7 +1292,16 @@ def restore_hours(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Duplicerade timmar i undo.")
         seen_hours.add(key)
         person_ids.add(item.person_id)
-        activity_ids.update(segment.activity_id for segment in item.segments if segment.activity_id is not None)
+        for segment in item.segments:
+            if segment.activity_id is not None and segment.loan_area_id is not None:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Aktivitet och låneområde kan inte sättas samtidigt.",
+                )
+            if segment.activity_id is not None:
+                activity_ids.add(segment.activity_id)
+            if segment.loan_area_id is not None:
+                loan_area_ids.add(segment.loan_area_id)
 
     scoped_business_id = visible_business_id(db, user)
     person_query = select(Person).where(Person.id.in_(person_ids))
@@ -1258,6 +1328,25 @@ def restore_hours(
                     continue
                 if activities_by_id[segment.activity_id].business_id != persons_by_id[item.person_id].business_id:
                     raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
+
+    if loan_area_ids:
+        area_query = select(Area).where(Area.id.in_(loan_area_ids))
+        if scoped_business_id is not None:
+            area_query = area_query.where(Area.business_id == scoped_business_id)
+        areas_by_id = {area.id: area for area in db.execute(area_query).scalars().all()}
+        existing_area_ids = set(areas_by_id)
+        missing_area_ids = sorted(loan_area_ids - existing_area_ids)
+        if missing_area_ids:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Område {missing_area_ids[0]} hittades inte")
+        for item in payload.hours:
+            for segment in item.segments:
+                if segment.loan_area_id is None:
+                    continue
+                loan_area = areas_by_id[segment.loan_area_id]
+                if loan_area.is_active is not True:
+                    raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Område hittades inte")
+                if loan_area.business_id != persons_by_id[item.person_id].business_id:
+                    raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och område tillhör olika verksamheter")
 
     restored: list[dict] = []
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
@@ -1315,6 +1404,7 @@ def restore_hours(
                     minute_end=segment.minute_end,
                     person_id=item.person_id,
                     activity_id=segment.activity_id,
+                    loan_area_id=segment.loan_area_id,
                     empty_override=segment.empty_override,
                     version=1,
                     updated_by=user.id,
@@ -1358,6 +1448,7 @@ def get_summary(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("schedule", "view")),
 ) -> list[SummaryRow]:
+    selected_date = _schedule_date(year, week, weekday)
     persons, scoped_business_id = _visible_schedule_persons(
         db,
         user,
@@ -1419,11 +1510,11 @@ def get_summary(
                 key = (row.person_id, row.hour)
                 covered_minutes[key] = min(60, covered_minutes.get(key, 0) + duration)
 
-        template_hours_map = get_template_hours_map(db, person_ids, [weekday])
+        template_hours_map = get_template_hours_map_for_dates(db, person_ids, [selected_date])
         for person in persons:
             if area_id is not None and person.id not in home_area_person_ids:
                 continue
-            template_hours = template_hours_map.get((person.id, weekday))
+            template_hours = template_hours_map.get((person.id, selected_date))
             home_activity_id = home_activity_for(person)
             if template_hours is None or home_activity_id is None:
                 continue

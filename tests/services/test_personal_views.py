@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -46,6 +48,7 @@ def client(db_session):
 
 
 def seed_base(session):
+    existing_person_created_at = datetime(2026, 1, 1)
     business = Business(id=1, code="MG", name="Mestergruppen", sort_order=1, is_active=True)
     area = Area(id=1, business_id=1, code="PACK", name="Pack", sort_order=1, is_active=True)
     activity = Activity(
@@ -69,6 +72,7 @@ def seed_base(session):
         has_fixed_schedule=True,
         is_active=True,
         sort_order=1,
+        created_at=existing_person_created_at,
     )
     other = Person(
         id=2,
@@ -80,6 +84,7 @@ def seed_base(session):
         has_fixed_schedule=True,
         is_active=True,
         sort_order=2,
+        created_at=existing_person_created_at,
     )
     session.add_all([business, area, activity, person, other])
     session.commit()

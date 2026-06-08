@@ -1016,23 +1016,34 @@ def flow_forecast(files: dict, params: dict) -> dict:
     }
 
 
-def flow_ytgenerering(files: dict, params: dict) -> dict:
-    if "location" not in files:
-        raise ValueError("Saknar kärnfilen location/lagerplatser.")
-
+def _forecast_dataframe_from_params(params: dict) -> pd.DataFrame | None:
     forecast_df = params.get("__forecast_df")
     if forecast_df is not None and not isinstance(forecast_df, pd.DataFrame):
-        forecast_df = pd.DataFrame(forecast_df)
+        return pd.DataFrame(forecast_df)
+    if forecast_df is not None:
+        return forecast_df
 
     raw_forecast = params.get("__forecast_json")
-    if forecast_df is None and not raw_forecast:
-        raise ValueError("Kör Forecast först, så Ytgenerering kan använda forecastens resultat.")
+    if not raw_forecast:
+        return None
+    payload = json.loads(raw_forecast)
+    rows = payload.get("rows") or []
+    columns = payload.get("columns") or None
+    return pd.DataFrame(rows, columns=columns)
 
-    if forecast_df is None:
-        payload = json.loads(raw_forecast)
-        rows = payload.get("rows") or []
-        columns = payload.get("columns") or None
-        forecast_df = pd.DataFrame(rows, columns=columns)
+
+def _forecast_dataframe_from_result(result: dict) -> pd.DataFrame:
+    for key, _label, table in result.get("tables") or []:
+        if key == "forecast":
+            if isinstance(table, pd.DataFrame):
+                return table
+            return pd.DataFrame(table)
+    raise ValueError("Forecast-resultatet saknar tabellen Forecast.")
+
+
+def _flow_ytgenerering_from_forecast_df(forecast_df: pd.DataFrame, files: dict, params: dict) -> dict:
+    if "location" not in files:
+        raise ValueError("Saknar kärnfilen location/lagerplatser.")
     locations_df = _read_prepared_locations(Path(files["location"]))
     map_locations = normalize_map_location_rows(params.get("__ytgenerering_map_locations_json"))
     locations_df, added_map_locations = extend_locations_with_map_layout(locations_df, map_locations)
@@ -1097,6 +1108,38 @@ def flow_ytgenerering(files: dict, params: dict) -> dict:
     }
 
 
+def flow_ytgenerering(files: dict, params: dict) -> dict:
+    forecast_df = _forecast_dataframe_from_params(params)
+    if forecast_df is not None:
+        return _flow_ytgenerering_from_forecast_df(forecast_df, files, params)
+
+    forecast_result = flow_forecast(files, params)
+    forecast_df = _forecast_dataframe_from_result(forecast_result)
+    if "location" not in files:
+        log = list(forecast_result.get("log") or [])
+        log.append("Location/lagerplatser saknas eller kunde inte hämtas - visar endast Forecast.")
+        return {**forecast_result, "log": log, "maps": [], "download_files": {}, "auto_downloads": []}
+
+    ytgenerering_params = dict(params)
+    carrier_clusters = forecast_result.get("carrier_clusters")
+    if carrier_clusters and "__carrier_clusters_json" not in ytgenerering_params:
+        ytgenerering_params["__carrier_clusters_json"] = json.dumps(carrier_clusters, ensure_ascii=False)
+    ytgenerering_result = _flow_ytgenerering_from_forecast_df(forecast_df, files, ytgenerering_params)
+
+    summary = dict(forecast_result.get("summary") or {})
+    summary.update(ytgenerering_result.get("summary") or {})
+    return {
+        "summary": summary,
+        "tables": list(forecast_result.get("tables") or []) + list(ytgenerering_result.get("tables") or []),
+        "artifacts": forecast_result.get("artifacts") or {},
+        "maps": ytgenerering_result.get("maps") or [],
+        "download_files": ytgenerering_result.get("download_files") or {},
+        "auto_downloads": ytgenerering_result.get("auto_downloads") or [],
+        "carrier_clusters": carrier_clusters,
+        "log": list(forecast_result.get("log") or []) + list(ytgenerering_result.get("log") or []),
+    }
+
+
 # --- Registry ----------------------------------------------------------------
 # Varje post: id, label, category, description, inputs[], handler.
 # input.type: file | text | number | textarea
@@ -1119,6 +1162,7 @@ FLOWS: list[dict] = [
         "id": "forecast", "label": "Forecast", "category": "Forecast & yta",
         "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
         "handler": flow_forecast,
+        "hidden": True,
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
@@ -1136,13 +1180,23 @@ FLOWS: list[dict] = [
     },
     {
         "id": "ytgenerering", "label": "Ytgenerering", "category": "Forecast & yta",
-        "description": "Placera forecastens sändningar på lagerplatser utifrån Max pall och transportör.",
+        "description": "Kör Forecast och skapar ytkarta/importfil när lagerplatser finns.",
         "handler": flow_ytgenerering,
-        "inputs": [],
-        "coredata": [
-            {"key": "location", "label": "Lagerplatser", "required": True},
+        "inputs": [
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
-        "requiresSessionFlow": {"flowId": "forecast", "label": "Forecast"},
+        "coredata": [
+            {"key": "custom", "label": "custom", "required": True},
+            {"key": "item", "label": "item", "required": True},
+            {"key": "item_alias", "label": "item_alias", "required": True},
+            {"key": "dimension", "label": "dimension", "required": True},
+            {"key": "pallet_type", "label": "pallet_type", "required": True},
+            {"key": "item_option", "label": "item_option", "required": True},
+            {"key": "trans_agency", "label": "Transportör", "required": False},
+            {"key": "location", "label": "Lagerplatser", "required": False},
+        ],
     },
     {
         "id": "ordersaldo", "label": "Ordersaldo", "category": "Order & saldo",
@@ -1165,12 +1219,12 @@ FLOWS: list[dict] = [
     },
     {
         "id": "pafyllnadsprio", "label": "Påfyllnadsprio", "category": "Order & saldo",
-        "description": "Prioritera påfyllnad utifrån underskott. Med orderöversikt används lastningsfönster-läge.",
+        "description": "Prioritera påfyllnad utifrån underskott med saldo och orderöversikt i lastningsfönster-läge.",
         "handler": flow_pafyllnadsprio,
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
-            {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": False, "detect": ["overview"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True, "detect": ["automation"]},
+            {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": True, "detect": ["overview"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
     },
@@ -1313,6 +1367,8 @@ def public_registry() -> list[dict]:
     """
     result: list[dict] = []
     for flow in FLOWS:
+        if flow.get("hidden"):
+            continue
         view = "solo" if flow["id"] in SOLO_FLOWS else "combined"
         inputs: list[dict] = []
         for inp in flow["inputs"]:

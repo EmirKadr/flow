@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import Activity, AppSetting, Area, Business, Person, ScheduleCell, User
+from app.backend.models import Activity, AppSetting, Area, Business, Person, PersonScheduleTemplate, ScheduleCell, User
 from app.backend.routers import businesses as businesses_router
 from app.backend.routers import public
 from app.backend.routers.activities import create_activity, list_activities, update_activity
@@ -12,10 +14,10 @@ from app.backend.routers.areas import create_area, delete_area, list_areas
 from app.backend.routers.businesses import create_business
 from app.backend.routers.overview import get_overview_revision
 from app.backend.routers.persons import create_person, get_person, list_persons, update_person
-from app.backend.routers.schedule import get_schedule, get_schedule_revision, get_summary, update_cell
+from app.backend.routers.schedule import bulk_update_cells, get_schedule, get_schedule_revision, get_summary, update_cell
 from app.backend.routers.settings import get_app_settings, update_app_settings
 from app.backend.routers.users import create_user, list_users, update_user
-from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BusinessCreate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
+from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
 from app.backend.schemas import AppSettingsUpdate
 
 
@@ -378,6 +380,22 @@ def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_ses
             updated_by=data["r3_user"].id,
         )
     )
+    session.add(
+        ScheduleCell(
+            id=21,
+            year=2026,
+            week=21,
+            weekday=1,
+            hour=8,
+            minute_start=0,
+            minute_end=60,
+            person_id=data["r3_person"].id,
+            activity_id=None,
+            loan_area_id=data["r3_user"].area_id,
+            empty_override=True,
+            updated_by=data["r3_user"].id,
+        )
+    )
     session.commit()
 
     assert_http_status(404, delete_area, data["r3_user"].area_id, session, data["user"])
@@ -394,6 +412,7 @@ def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_ses
     session.refresh(data["r3_person"])
     session.refresh(linked_activity)
     cell = session.get(ScheduleCell, 20)
+    loan_cell = session.get(ScheduleCell, 21)
     assert data["r3_user"].area_id is None
     assert data["r3_person"].home_area_id is None
     assert data["r3_person"].home_activity_id is None
@@ -401,6 +420,7 @@ def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_ses
     assert linked_activity.is_active is False
     assert cell.activity_id is None
     assert cell.empty_override is True
+    assert loan_cell.loan_area_id is None
     assert [area.code for area in list_areas(db=session, user=data["r3_user"])] == []
     assert [area.code for area in list_areas(include_inactive=True, db=session, user=data["r3_user"])] == ["R3"]
     assert [activity.code for activity in list_activities(db=session, user=data["r3_user"])] == ["R3_LEDIG"]
@@ -571,6 +591,89 @@ def test_schedule_area_view_includes_people_borrowed_by_activity_area(business_s
     }
     assert [(row.activity_label, row.hours) for row in summary] == [("MG Plock", 1.0)]
     assert after != before
+
+
+def test_schedule_area_view_includes_empty_loan_area_without_counting_activity(business_session):
+    session, data = business_session
+    autostore = Area(business_id=data["stigamo"].id, code="AS", name="Autostore", sort_order=2)
+    session.add(autostore)
+    session.flush()
+    as_activity = Activity(
+        business_id=data["stigamo"].id,
+        code="AS_PLOCK",
+        label="AS Plock",
+        area_id=autostore.id,
+        color="#ddd6fe",
+        category="work",
+        sort_order=2,
+    )
+    session.add(as_activity)
+    data["stigamo_person"].created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    session.add(
+        PersonScheduleTemplate(
+            person_id=data["stigamo_person"].id,
+            weekday=1,
+            start_hour=7,
+            end_hour=16,
+            is_off=False,
+            updated_by=data["user"].id,
+        )
+    )
+    session.commit()
+
+    response = bulk_update_cells(
+        BulkCellRequest(
+            action="loan_to_area",
+            cells=[
+                BulkCellItem(
+                    year=2026,
+                    week=24,
+                    weekday=1,
+                    hour=14,
+                    minute_start=0,
+                    minute_end=60,
+                    person_id=data["stigamo_person"].id,
+                    activity_id=None,
+                    loan_area_id=autostore.id,
+                    expected_version=0,
+                )
+            ],
+        ),
+        session,
+        data["user"],
+    )
+
+    applied = response["applied"][0]
+    assert applied["activity_id"] is None
+    assert applied["loan_area_id"] == autostore.id
+    assert applied["empty_override"] is True
+
+    schedule = get_schedule(year=2026, week=24, weekday=1, area_id=autostore.id, business_id=None, db=session, user=data["user"])
+    summary = get_summary(year=2026, week=24, weekday=1, area_id=autostore.id, business_id=None, db=session, user=data["user"])
+
+    assert [person.name for person in schedule.persons] == ["Stigamo Person"]
+    assert [(cell.hour, cell.activity_id, cell.loan_area_id, cell.empty_override) for cell in schedule.cells] == [
+        (14, None, autostore.id, True)
+    ]
+    assert summary == []
+
+    updated = update_cell(
+        CellUpdate(
+            year=2026,
+            week=24,
+            weekday=1,
+            hour=14,
+            minute_start=0,
+            minute_end=60,
+            person_id=data["stigamo_person"].id,
+            activity_id=as_activity.id,
+            expected_version=applied["version"],
+        ),
+        session,
+        data["user"],
+    )
+    assert updated["cell"]["activity_id"] == as_activity.id
+    assert updated["cell"]["loan_area_id"] is None
 
 
 def test_planning_revision_keys_are_business_scoped_and_change_on_visible_cells(business_session):

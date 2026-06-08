@@ -1,13 +1,13 @@
 ---
 title: Personer
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-08
 tags: [personer, register, ui, import]
 ---
 
 # Personer
 
-Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, sortering/filter, mjuk borttagning och personlig veckomall.
+Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, sortering/filter, mjuk borttagning och personlig veckomall. Nya personer far implicit schemamall forst fran sitt skapandedatum, sa gamla veckor inte fylls med standardtimmar.
 
 ## Knappar och kontroller
 
@@ -59,6 +59,12 @@ Funktioner:
 - `Avbryt`: stanger utan sparning.
 - `Spara`: skickar `PUT /api/persons/{id}/schedule`.
 
+Nar en ny person sparas anvands personens `created_at` som startdatum for
+implicita malltimmar. Om anvandaren tittar pa ett datum fore skapandedatumet
+visas personen utan standardtimmar, aven om personen har fast veckomall.
+Explicita schemaceller som nagon faktiskt har lagt in pa gamla datum visas
+fortfarande.
+
 ## Importregler
 
 - Direktimporten `Flera nya personer` har samma falt som Excelmallen: verksamhet vid behov, namn, NoMan, hemomrade, huvudaktivitet och sortering.
@@ -79,6 +85,7 @@ Funktioner:
 | "Vad anvands NoMan till?" | Det ar ett obligatoriskt WMS-anvandarnamn for nya personer. Det sparas och kan importeras, men anvands inte av planering eller forecast annu. |
 | "Varfor kan jag inte spara ny person?" | Kontrollera att bade Namn och NoMan ar ifyllda. NoMan ar obligatoriskt i ny person, direktimport och Excelimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
+| "Varfor far den nya personen inga timmar i gamla veckor?" | Implicita malltimmar borjar pa personens skapandedatum. Gamla datum visar bara explicita celler som lagts in manuellt. |
 | "Varfor forsvann personen?" | Ta bort inaktiverar personen. Hamta med `include_inactive=true` for att se den. |
 
 ## Kallor
@@ -87,3 +94,4 @@ Funktioner:
 - `../app/frontend/js/persons.js`
 - `../app/backend/routers/persons.py`
 - `../app/backend/routers/person_schedules.py`
+- `../app/backend/template_service.py`

@@ -1,7 +1,7 @@
 ---
 title: Bemanning
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-08
 tags: [bemanning, schema, ui, knappar]
 ---
 
@@ -12,7 +12,7 @@ Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr o
 ## Anvandarflode
 
 1. Sidan laddar omraden och aktiviteter.
-2. Sidan laddar hela schemadagen for aktuell verksamhet och filtrerar valt omradesfokus direkt i klienten. En person syns i valt omrade om personen har hemomradet dar eller har en schemacell den dagen med en aktivitet som tillhor omradet. Om perioden redan finns i lokal all-cache eller exakt omradescache ritas den utan nytt API-anrop.
+2. Sidan laddar hela schemadagen for aktuell verksamhet och filtrerar valt omradesfokus direkt i klienten. En person syns i valt omrade om personen har hemomradet dar, har en schemacell den dagen med en aktivitet som tillhor omradet, eller har en tom lanemarkering (`loan_area_id`) till omradet. Om perioden redan finns i lokal all-cache eller exakt omradescache ritas den utan nytt API-anrop.
 3. Varje rad ar en person; varje kolumn ar timme 06-23.
 4. Anvandaren valjer aktivitet i cellens dropdown, delar cell i halvtimmar vid behov, drar for att fylla flera celler eller anvander copy/paste.
 5. Summering och bemanningskalkyl uppdateras efter andringar.
@@ -34,9 +34,10 @@ Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr o
 | Redo | Gor om senaste angring | Restore av efter-snapshot | `PUT /api/schedule/hours/restore` | Knappen ar disabled nar redo-stack ar tom. |
 | Narvarande | Valjer Alla omraden eller nuvarande omrade och skriver ut | Ligger fore Undo/Redo, hamtar narvarolista for vald dag/timme, grupperar Alla per verksamhet och oppnar printdialog | `GET /api/schedule/presence`, `presence_print.js` | Tom lista visas som varning; Windows-appen anvander desktop-printbrygga. |
 | Personfilter | Skriver i Person-huvud | Filtrerar synliga rader klient-side | `refreshPersons` | Shift-klick pa header sorterar i stallet. |
+| Klick pa personrad | Klickar pa namn, hemomrade eller en timcell | Markerar hela personraden diskret i aktuell vy | `selectPersonRow`, `person-row-selected` | Markeringen ar bara visuell och sparas inte i databasen. |
 | Sortera Person/Hemomrade | Klick pa header | Sorterar rader | `th[data-sort]` | Personheadern har filterinput; klick i input sorterar inte. |
 | Dra personnamn | Drar ett namn upp eller ned | Sparar ny personsortering direkt pa personernas `sort_order` | `PUT /api/persons/sort-order` | Kraver `personSortOrder=edit`. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. Rensa personfilter innan sortering. |
-| Hogerklick personnamn | Valjer `Skicka till <omrade>` | Satter personens schemalagda timmar for dagen till malomradets aktiva standardaktivitet, utan att andra personens hemomrade | `POST /api/schedule/cells` med `action=loan_to_area` | Visas bara som andring om personen har schematimmar/explicita celler. Lasta celler hoppas over och read-only far varning. |
+| Hogerklick personnamn | Valjer `Skicka till <omrade>` | Bevarar personens tidigare timmar och gor personens schemalagda timmar fran aktuell eller fokuserad starttimme och framat tomma i malomradet, utan att andra personens hemomrade | `POST /api/schedule/cells` med `action=loan_to_area`, `activity_id=null`, `loan_area_id=<omrade>` | Visas bara som andring om personen har schematimmar/explicita celler fran starttimmen. Om starttimme inte kan avgoras visas varning i stallet for att tomma fran morgonen. Lasta celler hoppas over och read-only far varning. |
 | Cell-dropdown | Valjer aktivitet/tomt | Sparar segment direkt | `PUT /api/schedule/cell` | 409 betyder att nagon annan hann andra cellen. |
 | Hogerklick cell | Delar hel timme eller slar ihop | Kallar split-endpoint | `PUT /api/schedule/cell/split` | Konflikt om segmentsignatur inte matchar servern. |
 | Dubbelklick cell | Alternativ split/merge | Samma som hogerklick | `toggleHourSplit` | I read-only visas varning. |
@@ -62,17 +63,20 @@ Falt:
 - Klienten skickar aktuell version som `expected_version`.
 - Vid konflikt returnerar API `409`; klienten visar toast och laddar om dagen.
 - Om en person har fast veckomall visas standardaktivitet aven utan explicit cell.
+- Implicita malltimmar galler bara fran personens skapandedatum och framat. Gamla datum fore `persons.created_at` visar inga standardtimmar for personen, men explicita schemaceller visas fortfarande.
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
-- Om en person med hemomrade GG/AS/EH tilldelas en MG-aktivitet syns personen bade i sitt hemomrade och i MG-vyn for den dagen. Samma regel galler alla omraden. Summeringen for ett lanat omrade raknar bara de explicita celler som faktiskt har aktivitet i valt omrade, sa personens hemomradesmall inte raknas in i fel omradessummering.
-- Hogerklick pa personnamnet ar en snabbvag for samma laneregel. Menyn visar aktiva omraden i personens verksamhet som har en aktiv icke-franvaroaktivitet. Klienten valjer helst `<omradeskod>_VM`, annars forsta aktiva arbetsaktivitet i malomradet, och bulk-sparar bara personens schemalagda timmar for vald dag.
+- Om en person med hemomrade GG/AS/EH tilldelas en MG-aktivitet syns personen bade i sitt hemomrade och i MG-vyn for den dagen. Samma regel galler tomma lanemarkeringar: `loan_area_id` gor personen synlig i mottagande omrade utan att skapa aktivitetstimmar.
+- Summeringen for ett lanat omrade raknar bara de explicita celler som faktiskt har aktivitet i valt omrade. Tomma lanemarkeringar raknas inte som aktivitet, men de tacker malltimmen sa personens hemomradesmall inte raknas in i fel omradessummering.
+- Hogerklick pa personnamnet ar en snabbvag for laneregeln. Menyn visar aktiva omraden i personens verksamhet. Nar anvandaren skickar personen skapar klienten tomma schemaceller fran aktuell timme, eller fokuserad timme om dagen inte ar idag, och framat med `loan_area_id` for malomradet; mottagande omrade valjer sedan aktivitet sjalv. Om klienten inte kan avgora starttimmen stoppas flodet med varning sa tidigare timmar inte toms av misstag.
 - Om ett sparat omradesfokus pekar pa ett omrade som har tagits bort, till exempel ett gammalt `AREA:<id>` i browsern, normaliseras fokus till Alla innan Bemanning skickar API-anrop. Det skyddar mot 404 `Omrade hittades inte` och mot att vyn ser tom ut efter registerandringar.
 - Nar en period finns i cache kontrollerar klienten `/api/schedule/revision` tyst i bakgrunden. Aktiv vy kontrollerar ungefär var 10:e sekund, idle-vy ungefär var 30:e sekund, och dold browserflik pausar. Vid ny revision hamtas all-data och bara andrade synliga timmar patchas om anvandaren inte haller pa i just den cellen.
 - `Narvarande` raknar pa effektiv bemanning fran vald dag och aktuell klocktimme. En person kommer med om personen har nagon icke-franvaroaktivitet kvar under dagen och har `work` denna eller nasta timme. Nuvarande aktivitet visar bara aktuell timme; om personen tas med tack vare nasta timme visas `Ingen` nar aktuell timme saknar aktivitet.
 - Nar anvandaren valjer Alla omraden grupperas utskriften per verksamhet sa Super User inte far blandade verksamheter i samma lista.
 - `fill-from-left` finns som API (`POST /api/schedule/fill-from-left`) men har ingen synlig knapp i nuvarande `index.html`/`schedule.js`.
 - Personnamn kan dras for att andra personernas sorteringsnummer. Klienten skickar hela synliga ordningen till `/api/persons/sort-order`; backend nekar andra roller, filtrerade/forandrade personlistor och, for vanliga admin/bemanningsansvariga, personer med annat hemomrade. Super User och demo far sortera over omradesgranser nar de har `Personsortering=Redigera`.
+- Klick pa en personrad markerar raden diskret med `person-row-selected`. Det ar bara ett lokalt visuellt hjalpmedel for att folja en rad over manga timmar och paverkar inte schema, filter eller sparning.
 
 ## Felsokningssvar for framtida chat
 
@@ -85,9 +89,10 @@ Falt:
 | "Hur delar jag en timme?" | Hogerklicka eller dubbelklicka pa timcellen. Välj aktivitet for varje halvtimme. |
 | "Var ar Fyll fran vanster?" | Backend-endpointen finns, men nuvarande UI visar ingen knapp for den funktionen. |
 | "Varfor kan jag inte dra namnet for att sortera?" | Anvandaren maste ha `Personsortering=Redigera`. Bemanningsansvarig/admin maste ha samma omrade som personens hemomrade; Super User och demo kan sortera alla synliga personer. Rensa personfiltret om det ar aktivt. |
-| "Varfor hander inget nar jag skickar en person till omrade?" | Personen maste ha schemalagda timmar eller explicita celler den dagen. Om alla celler ar lasta visas varning och inget skrivs. |
+| "Varfor hander inget nar jag skickar en person till omrade?" | Personen maste ha schemalagda timmar eller explicita celler fran aktuell/startad timme den dagen. Om alla celler ar lasta visas varning och inget skrivs. |
+| "Varfor syns inga standardtimmar for en ny person bakat i tiden?" | Personen far implicit veckomall forst fran sitt skapandedatum. Det hindrar att nyanstallda raknas som schemalagda innan de lades till. |
 | "Varfor sag Bemanning tom ut efter att ett omrade togs bort?" | Browsern kan ha haft ett gammalt omradesfokus sparat. Nu faller sidan tillbaka till Alla nar det sparade omradet inte langre finns. Kontrollera Historik efter 404 `Omrade hittades inte` om felet hande innan fixen. |
-| "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker och dar personen hor hemma. |
+| "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet eller tom lanemarkering som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker eller ska planeras och dar personen hor hemma. |
 
 ## Kallor
 
@@ -97,3 +102,4 @@ Falt:
 - `../app/backend/routers/schedule.py`
 - `../app/backend/routers/bulk.py`
 - `../app/backend/schedule_locks.py`
+- `../app/backend/template_service.py`

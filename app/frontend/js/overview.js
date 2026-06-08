@@ -18,6 +18,7 @@ const state = {
   cells: [],
   days: [],
   focusedCell: null,
+  selectedPersonId: null,
   nameFilter: "",
   sortKey: "sort_order",
   sortAsc: true,
@@ -876,6 +877,26 @@ function buildWeekHeader() {
   }
 }
 
+function applySelectedPersonRow() {
+  const selectedId = Number(state.selectedPersonId);
+  document.querySelectorAll("#overviewBody tr.person-row-selected").forEach((row) => {
+    row.classList.remove("person-row-selected");
+    row.removeAttribute("aria-selected");
+  });
+  if (!Number.isInteger(selectedId)) return;
+  const row = document.querySelector(`#overviewBody tr[data-person-id="${selectedId}"]`);
+  if (!row) return;
+  row.classList.add("person-row-selected");
+  row.setAttribute("aria-selected", "true");
+}
+
+function selectPersonRow(personId) {
+  const nextId = Number(personId);
+  if (!Number.isInteger(nextId)) return;
+  state.selectedPersonId = nextId;
+  applySelectedPersonRow();
+}
+
 function buildWeekBody() {
   const body = document.getElementById("overviewBody");
   const fragment = document.createDocumentFragment();
@@ -913,6 +934,7 @@ function buildWeekBody() {
   });
 
   body.replaceChildren(fragment);
+  applySelectedPersonRow();
 }
 
 
@@ -965,6 +987,7 @@ function buildMonthBody() {
   });
 
   body.replaceChildren(fragment);
+  applySelectedPersonRow();
 }
 
 
@@ -1381,6 +1404,8 @@ function setupDrag() {
 
   body.addEventListener("click", (e) => {
     if (drag.suppressClick) return;
+    const row = e.target.closest("tr[data-person-id]");
+    if (row && body.contains(row)) selectPersonRow(row.dataset.personId);
     const td = e.target.closest("td.day");
     if (!td || td.classList.contains("is-off")) return;
     focusDayCell(td);

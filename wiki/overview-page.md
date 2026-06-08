@@ -1,7 +1,7 @@
 ---
 title: Oversikt
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-08
 tags: [oversikt, ui, knappar]
 ---
 
@@ -24,6 +24,7 @@ Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser 
 | Undo/Redo | Angra/gor om dagandringar | Restore av snapshots via schema-API | `/api/schedule/hours/restore` | Disabled om stacken ar tom eller read-only. |
 | Narvarande | Valjer Alla omraden eller nuvarande omrade och skriver ut | Ligger fore Undo/Redo, hamtar narvarolista fran Bemannings schema for vald/klickad dag, grupperar Alla per verksamhet och oppnar printdialog | `GET /api/schedule/presence`, `presence_print.js` | Tom lista visas som varning; Windows-appen anvander desktop-printbrygga. |
 | Personfilter | Skriver soktext | Filtrerar personer klient-side | `refreshPersons` | Shift-klick pa header sorterar. |
+| Klick pa personrad | Klickar pa namn eller dagcell | Markerar hela personraden diskret i aktuell vy | `selectPersonRow`, `person-row-selected` | Markeringen ar bara visuell och sparas inte i databasen. |
 | Dra personnamn | Drar ett namn upp eller ned | Sparar ny personsortering direkt pa personernas `sort_order` | `PUT /api/persons/sort-order` | Kraver `personSortOrder=edit`. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. Rensa personfilter innan sortering. |
 | Dagcell-dropdown | Valjer aktivitet/tomt for hel dag | Skriver/tommer personens schematimmar for dagen | `POST /api/overview/day` | Om dagen ar blandad visas confirm innan overskrivning. |
 | Drag over dagceller | Fyller flera dagar/personer | Skickar bulk-dagar | `POST /api/overview/days/bulk` | Max 100 celler. Fel per cell kan rapporteras. |
@@ -47,6 +48,7 @@ Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser 
 - Oversikt cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela veckan/manaden i verksamheten, filtrerar valt omrade lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ar separat for veckovy och manadsvy och ogiltigforklaras vid dagandring, drag och undo/redo.
 - Om ett sparat omradesfokus pekar pa ett borttaget omrade normaliseras fokus till Alla innan Oversikt skickar API-anrop. Det hindrar att gamla browserstate ger 404 `Omrade hittades inte` eller en tom vy.
 - Nar en period finns i cache kontrollerar klienten `/api/overview/revision` eller `/api/overview/revision/month` tyst i bakgrunden. Aktiv vy kontrollerar ungefär var 10:e sekund, idle-vy ungefär var 30:e sekund, och dold browserflik pausar. Vid ny revision hamtas all-data och bara andrade synliga dagceller patchas om anvandaren inte haller pa i just den cellen.
+- Klick pa en personrad markerar raden diskret med `person-row-selected`. Det ar bara ett lokalt visuellt hjalpmedel for att folja en rad over vecka/manad och paverkar inte schema, filter eller sparning.
 
 ## Felsokningssvar for framtida chat
 

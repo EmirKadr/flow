@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import SessionLocal
+from .external_data_client import ExternalDataClient, ExternalDataClientError
 from .media_store import get_media_store
 from .models import MetaMediaUpload, MetaShipmentObservation
+from .workflow_data import WorkflowDataError, _api_client, source_spec, workflow_api_configured
 
 
 logger = logging.getLogger(__name__)
@@ -160,12 +162,14 @@ Du ska inte lasa eller tolka videobilden, etiketter, transportetiketter eller
 innehallsforteckningar. Analysen ska bara bygga pa vad personen sager.
 
 Forvantat talflode:
-- Personen borjar med att saga "Pall ID", "Pall" eller liknande.
+- Personen borjar med att saga "Pall ID", "Pall", "Godsmarkning" eller liknande.
 - Personen sager sedan vilket nummer/id pallen har.
 - Personen beskriver sedan vad som ar fel pa pallen eller pallarna.
 
 Regler:
 - Returnera exakt ett pallet_id: det pall-id som hors tydligast.
+- Tolka "pall", "godsmärkning", "godsmarkning", "godsmärke" eller liknande
+  som pallet_id nar personen anvander det som pallens identitet.
 - Om flera pall-id namns, valj bara det tydligaste och skriv osakerheten i
   uncertainty_notes.
 - Returnera deviations som en lista med korta avvikelsebeskrivningar.
@@ -569,6 +573,13 @@ def normalize_meta_analysis(payload: dict) -> dict:
                 "pall_id",
                 "pall",
                 "pallet",
+                "godsmärkning",
+                "godsmarkning",
+                "godsmärke",
+                "godsmarke",
+                "goods_marking",
+                "goodsmarking",
+                "marking",
             ),
             120,
         ),
@@ -618,6 +629,82 @@ def normalize_meta_analysis(payload: dict) -> dict:
         "uncertainty_notes": _clean_text(_field(payload, "uncertainty_notes", "uncertainties", "osakerhet"), 2000),
         "label_frame_time_seconds": _clean_text(_field(payload, "label_frame_time_seconds", "label_timestamp"), 40),
     }
+
+
+def _row_field(row: dict[str, Any], *names: str) -> Any:
+    if not isinstance(row, dict):
+        return None
+    for name in names:
+        if name in row and row[name] not in (None, ""):
+            return row[name]
+    by_casefold = {str(key).casefold(): key for key in row}
+    for name in names:
+        actual = by_casefold.get(str(name).casefold())
+        if actual is not None and row.get(actual) not in (None, ""):
+            return row.get(actual)
+    return None
+
+
+def _append_uncertainty_note(existing: str | None, note: str | None) -> str | None:
+    cleaned_note = _clean_text(note, 2000)
+    if not cleaned_note:
+        return existing
+    cleaned_existing = _clean_text(existing, 2000)
+    if not cleaned_existing:
+        return cleaned_note
+    if cleaned_note in cleaned_existing:
+        return cleaned_existing
+    return f"{cleaned_existing}; {cleaned_note}"[:2000]
+
+
+def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None]:
+    pallet = str(pallet_id or "").strip()
+    if not pallet or not workflow_api_configured():
+        return {}
+    try:
+        spec = source_spec("dispatch")
+        rows = _api_client().fetch_data(
+            spec.view,
+            filters=[ExternalDataClient.eq("pick_pall_num", pallet)],
+        )
+    except (ExternalDataClientError, WorkflowDataError) as exc:
+        logger.warning("Could not enrich Meta analysis from Dispatchpallar for pallet %s: %s", pallet, exc)
+        return {
+            "note": "Dispatchpallar kunde inte hamtas fran ASK for pall-id.",
+        }
+    if not rows:
+        return {
+            "note": f"Dispatchpallar gav ingen traff for pall-id {pallet}.",
+        }
+
+    row = rows[0]
+    return {
+        "order_number": _clean_text(_row_field(row, "order_num", "Ordernr", "ordernr"), 80),
+        "shipment_number": _clean_text(
+            _row_field(row, "shipment_id", "Sändningsnr", "sandningsnr", "sändningsnr"),
+            120,
+        ),
+        "username": _clean_text(_row_field(row, "user_id", "Användare", "anvandare", "användare"), 120),
+        "customer_name": _clean_text(
+            _row_field(row, "custom_desc", "custom_num", "Kund", "kund", "customer_name", "customer"),
+            200,
+        ),
+        "note": None,
+    }
+
+
+def _apply_dispatch_lookup(observation: MetaShipmentObservation, fields: dict) -> None:
+    lookup = lookup_dispatch_pallet_fields(fields.get("pallet_id"))
+    if not lookup:
+        return
+    for target in ("order_number", "shipment_number", "username", "customer_name"):
+        if lookup.get(target):
+            setattr(observation, target, lookup[target])
+    if lookup.get("note"):
+        observation.uncertainty_notes = _append_uncertainty_note(
+            observation.uncertainty_notes,
+            lookup.get("note"),
+        )
 
 
 def _status_for_analysis(fields: dict, label_image_upload_id: int | None) -> str:
@@ -749,6 +836,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
         observation.uncertainty_notes = fields["uncertainty_notes"]
         observation.label_frame_time_seconds = _format_timestamp_seconds(_configured_label_still_seconds())
         observation.llm_raw_response = raw_response
+        _apply_dispatch_lookup(observation, fields)
 
         label_upload = None
         seconds = _timestamp_seconds(observation.label_frame_time_seconds)
@@ -758,7 +846,10 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
                 label_upload = create_label_still_upload(db, upload, still_bytes)
                 observation.label_image_upload_id = label_upload.id
                 observation.label_image_hash = label_upload.content_hash
-        observation.analysis_status = _status_for_analysis(fields, observation.label_image_upload_id)
+        observation.analysis_status = _status_for_analysis(
+            {**fields, "uncertainty_notes": observation.uncertainty_notes},
+            observation.label_image_upload_id,
+        )
         observation.analysis_error = None
         refresh_record_hash(observation)
         db.commit()

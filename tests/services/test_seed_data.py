@@ -149,7 +149,8 @@ def test_local_bootstrap_migrates_legacy_sqlite_business_constraints(tmp_path):
                 category VARCHAR(20) NOT NULL,
                 sort_order INTEGER NOT NULL,
                 is_active BOOLEAN NOT NULL,
-                required_competency VARCHAR(40)
+                required_competency VARCHAR(40),
+                kpi_process_name VARCHAR(255)
             )
             """
         )

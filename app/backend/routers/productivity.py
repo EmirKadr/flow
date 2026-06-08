@@ -19,11 +19,12 @@ from ..productivity_service import (
     classify_productivity_file,
     clear_productivity_cache,
     clear_productivity_file,
+    find_kpi_file,
     read_productivity_targets,
     save_productivity_file,
-    source_files_from_session_logs,
     update_productivity_compiled_log,
 )
+from ..workflow_data import WorkflowDataError, productivity_api_source_map, resolve_sources, sources_available
 
 
 router = APIRouter(prefix="/api/productivity", tags=["productivity"])
@@ -217,6 +218,58 @@ def _audit_productivity_files(
     )
 
 
+def _audit_productivity_report_sources(
+    db: Session,
+    user: User,
+    *,
+    status_text: str,
+    source_status: list[dict] | None = None,
+    error_type: str | None = None,
+    status_code: int | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "status": status_text,
+        "source_status": source_status or [],
+    }
+    if error_type:
+        payload["error_type"] = error_type
+    if status_code is not None:
+        payload["status_code"] = status_code
+    audit.log_and_commit(
+        db,
+        entity_type="productivity_report",
+        entity_id=0,
+        action="run",
+        old_value=None,
+        new_value=payload,
+        user_id=getattr(user, "id", None),
+        logger=logger,
+        context="productivity report source audit",
+    )
+
+
+def _api_first_productivity_status(status_payload: dict) -> dict:
+    files = {}
+    for key, item in (status_payload.get("files") or {}).items():
+        next_item = dict(item)
+        next_item.update(
+            {
+                "uploaded": True,
+                "name": "Hämtas från API",
+                "source": "api",
+            }
+        )
+        files[key] = next_item
+    return {
+        **status_payload,
+        "api_first": True,
+        "ready": True,
+        "missing": [],
+        "kpi_loaded": True,
+        "files": files,
+    }
+
+
 @router.get("/files")
 def get_productivity_files(
     request: Request,
@@ -224,7 +277,10 @@ def get_productivity_files(
     db: Session = Depends(get_db),
 ) -> dict:
     business_code = _productivity_business_code(db, user)
-    return build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db)
+    status_payload = build_productivity_session_file_status(_session_log_files(request), business_code=business_code, db=db)
+    if sources_available(tuple(productivity_api_source_map().values())):
+        return _api_first_productivity_status(status_payload)
+    return status_payload
 
 
 @router.get("/targets")
@@ -379,22 +435,73 @@ def get_productivity(
     user: User = Depends(require_view_access("productivity", "view")),
     db: Session = Depends(get_db),
 ) -> dict:
+    source_status: list[dict] = []
+    source_resolution = None
     try:
         business_code = _productivity_business_code(db, user)
-        files = source_files_from_session_logs(_session_log_files(request), business_code=business_code, db=db)
-        return build_productivity_report_from_files(files, report_date=date_filter)
+        files = dict(_session_log_files(request))
+        try:
+            files["kpi"] = find_kpi_file(business_code=business_code, db=db)
+        except ProductivitySourceError:
+            pass
+        source_map = productivity_api_source_map()
+        source_resolution = resolve_sources(source_map, files, required_keys=set(source_map))
+        source_status = source_resolution.audit_entries
+        report = build_productivity_report_from_files(source_resolution.files, report_date=date_filter)
+        report["source_status"] = source_status
+        report["log"] = source_resolution.log_lines + list(report.get("log") or [])
+        _audit_productivity_report_sources(db, user, status_text="ok", source_status=source_status)
+        return report
+    except WorkflowDataError as exc:
+        source_status = exc.audit_entries
+        _audit_productivity_report_sources(
+            db,
+            user,
+            status_text="error",
+            source_status=source_status,
+            error_type=type(exc).__name__,
+            status_code=exc.status_code,
+        )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except ProductivitySourceError as exc:
+        _audit_productivity_report_sources(
+            db,
+            user,
+            status_text="error",
+            source_status=source_status,
+            error_type=type(exc).__name__,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
     except OSError as exc:
+        _audit_productivity_report_sources(
+            db,
+            user,
+            status_text="error",
+            source_status=source_status,
+            error_type=type(exc).__name__,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Kunde inte läsa produktivitetsunderlag: {exc}",
         ) from exc
     except Exception as exc:
+        _audit_productivity_report_sources(
+            db,
+            user,
+            status_text="error",
+            source_status=source_status,
+            error_type=type(exc).__name__,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Kunde inte beräkna produktivitet: {exc}",
         ) from exc
+    finally:
+        for temp_path in (source_resolution.temp_paths if source_resolution is not None else []):
+            temp_path.unlink(missing_ok=True)

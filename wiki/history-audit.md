@@ -21,6 +21,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 | Atgard | Skriver action | Skickar action-filter | `actionFilter` | Exempel: `update`, `clear`, `drag_fill`. |
 | Objekt-id | Skriver id | Skickar `entity_id` | `entityIdFilter` | Maste vara numeriskt. |
 | Uppdatera | Klickar knapp | Hamter summary, rader och felkodsdashboard igen | `GET /api/audit/summary`, `GET /api/audit`, `GET /api/audit/errors` | Nekas om saknar Super User. |
+| Tabellrubriker | Klickar pa en kolumnrubrik i historik, analys, felkoder, vantetider eller Halsa | Sorterar synliga tabellrader stigande/fallande klient-side | `common.js` klienttabellsortering | Skickar inte nya auditfilter och sorterar bara det som redan ar hamtat. |
 | Enter i textfilter | Trycker Enter | Trigger refresh | `keydown` handlers | Change pa select refreshar direkt. |
 | Historik-AI | Skriver en fraga om tracking | Skickar filtrerad historik, aggregeringar och raw events inom limit till MiniMax | `POST /api/audit/interactions/chat` | Svarar bara pa fragor om historik/tracking och vagrar hemligheter eller blockerade falt. |
 | Rensa AI | Klickar Rensa i AI-analys | Rensar aktuell chattvy | `POST /api/audit/interactions/chat/clear` | Sparar ingen separat chatthistorik. |

@@ -130,6 +130,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, rapportgruppering och tillgangliga datum. | Produktivitet, plock-/pallloggar, KPI-filer eller rapportbyggnad. |
 | `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
 | `tests/services/test_healthcheck_service.py` | Halsa-service, SQLite-databaskontroll, vantetidsinsamling och sammanfattning. | `/api/healthcheck`, `UserWaitMetric`, Render-/databashalsa eller vantetidsanalys. |
+| `tests/services/test_meta_uploads.py` | Meta-uppladdning, audio-only-analys, ASK-uppslag, media/content, koer och Excel-export. | `meta_uploads`, `meta_analysis_service`, Meta-vyn, nedladdningar eller Dispatchpallar-berikning. |
 | `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
 | `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
 | `tests/services/test_seed_data.py` | Seed-data, lokal SQLite-bootstrap, verksamhetsbackfill och dubblettsanering. | `backend.seed`, `bootstrap_local`, verksamheter eller standarddata. |

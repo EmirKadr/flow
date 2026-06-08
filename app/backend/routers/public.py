@@ -29,7 +29,7 @@ from ..business_scope import DEFAULT_BUSINESS_CODE, get_business_by_input
 from ..config import settings
 from ..deps import get_db
 from ..models import Activity, Person, ScheduleCell
-from ..template_service import get_template_hours
+from ..template_service import get_template_hours_for_date
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -123,6 +123,13 @@ def _resolve_public_business_id(db: Session, business: str | int | float | None)
     return resolved.id
 
 
+def _date_from_iso(year: int, week: int, weekday: int) -> date:
+    try:
+        return date.fromisocalendar(year, week, weekday)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltig ISO-vecka eller dag")
+
+
 def _calc_activity_hours(
     db: Session,
     year: int,
@@ -168,7 +175,7 @@ def _calc_activity_hours(
 
     for person in db.execute(persons_q).scalars().all():
         for weekday in weekdays:
-            template = get_template_hours(db, person.id, weekday)
+            template = get_template_hours_for_date(db, person.id, _date_from_iso(year, week, weekday))
             if not template:
                 continue
             for hour in template:

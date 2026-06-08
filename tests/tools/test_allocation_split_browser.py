@@ -410,7 +410,7 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
         context.close()
 
 
-def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocation_server, chromium_browser):
+def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()
     captured = {}
@@ -418,37 +418,6 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         login_admin(page, local_allocation_server)
         seed_allocation_file_pool(page)
         mock_forecast_coredata(page)
-
-        page.route(
-            "**/api/allokering/flow/forecast",
-            lambda route: route.fulfill(
-                status=200,
-                headers={"content-type": "application/json"},
-                body=json.dumps(
-                    {
-                        "flow_id": "forecast",
-                        "session_id": "forecast-session-1",
-                        "summary": {"Sändningar": 1, "Predikterade pallplatser": 2.5},
-                        "tables": [
-                            {
-                                "key": "forecast",
-                                "label": "Forecast",
-                                "table": {
-                                    "columns": ["Sändningsnr", "Transportör", "Predikterade pallplatser"],
-                                    "rows": [["S-1", "Akeri A", "2.5"]],
-                                    "row_count": 1,
-                                    "truncated": False,
-                                },
-                            }
-                        ],
-                        "log": [],
-                        "artifact_keys": ["forecast_json"],
-                        "auto_downloads": [],
-                    },
-                    ensure_ascii=False,
-                ),
-            ),
-        )
 
         def handle_ytgenerering(route):
             post_data = route.request.post_data or ""
@@ -460,8 +429,18 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
                     {
                         "flow_id": "ytgenerering",
                         "session_id": "ytgenerering-session-1",
-                        "summary": {"Sändningar": 1, "Använda lagerplatser": 1},
+                        "summary": {"Sändningar": 1, "Predikterade pallplatser": 2.5, "Använda lagerplatser": 1},
                         "tables": [
+                            {
+                                "key": "forecast",
+                                "label": "Forecast",
+                                "table": {
+                                    "columns": ["Sändningsnr", "Transportör", "Predikterade pallplatser"],
+                                    "rows": [["S-1", "Akeri A", "2.5"]],
+                                    "row_count": 1,
+                                    "truncated": False,
+                                },
+                            },
                             {
                                 "key": "ytgenerering",
                                 "label": "Ytgenerering",
@@ -526,40 +505,25 @@ def test_forecast_enables_ytgenerering_button_and_passes_session(local_allocatio
         )
 
         page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
-        forecast_button = page.locator('button[data-run-flow="forecast"]')
         ytgenerering_button = page.locator('button[data-run-flow="ytgenerering"]')
-        expect(forecast_button).to_be_enabled(timeout=15000)
-        expect(ytgenerering_button).to_be_disabled()
-
-        forecast_button.click()
-        page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
-        expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Forecast")
-        expect(page.locator(".allocation-result")).to_contain_text("S-1")
+        expect(page.locator('button[data-run-flow="forecast"]')).to_have_count(0)
         expect(ytgenerering_button).to_be_enabled(timeout=15000)
-        follow_up_button = page.locator('button[data-follow-up-flow="ytgenerering"]')
-        expect(follow_up_button).to_be_enabled(timeout=15000)
-        cluster_button = page.locator('button[data-edit-carrier-clusters]')
-        expect(cluster_button).to_be_enabled(timeout=15000)
-        cluster_button.click()
-        page.wait_for_selector(".allocation-carrier-cluster-modal", timeout=15000)
-        page.fill('[data-carrier-cluster-row="0"] [data-carrier-cluster-field="clusterGroup"]', "Freja Test")
-        page.click("#allocation-carrier-cluster-save")
-        expect(page.locator(".allocation-carrier-cluster-modal")).to_have_count(0)
+        expect(page.locator('button[data-follow-up-flow="ytgenerering"]')).to_have_count(0)
 
         with page.expect_response("**/api/allokering/download/ytgenerering-session-1/order_set_area_import") as download_response:
-            follow_up_button.click()
+            ytgenerering_button.click()
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Ytgenerering")
+        expect(page.locator(".allocation-result")).to_contain_text("Forecast")
+        expect(page.locator(".allocation-result")).to_contain_text("S-1")
         expect(page.locator(".allocation-result")).to_contain_text("UTL100")
         expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga pallplatser")
         expect(page.locator("[data-map-metrics]")).to_contain_text("5")
         expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga ytor")
         expect(page.locator("[data-map-metrics]")).to_contain_text("2")
         assert download_response.value.status == 200
-        assert "forecast-session-1" in captured["post_data"]
-        assert 'name="forecast_session_id"' in captured["post_data"]
-        assert 'name="carrier_clusters_json"' in captured["post_data"]
-        assert "Freja Test" in captured["post_data"]
+        assert 'name="forecast_session_id"' not in captured["post_data"]
+        assert 'name="carrier_clusters_json"' not in captured["post_data"]
     finally:
         context.close()
 

@@ -1,11 +1,184 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-08
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-08] docs | Tog bort projektkarta Mermaid
+
+Tog bort den separata sidan `project-mermaid.md` och lankningen fran
+`index.md`, sa wikin inte listar en fristaende Mermaid-projektkarta.
+
+## [2026-06-08] feature | KPI Mal processnamn pa aktiviteter
+
+Aktiviteter har nu ett valfritt `kpi_process_name` som visas som `KPI Mal` i
+Aktiviteter. Faltet finns i ny/redigera-dialogen, Excelmallen och direktimporten
+`Flera nya aktiviteter`. Anvandaren skriver bara processnamn, till exempel
+`dekant, plock`; kommaseparerade varden normaliseras och format med bolag som
+`GG:decanting` stoppas eftersom verksamheten redan kommer fran aktiviteten.
+
+## [2026-06-08] data | Fyller KPI Mal pa befintliga aktiviteter
+
+Alembic-revision `0036_backfill_activity_kpi_processes` fyller en gang i
+`kpi_process_name` for befintliga aktiviteter utifran verksamhetens processlista.
+Migrationen skapar inga aktiviteter och skriver bara i tomma KPI Mal-falt, sa
+anvandarnas senare andringar i Aktiviteter fortsatter vara vanliga sparade
+registerandringar.
+
+## [2026-06-08] feature | Verksamhet i registertabeller
+
+Anvandare- och Aktiviteter-vyerna visar nu en egen `Verksamhet`-kolumn i
+huvudtabellen. Kolumnen bygger pa befintligt `business_id` i API-svaren, anvander
+verksamhetsnamn nar det finns och kan sorteras via de klickbara tabellrubrikerna.
+
+## [2026-06-08] feature | Klickbara tabellrubriker
+
+Vanliga list- och rapporttabeller far nu gemensam klient-side sortering via
+`common.js`: klick pa en rubrik sorterar synliga rader stigande/fallande och
+visar en diskret indikator. Specialtabeller med egen logik, till exempel
+Bemanning, Oversikt, Personer, Verksamheter, Meta, modaler och Bearbeta-
+editorer, undantas for att inte fa dubbel sortering. Meta behaller sin egen
+sortering, och Etikett-kolumnen ar nu ocksa sorteringsbar dar.
+
+## [2026-06-08] feature | Personliga Bearbeta-filtreringar
+
+Bearbeta-matrisen filtrerar inte langre uppladdade filer, API-kallor eller
+tabellrader. Matrisen styr nu bara vilka Bearbeta-floden som syns per toggle.
+Varje Bearbeta-funktion har i stallet en edit-ikon till vanster om info-ikonen
+dar anvandaren sparar egna filter per fil/API-kalla. For `Ytgenerering` sparar
+samma editmodal ocksa UTL-intervall per toggle och transportorskluster
+inklusive grupp, start/end seq, ordning och tider. Profilen lagras per
+anvandare i `allocation_user_filter_profiles`, foljer med efter logout/login
+och kan kopieras fran en annan atkomlig anvandare via rullista i modalen.
+
+## [2026-06-08] change | Ytgenerering-installningar flyttas fran matrisen
+
+Ytgenereringens utlastningsytor (`Fran`/`Till`) och transportorsgruppering har
+flyttats fran den globala Bearbeta-matrisen till Ytgenereringens personliga
+editprofil. Matrisdialogen visar nu bara toggle + funktioner. Backend och
+desktop-runtime applicerar `settings.ytgenerering` fran samma
+`filter-profile`-payload som filfiltren innan `warehouse_tools` kor flodet.
+
+## [2026-06-08] feature | Bearbeta-edit valjer API eller uppladdning
+
+Editmodalen for Bearbeta-funktioner visar nu en källtoggle for filer och
+karnfiler som kan hamtas API-first. Standard ar fortsatt API, men anvandaren
+kan valja `Uppladdning`; valet sparas per anvandare i `filter-profile` som
+`sources` och gor filen kravd i Bearbeta tills en uppladdad/localRef/coredata-
+fil finns. Backend och desktop-runtime filtrerar bort de API-kallor som
+anvandaren valt som uppladdning innan source-resolvern kor.
+
+## [2026-06-08] polish | Bearbeta-kallval visas som switch
+
+Kallvalet i Bearbeta-edit visas nu som en kompakt pill-switch: gront `API`-lage
+nar API-first-hamtning anvands och gratt `Fil`-lage nar anvandaren vill krava
+uppladdning. Samma personliga `sources`-varde sparas fortsatt i
+`filter-profile`, sa andringen ar visuell och paverkar bade webb och desktop via
+samma frontend.
+
+## [2026-06-08] fix | Skicka person skyddar tidigare timmar
+
+Bemanningsflodet `Skicka till <omrade>` stoppar nu om klienten inte kan avgora
+en saker starttimme. Starttimmen jamfors mot valt datum med lokal datumstrang
+och kan annars tas fran fokuserad timcell; flodet faller inte langre tillbaka
+till 06:00. Det skyddar redan satta tidigare timmar fran att tommas av misstag.
+
+## [2026-06-08] feature | Klick markerar personrad
+
+Bemanning och Oversikt markerar nu hela personraden diskret nar anvandaren
+klickar pa personen eller en cell i raden. Markeringen ar lokal och visuell,
+sparas inte i databasen och paverkar inte schema, filter, sortering eller
+dragfyllning.
+
+## [2026-06-08] fix | Skicka person lamnar tomma lanetimmar
+
+Hogerklicksflodet `Skicka till <omrade>` i Bemanning fyller inte langre hela
+dagen med malomradets standardaktivitet. Personen markeras i stallet med
+`loan_area_id` och tomma schemaceller fran aktuell timme och framat, sa
+mottagande omrade kan valja aktivitet sjalv. Tidigare timmar bevaras och tomma
+lanemarkeringar raknas inte som aktivitetstimmar i summeringen.
+
+## [2026-06-08] fix | Påfyllnadsprio får API-källor
+
+Påfyllnadsprio ingår nu i Bearbetas API-first-karta med `orders`, `saldo` och
+`overview` som krav. Det hindrar `KeyError: 'orders'` när flödet körs utan
+uppladdade filer och låter lastningsfönsterläget använda API-hämtad
+orderöversikt på samma sätt som tidigare uppladdat underlag.
+
+## [2026-06-08] fix | Nya personer schemalaggs inte bakat
+
+Implicita veckomalltimmar for personer raknas nu bara fran personens
+skapandedatum och framat. Bemanning, Oversikt, Narvarande, Mitt schema och
+publika timmar/personer anvander samma datumstyrda mallservice, sa en ny person
+inte far standardtimmar pa gamla veckor om det saknas explicita schemaceller.
+
+## [2026-06-08] docs | Bearbeta kodsokvagar
+
+Lade till en praktisk kodkarta i `warehouse-tools.md` for hur man foljer ett
+Bearbeta-`flow_id` fran knapp till frontend, API, desktop local runtime,
+API-first/fallback, `warehouse_tools`-handler, motor, resultat och tester.
+Sektionen innehaller ocksa `rg`-kommandon och en tabell over vanliga flow-id.
+
+## [2026-06-08] docs | Bearbeta-vyn i Mermaid
+
+Lade in en egen Mermaid-sektion i `warehouse-tools.md` for Bearbeta-vyn. Den
+visar hur vyn bootar, hur omradestoggle, Bearbeta-matris, filstatus,
+karnfiler och API-first styr flodesknapparnas readiness, samt hur webb och
+Windows delar korflode men skiljer sig genom desktop localRef och lokal runtime.
+
+## [2026-06-08] docs | Fordjupad projektkarta
+
+Byggde ut `project-mermaid.md` med en enklare mental modell, nyckelbegrepp,
+sekvensdiagram for skyddade webbsidor, Windows-start, desktop localRef,
+Bearbeta/Ytgenerering, Produktivitet, Meta och personliga vyer. Sidan har nu
+ocksa en lasguide for var man bor borja i koden samt en tydligare karta over
+datatyper, primar lagring och fallback.
+
+## [2026-06-08] fix | Ytgenerering accepterar API-Item Option
+
+API-materialiseringen for `item_option` kraver nu tekniska katalog-id:n
+`not_stackable` och `whole_pallet_near_miss_percent`, och mappar dem till
+Forecastens gamla CSV-rubriker `Ej staplingsbar` och `Helpalls avvikelse %`.
+Om API-vyn saknar tekniska id:n underkanns API-kallan och Ytgenerering faller
+tillbaka till uppladdad eller verksamhetens karnfil, i stallet for att tolka
+saknade regler som tomma varden. `data-fetch.md` och `wiki/AGENTS.md`
+dokumenterar att tekniskt id ska kontrolleras fore svenska labels.
+
+## [2026-06-08] feature | Ytgenerering kor Forecast i samma knapp
+
+Bearbeta visar nu `Ytgenerering` som den publika Forecast & yta-knappen. Flodet
+hamtar Forecast-underlagen API-first, kor Forecast internt och lagger till
+ytkarta, ytgenereringstabeller och automatisk ASK-import nar `location` finns.
+Om `location` saknas eller inte kan hamtas visas Forecast-resultatet anda med
+loggrad om att lagerplatser saknas. Den tekniska `forecast`-handlern och gamla
+sessionbaserade Ytgenerering-anrop finns kvar for legacy, men nya webb- och
+desktopklick skickar normalt inte `forecast_session_id`.
+
+## [2026-06-08] feature | Meta-tabell med ASK-uppslag och export
+
+Meta-analysen tolkar nu "pall", "godsmärkning"/"godsmarkning" och
+"godsmärke" som pall-id i audio-only-prompten. Efter analys berikas raden fran
+ASK Dispatchpallar via pall-id med ordernummer, sandningsnummer, anvandare och
+kund. Super User-vyn for Meta har sok, sortering, Excel-export for alla eller
+filtrerade rader, klientko for nedladdningar och backend-ko for playable-video-
+transkodning.
+
+## [2026-06-08] docs | Projektkarta i Mermaid
+
+Lade till `project-mermaid.md` med helhetsdiagram for webbapp, Windows-app,
+backend, lagerverktyg, data, test, drift och wiki. Sidan markerar ocksa filer
+och mappar som inte verkar inga i ordinarie runtime eller som bara anvands som
+legacy-/fallback-/releaseartefakter, utan att behandla dem som sakra
+raderingskandidater.
+
+## [2026-06-08] polish | Meta-vyn visar bara sandningsanalysen
+
+Meta-vyn har inte langre den nedre kortgridden for uppladdade bilder och videor.
+Super User arbetar i stallet direkt i sandningsanalystabellen, dar video,
+etikettstillbild, timestamp, nedladdning och analys finns samlade per rad.
 
 ## [2026-06-05] fix | Minska serverminne for Bearbeta och Meta
 
@@ -923,3 +1096,7 @@ Trackinglagret har nu Playwright-tester for auto-capture av klick/change/submit,
 ## [2026-06-08] polish | Meta-tabellen visar uppdaterad timestamp
 
 Sändningsanalysen i Meta-vyn visar nu kolumnen `Uppdaterad`, baserad på `meta_shipment_observations.updated_at` med `created_at` som fallback. Hover-title visar både skapad och uppdaterad tid, så Super User kan skilja historiska etikettanalyser från nya audio-only-rader där bara pall-id och avvikelser ska fyllas.
+
+## [2026-06-08] feature | API-first for Bearbeta och Produktivitet
+
+Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern datakalla vid knapptryck, utan MiniMax och utan radbegransning. Uppladdade filer och Windows `localRef` anvands som fallback nar API eller katalog inte kan nas. Wikin dokumenterar source-mapping, `/api/workflow-data/source`, Produktivitetens `api_first`-status, sanerad source-audit och nya fallbackfel.

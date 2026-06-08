@@ -27,6 +27,7 @@ CATALOG_FLOWS: list[dict] = [
         "label": "Forecast",
         "category": "Forecast & yta",
         "description": "Prognostisera pallplatser per sändningsnr med lokala orderfiler och kärnfiler.",
+        "hidden": True,
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
             {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
@@ -46,12 +47,22 @@ CATALOG_FLOWS: list[dict] = [
         "id": "ytgenerering",
         "label": "Ytgenerering",
         "category": "Forecast & yta",
-        "description": "Placera forecastens sändningar på lagerplatser utifrån Max pall och transportör.",
-        "inputs": [],
-        "coredata": [
-            {"key": "location", "label": "Lagerplatser", "required": True},
+        "description": "Kör Forecast och skapar ytkarta/importfil när lagerplatser finns.",
+        "inputs": [
+            {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
+            {"key": "overview", "label": "Orderöversikt", "type": "file", "required": True, "detect": ["overview"]},
+            {"key": "buffer", "label": "Buffertpall", "type": "file", "required": True, "detect": ["buffer"]},
         ],
-        "requiresSessionFlow": {"flowId": "forecast", "label": "Forecast"},
+        "coredata": [
+            {"key": "custom", "label": "custom", "required": True},
+            {"key": "item", "label": "item", "required": True},
+            {"key": "item_alias", "label": "item_alias", "required": True},
+            {"key": "dimension", "label": "dimension", "required": True},
+            {"key": "pallet_type", "label": "pallet_type", "required": True},
+            {"key": "item_option", "label": "item_option", "required": True},
+            {"key": "trans_agency", "label": "Transportör", "required": False},
+            {"key": "location", "label": "Lagerplatser", "required": False},
+        ],
     },
     {
         "id": "ordersaldo",
@@ -78,11 +89,11 @@ CATALOG_FLOWS: list[dict] = [
         "id": "pafyllnadsprio",
         "label": "Påfyllnadsprio",
         "category": "Order & saldo",
-        "description": "Prioritera påfyllnad utifrån underskott. Med orderöversikt används lastningsfönster-läge.",
+        "description": "Prioritera påfyllnad utifrån underskott med saldo och orderöversikt i lastningsfönster-läge.",
         "inputs": [
             {"key": "orders", "label": "Detalj Kundorder (Alla)", "type": "file", "required": True, "detect": ["orders"]},
-            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": False, "detect": ["automation"]},
-            {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": False, "detect": ["overview"]},
+            {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True, "detect": ["automation"]},
+            {"key": "overview", "label": "Orderöversikt (lastningsfönster)", "type": "file", "required": True, "detect": ["overview"]},
             {"key": "max_csv", "label": "artikel_max.csv (sammanställd data)", "type": "file", "required": False, "detect": []},
         ],
     },
@@ -223,6 +234,8 @@ def _pool_key(input_key: str) -> str:
 def public_registry() -> list[dict]:
     result: list[dict] = []
     for flow in CATALOG_FLOWS:
+        if flow.get("hidden"):
+            continue
         view = "solo" if flow["id"] in SOLO_FLOWS else "combined"
         inputs: list[dict] = []
         for inp in flow["inputs"]:

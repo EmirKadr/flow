@@ -15,9 +15,10 @@ from .. import allocation_bridge as bridge
 from ..business_scope import DEFAULT_BUSINESS_CODE, assert_user_can_access_business, get_business_by_code, normalize_business_code, user_business_id
 from ..coredata_service import CoreDataError, find_coredata_file
 from ..deps import get_db, require_allocation_tools_user, require_view_access
-from ..models import Area, Business, User
+from ..models import AllocationUserFilterProfile, Area, Business, User
 from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
 from ..user_access import can_access_view, can_use_allocation_process, is_super_user
+from ..workflow_data import WorkflowDataError, allocation_api_source_map, resolve_sources, source_public_metadata
 
 
 router = APIRouter(
@@ -27,19 +28,20 @@ router = APIRouter(
 
 SELF_SERVICE_FLOW_IDS = {"split-values"}
 BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
+FORECAST_COREDATA_DEFAULTS = {
+    "custom": "custom",
+    "item": "item",
+    "item_alias": "item_alias",
+    "dimension": "dimension",
+    "pallet_type": "pallet_type",
+    "item_option": "item_option",
+    "trans_agency": "trans_agency",
+}
 BUSINESS_COREDATA_FLOW_DEFAULTS = {
     "allocate": {"items": "item_option"},
     "goods-declaration": {"item_security_info": "item_security_info"},
-    "forecast": {
-        "custom": "custom",
-        "item": "item",
-        "item_alias": "item_alias",
-        "dimension": "dimension",
-        "pallet_type": "pallet_type",
-        "item_option": "item_option",
-        "trans_agency": "trans_agency",
-    },
-    "ytgenerering": {"location": "location"},
+    "forecast": FORECAST_COREDATA_DEFAULTS,
+    "ytgenerering": {**FORECAST_COREDATA_DEFAULTS, "location": "location"},
 }
 PROCESS_MATRIX_HIDDEN_FLOW_IDS = {"observations-update", "observations-sync", "update-check", "split-values"}
 logger = logging.getLogger(__name__)
@@ -54,6 +56,14 @@ class AllocationProcessMatrixUpdate(BaseModel):
 
 class YtgenereringMapLayoutUpdate(BaseModel):
     locations: list[dict] = Field(default_factory=list)
+
+
+class AllocationFilterProfileUpdate(BaseModel):
+    profile: dict = Field(default_factory=dict)
+
+
+class AllocationFilterProfileImport(BaseModel):
+    user_id: int
 
 
 def _role_access_for_user(db: Session | object, user: User) -> dict | None:
@@ -86,6 +96,7 @@ def _flow_audit_payload(
     area_focus: str | None = None,
     business_code: str | None = None,
     filter_log: list[str] | None = None,
+    source_status: list[dict] | None = None,
     path: str | None = None,
 ) -> dict:
     payload = {
@@ -99,6 +110,8 @@ def _flow_audit_payload(
         payload["business_code"] = business_code
     if filter_log:
         payload["filter_log"] = [_clean_audit_text(line, max_length=220) for line in filter_log[:8]]
+    if source_status:
+        payload["source_status"] = source_status
     if path:
         payload["path"] = path
     if result is not None:
@@ -226,6 +239,59 @@ def _allocation_process_matrix_flows() -> list[dict]:
     return flows
 
 
+def _allocation_flow_required_file_keys(flow: dict | None) -> set[str]:
+    required: set[str] = set()
+    for item in (flow or {}).get("inputs") or []:
+        if item.get("type") == "file" and item.get("required"):
+            required.add(str(item.get("key") or ""))
+    for item in (flow or {}).get("coredata") or []:
+        if item.get("required"):
+            required.add(str(item.get("key") or ""))
+    return {key for key in required if key}
+
+
+def _with_api_source_metadata(flow: dict) -> dict:
+    source_map = allocation_api_source_map(str(flow.get("id") or ""))
+    if not source_map:
+        return flow
+    result = dict(flow)
+    result["apiFirstSources"] = source_map
+    source_meta: dict[str, dict] = {}
+    for source_key in sorted(set(source_map.values())):
+        try:
+            source_meta[source_key] = source_public_metadata(source_key)
+        except WorkflowDataError:
+            continue
+    if source_meta:
+        result["apiSourceMetadata"] = source_meta
+
+    inputs = []
+    for item in flow.get("inputs") or []:
+        next_item = dict(item)
+        source_key = source_map.get(str(item.get("key") or ""))
+        if source_key:
+            next_item["apiPreferred"] = True
+            next_item["apiSourceKey"] = source_key
+            if source_key in source_meta:
+                next_item["apiSource"] = source_meta[source_key]
+        inputs.append(next_item)
+    result["inputs"] = inputs
+
+    coredata = []
+    for item in flow.get("coredata") or []:
+        next_item = dict(item)
+        source_key = source_map.get(str(item.get("key") or ""))
+        if source_key:
+            next_item["apiPreferred"] = True
+            next_item["apiSourceKey"] = source_key
+            if source_key in source_meta:
+                next_item["apiSource"] = source_meta[source_key]
+        coredata.append(next_item)
+    if coredata:
+        result["coredata"] = coredata
+    return result
+
+
 def _stored_process_matrix(db: Session | object, *, flows: list[dict] | None = None) -> dict[str, dict]:
     try:
         stored = get_json_setting(db, ALLOCATION_PROCESS_MATRIX_KEY, default={})  # type: ignore[arg-type]
@@ -311,6 +377,96 @@ def _upload_cache_scope(user: User) -> str:
     if user_id is not None:
         return f"user:{user_id}"
     return f"business:{getattr(user, 'business_id', None)}"
+
+
+def _empty_filter_profile() -> dict:
+    return {"version": bridge.USER_FILTER_PROFILE_VERSION, "flows": {}}
+
+
+def _user_filter_profile(db: Session | object, user: User) -> dict:
+    user_id = getattr(user, "id", None)
+    if user_id is None or not hasattr(db, "query"):
+        return _empty_filter_profile()
+    try:
+        row = db.query(AllocationUserFilterProfile).filter(AllocationUserFilterProfile.user_id == user_id).first()
+    except Exception:
+        return _empty_filter_profile()
+    return bridge.normalize_user_filter_profile(getattr(row, "profile", None) if row is not None else None)
+
+
+def _filter_profile_display_name(user: User) -> str:
+    return str(getattr(user, "display_name", None) or getattr(user, "username", None) or getattr(user, "id", "")).strip()
+
+
+def _accessible_filter_profile_user_query(db: Session, user: User):
+    query = db.query(User).filter(User.is_active.is_(True))
+    if not is_super_user(user):
+        business_id = getattr(user, "business_id", None)
+        if business_id is not None:
+            query = query.filter(User.business_id == business_id)
+    return query
+
+
+def _assert_filter_profile_source_allowed(db: Session, user: User, source_user_id: int) -> User:
+    source_user = _accessible_filter_profile_user_query(db, user).filter(User.id == source_user_id).first()
+    if source_user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Anvandarens filtreringar hittades inte")
+    return source_user
+
+
+def _filter_profile_users(db: Session, user: User) -> list[dict]:
+    users = _accessible_filter_profile_user_query(db, user).order_by(func.lower(User.username)).all()
+    user_ids = [int(item.id) for item in users if getattr(item, "id", None) is not None]
+    rows = []
+    if user_ids:
+        rows = db.query(AllocationUserFilterProfile).filter(AllocationUserFilterProfile.user_id.in_(user_ids)).all()
+    profile_by_user = {int(row.user_id): bridge.normalize_user_filter_profile(row.profile) for row in rows}
+    result = []
+    for item in users:
+        item_id = int(item.id)
+        profile = profile_by_user.get(item_id, _empty_filter_profile())
+        count = bridge.user_filter_profile_count(profile)
+        result.append({
+            "id": item_id,
+            "username": str(item.username),
+            "name": _filter_profile_display_name(item),
+            "is_current": item_id == getattr(user, "id", None),
+            "has_filters": count > 0,
+            "filter_count": count,
+        })
+    return result
+
+
+def _filter_profile_response(db: Session, user: User) -> dict:
+    return {
+        "profile": _user_filter_profile(db, user),
+        "users": _filter_profile_users(db, user),
+    }
+
+
+def _set_user_filter_profile(db: Session, user: User, profile: object) -> dict:
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Anvandare saknas")
+    normalized = bridge.normalize_user_filter_profile(profile, flows=bridge.public_registry())
+    row = db.query(AllocationUserFilterProfile).filter(AllocationUserFilterProfile.user_id == user_id).first()
+    if row is None:
+        row = AllocationUserFilterProfile(user_id=user_id, profile=normalized)
+        db.add(row)
+    else:
+        row.profile = normalized
+    db.flush()
+    return normalized
+
+
+def _filter_profile_from_params_or_db(params: dict, db: Session | object, user: User) -> dict:
+    raw = params.pop(bridge.USER_FILTERS_PARAM, None)
+    if raw:
+        try:
+            return bridge.normalize_user_filter_profile(json.loads(raw), flows=bridge.public_registry())
+        except Exception:
+            return _empty_filter_profile()
+    return _user_filter_profile(db, user)
 
 
 def _business_code_for_id(db: Session, user: User, business_id: int | None) -> str | None:
@@ -409,7 +565,7 @@ def _attach_required_session_artifacts(flow_id: str, params: dict, user: User) -
         return
     forecast_session_id = str(params.get("forecast_session_id") or "").strip()
     if not forecast_session_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Kör Forecast först.")
+        return
     _assert_session_allowed(forecast_session_id, user)
     session = bridge.SESSIONS.get(forecast_session_id)
     if session is None or session.get("flow_id") != "forecast":
@@ -450,7 +606,7 @@ def list_flows(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    flows = bridge.public_registry()
+    flows = [_with_api_source_metadata(flow) for flow in bridge.public_registry()]
     if not can_use_allocation_process(user, _role_access_for_user(db, user)):
         flows = [flow for flow in flows if flow.get("id") in SELF_SERVICE_FLOW_IDS]
     return {"flows": flows}
@@ -503,6 +659,66 @@ def update_process_matrix(
         )
     db.commit()
     return _process_matrix_response(db, admin)
+
+
+@router.get("/filter-profile")
+def get_filter_profile(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_allocation_tools_user),
+) -> dict:
+    return _filter_profile_response(db, user)
+
+
+@router.put("/filter-profile")
+def update_filter_profile(
+    payload: AllocationFilterProfileUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_allocation_tools_user),
+) -> dict:
+    before = _user_filter_profile(db, user)
+    after = _set_user_filter_profile(db, user, payload.profile)
+    if before != after:
+        audit.log(
+            db,
+            entity_type="allocation_filter_profile",
+            entity_id=int(getattr(user, "id", 0) or 0),
+            action="update_allocation_filter_profile",
+            old_value={"filter_count": bridge.user_filter_profile_count(before)},
+            new_value={"filter_count": bridge.user_filter_profile_count(after)},
+            user_id=getattr(user, "id", None),
+            business_id=getattr(user, "business_id", None),
+        )
+    db.commit()
+    return _filter_profile_response(db, user)
+
+
+@router.post("/filter-profile/import")
+def import_filter_profile(
+    payload: AllocationFilterProfileImport,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_allocation_tools_user),
+) -> dict:
+    source_user = _assert_filter_profile_source_allowed(db, user, payload.user_id)
+    source_profile = _user_filter_profile(db, source_user)
+    if bridge.user_filter_profile_count(source_profile) <= 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Anvandaren har inga sparade filtreringar")
+    before = _user_filter_profile(db, user)
+    after = _set_user_filter_profile(db, user, source_profile)
+    audit.log(
+        db,
+        entity_type="allocation_filter_profile",
+        entity_id=int(getattr(user, "id", 0) or 0),
+        action="import_allocation_filter_profile",
+        old_value={"filter_count": bridge.user_filter_profile_count(before)},
+        new_value={
+            "filter_count": bridge.user_filter_profile_count(after),
+            "source_user_id": getattr(source_user, "id", None),
+        },
+        user_id=getattr(user, "id", None),
+        business_id=getattr(user, "business_id", None),
+    )
+    db.commit()
+    return _filter_profile_response(db, user)
 
 
 @router.get("/ytgenerering-map-layout")
@@ -699,8 +915,12 @@ async def run_flow(
         raise
     business_code = None
     area_filter_log: list[str] = []
+    user_filter_log: list[str] = []
+    source_log: list[str] = []
+    source_status: list[dict] = []
     flow_path = f"{ALLOCATION_FLOW_PATH_PREFIX}/{flow_id}"
     try:
+        user_filter_profile = _filter_profile_from_params_or_db(params, db, user)
         process_matrix = _stored_process_matrix(db)
         if area_focus and not bridge.process_flow_visible(flow_id, area_focus, process_matrix):
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Funktionen ar inte tillganglig for vald toggle")
@@ -710,16 +930,34 @@ async def run_flow(
         coredata_files = _business_coredata_default_files(flow_id, files, business_code, db)
         if coredata_files:
             files = {**coredata_files, **files}
+        source_map = bridge.api_source_map_for_user_profile(
+            allocation_api_source_map(flow_id),
+            flow_id,
+            user_filter_profile,
+        )
+        if source_map:
+            flow = bridge.public_registry()
+            flow_by_id = {str(item.get("id") or ""): item for item in flow}
+            required_keys = _allocation_flow_required_file_keys(flow_by_id.get(flow_id))
+            try:
+                source_resolution = resolve_sources(source_map, files, required_keys=required_keys)
+            except WorkflowDataError as exc:
+                source_status = exc.audit_entries
+                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            files = source_resolution.files
+            temp_paths.extend(source_resolution.temp_paths)
+            source_log = source_resolution.log_lines
+            source_status = source_resolution.audit_entries
         files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
         temp_paths.extend(filter_temp_paths)
+        files, user_filter_temp_paths, user_filter_log = bridge.apply_user_flow_filters(files, flow_id, user_filter_profile)
+        temp_paths.extend(user_filter_temp_paths)
         if flow_id == "ytgenerering":
             ytgenerering_focus = area_focus or "ALLT"
-            utl_min, utl_max = bridge.process_ytgenerering_utl_range(ytgenerering_focus, process_matrix)
             map_business_id = _allocation_settings_business_id(db, user, area_focus)
             if area_focus:
                 params[bridge.PROCESS_AREA_FOCUS_PARAM] = area_focus
-            params[bridge.YTGENERERING_UTL_MIN_PARAM] = str(utl_min)
-            params[bridge.YTGENERERING_UTL_MAX_PARAM] = str(utl_max)
+            bridge.apply_ytgenerering_user_settings(params, user_filter_profile, area_focus=ytgenerering_focus)
             params["__ytgenerering_map_locations_json"] = json.dumps(
                 _stored_ytgenerering_map_rows(db, business_id=map_business_id),
                 ensure_ascii=False,
@@ -739,6 +977,14 @@ async def run_flow(
                 "area_focus": area_focus,
                 "lines": area_filter_log,
             }
+        if user_filter_log:
+            result["log"] = user_filter_log + list(result.get("log") or [])
+            result["user_filter"] = {
+                "lines": user_filter_log,
+            }
+        if source_log:
+            result["log"] = source_log + list(result.get("log") or [])
+            result["source_status"] = source_status
         session_id = result.get("session_id")
         if session_id in bridge.SESSIONS:
             bridge.SESSIONS[session_id]["owner"] = _session_owner_payload(user)
@@ -753,7 +999,8 @@ async def run_flow(
                 result=result,
                 area_focus=area_focus,
                 business_code=business_code,
-                filter_log=area_filter_log,
+                filter_log=area_filter_log + user_filter_log,
+                source_status=source_status,
             ),
         )
         return result
@@ -774,7 +1021,8 @@ async def run_flow(
                 technical_message=error_fields["technical_message"],
                 area_focus=area_focus,
                 business_code=business_code,
-                filter_log=area_filter_log,
+                filter_log=area_filter_log + user_filter_log,
+                source_status=source_status,
                 path=flow_path,
             ),
         )
