@@ -1488,6 +1488,7 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert "Sändningsanalys" in html
     assert "Sändningsnummer" in html
     assert "Längd" in html
+    assert "Uppdaterad" in html
     assert "Rad-ID" in html
     assert 'id="metaShipmentRows"' in html
     assert 'id: "meta"' in common
@@ -1511,6 +1512,8 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert "Radera" in js
     assert "Analysera" in js
     assert "shipment_number" in js
+    assert "formatTimestamp(item.updated_at || item.created_at)" in js
+    assert "meta-admin-timestamp" in js
     assert "Video-ID" in js
     assert "formatDuration" in js
     assert "data-duration-for" in js

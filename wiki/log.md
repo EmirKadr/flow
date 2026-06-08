@@ -919,3 +919,7 @@ Historik har nu ett separat `user_interaction_events`-lager bredvid audit och va
 ## [2026-06-04] test | Interaction-tracking far browserkontrakt
 
 Trackinglagret har nu Playwright-tester for auto-capture av klick/change/submit, API-koppling, nedladdning/export, Historik-dashboardens Funktioner/Knappar/Kolumner/Floden, Historik-AI och desktop-surface. Tester fangade och skyddar att interna download-lankar ignoreras av auto-tracking, att Pafyllnadsprio copy-patterns anvander `copy_mode`, och att kanda kontroll-id:n i coverage matchar frontendens faktiska id:n.
+
+## [2026-06-08] polish | Meta-tabellen visar uppdaterad timestamp
+
+Sändningsanalysen i Meta-vyn visar nu kolumnen `Uppdaterad`, baserad på `meta_shipment_observations.updated_at` med `created_at` som fallback. Hover-title visar både skapad och uppdaterad tid, så Super User kan skilja historiska etikettanalyser från nya audio-only-rader där bara pall-id och avvikelser ska fyllas.

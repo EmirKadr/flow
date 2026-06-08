@@ -231,7 +231,7 @@ function renderShipmentRows() {
   if (!tbody || !summary) return;
   summary.textContent = `${shipmentItems.length} sändningsrader`;
   if (!shipmentItems.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
     return;
   }
 
@@ -246,6 +246,8 @@ function renderShipmentRows() {
     const duration = mediaDurationSeconds(item.media_upload_id, item.video_duration_seconds);
     const videoDownloadLabel = `Ladda ner ${videoTitle || "video"}`;
     const labelDownloadLabel = `Ladda ner stillbild för ${videoTitle || "video"}`;
+    const timestamp = formatTimestamp(item.updated_at || item.created_at);
+    const timestampTitle = `Skapad: ${formatTimestamp(item.created_at)}\nUppdaterad: ${formatTimestamp(item.updated_at)}`;
     return `
       <tr>
         <td>${escapeHtml(item.order_number || "")}</td>
@@ -258,6 +260,7 @@ function renderShipmentRows() {
           <span class="meta-status-pill ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
           ${item.uncertainty_notes ? `<div class="meta-admin-note" title="${escapeHtml(item.uncertainty_notes)}">Osäkert</div>` : ""}
         </td>
+        <td class="meta-admin-timestamp" title="${escapeHtml(timestampTitle)}">${escapeHtml(timestamp)}</td>
         <td class="meta-admin-video-ref" title="${escapeHtml(item.video_original_filename || videoTitle || "-")}">
           <div class="meta-admin-primary">${escapeHtml(videoTitle || "-")}</div>
           <div class="meta-admin-subtle" title="${escapeHtml(item.video_hash || "-")}">#${escapeHtml(videoHash || "-")}</div>

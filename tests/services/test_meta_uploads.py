@@ -752,6 +752,8 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         assert item["video_filename"] == "20260531_120102_123456Z_01.mov"
         assert item["video_duration_seconds"] == 75.4
         assert item["video_duration_label"] == "1:15"
+        assert item["created_at"]
+        assert item["updated_at"]
 
         analysis = client.post(f"/api/meta/uploads/{row.id}/analyze")
         assert analysis.status_code == 200

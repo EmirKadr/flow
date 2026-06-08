@@ -2708,7 +2708,7 @@ body.dragging-ov select { pointer-events: none; }
 
 .meta-admin-table {
   width: 100%;
-  min-width: 1240px;
+  min-width: 1360px;
   border-collapse: collapse;
 }
 
@@ -2745,6 +2745,11 @@ body.dragging-ov select { pointer-events: none; }
 
 .meta-admin-hash {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+}
+
+.meta-admin-timestamp {
+  min-width: 132px;
   color: var(--text-muted);
 }
 
