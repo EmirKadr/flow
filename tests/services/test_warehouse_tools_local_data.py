@@ -34,6 +34,7 @@ REGISTRY_FLOW_IDS = (
     "split-values",
     "update-check",
 )
+PUBLIC_REGISTRY_FLOW_IDS = tuple(flow_id for flow_id in REGISTRY_FLOW_IDS if flow_id != "forecast")
 
 LOCAL_DATA_FLOW_IDS = tuple(
     flow_id
@@ -449,10 +450,13 @@ def test_warehouse_registry_is_loaded_from_flow_package():
     assert tuple(flows.FLOW_BY_ID) == REGISTRY_FLOW_IDS
     assert len(flows.public_pool()) == 11
     public_registry = flows.public_registry()
-    assert [flow["id"] for flow in public_registry] == list(REGISTRY_FLOW_IDS)
+    assert [flow["id"] for flow in public_registry] == list(PUBLIC_REGISTRY_FLOW_IDS)
     assert all("handler" not in flow for flow in public_registry)
-    forecast = next(flow for flow in public_registry if flow["id"] == "forecast")
-    assert {entry["key"] for entry in forecast["coredata"]} == {
+    assert flows.FLOW_BY_ID["forecast"]["hidden"] is True
+    ytgenerering = next(flow for flow in public_registry if flow["id"] == "ytgenerering")
+    assert [input_def["key"] for input_def in ytgenerering["inputs"]] == ["orders", "overview", "buffer"]
+    assert "requiresSessionFlow" not in ytgenerering
+    assert {entry["key"] for entry in ytgenerering["coredata"]} == {
         "custom",
         "item",
         "item_alias",
@@ -460,17 +464,100 @@ def test_warehouse_registry_is_loaded_from_flow_package():
         "pallet_type",
         "item_option",
         "trans_agency",
+        "location",
     }
-    ytgenerering = next(flow for flow in public_registry if flow["id"] == "ytgenerering")
-    assert ytgenerering["requiresSessionFlow"]["flowId"] == "forecast"
-    assert ytgenerering["coredata"] == [{"key": "location", "label": "Lagerplatser", "required": True}]
+    assert next(entry for entry in ytgenerering["coredata"] if entry["key"] == "location")["required"] is False
     ordersaldo = next(flow for flow in public_registry if flow["id"] == "ordersaldo")
     assert any(input_def["key"] == "max_csv" for input_def in ordersaldo["inputs"])
+    pafyllnadsprio = next(flow for flow in public_registry if flow["id"] == "pafyllnadsprio")
+    pafyllnadsprio_inputs = {input_def["key"]: input_def for input_def in pafyllnadsprio["inputs"]}
+    assert [key for key, item in pafyllnadsprio_inputs.items() if item.get("required")] == [
+        "orders",
+        "saldo",
+        "overview",
+    ]
     goods_declaration = next(flow for flow in public_registry if flow["id"] == "goods-declaration")
     assert [input_def["key"] for input_def in goods_declaration["inputs"]] == ["orders", "overview", "custom_adr"]
     assert goods_declaration["coredata"] == [
         {"key": "item_security_info", "label": "Artikel S\u00e4kerhetsinformation", "required": True}
     ]
+
+
+def test_ytgenerering_combined_returns_forecast_only_when_location_missing(monkeypatch):
+    forecast_df = pd.DataFrame(
+        [
+            {"Sändningsnr": "S-1", "Transportör": "Akeri A", "Predikterade pallplatser": 1.5},
+        ]
+    )
+
+    def fake_flow_forecast(files, params):
+        return {
+            "summary": {"Sändningar": 1, "Predikterade pallplatser": 1.5},
+            "tables": [("forecast", "Forecast", forecast_df)],
+            "artifacts": {},
+            "carrier_clusters": None,
+            "log": ["Forecast körd."],
+        }
+
+    monkeypatch.setattr(flows, "flow_forecast", fake_flow_forecast)
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"orders": Path("orders.csv"), "overview": Path("overview.csv"), "buffer": Path("buffer.csv")},
+        {},
+    )
+
+    assert [key for key, _label, _table in result["tables"]] == ["forecast"]
+    assert result["maps"] == []
+    assert result["download_files"] == {}
+    assert result["auto_downloads"] == []
+    assert any("Location/lagerplatser saknas" in line for line in result["log"])
+
+
+def test_ytgenerering_combined_runs_forecast_and_surface_generation(monkeypatch, tmp_path):
+    forecast_df = pd.DataFrame(
+        [
+            {
+                "Sändningsnr": "S-1",
+                "Transportör": "Akeri A",
+                "Predikterade pallplatser": 1.0,
+                "Ordernummer": "O-1",
+            },
+        ]
+    )
+
+    def fake_flow_forecast(files, params):
+        return {
+            "summary": {"Sändningar": 1, "Predikterade pallplatser": 1.0},
+            "tables": [("forecast", "Forecast", forecast_df)],
+            "artifacts": {"carrier_clusters": {"rows": []}},
+            "carrier_clusters": {"rows": []},
+            "log": ["Forecast körd."],
+        }
+
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("not used\n", encoding="utf-8")
+    monkeypatch.setattr(flows, "flow_forecast", fake_flow_forecast)
+    monkeypatch.setattr(
+        flows,
+        "_read",
+        lambda path: pd.DataFrame(
+            [
+                {"Lagerplats": "UTL100", "Typ": "U", "Max pall": 2},
+            ]
+        ),
+    )
+
+    result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
+        {"orders": Path("orders.csv"), "overview": Path("overview.csv"), "buffer": Path("buffer.csv"), "location": location_path},
+        {},
+    )
+
+    tables = {key: table for key, _label, table in result["tables"]}
+    assert {"forecast", "ytgenerering", "transportorer"}.issubset(tables)
+    assert list(tables["ytgenerering"]["Lagerplats"]) == ["UTL100"]
+    assert result["maps"]
+    assert result["carrier_clusters"] == {"rows": []}
+    assert any("Forecast körd." == line for line in result["log"])
 
 
 def test_ytgenerering_places_shipments_separately_and_sorts_by_carrier():

@@ -24,7 +24,7 @@ from ..business_scope import (
 )
 from ..deps import get_db, require_view_access
 from ..demo_session import DEMO_USERNAME
-from ..models import AppSetting, Area, AuditLog, Person, PersonScheduleTemplate, ScheduleCell, User
+from ..models import AllocationUserFilterProfile, AppSetting, Area, AuditLog, Person, PersonScheduleTemplate, ScheduleCell, User
 from ..schemas import UserAdminOut, UserCreate, UserImportError, UserImportResult, UserImportRowsRequest, UserUpdate
 from ..security import hash_password
 from ..user_access import SUPER_USER_ROLE, can_admin, is_demo_user, is_super_user, normalize_user_roles, primary_role, user_admin_out, user_roles
@@ -671,6 +671,9 @@ def delete_user(
     )
     db.query(AuditLog).filter(AuditLog.user_id == user_id).update(
         {AuditLog.user_id: None},
+        synchronize_session=False,
+    )
+    db.query(AllocationUserFilterProfile).filter(AllocationUserFilterProfile.user_id == user_id).delete(
         synchronize_session=False,
     )
     audit.log(

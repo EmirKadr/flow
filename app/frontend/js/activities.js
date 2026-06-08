@@ -16,6 +16,16 @@ function areaName(id) {
   return a ? a.name : "";
 }
 
+function businessName(id) {
+  if (id == null) return "Utan verksamhet";
+  const business = businesses.find((item) => Number(item.id) === Number(id));
+  if (business) return business.name;
+  if (Number(currentUser?.business_id) === Number(id)) {
+    return currentUser?.business_name || currentUser?.business_code || "";
+  }
+  return `Verksamhet #${id}`;
+}
+
 function activityLabel(id) {
   const a = activities.find((x) => x.id === id);
   return a ? a.label : "";
@@ -81,8 +91,10 @@ async function load() {
       <td style="background: ${a.color}; min-width: 40px;"></td>
       <td>${escapeHtml(a.label)}</td>
       ${canSeeCodes() ? `<td>${escapeHtml(a.code)}</td>` : ""}
+      <td>${escapeHtml(businessName(a.business_id))}</td>
       <td>${escapeHtml(areaName(a.area_id))}</td>
       <td>${escapeHtml(activityLabel(a.summary_activity_id) || "–")}</td>
+      <td>${escapeHtml(a.kpi_process_name || "–")}</td>
       <td>${escapeHtml(a.category)}</td>
       <td>${a.sort_order}</td>
       <td>
@@ -137,6 +149,8 @@ function openModal(act) {
         <option value="">Egen rad</option>
         ${summaryOptions}
       </select>
+      <label>KPI Mål</label>
+      <input id="m-kpi-process-name" maxlength="255" placeholder="dekant, plock" value="${escapeHtml(act?.kpi_process_name || "")}" />
       <label>Färg (hex)</label>
       <input id="m-color" type="color" value="${act?.color || "#ffffff"}" />
       <label>Kategori</label>
@@ -159,6 +173,7 @@ function openModal(act) {
       label: document.getElementById("m-label").value.trim(),
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       summary_activity_id: document.getElementById("m-summary").value ? Number(document.getElementById("m-summary").value) : null,
+      kpi_process_name: document.getElementById("m-kpi-process-name").value.trim() || null,
       color: document.getElementById("m-color").value,
       category: document.getElementById("m-cat").value,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
@@ -169,6 +184,10 @@ function openModal(act) {
 
     if (!payload.label) {
       showToast("Etikett krävs", "error");
+      return;
+    }
+    if (payload.kpi_process_name && payload.kpi_process_name.includes(":")) {
+      showToast("KPI Mål ska bara vara processnamn, utan bolag", "error");
       return;
     }
     try {
@@ -260,6 +279,7 @@ function openBulkActivitiesModal() {
       { key: "label", label: "Etikett", required: true },
       { key: "area", label: "Område", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
       { key: "summary_activity", label: "Summeras som", required: false, type: "select", options: activities.map((activity) => ({ value: activity.label, label: activity.label })) },
+      { key: "kpi_process_name", label: "KPI Mål", required: false },
       { key: "sort_order", label: "Sortering", required: false, type: "number" },
     ],
     onSubmit: async (rows) => {

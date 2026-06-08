@@ -38,19 +38,20 @@ LOCAL_REF_PREFIX = "__flow_local_ref:"
 PRODUCTIVITY_KEYS = {"pick", "trans", "pallet", "kpi"}
 ARTICLE_MAX_KEY = "article_max"
 BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
+FORECAST_COREDATA_DEFAULTS = {
+    "custom": "custom",
+    "item": "item",
+    "item_alias": "item_alias",
+    "dimension": "dimension",
+    "pallet_type": "pallet_type",
+    "item_option": "item_option",
+    "trans_agency": "trans_agency",
+}
 BUSINESS_COREDATA_FLOW_DEFAULTS = {
     "allocate": {"items": "item_option"},
     "goods-declaration": {"item_security_info": "item_security_info"},
-    "forecast": {
-        "custom": "custom",
-        "item": "item",
-        "item_alias": "item_alias",
-        "dimension": "dimension",
-        "pallet_type": "pallet_type",
-        "item_option": "item_option",
-        "trans_agency": "trans_agency",
-    },
-    "ytgenerering": {"location": "location"},
+    "forecast": FORECAST_COREDATA_DEFAULTS,
+    "ytgenerering": {**FORECAST_COREDATA_DEFAULTS, "location": "location"},
 }
 
 
@@ -364,6 +365,11 @@ class DesktopLocalRuntime:
     ) -> dict[str, Any]:
         started = time.perf_counter()
         files, params = self._resolve_flow_files(fields, uploads)
+        raw_filter_profile = params.pop(allocation.USER_FILTERS_PARAM, "")
+        try:
+            user_filter_profile = allocation.normalize_user_filter_profile(json.loads(raw_filter_profile)) if raw_filter_profile else {}
+        except Exception:
+            user_filter_profile = {}
         local_ref_keys = {key for key, value in fields.items() if _is_local_ref(value)}
         for file_key, coredata_type in BUSINESS_COREDATA_FLOW_DEFAULTS.get(flow_id, {}).items():
             if file_key in files:
@@ -378,7 +384,11 @@ class DesktopLocalRuntime:
             default_max = self._cached_article_max()
         source_resolution: workflow_data.WorkflowResolution | None = None
         try:
-            source_map = workflow_data.allocation_api_source_map(flow_id)
+            source_map = allocation.api_source_map_for_user_profile(
+                workflow_data.allocation_api_source_map(flow_id),
+                flow_id,
+                user_filter_profile,
+            )
             if source_map:
                 source_resolution = self._resolve_api_first_sources(
                     feature="allocation",
@@ -391,7 +401,17 @@ class DesktopLocalRuntime:
                     headers=headers or {},
                 )
                 files = source_resolution.files
+            files, user_filter_temp_paths, user_filter_log = allocation.apply_user_flow_filters(files, flow_id, user_filter_profile)
+            if flow_id == "ytgenerering":
+                allocation.apply_ytgenerering_user_settings(
+                    params,
+                    user_filter_profile,
+                    area_focus=params.get(allocation.PROCESS_AREA_FOCUS_PARAM, "") or "ALLT",
+                )
             result = allocation.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max)
+            if user_filter_log:
+                result["log"] = user_filter_log + list(result.get("log") or [])
+                result["user_filter"] = {"lines": user_filter_log}
             if source_resolution is not None:
                 result["log"] = source_resolution.log_lines + list(result.get("log") or [])
                 result["source_status"] = source_resolution.audit_entries
@@ -400,6 +420,8 @@ class DesktopLocalRuntime:
             return result
         finally:
             for temp_path in (source_resolution.temp_paths if source_resolution is not None else []):
+                temp_path.unlink(missing_ok=True)
+            for temp_path in locals().get("user_filter_temp_paths", []):
                 temp_path.unlink(missing_ok=True)
 
     def register_productivity_refs(self, mapping: dict[str, str]) -> dict[str, Any]:

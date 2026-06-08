@@ -37,6 +37,8 @@ router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
+KPI_PROCESS_NAME_MAX_LENGTH = 255
+KPI_PROCESS_NAME_NO_COMPANY_ERROR = "KPI Mål ska bara vara processnamn, utan bolag"
 
 HEADER_ALIASES = {
     "etikett": "label",
@@ -64,6 +66,12 @@ HEADER_ALIASES = {
     "huvudställe": "summary_activity",
     "summary": "summary_activity",
     "summaryactivity": "summary_activity",
+    "kpimal": "kpi_process_name",
+    "kpitarget": "kpi_process_name",
+    "kpiprocess": "kpi_process_name",
+    "kpiprocessnamn": "kpi_process_name",
+    "process": "kpi_process_name",
+    "processnamn": "kpi_process_name",
     "sortering": "sort_order",
     "sort": "sort_order",
     "sortorder": "sort_order",
@@ -77,6 +85,7 @@ class ImportActivityRow:
     label: str
     area: str | None
     summary_activity: str | None
+    kpi_process_name: str | None
     sort_order: int | None
 
 
@@ -129,6 +138,33 @@ def _parse_sort_order(value: str, *, row_number: int, label: str) -> tuple[int |
     return int(parsed), None
 
 
+def _normalize_kpi_process_name(value: object) -> str | None:
+    text = _cell_text(value)
+    if not text:
+        return None
+    if ":" in text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=KPI_PROCESS_NAME_NO_COMPANY_ERROR)
+    process_names = [part.strip() for part in text.split(",") if part.strip()]
+    if not process_names:
+        return None
+    normalized = ", ".join(process_names)
+    if len(normalized) > KPI_PROCESS_NAME_MAX_LENGTH:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="KPI Mål får vara max 255 tecken")
+    return normalized
+
+
+def _parse_kpi_process_name(
+    value: str,
+    *,
+    row_number: int,
+    label: str,
+) -> tuple[str | None, ActivityImportError | None]:
+    try:
+        return _normalize_kpi_process_name(value), None
+    except HTTPException as exc:
+        return None, ActivityImportError(row=row_number, label=label or None, error=str(exc.detail))
+
+
 def _parse_activity_import_values(
     raw_rows: list[tuple[int, dict[str, object]]],
 ) -> tuple[list[ImportActivityRow], list[ActivityImportError]]:
@@ -138,7 +174,7 @@ def _parse_activity_import_values(
     for row_number, raw_values in raw_rows:
         values = {
             field: _cell_text(raw_values.get(field))
-            for field in ("business", "label", "area", "summary_activity", "sort_order")
+            for field in ("business", "label", "area", "summary_activity", "kpi_process_name", "sort_order")
         }
         if not any(values.values()):
             continue
@@ -156,6 +192,15 @@ def _parse_activity_import_values(
             errors.append(sort_error)
             continue
 
+        kpi_process_name, kpi_error = _parse_kpi_process_name(
+            values.get("kpi_process_name", ""),
+            row_number=row_number,
+            label=label,
+        )
+        if kpi_error is not None:
+            errors.append(kpi_error)
+            continue
+
         rows.append(
             ImportActivityRow(
                 row_number=row_number,
@@ -163,6 +208,7 @@ def _parse_activity_import_values(
                 label=label,
                 area=values.get("area") or None,
                 summary_activity=values.get("summary_activity") or None,
+                kpi_process_name=kpi_process_name,
                 sort_order=sort_order,
             )
         )
@@ -174,12 +220,20 @@ def build_activity_import_template_excel() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Aktiviteter"
-    sheet.append(["verksamhet (frivillig)", "etikett (obligatorisk)", "område (frivillig)", "summeras som (frivillig)", "sortering (frivillig)"])
+    sheet.append([
+        "verksamhet (frivillig)",
+        "etikett (obligatorisk)",
+        "område (frivillig)",
+        "summeras som (frivillig)",
+        "KPI Mål (frivillig)",
+        "sortering (frivillig)",
+    ])
     sheet.column_dimensions["A"].width = 22
     sheet.column_dimensions["B"].width = 28
     sheet.column_dimensions["C"].width = 24
     sheet.column_dimensions["D"].width = 28
-    sheet.column_dimensions["E"].width = 14
+    sheet.column_dimensions["E"].width = 22
+    sheet.column_dimensions["F"].width = 14
     sheet.freeze_panes = "A2"
 
     stream = io.BytesIO()
@@ -271,6 +325,7 @@ def _activity_snapshot(activity: Activity) -> dict:
         "sort_order": activity.sort_order,
         "is_active": activity.is_active,
         "required_competency": activity.required_competency,
+        "kpi_process_name": activity.kpi_process_name,
     }
 
 
@@ -428,6 +483,7 @@ def _import_activity_rows(
             sort_order=sort_order,
             is_active=True,
             required_competency=None,
+            kpi_process_name=row.kpi_process_name,
         )
         db.add(activity)
         db.flush()
@@ -519,6 +575,7 @@ def create_activity(
         related_ids=related_business_ids(area, summary_activity),
     )
     data = payload.model_dump()
+    data["kpi_process_name"] = _normalize_kpi_process_name(data.get("kpi_process_name"))
     data["business_id"] = business_id
     data["code"] = _resolve_activity_code(db, payload, admin, business_id)
     data["summary_activity_id"] = _validate_summary_activity(
@@ -572,6 +629,8 @@ def update_activity(
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Aktivitet med samma kod finns redan")
     data = payload.model_dump(exclude_unset=True)
+    if "kpi_process_name" in data:
+        data["kpi_process_name"] = _normalize_kpi_process_name(data.get("kpi_process_name"))
     if "business_id" in data and data["business_id"] != activity.business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Aktivitet kan inte flyttas mellan verksamheter")
     if "area_id" in data and data["area_id"] is not None:

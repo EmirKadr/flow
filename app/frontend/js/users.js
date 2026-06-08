@@ -124,6 +124,20 @@ function areaName(areaId) {
   return area ? area.name : `Område #${areaId}`;
 }
 
+function businessName(userOrId) {
+  const id = typeof userOrId === "object" ? userOrId?.business_id : userOrId;
+  if (id == null) return "Utan verksamhet";
+  if (typeof userOrId === "object" && (userOrId.business_name || userOrId.business_code)) {
+    return userOrId.business_name || userOrId.business_code;
+  }
+  const business = businesses.find((item) => Number(item.id) === Number(id));
+  if (business) return business.name;
+  if (Number(currentUser?.business_id) === Number(id)) {
+    return currentUser?.business_name || currentUser?.business_code || "";
+  }
+  return `Verksamhet #${id}`;
+}
+
 function businessOptions(selectedId) {
   if (!currentUser?.is_super_user) return "";
   return `
@@ -352,6 +366,7 @@ function renderUsers() {
     tr.innerHTML = `
       <td>${escapeHtml(user.username)}${escapeHtml(selfLabel)}${demoLabel}</td>
       <td>${escapeHtml(user.display_name || "-")}</td>
+      <td>${escapeHtml(businessName(user))}</td>
       <td>${escapeHtml(roleLabel(user))}</td>
       <td>${escapeHtml(areaName(user.area_id))}</td>
       <td>${escapeHtml(passwordStatus(user))}</td>

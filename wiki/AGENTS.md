@@ -1,7 +1,7 @@
 ---
 title: Wiki-agentregler
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-08
 tags: [wiki, agent, arbetsflode]
 ---
 
@@ -16,6 +16,11 @@ Denna mapp ar en LLM-underhallen projektwiki enligt Karpathy-modellen for en per
 3. Las relevanta wiki-sidor innan du laser kod.
 4. Las koden som kallas ut under "Kallor" pa respektive sida innan du andrar beteende.
 5. Om uppgiften ror CSV/XLS/XLSX eller lagerunderlag: las `../ALLOKERING_FILKUNSKAP.md` i workspace-roten innan du antar kolumner.
+
+Nar uppgiften ror API-/CSV-kolumner ska tekniskt katalog-id kontrolleras fore
+svenska eller engelska labels. Labels ar presentation eller legacy-CSV-rubrik;
+om en gammal motor kraver en rubrik ska mappningen fran tekniskt id till rubrik
+dokumenteras explicit i kod och wiki.
 
 ## Sanning och kallprioritet
 

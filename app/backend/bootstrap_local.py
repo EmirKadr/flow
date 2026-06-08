@@ -36,6 +36,7 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
     area_columns = columns_for("areas")
     person_columns = columns_for("persons")
     activity_columns = columns_for("activities")
+    schedule_columns = columns_for("schedule_cells")
     audit_columns = columns_for("audit_log")
     settings_columns = columns_for("app_settings")
     meta_upload_columns = columns_for("meta_media_uploads")
@@ -52,6 +53,10 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN noman VARCHAR(120)")
         if activity_columns and "business_id" not in activity_columns:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
+        if activity_columns and "kpi_process_name" not in activity_columns:
+            connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN kpi_process_name VARCHAR(255)")
+        if schedule_columns and "loan_area_id" not in schedule_columns:
+            connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN loan_area_id INTEGER REFERENCES areas(id)")
         if audit_columns and "business_id" not in audit_columns:
             connection.exec_driver_sql("ALTER TABLE audit_log ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if settings_columns and "business_id" not in settings_columns:
@@ -185,6 +190,7 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
                     sort_order INTEGER NOT NULL,
                     is_active BOOLEAN NOT NULL,
                     required_competency VARCHAR(40),
+                    kpi_process_name VARCHAR(255),
                     PRIMARY KEY (id),
                     UNIQUE (business_id, code)
                 )
@@ -201,6 +207,7 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
                     "sort_order",
                     "is_active",
                     "required_competency",
+                    "kpi_process_name",
                 ],
             )
 

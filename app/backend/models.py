@@ -121,6 +121,7 @@ class Activity(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     required_competency: Mapped[str | None] = mapped_column(String(40))
+    kpi_process_name: Mapped[str | None] = mapped_column(String(255))
 
     business: Mapped[Business | None] = relationship(back_populates="activities")
     area: Mapped[Area | None] = relationship(back_populates="activities")
@@ -142,6 +143,7 @@ class ScheduleCell(Base):
     minute_end: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=60)
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
     activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
+    loan_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     empty_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(
@@ -321,6 +323,16 @@ class MetaShipmentObservation(Base):
 
     media_upload: Mapped[MetaMediaUpload] = relationship(foreign_keys=[media_upload_id])
     label_image_upload: Mapped[MetaMediaUpload | None] = relationship(foreign_keys=[label_image_upload_id])
+
+
+class AllocationUserFilterProfile(Base):
+    __tablename__ = "allocation_user_filter_profiles"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    profile: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AppSetting(Base):

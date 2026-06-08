@@ -21,6 +21,7 @@ Rollen behover minst `productivity=view` for att oppna sidan och lasa status/KPI
 | Foregaende/nasta datum | Klickar pilar | Hoppar till narliggande datum som finns i datasetet | `shiftProductivityDate` | Disabled om inget fore/efter-datum finns. |
 | Omradesfokus i sidebar | Valjer Alla/GG/AS/EH/MG | Filtrerar rapportsektioner; `∞` visar alla block | `flow:areaFocusChanged`, `preferredProductivityGroupFilter` | Om fel block visas, kontrollera togglen nere i sidebar. |
 | Sok | Skriver text | Filtrerar sektioner/rader klient-side | `activeSearch`, `renderContent` | Sokningen ar lokal och paverkar inte datan. |
+| Rapporttabellrubriker | Klickar pa anvandare, timme eller nyckeltal | Sorterar synliga rapportrader stigande/fallande klient-side | `common.js` klienttabellsortering | Paverkar inte sokning, omradesfokus eller datakallor. |
 | Filkrav/dropzoner | Drar filer till kravslot | Webben sparar fil i IndexedDB; Windows sparar `localRef` och registrerar den hos desktop-servern | `productivityUploads.saveFiles`, `/api/desktop/productivity/files/register` | Okand filtyp om namn/header inte matchar. |
 | Välj per filslot | Oppnar filval for viss filtyp | Sparar vald fil pa den sloten | IndexedDB `flow-productivity-files` | Vald fel fil kan klassas om targetKey anvands. |
 | Rensa per filslot | Klick pa x | Tar bort lokal fil | `deleteFile` | KPI-mal ar permanent och kan inte rensas via x. |

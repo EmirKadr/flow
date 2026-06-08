@@ -9,8 +9,21 @@ const ALLOCATION_BOOT_CACHE_KEY = "flow-allocation-boot-cache-v1";
 const ALLOCATION_BOOT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 const ALLOCATION_HIDDEN_FLOW_IDS = new Set(["observations-update", "observations-sync", "update-check"]);
 const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus";
+const ALLOCATION_USER_FILTERS_PARAM = "__allocation_user_filters_json";
+const ALLOCATION_YTGENERERING_SETTINGS_SOURCE = "__ytgenerering_settings";
 const ALLOCATION_YTGENERERING_UTL_MIN = 1;
 const ALLOCATION_YTGENERERING_UTL_MAX = 652;
+const ALLOCATION_FILTER_OPERATORS = [
+  { value: "EQ", label: "=" },
+  { value: "NE", label: "!=" },
+  { value: "GT", label: ">" },
+  { value: "GTE", label: ">=" },
+  { value: "LT", label: "<" },
+  { value: "LTE", label: "<=" },
+  { value: "Between", label: "Between" },
+  { value: "In", label: "In" },
+  { value: "NotIn", label: "Not In" },
+];
 const ALLOCATION_PROCESS_AREA_OPTIONS = [
   { code: "GG", label: "GG" },
   { code: "MG", label: "MG" },
@@ -21,60 +34,25 @@ const ALLOCATION_PROCESS_AREA_OPTIONS = [
 ];
 const ALLOCATION_PROCESS_MATRIX = {
   GG: {
-    company: "GG",
-    excludeCustomers: ["6005"],
-    filterLabel: "Filter: Bolag GG, exkl. kundnr 6005",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
   MG: {
-    company: "MG",
-    excludeCustomers: ["40002", "90002"],
-    filterLabel: "Filter: Bolag MG, exkl. kundnr 40002 och 90002",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 205,
-    ytgenereringUtlMax: 652,
   },
   AS: {
-    company: "",
-    excludeCustomers: [],
-    filterLabel: "",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
   EH: {
-    company: "",
-    excludeCustomers: [],
-    filterLabel: "",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
   R3: {
-    company: "",
-    excludeCustomers: [],
-    filterLabel: "",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
   ALLT: {
-    company: "",
-    excludeCustomers: [],
-    filterLabel: "",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
   DEFAULT: {
-    company: "",
-    excludeCustomers: [],
-    filterLabel: "",
     visibleFlowIds: null,
-    ytgenereringUtlMin: 1,
-    ytgenereringUtlMax: 652,
   },
 };
 const ALLOCATION_KEY_OVERRIDES = { details: "orders", wms_buffert: "buffer" };
@@ -300,6 +278,12 @@ const ALLOCATION_COPY_ICON = `
     <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
   </svg>
 `;
+const ALLOCATION_EDIT_ICON = `
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    <path d="M12 20h9"></path>
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+  </svg>
+`;
 
 const allocationState = {
   user: null,
@@ -309,6 +293,8 @@ const allocationState = {
   files: {},
   coredata: {},
   processMatrix: null,
+  filterProfile: { version: 1, flows: {} },
+  filterUsers: [],
   values: {},
   busyId: "",
   status: "",
@@ -516,34 +502,26 @@ function normalizeYtgenereringUtlNumber(value, fallback) {
 }
 
 function normalizeYtgenereringUtlRange(rule = {}) {
-  let min = normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMin ?? rule.ytgenerering_utl_min, ALLOCATION_YTGENERERING_UTL_MIN);
-  let max = normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMax ?? rule.ytgenerering_utl_max, ALLOCATION_YTGENERERING_UTL_MAX);
+  let min = normalizeYtgenereringUtlNumber(
+    rule.utlMin ?? rule.ytgenereringUtlMin ?? rule.ytgenerering_utl_min,
+    ALLOCATION_YTGENERERING_UTL_MIN,
+  );
+  let max = normalizeYtgenereringUtlNumber(
+    rule.utlMax ?? rule.ytgenereringUtlMax ?? rule.ytgenerering_utl_max,
+    ALLOCATION_YTGENERERING_UTL_MAX,
+  );
   if (min > max) [min, max] = [max, min];
   return { min, max };
 }
 
 function normalizeAllocationProcessRule(rule = {}) {
-  const company = String(rule.company || "").trim().toUpperCase();
-  const rawExcluded = Array.isArray(rule.excludeCustomers)
-    ? rule.excludeCustomers
-    : Array.isArray(rule.exclude_customers)
-      ? rule.exclude_customers
-      : String(rule.excludeCustomers || rule.exclude_customers || "").split(/[,;\s]+/);
-  const excludeCustomers = [...new Set(rawExcluded.map((value) => String(value || "").trim()).filter(Boolean))];
   const visibleFlowIds = Array.isArray(rule.visibleFlowIds)
     ? rule.visibleFlowIds.map((value) => String(value || "").trim()).filter(Boolean)
     : Array.isArray(rule.visible_flow_ids)
       ? rule.visible_flow_ids.map((value) => String(value || "").trim()).filter(Boolean)
       : null;
-  const filterLabel = typeof rule.filterLabel === "string" ? rule.filterLabel : "";
-  const utlRange = normalizeYtgenereringUtlRange(rule);
   return {
-    company,
-    excludeCustomers,
-    filterLabel,
     visibleFlowIds,
-    ytgenereringUtlMin: utlRange.min,
-    ytgenereringUtlMax: utlRange.max,
   };
 }
 
@@ -584,6 +562,61 @@ function normalizeAllocationProcessMatrix(data = null) {
   return { areas, flows, matrix };
 }
 
+function allocationDefaultYtgenereringAreaRule(code = "DEFAULT") {
+  const areaCode = String(code || "").trim().toUpperCase();
+  return {
+    utlMin: areaCode === "MG" ? 205 : ALLOCATION_YTGENERERING_UTL_MIN,
+    utlMax: ALLOCATION_YTGENERERING_UTL_MAX,
+  };
+}
+
+function allocationDefaultYtgenereringAreas() {
+  const areas = { DEFAULT: allocationDefaultYtgenereringAreaRule("DEFAULT") };
+  ALLOCATION_PROCESS_AREA_OPTIONS.forEach((area) => {
+    const code = String(area.code || "").trim().toUpperCase();
+    if (code) areas[code] = allocationDefaultYtgenereringAreaRule(code);
+  });
+  return areas;
+}
+
+function normalizeAllocationYtgenereringAreas(value = {}) {
+  const areas = allocationDefaultYtgenereringAreas();
+  const rawAreas = value?.areas && typeof value.areas === "object" ? value.areas : value;
+  if (!rawAreas || typeof rawAreas !== "object") return areas;
+  for (const [code, rule] of Object.entries(rawAreas)) {
+    const areaCode = String(code || "").trim().toUpperCase();
+    if (!areaCode || !areas[areaCode]) continue;
+    const range = normalizeYtgenereringUtlRange(rule || {});
+    areas[areaCode] = { utlMin: range.min, utlMax: range.max };
+  }
+  return areas;
+}
+
+function normalizeAllocationYtgenereringSettings(value = {}) {
+  const raw = value && typeof value === "object" ? value : {};
+  const rawCarrierClusters = raw.carrierClusters || raw.carrier_clusters;
+  const carrierClusters = normalizeAllocationCarrierClusters(rawCarrierClusters);
+  const settings = {
+    areas: normalizeAllocationYtgenereringAreas(raw.areas || raw),
+  };
+  if (carrierClusters?.rows?.length) settings.carrierClusters = carrierClusters;
+  else if (rawCarrierClusters && typeof rawCarrierClusters === "object" && Array.isArray(rawCarrierClusters.rows)) {
+    settings.carrierClusters = {
+      version: 1,
+      source: rawCarrierClusters.source || { name: "Manuell", rowCount: 0 },
+      rows: [],
+    };
+  }
+  return settings;
+}
+
+function allocationDefaultYtgenereringSettings() {
+  return normalizeAllocationYtgenereringSettings({
+    areas: allocationDefaultYtgenereringAreas(),
+    carrierClusters: allocationDefaultCarrierClusters(),
+  });
+}
+
 const ALLOCATION_CLUSTER_DEFAULT_TIMES = { asn: "11:00", arrive: "12:00", depart: "14:00" };
 const ALLOCATION_CLUSTER_HUES = [350, 265, 150, 40, 210, 320, 175, 285, 25, 130, 195, 300];
 const ALLOCATION_CARRIER_CLUSTER_DEFAULTS = new Map();
@@ -616,6 +649,28 @@ allocationRegisterCarrierClusterDefaults([59], { clusterGroup: "Sandahls Norrlan
 allocationRegisterCarrierClusterDefaults([97], { assignmentOrder: "19", startSeq: "205", endSeq: "652", asn: "13:00", arrive: "14:00", depart: "16:00", color: "#e879f9" });
 allocationRegisterCarrierClusterDefaults([65, 67], { assignmentOrder: "20", startSeq: "205", endSeq: "652", asn: "10:00", arrive: "11:00", depart: "13:00", color: "#4ade80" });
 allocationRegisterCarrierClusterDefaults([71, 73], { assignmentOrder: "21", startSeq: "205", endSeq: "652", asn: "11:00", arrive: "12:00", depart: "14:00", color: "#fbbf24" });
+
+function allocationDefaultCarrierClusters() {
+  const rows = [...ALLOCATION_CARRIER_CLUSTER_DEFAULTS.entries()].map(([carrierNum, defaults], index) => ({
+    id: `default-${carrierNum}`,
+    carrierNum,
+    description: "",
+    alias: "",
+    clusterGroup: defaults.clusterGroup || "",
+    assignmentOrder: defaults.assignmentOrder || String(index + 1),
+    startSeq: defaults.startSeq || "",
+    endSeq: defaults.endSeq || "",
+    asn: defaults.asn || ALLOCATION_CLUSTER_DEFAULT_TIMES.asn,
+    arrive: defaults.arrive || ALLOCATION_CLUSTER_DEFAULT_TIMES.arrive,
+    depart: defaults.depart || ALLOCATION_CLUSTER_DEFAULT_TIMES.depart,
+    color: defaults.color || "",
+  }));
+  return normalizeAllocationCarrierClusters({
+    version: 1,
+    source: { name: "Standardtransportorer", rowCount: rows.length },
+    rows,
+  });
+}
 
 function allocationCarrierClusterText(value) {
   const text = String(value ?? "").trim();
@@ -808,9 +863,202 @@ function allocationFlowsForCurrentView() {
   return allocationState.visibleFlows.filter((flow) => allocationFlowVisibleForCurrentArea(flow));
 }
 
-function allocationProcessFilterNotice() {
-  if (allocationState.page !== "process") return "";
-  return allocationProcessRule().filterLabel || "";
+function normalizeAllocationFilterOperator(value) {
+  const text = String(value || "").trim();
+  if (ALLOCATION_FILTER_OPERATORS.some((item) => item.value === text)) return text;
+  if (text === "=" || text.toLowerCase() === "eq") return "EQ";
+  if (text === "!=" || text.toLowerCase() === "ne") return "NE";
+  if (text === ">") return "GT";
+  if (text === ">=") return "GTE";
+  if (text === "<") return "LT";
+  if (text === "<=") return "LTE";
+  if (text.toLowerCase() === "between") return "Between";
+  if (["in", "terms"].includes(text.toLowerCase())) return "In";
+  if (["not in", "not_in", "notin"].includes(text.toLowerCase())) return "NotIn";
+  return "EQ";
+}
+
+function allocationFilterValues(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  return String(value ?? "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeAllocationFilterCondition(raw = {}) {
+  const column = String(raw.column || raw.id || raw.field || "").trim();
+  const columnLabel = String(raw.columnLabel || raw.label || "").trim();
+  const operator = normalizeAllocationFilterOperator(raw.operator);
+  if (!column && !columnLabel) return null;
+  let value = raw.value;
+  if (operator === "In" || operator === "NotIn") value = allocationFilterValues(value);
+  else if (operator === "Between") value = allocationFilterValues(value).slice(0, 2);
+  else value = String(value ?? "").trim();
+  if (Array.isArray(value) ? value.length === 0 : value === "") return null;
+  if (operator === "Between" && value.length < 2) return null;
+  return { column, columnLabel, operator, value };
+}
+
+function normalizeAllocationSourceMode(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (["api", "external", "hamta", "hämta"].includes(text)) return "api";
+  if (["upload", "uploaded", "file", "local", "uppladdning", "fil"].includes(text)) return "upload";
+  return "";
+}
+
+function normalizeAllocationSourceModes(value = {}) {
+  if (!value || typeof value !== "object") return {};
+  const modes = {};
+  for (const [fileKey, rawMode] of Object.entries(value)) {
+    const key = String(fileKey || "").trim();
+    const mode = normalizeAllocationSourceMode(rawMode);
+    if (key && mode) modes[key] = mode;
+  }
+  return modes;
+}
+
+function normalizeAllocationFilterProfile(profile = {}) {
+  const rawFlows = profile && typeof profile === "object" && profile.flows && typeof profile.flows === "object"
+    ? profile.flows
+    : {};
+  const flows = {};
+  for (const [flowId, flowData] of Object.entries(rawFlows)) {
+    const flowPayload = {};
+    const sources = normalizeAllocationSourceModes(flowData?.sources || flowData?.sourceModes || {});
+    if (Object.keys(sources).length) flowPayload.sources = sources;
+    const files = {};
+    const rawFiles = flowData?.files && typeof flowData.files === "object" ? flowData.files : {};
+    for (const [fileKey, conditions] of Object.entries(rawFiles)) {
+      const normalized = (Array.isArray(conditions) ? conditions : [])
+        .map(normalizeAllocationFilterCondition)
+        .filter(Boolean);
+      if (normalized.length) files[fileKey] = normalized;
+    }
+    if (Object.keys(files).length) flowPayload.files = files;
+    if (flowId === "ytgenerering") {
+      const rawSettings = flowData?.settings && typeof flowData.settings === "object" ? flowData.settings : {};
+      const rawYtgenerering = rawSettings.ytgenerering || flowData?.ytgenerering || null;
+      if (rawYtgenerering && typeof rawYtgenerering === "object") {
+        flowPayload.settings = { ytgenerering: normalizeAllocationYtgenereringSettings(rawYtgenerering) };
+      }
+    }
+    if (Object.keys(flowPayload).length) flows[flowId] = flowPayload;
+  }
+  return { version: 1, flows };
+}
+
+function cloneAllocationFilterProfile(profile = allocationState.filterProfile) {
+  return normalizeAllocationFilterProfile(JSON.parse(JSON.stringify(profile || { version: 1, flows: {} })));
+}
+
+function allocationFilterProfileCount(profile = allocationState.filterProfile) {
+  const normalized = normalizeAllocationFilterProfile(profile);
+  return Object.entries(normalized.flows || {}).reduce((total, [flowId, flow]) => (
+    total
+    + Object.keys(flow.sources || {}).length
+    + Object.values(flow.files || {}).reduce((sum, conditions) => sum + conditions.length, 0)
+    + allocationYtgenereringSettingsCount(flowId, flow)
+  ), 0);
+}
+
+function allocationFilterCountForFlow(flowId, profile = allocationState.filterProfile) {
+  const flow = normalizeAllocationFilterProfile(profile).flows?.[flowId];
+  return Object.keys(flow?.sources || {}).length
+    + Object.values(flow?.files || {}).reduce((sum, conditions) => sum + conditions.length, 0)
+    + allocationYtgenereringSettingsCount(flowId, flow);
+}
+
+function allocationFilterCountForSource(flowId, fileKey, profile = allocationState.filterProfile) {
+  if (fileKey === ALLOCATION_YTGENERERING_SETTINGS_SOURCE) {
+    return allocationYtgenereringSettingsCount(flowId, normalizeAllocationFilterProfile(profile).flows?.[flowId]);
+  }
+  const flow = normalizeAllocationFilterProfile(profile).flows?.[flowId];
+  return (flow?.files?.[fileKey]?.length || 0) + (flow?.sources?.[fileKey] ? 1 : 0);
+}
+
+function allocationYtgenereringSettingsCount(flowId, flow) {
+  if (flowId !== "ytgenerering") return 0;
+  const settings = flow?.settings?.ytgenerering;
+  return settings ? 1 : 0;
+}
+
+function allocationSourceModeForFile(flowId, fileKey, source = null, profile = allocationState.filterProfile) {
+  const flow = normalizeAllocationFilterProfile(profile).flows?.[flowId];
+  const saved = normalizeAllocationSourceMode(flow?.sources?.[fileKey]);
+  if (saved) return saved;
+  return source?.apiPreferred ? "api" : "upload";
+}
+
+function allocationFilterSourcesForFlow(flow) {
+  const sources = [];
+  const seen = new Set();
+  const addSource = (item, type) => {
+    const key = String(item?.key || "").trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const apiMeta = item.apiSource || flow?.apiSourceMetadata?.[item.apiSourceKey] || null;
+    sources.push({
+      key,
+      label: item.label || allocationSlotLabel(key),
+      type,
+      required: Boolean(item.required),
+      apiPreferred: Boolean(item.apiPreferred),
+      apiSourceKey: item.apiSourceKey || "",
+      columns: Array.isArray(apiMeta?.columns) ? apiMeta.columns : [],
+    });
+  };
+  if (flow?.id === "ytgenerering") {
+    addSource({ key: ALLOCATION_YTGENERERING_SETTINGS_SOURCE, label: "Ytgenerering" }, "settings");
+  }
+  (flow?.inputs || []).forEach((item) => {
+    if (item.type === "file") addSource(item, "file");
+  });
+  (flow?.coredata || []).forEach((item) => addSource(item, "coredata"));
+  return sources;
+}
+
+function allocationFilterConditionValueText(condition) {
+  return Array.isArray(condition?.value) ? condition.value.join("\n") : String(condition?.value ?? "");
+}
+
+async function loadAllocationFilterProfile() {
+  try {
+    const data = await allocationJson(`${ALLOCATION_API}/filter-profile`);
+    allocationState.filterProfile = normalizeAllocationFilterProfile(data.profile);
+    allocationState.filterUsers = Array.isArray(data.users) ? data.users : [];
+  } catch (error) {
+    allocationState.filterProfile = { version: 1, flows: {} };
+    allocationState.filterUsers = [];
+    console.warn("Kunde inte lÃ¤sa Bearbeta-filtreringar.", error);
+  }
+}
+
+async function saveAllocationFilterProfile(profile) {
+  const data = await allocationJson(`${ALLOCATION_API}/filter-profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: normalizeAllocationFilterProfile(profile) }),
+  });
+  allocationState.filterProfile = normalizeAllocationFilterProfile(data.profile);
+  allocationState.filterUsers = Array.isArray(data.users) ? data.users : [];
+}
+
+async function importAllocationFilterProfile(userId) {
+  const data = await allocationJson(`${ALLOCATION_API}/filter-profile/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: Number(userId) }),
+  });
+  allocationState.filterProfile = normalizeAllocationFilterProfile(data.profile);
+  allocationState.filterUsers = Array.isArray(data.users) ? data.users : [];
+}
+
+function appendAllocationFilterProfile(formData) {
+  const profile = normalizeAllocationFilterProfile(allocationState.filterProfile);
+  if (allocationFilterProfileCount(profile) > 0) {
+    formData.append(ALLOCATION_USER_FILTERS_PARAM, JSON.stringify(profile));
+  }
 }
 
 function serializableAllocationValues(values) {
@@ -1693,12 +1941,13 @@ function slotsForFlow(flow) {
 function missingForFlow(flow) {
   const missing = (flow?.inputs || []).filter((input) => {
     if (!input.required) return false;
-    if (input.apiPreferred) return false;
-    if (input.type === "file") return !allocationDisplayFile(allocationFileInputKey(input));
+    const fileKey = allocationFileInputKey(input);
+    if (input.apiPreferred && allocationSourceModeForFile(flow.id, fileKey, input) !== "upload") return false;
+    if (input.type === "file") return !allocationDisplayFile(fileKey);
     return !allocationState.values[input.key];
   });
   for (const input of flow?.coredata || []) {
-    if (input.apiPreferred) continue;
+    if (input.apiPreferred && allocationSourceModeForFile(flow.id, input.key, input) !== "upload") continue;
     if (input.required && !allocationPersistentStatusFile(input.key)) missing.push({ ...input, type: "coredata" });
   }
   if (flow?.id === "prognos-report" && !allocationDisplayFile("prognos") && !allocationDisplayFile("campaign")) {
@@ -1771,28 +2020,32 @@ function renderFlowFileList(flow) {
         const entry = allocationState.files[key];
         const persistentEntry = entry ? null : allocationPersistentDataFile(key);
         const displayEntry = entry || persistentEntry;
-        const cls = displayEntry ? "ok" : input.required ? "missing" : "optional";
+        const apiReady = input.apiPreferred && allocationSourceModeForFile(flow.id, key, input) !== "upload";
+        const cls = displayEntry || apiReady ? "ok" : input.required ? "missing" : "optional";
         const prefix = displayEntry ? "✓" : input.required ? "✗" : "○";
         const suffix = persistentEntry
           ? ` (${allocationEscape(persistentEntry.suffixLabel || persistentEntry.badge.toLowerCase())})`
+          : apiReady
+            ? " (API)"
           : input.required || displayEntry ? "" : " (valfri)";
         return `
-          <div class="allocation-flow-file ${displayEntry ? "filled" : ""}">
-            <span class="allocation-file-tag ${cls}">${prefix} ${allocationEscape(allocationSlotLabel(key))}${suffix}</span>
-            <span>${displayEntry ? allocationEscape(displayEntry.name) : "Ingen fil"}</span>
+          <div class="allocation-flow-file ${displayEntry || apiReady ? "filled" : ""}">
+            <span class="allocation-file-tag ${cls}">${apiReady ? "API" : prefix} ${allocationEscape(allocationSlotLabel(key))}${suffix}</span>
+            <span>${displayEntry ? allocationEscape(displayEntry.name) : apiReady ? "H&auml;mtas fr&aring;n API" : "Ingen fil"}</span>
           </div>
         `;
       }).join("")}
       ${coreInputs.map((input) => {
         const entry = allocationPersistentStatusFile(input.key);
         const label = input.label || ALLOCATION_PERSISTENT_DATA_LABELS[input.key] || input.key;
-        const cls = entry ? "ok" : input.required ? "missing" : "optional";
+        const apiReady = input.apiPreferred && allocationSourceModeForFile(flow.id, input.key, input) !== "upload";
+        const cls = entry || apiReady ? "ok" : input.required ? "missing" : "optional";
         const prefix = entry ? "✓" : input.required ? "✗" : "○";
         const suffixLabel = allocationDataSuffixLabel(input.key, entry || {});
         return `
-          <div class="allocation-flow-file ${entry ? "filled" : ""}">
-            <span class="allocation-file-tag ${cls}">${prefix} ${allocationEscape(label)} (${allocationEscape(suffixLabel)})</span>
-            <span>${entry ? allocationEscape(entry.name) : "Saknas"}</span>
+          <div class="allocation-flow-file ${entry || apiReady ? "filled" : ""}">
+            <span class="allocation-file-tag ${cls}">${apiReady ? "API" : prefix} ${allocationEscape(label)} (${apiReady ? "API" : allocationEscape(suffixLabel)})</span>
+            <span>${entry ? allocationEscape(entry.name) : apiReady ? "H&auml;mtas fr&aring;n API" : "Saknas"}</span>
           </div>
         `;
       }).join("")}
@@ -1919,6 +2172,7 @@ async function runAllocationFlow(flow) {
   if (allocationState.page === "process") {
     appendAllocationAreaFocus(fd);
   }
+  appendAllocationFilterProfile(fd);
   if (flow.requiresSessionFlow?.flowId === "forecast") {
     fd.append("forecast_session_id", allocationState.lastForecastSessionId || "");
   }
@@ -3120,8 +3374,10 @@ function setupAllocationWarehouseMap(host, entry) {
   });
 }
 
-function renderAllocationCarrierClusterEditor(host, clusters) {
+function renderAllocationCarrierClusterEditor(host, clusters, options = {}) {
   const rows = clusters?.rows || [];
+  const editableCarrier = Boolean(options.editableCarrier);
+  const allowDelete = Boolean(options.allowDelete);
   const colorMap = allocationClusterColorMap(
     rows.map((row) => ({ carrier: row.alias || row.description || row.carrierNum, cluster: row.clusterGroup })),
     new Map(rows.map((row) => [String(row.alias || row.description || row.carrierNum || ""), row.color]).filter(([, color]) => color)),
@@ -3140,6 +3396,7 @@ function renderAllocationCarrierClusterEditor(host, clusters) {
             <th style="width:150px">Group</th>
             <th style="width:80px">Start seq</th>
             <th style="width:80px">End seq</th>
+            ${allowDelete ? `<th style="width:42px"></th>` : ""}
             <th style="width:54px">Color</th>
           </tr>
         </thead>
@@ -3151,13 +3408,16 @@ function renderAllocationCarrierClusterEditor(host, clusters) {
               <tr data-carrier-cluster-row="${index}" draggable="true">
                 <td class="adv-handle" aria-hidden="true">⠿</td>
                 <td class="adv-index">${index + 1}</td>
-                <th class="adv-agency">${allocationEscape(carrier)}</th>
+                ${editableCarrier
+                  ? `<th class="adv-agency"><input type="text" data-carrier-cluster-field="carrierNum" value="${allocationEscape(row.carrierNum || row.alias || row.description || "")}" placeholder="Transport&ouml;r" /></th>`
+                  : `<th class="adv-agency">${allocationEscape(carrier)}</th>`}
                 <td><input type="text" data-carrier-cluster-field="asn" value="${allocationEscape(row.asn || "")}" /></td>
                 <td><input type="text" data-carrier-cluster-field="arrive" value="${allocationEscape(row.arrive || "")}" /></td>
                 <td><input type="text" data-carrier-cluster-field="depart" value="${allocationEscape(row.depart || "")}" /></td>
                 <td><input type="text" data-carrier-cluster-field="clusterGroup" value="${allocationEscape(row.clusterGroup || "")}" /></td>
                 <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="startSeq" value="${allocationEscape(row.startSeq || "")}" /></td>
                 <td><input type="number" min="1" max="652" step="1" data-carrier-cluster-field="endSeq" value="${allocationEscape(row.endSeq || "")}" /></td>
+                ${allowDelete ? `<td><button type="button" class="danger" data-carrier-cluster-delete="${index}" aria-label="Ta bort transport&ouml;r">x</button></td>` : ""}
                 <td><input type="color" class="adv-color" data-carrier-cluster-field="color" value="${allocationEscape(swatch)}" aria-label="Färg ${allocationEscape(carrier)}" /></td>
               </tr>
             `;
@@ -3166,6 +3426,17 @@ function renderAllocationCarrierClusterEditor(host, clusters) {
       </table>
     </div>
   `;
+  if (allowDelete) {
+    host.querySelectorAll("[data-carrier-cluster-delete]").forEach((button) => {
+      button.addEventListener("click", () => {
+        button.closest("[data-carrier-cluster-row]")?.remove();
+        [...host.querySelectorAll("[data-carrier-cluster-row]")].forEach((tr, index) => {
+          const indexCell = tr.querySelector(".adv-index");
+          if (indexCell) indexCell.textContent = index + 1;
+        });
+      });
+    });
+  }
   initAllocationCarrierClusterDrag(host.querySelector("tbody"));
 }
 
@@ -3202,7 +3473,7 @@ function collectAllocationCarrierClusterDraft(host, clusters) {
   const rows = [];
   host.querySelectorAll("[data-carrier-cluster-row]").forEach((tr, position) => {
     const index = Number.parseInt(tr.dataset.carrierClusterRow || "0", 10);
-    const source = sourceRows[index] || {};
+    const source = Number.isFinite(index) ? sourceRows[index] || {} : {};
     const row = { ...source };
     tr.querySelectorAll("[data-carrier-cluster-field]").forEach((input) => {
       const key = input.dataset.carrierClusterField;
@@ -3434,17 +3705,386 @@ function bindResultActions(root) {
   });
 }
 
+function allocationFilterOperatorOptions(selected) {
+  const value = normalizeAllocationFilterOperator(selected);
+  return ALLOCATION_FILTER_OPERATORS
+    .map((item) => `<option value="${allocationEscape(item.value)}" ${item.value === value ? "selected" : ""}>${allocationEscape(item.label)}</option>`)
+    .join("");
+}
+
+function allocationFilterColumnControl(source, condition, index) {
+  const columns = Array.isArray(source?.columns) ? source.columns : [];
+  const selectedId = String(condition?.column || "").trim();
+  const selectedLabel = String(condition?.columnLabel || "").trim();
+  if (!columns.length) {
+    return `<input type="text" data-filter-column="${index}" value="${allocationEscape(selectedLabel || selectedId)}" placeholder="Kolumn" />`;
+  }
+  const hasSelected = columns.some((column) => String(column.id || "") === selectedId || String(column.label || "") === selectedLabel);
+  const selectedFallback = selectedId || selectedLabel;
+  return `
+    <select data-filter-column="${index}">
+      ${selectedFallback && !hasSelected ? `<option value="${allocationEscape(selectedId || selectedFallback)}" data-label="${allocationEscape(selectedLabel || selectedFallback)}" selected>${allocationEscape(selectedLabel || selectedFallback)}</option>` : ""}
+      ${columns.map((column) => {
+        const columnId = String(column.id || "");
+        const columnLabel = String(column.label || columnId);
+        const columnType = String(column.type || "").trim();
+        const selected = columnId === selectedId || columnLabel === selectedLabel;
+        return `<option value="${allocationEscape(columnId)}" data-label="${allocationEscape(columnLabel)}" ${columnType ? `title="${allocationEscape(columnType)}"` : ""} ${selected ? "selected" : ""}>${allocationEscape(columnLabel)}</option>`;
+      }).join("")}
+    </select>
+  `;
+}
+
+function defaultAllocationFilterCondition(source) {
+  const firstColumn = Array.isArray(source?.columns) ? source.columns[0] : null;
+  return {
+    column: firstColumn?.id || "",
+    columnLabel: firstColumn?.label || "",
+    operator: "EQ",
+    value: "",
+  };
+}
+
+function renderAllocationSourceModeToggle(flowId, source, draft) {
+  if (!source?.apiPreferred) return "";
+  const mode = allocationSourceModeForFile(flowId, source.key, source, draft);
+  const apiChecked = mode !== "upload";
+  const sourceLabel = allocationEscape(source.label || source.key);
+  return `
+    <div class="allocation-source-mode-toggle" aria-label="K&auml;lla f&ouml;r ${sourceLabel}">
+      <span>K&auml;lla</span>
+      <label class="allocation-source-switch" title="V&auml;xla mellan API och uppladdad fil">
+        <input
+          type="checkbox"
+          value="api"
+          data-filter-source-mode-toggle
+          aria-label="H&auml;mta ${sourceLabel} fr&aring;n API"
+          ${apiChecked ? "checked" : ""}
+        />
+        <span class="allocation-source-switch-track" aria-hidden="true">
+          <span class="allocation-source-switch-text allocation-source-switch-text--api">API</span>
+          <span class="allocation-source-switch-text allocation-source-switch-text--upload">Fil</span>
+          <span class="allocation-source-switch-knob"></span>
+        </span>
+      </label>
+    </div>
+  `;
+}
+
+function collectAllocationSourceMode(backdrop, draft, flowId, source) {
+  if (!source?.apiPreferred) return;
+  const toggle = backdrop.querySelector("[data-filter-source-mode-toggle]");
+  const selected = toggle ? (toggle.checked ? "api" : "upload") : "api";
+  draft.flows = draft.flows || {};
+  draft.flows[flowId] = draft.flows[flowId] || {};
+  draft.flows[flowId].sources = draft.flows[flowId].sources || {};
+  if (selected === "upload") draft.flows[flowId].sources[source.key] = "upload";
+  else delete draft.flows[flowId].sources[source.key];
+  pruneAllocationDraftFlow(draft, flowId);
+}
+
+function allocationYtgenereringSettingsForDraft(draft, flowId) {
+  const settings = draft?.flows?.[flowId]?.settings?.ytgenerering;
+  return settings ? normalizeAllocationYtgenereringSettings(settings) : allocationDefaultYtgenereringSettings();
+}
+
+function setAllocationYtgenereringDraftSettings(draft, flowId, settings) {
+  draft.flows = draft.flows || {};
+  draft.flows[flowId] = draft.flows[flowId] || {};
+  draft.flows[flowId].settings = draft.flows[flowId].settings || {};
+  draft.flows[flowId].settings.ytgenerering = normalizeAllocationYtgenereringSettings(settings);
+}
+
+function pruneAllocationDraftFlow(draft, flowId) {
+  const flow = draft.flows?.[flowId];
+  if (!flow) return;
+  if (flow.sources && !Object.keys(flow.sources).length) delete flow.sources;
+  if (flow.files && !Object.keys(flow.files).length) delete flow.files;
+  if (flow.settings && !Object.keys(flow.settings).length) delete flow.settings;
+  if (!flow.sources && !flow.files && !flow.settings) delete draft.flows[flowId];
+}
+
+function renderAllocationYtgenereringSettingsEditor(host, settings) {
+  const normalized = normalizeAllocationYtgenereringSettings(settings);
+  const areas = normalizeAllocationYtgenereringAreas(normalized.areas);
+  const hasSavedCarrierClusters = Object.prototype.hasOwnProperty.call(normalized, "carrierClusters");
+  const carrierClusters = hasSavedCarrierClusters
+    ? (normalizeAllocationCarrierClusters(normalized.carrierClusters) || { version: 1, source: { name: "Manuell", rowCount: 0 }, rows: [] })
+    : allocationDefaultCarrierClusters();
+  host.__allocationYtgenereringCarrierClusters = carrierClusters;
+  host.innerHTML = `
+    <div class="allocation-ytgenerering-settings">
+      <section class="allocation-ytgenerering-settings-section">
+        <h4>Utlastningsytor</h4>
+        <div class="allocation-ytgenerering-utl-grid">
+          ${ALLOCATION_PROCESS_AREA_OPTIONS.map((area) => {
+            const code = String(area.code || "").trim().toUpperCase();
+            const range = normalizeYtgenereringUtlRange(areas[code] || areas.DEFAULT);
+            return `
+              <div class="allocation-ytgenerering-utl-row" data-ytgenerering-utl-area="${allocationEscape(code)}">
+                <strong>${allocationEscape(area.label || code)}</strong>
+                <label>
+                  <span>Fr&aring;n</span>
+                  <input type="number" min="1" max="652" step="1" data-ytgenerering-utl-min="${allocationEscape(code)}" value="${range.min}" />
+                </label>
+                <label>
+                  <span>Till</span>
+                  <input type="number" min="1" max="652" step="1" data-ytgenerering-utl-max="${allocationEscape(code)}" value="${range.max}" />
+                </label>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </section>
+      <section class="allocation-ytgenerering-settings-section">
+        <div class="allocation-filter-editor-head">
+          <h4>Transport&ouml;rskluster</h4>
+          <div class="allocation-filter-toolbar-inline">
+            <button type="button" data-ytgenerering-carrier-add>L&auml;gg transport&ouml;r</button>
+            <button type="button" data-ytgenerering-carrier-defaults>Standard</button>
+            <button type="button" data-ytgenerering-carrier-clear>Rensa</button>
+          </div>
+        </div>
+        <div data-ytgenerering-carriers></div>
+      </section>
+    </div>
+  `;
+  const carrierHost = host.querySelector("[data-ytgenerering-carriers]");
+  renderAllocationCarrierClusterEditor(carrierHost, carrierClusters, { editableCarrier: true, allowDelete: true });
+  host.querySelector("[data-ytgenerering-carrier-add]")?.addEventListener("click", () => {
+    const current = collectAllocationYtgenereringSettingsDraft(host);
+    const rows = [...(current.carrierClusters?.rows || [])];
+    rows.push({
+      id: `manual-${Date.now()}`,
+      carrierNum: `Ny transportor ${rows.length + 1}`,
+      description: "",
+      alias: "",
+      clusterGroup: "",
+      assignmentOrder: String(rows.length + 1),
+      startSeq: String(ALLOCATION_YTGENERERING_UTL_MIN),
+      endSeq: String(ALLOCATION_YTGENERERING_UTL_MAX),
+      asn: ALLOCATION_CLUSTER_DEFAULT_TIMES.asn,
+      arrive: ALLOCATION_CLUSTER_DEFAULT_TIMES.arrive,
+      depart: ALLOCATION_CLUSTER_DEFAULT_TIMES.depart,
+      color: allocationHslToHex(ALLOCATION_CLUSTER_HUES[rows.length % ALLOCATION_CLUSTER_HUES.length], 65, 58),
+    });
+    renderAllocationYtgenereringSettingsEditor(host, { ...current, carrierClusters: { version: 1, source: { name: "Manuell", rowCount: rows.length }, rows } });
+  });
+  host.querySelector("[data-ytgenerering-carrier-defaults]")?.addEventListener("click", () => {
+    const current = collectAllocationYtgenereringSettingsDraft(host);
+    renderAllocationYtgenereringSettingsEditor(host, { ...current, carrierClusters: allocationDefaultCarrierClusters() });
+  });
+  host.querySelector("[data-ytgenerering-carrier-clear]")?.addEventListener("click", () => {
+    const current = collectAllocationYtgenereringSettingsDraft(host);
+    renderAllocationYtgenereringSettingsEditor(host, { ...current, carrierClusters: { version: 1, source: { name: "Manuell", rowCount: 0 }, rows: [] } });
+  });
+}
+
+function collectAllocationYtgenereringSettingsDraft(host) {
+  const areas = allocationDefaultYtgenereringAreas();
+  host.querySelectorAll("[data-ytgenerering-utl-area]").forEach((row) => {
+    const code = String(row.dataset.ytgenereringUtlArea || "").trim().toUpperCase();
+    if (!code) return;
+    const range = normalizeYtgenereringUtlRange({
+      utlMin: row.querySelector(`[data-ytgenerering-utl-min="${code}"]`)?.value,
+      utlMax: row.querySelector(`[data-ytgenerering-utl-max="${code}"]`)?.value,
+    });
+    areas[code] = { utlMin: range.min, utlMax: range.max };
+  });
+  const carrierHost = host.querySelector("[data-ytgenerering-carriers]");
+  const carrierClusters = carrierHost
+    ? collectAllocationCarrierClusterDraft(carrierHost, host.__allocationYtgenereringCarrierClusters || allocationDefaultCarrierClusters())
+    : null;
+  return normalizeAllocationYtgenereringSettings({ areas, carrierClusters });
+}
+
+function collectAllocationFilterModalSource(backdrop, draft, flowId, fileKey, source = null) {
+  if (!fileKey) return;
+  if (fileKey === ALLOCATION_YTGENERERING_SETTINGS_SOURCE) {
+    const host = backdrop.querySelector("[data-ytgenerering-settings-editor]");
+    if (host) setAllocationYtgenereringDraftSettings(draft, flowId, collectAllocationYtgenereringSettingsDraft(host));
+    return;
+  }
+  collectAllocationSourceMode(backdrop, draft, flowId, source);
+  const rows = [...backdrop.querySelectorAll("[data-filter-condition]")];
+  const conditions = rows.map((row) => {
+    const index = row.dataset.filterCondition;
+    const columnControl = row.querySelector(`[data-filter-column="${index}"]`);
+    const selectedOption = columnControl?.tagName === "SELECT"
+      ? columnControl.options[columnControl.selectedIndex]
+      : null;
+    return {
+      column: columnControl?.value || "",
+      columnLabel: selectedOption?.dataset?.label || columnControl?.value || "",
+      operator: row.querySelector(`[data-filter-operator="${index}"]`)?.value || "EQ",
+      value: row.querySelector(`[data-filter-value="${index}"]`)?.value || "",
+    };
+  });
+  draft.flows = draft.flows || {};
+  draft.flows[flowId] = draft.flows[flowId] || { files: {} };
+  draft.flows[flowId].files = draft.flows[flowId].files || {};
+  if (conditions.length) draft.flows[flowId].files[fileKey] = conditions;
+  else delete draft.flows[flowId].files[fileKey];
+  pruneAllocationDraftFlow(draft, flowId);
+}
+
+function renderAllocationFlowFilterModal(backdrop, flow, draft, selectedKey = "") {
+  const sources = allocationFilterSourcesForFlow(flow);
+  const selectedSource = sources.find((source) => source.key === selectedKey) || sources[0] || null;
+  const currentKey = selectedSource?.key || "";
+  const isSettingsSource = selectedSource?.type === "settings";
+  const conditions = isSettingsSource ? [] : draft.flows?.[flow.id]?.files?.[currentKey] || [];
+  const importUsers = (allocationState.filterUsers || []).filter((user) => user.has_filters && !user.is_current);
+  backdrop.innerHTML = `
+    <div class="modal wide allocation-filter-modal">
+      <h2>Filtreringar - ${allocationEscape(flow.label || flow.id)}</h2>
+      <div class="allocation-filter-toolbar">
+        <select id="allocation-filter-import-user" ${importUsers.length ? "" : "disabled"}>
+          <option value="">H&auml;mta fr&aring;n anv&auml;ndare</option>
+          ${importUsers.map((user) => `<option value="${allocationEscape(user.id)}">${allocationEscape(user.name || user.username)} (${allocationEscape(user.filter_count || 0)})</option>`).join("")}
+        </select>
+        <button type="button" id="allocation-filter-import" ${importUsers.length ? "" : "disabled"}>H&auml;mta</button>
+      </div>
+      <div class="allocation-filter-layout">
+        <div class="allocation-filter-source-list">
+          ${sources.map((source) => {
+            const count = allocationFilterCountForSource(flow.id, source.key, draft);
+            return `
+              <button type="button" class="${source.key === currentKey ? "active" : ""}" data-filter-source="${allocationEscape(source.key)}">
+                <span>${allocationEscape(source.label || source.key)}</span>
+                ${count ? `<strong>${count}</strong>` : ""}
+              </button>
+            `;
+          }).join("") || `<p class="allocation-muted">Inga filer.</p>`}
+        </div>
+        <div class="allocation-filter-editor">
+          ${selectedSource ? `
+            <div class="allocation-filter-editor-head">
+              <h3>${allocationEscape(selectedSource.label || selectedSource.key)}</h3>
+              ${isSettingsSource ? "" : `<button type="button" id="allocation-filter-add">+ Filter</button>`}
+            </div>
+            ${isSettingsSource ? `
+              <div data-ytgenerering-settings-editor></div>
+            ` : `
+              ${renderAllocationSourceModeToggle(flow.id, selectedSource, draft)}
+              <div class="allocation-filter-condition-head">
+                <span>Kolumn</span>
+                <span>Operator</span>
+                <span>V&auml;rde</span>
+              </div>
+              <div class="allocation-filter-conditions">
+                ${conditions.map((condition, index) => `
+                  <div class="allocation-filter-condition" data-filter-condition="${index}">
+                    ${allocationFilterColumnControl(selectedSource, condition, index)}
+                    <select data-filter-operator="${index}">${allocationFilterOperatorOptions(condition.operator)}</select>
+                    <textarea rows="3" data-filter-value="${index}">${allocationEscape(allocationFilterConditionValueText(condition))}</textarea>
+                    <button type="button" class="danger" data-filter-remove="${index}" aria-label="Ta bort filter">x</button>
+                  </div>
+                `).join("") || `<p class="allocation-muted">Inga filter sparade f&ouml;r filen.</p>`}
+                </div>
+            `}
+          ` : `<p class="allocation-muted">Inga filer.</p>`}
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="allocation-filter-clear-flow">Rensa funktion</button>
+        <button type="button" id="allocation-filter-cancel">Avbryt</button>
+        <button type="button" class="primary" id="allocation-filter-save">Spara</button>
+      </div>
+    </div>
+  `;
+
+  if (isSettingsSource) {
+    const settingsHost = backdrop.querySelector("[data-ytgenerering-settings-editor]");
+    if (settingsHost) renderAllocationYtgenereringSettingsEditor(settingsHost, allocationYtgenereringSettingsForDraft(draft, flow.id));
+  }
+
+  const rerender = (nextSelectedKey = currentKey) => renderAllocationFlowFilterModal(backdrop, flow, draft, nextSelectedKey);
+  backdrop.querySelectorAll("[data-filter-source]").forEach((button) => {
+    button.addEventListener("click", () => {
+      collectAllocationFilterModalSource(backdrop, draft, flow.id, currentKey, selectedSource);
+      rerender(button.dataset.filterSource || "");
+    });
+  });
+  backdrop.querySelector("#allocation-filter-add")?.addEventListener("click", () => {
+    collectAllocationFilterModalSource(backdrop, draft, flow.id, currentKey, selectedSource);
+    draft.flows = draft.flows || {};
+    draft.flows[flow.id] = draft.flows[flow.id] || { files: {} };
+    draft.flows[flow.id].files = draft.flows[flow.id].files || {};
+    draft.flows[flow.id].files[currentKey] = draft.flows[flow.id].files[currentKey] || [];
+    draft.flows[flow.id].files[currentKey].push(defaultAllocationFilterCondition(selectedSource));
+    rerender(currentKey);
+  });
+  backdrop.querySelectorAll("[data-filter-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      collectAllocationFilterModalSource(backdrop, draft, flow.id, currentKey, selectedSource);
+      const index = Number(button.dataset.filterRemove);
+      draft.flows?.[flow.id]?.files?.[currentKey]?.splice(index, 1);
+      rerender(currentKey);
+    });
+  });
+  backdrop.querySelector("#allocation-filter-clear-flow")?.addEventListener("click", () => {
+    if (draft.flows) delete draft.flows[flow.id];
+    rerender(currentKey);
+  });
+  backdrop.querySelector("#allocation-filter-cancel")?.addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#allocation-filter-save")?.addEventListener("click", async () => {
+    collectAllocationFilterModalSource(backdrop, draft, flow.id, currentKey, selectedSource);
+    const button = backdrop.querySelector("#allocation-filter-save");
+    button.disabled = true;
+    try {
+      await saveAllocationFilterProfile(draft);
+      backdrop.remove();
+      renderAllocationPage();
+      showToast("Filtrering sparades.", "success", 2500);
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || "Kunde inte spara filtrering.", "error", 7000);
+    }
+  });
+  backdrop.querySelector("#allocation-filter-import")?.addEventListener("click", async () => {
+    const userId = backdrop.querySelector("#allocation-filter-import-user")?.value;
+    if (!userId) return;
+    const button = backdrop.querySelector("#allocation-filter-import");
+    button.disabled = true;
+    try {
+      await importAllocationFilterProfile(userId);
+      const imported = cloneAllocationFilterProfile();
+      Object.keys(draft).forEach((key) => delete draft[key]);
+      Object.assign(draft, imported);
+      rerender(currentKey);
+      showToast("Filtrering hamtad.", "success", 2500);
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || "Kunde inte hamta filtrering.", "error", 7000);
+    }
+  });
+}
+
+function openAllocationFlowFilterModal(flow) {
+  if (!flow) return;
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  document.body.appendChild(backdrop);
+  renderAllocationFlowFilterModal(backdrop, flow, cloneAllocationFilterProfile());
+}
+
 function renderFlowChip(flow) {
   const missing = missingForFlow(flow);
   const ready = missing.length === 0;
   const running = allocationState.busyId === flow.id;
   const fileList = renderFlowFileList(flow);
   const label = allocationEscape(flow.label);
+  const filterCount = allocationFilterCountForFlow(flow.id);
   return `
     <div class="allocation-flow-chip ${ready ? "ready" : ""}" data-allocation-drop data-drop-scope="flow" data-flow-id="${allocationEscape(flow.id)}">
       <div class="allocation-flow-chip-row">
         <button type="button" class="allocation-flow-run" data-run-flow="${allocationEscape(flow.id)}" ${ready && !allocationState.busyId ? "" : "disabled"}>
           ${running ? "Kör…" : label}
+        </button>
+        <button type="button" class="allocation-flow-filter ${filterCount ? "active" : ""}" data-flow-filter="${allocationEscape(flow.id)}" aria-label="Redigera filtrering f&ouml;r ${label}">
+          ${ALLOCATION_EDIT_ICON}
+          ${filterCount ? `<span>${allocationEscape(filterCount)}</span>` : ""}
         </button>
         <button type="button" class="allocation-flow-info" data-flow-info="${allocationEscape(flow.id)}" aria-label="Visa information om ${label}">
           <span aria-hidden="true">i</span>
@@ -3483,13 +4123,22 @@ function bindFlowInfoToggles(root) {
   });
 }
 
+function bindFlowFilterButtons(root) {
+  root.querySelectorAll("[data-flow-filter]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openAllocationFlowFilterModal(flowById(button.dataset.flowFilter));
+    });
+  });
+}
+
 function ensureFlowPopoverDismiss() {
   if (allocationPopoverDismissBound) return;
   allocationPopoverDismissBound = true;
   document.addEventListener("click", (event) => {
     const root = document.getElementById("allocationRoot");
     if (!root) return;
-    if (event.target.closest("[data-flow-info]") || event.target.closest("[data-flow-popover]")) return;
+    if (event.target.closest("[data-flow-info]") || event.target.closest("[data-flow-filter]") || event.target.closest("[data-flow-popover]")) return;
     closeFlowPopovers(root);
   });
 }
@@ -4900,12 +5549,7 @@ function cloneAllocationProcessMatrixRules(rules) {
   const cloned = {};
   for (const [code, rule] of Object.entries(rules || {})) {
     cloned[code] = {
-      company: String(rule.company || ""),
-      excludeCustomers: [...(rule.excludeCustomers || [])],
-      filterLabel: String(rule.filterLabel || ""),
       visibleFlowIds: Array.isArray(rule.visibleFlowIds) ? [...rule.visibleFlowIds] : null,
-      ytgenereringUtlMin: normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMin, ALLOCATION_YTGENERERING_UTL_MIN),
-      ytgenereringUtlMax: normalizeYtgenereringUtlNumber(rule.ytgenereringUtlMax, ALLOCATION_YTGENERERING_UTL_MAX),
     };
   }
   return cloned;
@@ -4941,22 +5585,6 @@ function allocationProcessMatrixFlowChecks(code, rule, flows) {
   `;
 }
 
-function renderYtgenereringUtlInputs(code, rule, readonly = false) {
-  const range = normalizeYtgenereringUtlRange(rule);
-  return `
-    <div class="allocation-process-utl-range">
-      <label>
-        <span>Fr&aring;n</span>
-        <input type="number" min="1" max="652" step="1" data-matrix-utl-min="${allocationEscape(code)}" value="${range.min}" aria-label="Ytgenerering UTL fr&aring;n ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
-      </label>
-      <label>
-        <span>Till</span>
-        <input type="number" min="1" max="652" step="1" data-matrix-utl-max="${allocationEscape(code)}" value="${range.max}" aria-label="Ytgenerering UTL till ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
-      </label>
-    </div>
-  `;
-}
-
 function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
   const areas = allocationProcessMatrixAreas();
   const flows = allocationProcessMatrixFlows();
@@ -4966,9 +5594,6 @@ function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
         <thead>
           <tr>
             <th>Toggle</th>
-            <th>Bolag</th>
-            <th>Exkl. kundnr</th>
-            <th>Ytgenerering UTL</th>
             <th>Funktioner</th>
           </tr>
         </thead>
@@ -4979,13 +5604,6 @@ function renderAllocationProcessMatrixEditor(host, draft, readonly = false) {
             return `
               <tr data-matrix-area="${allocationEscape(code)}">
                 <th>${allocationEscape(area.label || code)}</th>
-                <td>
-                  <input type="text" data-matrix-company="${allocationEscape(code)}" value="${allocationEscape(rule.company || "")}" aria-label="Bolag ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
-                </td>
-                <td>
-                  <input type="text" data-matrix-exclude="${allocationEscape(code)}" value="${allocationEscape((rule.excludeCustomers || []).join(", "))}" aria-label="Exkludera kundnr ${allocationEscape(code)}" ${readonly ? "disabled" : ""} />
-                </td>
-                <td>${renderYtgenereringUtlInputs(code, rule, readonly)}</td>
                 <td>${allocationProcessMatrixFlowChecks(code, rule, flows)}</td>
               </tr>
             `;
@@ -5014,25 +5632,12 @@ function collectAllocationProcessMatrixDraft(host) {
   host.querySelectorAll("[data-matrix-area]").forEach((row) => {
     const code = String(row.dataset.matrixArea || "").trim().toUpperCase();
     if (!code) return;
-    const company = String(row.querySelector("[data-matrix-company]")?.value || "").trim();
-    const excludeCustomers = String(row.querySelector("[data-matrix-exclude]")?.value || "")
-      .split(/[,;\s]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const utlRange = normalizeYtgenereringUtlRange({
-      ytgenereringUtlMin: row.querySelector("[data-matrix-utl-min]")?.value,
-      ytgenereringUtlMax: row.querySelector("[data-matrix-utl-max]")?.value,
-    });
     const allFlows = row.querySelector("[data-matrix-all-flows]")?.checked;
     const visibleFlowIds = allFlows
       ? null
       : [...row.querySelectorAll("[data-matrix-flow]:checked")].map((input) => input.value);
     matrix[code] = {
-      company,
-      excludeCustomers,
       visibleFlowIds,
-      ytgenereringUtlMin: utlRange.min,
-      ytgenereringUtlMax: utlRange.max,
     };
   });
   return matrix;
@@ -5088,7 +5693,6 @@ async function openAllocationProcessMatrixModal() {
 
 function renderCombinedView() {
   const flows = combinedAllocationFlows();
-  const filterNotice = allocationProcessFilterNotice();
   const groups = [];
   for (const flow of flows) {
     let group = groups.find((item) => item.name === flow.category);
@@ -5106,7 +5710,6 @@ function renderCombinedView() {
   renderAllocationShell(`
     <section class="allocation-panel allocation-panel--compact" data-allocation-drop>
       ${!anyFile ? `<p class="allocation-status">Inga filer inlagda. Dra filer hit eller använd Välj filer.</p>` : ""}
-      ${filterNotice ? `<p class="allocation-status">${allocationEscape(filterNotice)}</p>` : ""}
       ${allocationState.status ? `<p class="allocation-status">${allocationEscape(allocationState.status)}</p>` : ""}
       <div class="allocation-board">
         ${groups.map((group) => `
@@ -5185,6 +5788,7 @@ function bindRunButtons() {
     button.addEventListener("click", () => runAllocationFlow(flowById(button.dataset.runFlow)));
   });
   bindFlowInfoToggles(root);
+  bindFlowFilterButtons(root);
   bindResultActions(root);
 }
 
@@ -5254,6 +5858,7 @@ async function initAllocationPage() {
         loadAllocationFlows(),
         loadAllocationProcessMatrix(),
         loadAllocationCoreDataStatus(),
+        loadAllocationFilterProfile(),
       ]);
       if (!restoredFromCache && Object.keys(allocationState.files || {}).length) {
         restoreWorkStateOnce();
@@ -5266,6 +5871,7 @@ async function initAllocationPage() {
         loadAllocationFlows(),
         loadAllocationProcessMatrix(),
         loadAllocationCoreDataStatus(),
+        loadAllocationFilterProfile(),
       ]);
       allocationState.files = storedFiles;
     }
@@ -5321,6 +5927,7 @@ window.preloadAllocationUploadsData = function preloadAllocationUploadsData() {
     loadStoredAllocationFiles(),
     loadAllocationFlows(),
     loadAllocationCoreDataStatus(),
+    loadAllocationFilterProfile(),
   ]).finally(() => {
     cacheAllocationBootData();
     allocationUploadsPreloadPromise = null;

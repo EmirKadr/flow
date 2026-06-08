@@ -38,7 +38,7 @@ Uppladdningar forhandsvisar inte langre filinnehall. Fyllda filrader visar bara 
 
 Allokering anvander verksamhetens `item_option`-karnfil nar anvandaren inte laddat upp en egen Item Option-fil. En uppladdad lokal fil i sloten vinner for den korningen, men den permanenta karnfilen ligger kvar som verksamhetens fallback.
 
-Forecast anvander verksamhetens karnfiler `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` och den frivilliga transportorsfilen `trans_agency` som standard. Ytgenerering anvander verksamhetens `location` som lagerplatsunderlag. Anvandaren kan fortfarande ladda upp egna lokala filer for en korning nar flodet har en motsvarande filslot, men karnfilen ligger kvar som verksamhetens fallback.
+Ytgenerering ar nu den publika enknappsvagen for Forecast & yta. Den kor Forecast internt med Detalj Kundorder, Orderoversikt, Buffertpall och verksamhetens karnfiler `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` samt frivillig `trans_agency`. Om `location` finns via API, karnfil eller lokal fallback skapas ocksa ytkarta, ytgenereringstabeller och ASK-import. Om `location` saknas eller inte kan hamtas presenteras Forecast-resultatet anda, med loggrad om att lagerplatser saknas. Anvandaren kan fortfarande ladda upp egna lokala filer for en korning nar flodet har en motsvarande filslot, men karnfilen ligger kvar som verksamhetens fallback.
 
 Godsdeklaration anvander verksamhetens `item_security_info` som artikelns farligt gods-underlag. En ny uppladdad `item_security_info-*.csv` ersatter tidigare `item_security_info` for samma verksamhet pa samma satt som andra karnfiler.
 
@@ -63,7 +63,209 @@ API-first-kartor:
 - `dispatch` -> `v_ask_dispatch_pallet`.
 - `custom_adr` -> `v_ask_custom_adr`.
 - `not_putaway` -> `v_ask_booking_putaway`.
+- `pafyllnadsprio` hamtar `orders`, `saldo` och `overview` API-first som krav, sa lastningsfonster-laget kan koras utan uppladdade filer.
 - karnfiler som `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`, `trans_agency`, `location` och `item_security_info` kan hamtas API-first nar flodet kraver dem.
+- `item_option` anvander API-kolumn-id `not_stackable` -> `Ej staplingsbar` och `whole_pallet_near_miss_percent` -> `Helpalls avvikelse %` nar Forecastens gamla CSV-rubriker materialiseras. Vid framtida API-first-mappning ska tekniskt katalog-id kontrolleras fore svenska rubriker/labels.
+
+## Bearbeta-vyn i Mermaid
+
+Bearbeta-vyn ar ett styrbord for lagerfloden: den laser anvandarens
+behorighet, vald omradestoggle, Bearbeta-matris, lokala filval och permanenta
+karnfiler innan den visar vilka floden som kan koras. Knappen ar bara aktiv nar
+flodets krav ar uppfyllda, men API-first-kallor kan gora en slot redo utan att
+anvandaren sjalv har laddat upp filen.
+
+```mermaid
+flowchart TB
+  Sidebar["Sidebar: Bearbeta"] --> Boot["bearbeta.html<br/>allocation_tools.js"]
+  Boot --> Auth["initPage('allocationProcess')<br/>session, roll och vybehorighet"]
+  Auth --> BootData["Ladda bootdata<br/>/api/allokering/flows<br/>/api/coredata/files<br/>/api/allokering/process-matrix<br/>/api/allokering/filter-profile"]
+  BootData --> Focus["Las omradestoggle<br/>GG, MG, AS, EH, R3 eller Alla"]
+  Focus --> Matrix["Bearbeta-matris<br/>synliga floden"]
+  BootData --> UserFilters["Personliga filterprofiler<br/>per anvandare, per flode,<br/>per fil/API-kalla<br/>+ Ytgenerering-installningar"]
+  Matrix --> Slots["Filstatus<br/>IndexedDB eller localRef<br/>+ coredata/sammanstalld data<br/>+ API-first-mojlighet"]
+  UserFilters --> Slots
+  Slots --> Board["allocation-board<br/>grupperade flodeskort"]
+
+  Board --> FlowCard["Flodeskort<br/>kor-knapp, edit-ikon,<br/>info-i och kravlista"]
+  FlowCard --> FilterModal["Edit-ikon<br/>visar alla filer/kallor<br/>och sparar filterprofil"]
+  FilterModal --> ImportFilters["Hamta fran anvandare<br/>kopierar annan anvandares<br/>sparade filterprofil"]
+  FlowCard --> Ready{"Alla krav uppfyllda?"}
+  Ready -- "Nej" --> Disabled["Knapp disabled<br/>krav visas i kortet"]
+  Ready -- "Ja" --> Enabled["Knapp aktiv<br/>Klick kor flodet"]
+  Enabled --> Busy["busyId satt<br/>alla andra korningar blockeras"]
+  Busy --> Result["Resultatpanel<br/>sammanfattning, logg,<br/>tabeller, ytkarta,<br/>Excel/CSV/kopiering"]
+  Result --> Persist["sessionStorage<br/>preview och arbetslage<br/>per anvandare + vy + toggle"]
+```
+
+Nar anvandaren klickar pa ett flode byggs ett multipart-formular av synliga
+filer, localRef-referenser, textfalt, vald toggle och anvandarens filterprofil. Webb
+skickar formularet till FastAPI. Windows-appen later den lokala desktop-servern
+fanga samma endpoint och kor samma domanlogik lokalt nar det gar.
+
+```mermaid
+flowchart TD
+  Click["Klick pa flodesknapp"] --> JS["allocation_tools.js<br/>runAllocationFlow"]
+  JS --> Form["Bygg FormData<br/>filer, localRef, textfalt,<br/>area_focus och anvandarens<br/>filter-/Ytgenereringprofil"]
+  Form --> Client{"Klientyta"}
+
+  Client -- "Webb" --> Api["POST /api/allokering/flow/{flow_id}"]
+  Client -- "Windows" --> LocalProxy["desktop/local_app_server.py<br/>fangar /api/allokering/flow/*"]
+
+  LocalProxy --> LocalRuntime["desktop/local_runtime.py<br/>laser localRef fran disk"]
+  LocalRuntime --> DesktopSources["Hamtar API-first-kallor<br/>via central /api/workflow-data/source<br/>eller faller tillbaka pa localRef/cache"]
+  DesktopSources --> LocalWarehouse["warehouse_tools lokalt"]
+
+  Api --> Router["routers/allocation.py<br/>behorighet, business-scope,<br/>auditpayload"]
+  Router --> SourceResolve["workflow_data.resolve_sources<br/>API-first per flode"]
+  SourceResolve --> External["Extern datakalla<br/>materialiseras till temp-CSV"]
+  SourceResolve --> Fallback["Fallback<br/>upload, coredata, artikel_max<br/>eller missing"]
+  External --> UserFilter["apply_user_flow_filters<br/>filtrerar temporara kopior<br/>per anvandarprofil"]
+  Fallback --> UserFilter
+  UserFilter --> Bridge["allocation_bridge.py"]
+  Bridge --> ServerWarehouse["warehouse_tools pa servern"]
+
+  ServerWarehouse --> ResultSession["Resultat-session<br/>tempfiler for tabeller,<br/>artifacts och downloads"]
+  LocalWarehouse --> LocalResult["Lokalt resultat<br/>tabeller, logg, kartor"]
+
+  ResultSession --> Response["JSON till frontend<br/>session_id + preview"]
+  LocalResult --> Response
+  Response --> Render["renderResultPanel<br/>tabeller, logg, karta,<br/>auto-copy/auto-download"]
+  Render --> Tracking["flowTrack + audit<br/>sanerad status, radantal,<br/>source_status/filter_count,<br/>inga filnamn/sokvagar"]
+```
+
+Readiness ar en kombination av vybehorighet, matris, filslotar och API-first.
+En slot kan vara klar genom uppladdad fil, Windows `localRef`, coredata,
+sammanstalld data eller en konfigurerad API-kalla. Om en kravd API-kalla faller
+och ingen fallback finns visas feltexten nar flodet kor, inte hemliga tekniska
+detaljer.
+
+```mermaid
+flowchart LR
+  Access["allocationProcess=edit<br/>eller Super User"] --> Visible["Flodet syns enligt<br/>Bearbeta-matrisen"]
+  Visible --> Required["Las flodets krav<br/>inputs + coredata + ev. textfalt"]
+  Required --> SlotState{"Varje kravd slot klar?"}
+  SlotState -- "Uppladdad fil" --> ReadySlot["Klar"]
+  SlotState -- "Desktop localRef" --> ReadySlot
+  SlotState -- "Coredata/sammanstalld data" --> ReadySlot
+  SlotState -- "API-first-kalla finns" --> ReadySlot
+  SlotState -- "Saknas helt" --> NotReady["Knapp disabled<br/>kravet visas"]
+  ReadySlot --> AllReady{"Alla krav klara<br/>och ingen busyId?"}
+  AllReady -- "Ja" --> Run["Knapp aktiv"]
+  AllReady -- "Nej" --> NotReady
+  Run --> SourceStatus["Efter korning visas logg/audit:<br/>api, upload_fallback,<br/>local_ref_fallback,<br/>optional_skipped eller missing"]
+```
+
+## Hitta koden bakom en Bearbeta-funktion
+
+Nar du vill forsta en Bearbeta-funktion ar basta vagen att folja flodets
+`flow_id`. Samma id anvands i frontendens knapp, i API-sokvagen, i desktopens
+lokala proxy och i `warehouse_tools`-registret. Exempel: knappen
+`Ytgenerering` anvander `flow_id=ytgenerering`; knappen `Allokering` anvander
+`flow_id=allocate`.
+
+```mermaid
+flowchart TB
+  Use["Anvandaren klickar en Bearbeta-funktion"] --> FlowId["flow_id<br/>ex: ytgenerering, allocate, ordersaldo"]
+
+  FlowId --> Frontend["Frontend<br/>app/frontend/js/allocation_tools.js"]
+  Frontend --> FrontendFns["renderCombinedView -> renderFlowChip<br/>missingForFlow -> bindRunButtons<br/>runAllocationFlow"]
+  FrontendFns --> Post["POST /api/allokering/flow/{flow_id}<br/>FormData med filer, localRef,<br/>area_focus och matrisparametrar"]
+
+  Post --> Client{"Var kors appen?"}
+
+  Client -- "Webb" --> Router["FastAPI-router<br/>app/backend/routers/allocation.py<br/>run_flow"]
+  Router --> Access["Behorighet och scope<br/>deps.py, user_access.py,<br/>business_scope.py"]
+  Router --> Sources["API-first och fallback<br/>app/backend/workflow_data.py<br/>allocation_api_source_map + resolve_sources"]
+  Sources --> External["Privat datakalla via backend<br/>external_data_client.py<br/>data/external_data_catalog.json"]
+  Sources --> Fallback["Fallback<br/>upload, coredata,<br/>compiled_data_paths.py,<br/>article_max"]
+  Router --> Bridge["Korhandler och sparar session<br/>app/backend/allocation_bridge.py<br/>run_flow_handler"]
+
+  Client -- "Windows" --> LocalServer["Lokal desktop-server<br/>desktop/local_app_server.py"]
+  LocalServer --> LocalRuntime["desktop/local_runtime.py<br/>local_response_for_request<br/>run_allocation_flow"]
+  LocalRuntime --> LocalSources["Samma API-first-map<br/>app/backend/workflow_data.py<br/>eller localRef/cache"]
+
+  Bridge --> Registry["Flow-register<br/>warehouse_tools/catalog.py<br/>publik metadata<br/><br/>warehouse_tools/flows.py<br/>FLOWS + FLOW_BY_ID"]
+  LocalSources --> Registry
+  Registry --> Handler["Handler<br/>warehouse_tools/flows.py<br/>flow_ytgenerering, flow_allocate,<br/>flow_ordersaldo, ..."]
+
+  Handler --> EngineChoice{"Vilken motor anvands?"}
+  EngineChoice -- "Native Bearbeta-kod" --> Native["warehouse_tools/native_flows.py<br/>surface_generation.py<br/>carrier_clusters.py<br/>native_tables.py"]
+  EngineChoice -- "Legacy/paritet" --> Legacy["warehouse_tools/engine.py<br/>warehouse_tools/vendor/allokering12.1.py"]
+  EngineChoice -- "Forecast/yta" --> Forecast["warehouse_tools/mg_forecast/*<br/>warehouse_tools/ytgenerering_map.py"]
+
+  Handler --> Result["Resultat och artifacts<br/>session_id, tempfiler,<br/>preview-tabeller, downloads"]
+  Result --> Render["Tillbaka till frontend<br/>renderResultPanel i allocation_tools.js"]
+  Render --> User["Anvandaren ser logg,<br/>tabell, karta, kopiering,<br/>Excel/CSV eller nedladdning"]
+```
+
+Snabbkarta for var du bor borja:
+
+| Fraga | Borja har |
+| --- | --- |
+| Var visas knappen och varfor ar den aktiv/inaktiv? | `app/frontend/js/allocation_tools.js` med `renderCombinedView`, `renderFlowChip`, `missingForFlow`, `bindRunButtons` |
+| Vilken endpoint kor knappen? | `POST /api/allokering/flow/{flow_id}` i `app/backend/routers/allocation.py` |
+| Var sker behorighet, audit och business-scope? | `app/backend/routers/allocation.py`, `app/backend/user_access.py`, `app/backend/business_scope.py` |
+| Var mappas API-first-kallor och fallback? | `app/backend/workflow_data.py` |
+| Var hamtas privat extern data? | `app/backend/external_data_client.py` och katalogen `data/external_data_catalog.json` |
+| Var valjs faktisk Bearbeta-handler? | `app/backend/allocation_bridge.py` och `warehouse_tools/flows.py` |
+| Var finns publik flow-metadata/listan frontend far? | `warehouse_tools/catalog.py` och `warehouse_tools/flows.py` |
+| Var finns Windows-specialfallet? | `desktop/local_app_server.py`, `desktop/local_runtime.py`, `app/frontend/js/desktop_bridge.js` |
+| Var finns legacy-motorn? | `warehouse_tools/engine.py` och `warehouse_tools/vendor/allokering12.1.py` |
+| Var finns Forecast/Ytgenereringens extra kod? | `warehouse_tools/mg_forecast/*`, `warehouse_tools/surface_generation.py`, `warehouse_tools/ytgenerering_map.py`, `warehouse_tools/carrier_clusters.py` |
+| Var skyddas beteendet i test? | `tests/services/test_allocation_bridge.py`, `tests/services/test_workflow_data.py`, `tests/services/test_warehouse_tools_local_data.py`, `tests/tools/test_allocation_split_browser.py`, `tests/tools/test_visual_tools.py` |
+
+Praktiska sokkommandon:
+
+```powershell
+# Hitta knappen, readiness och klickhandlern i frontend
+rg -n "data-run-flow|renderFlowChip|renderCombinedView|missingForFlow|runAllocationFlow|bindRunButtons" app/frontend/js/allocation_tools.js
+
+# Hitta API-endpointen som kor ett flow_id
+rg -n "flow/\\{flow_id\\}|def run_flow|@router.post" app/backend/routers/allocation.py
+
+# Hitta var ett flow_id definieras och vilken handler det har
+rg -n '"id": "ytgenerering"|"id": "allocate"|FLOWS|FLOW_BY_ID|handler' warehouse_tools/flows.py warehouse_tools/catalog.py
+
+# Hitta handlern for en viss funktion
+rg -n "def flow_ytgenerering|def flow_allocate|def flow_ordersaldo" warehouse_tools/flows.py
+
+# Hitta API-first och fallback for Bearbeta
+rg -n "ALLOCATION_FLOW_API_SOURCES|SOURCE_SPECS|allocation_api_source_map|resolve_sources" app/backend/workflow_data.py
+
+# Hitta desktopens lokala koppling for samma endpoint
+rg -n "/api/allokering/flow|run_allocation_flow|local_response_for_request|localRef" desktop app/frontend/js/desktop_bridge.js
+
+# Hitta session, preview, download och resultatlogik
+rg -n "run_flow_handler|SESSIONS|download|table_column|open_excel|preview" app/backend/allocation_bridge.py app/backend/routers/allocation.py
+
+# Hitta legacy- och Forecast-motorer
+rg -n "allokering12.1|ENGINE_FILE|mg_forecast|flow_ytgenerering|surface_generation" warehouse_tools
+
+# Hitta tester som brukar behova uppdateras vid Bearbeta-andring
+rg -n "ytgenerering|allocation|run_flow|api_first|localRef|workflow_data" tests/services tests/tools
+```
+
+Vanliga flow-id och huvudfiler:
+
+| flow_id | Knapp/namn | Forsta handler | Vanliga sidospar |
+| --- | --- | --- | --- |
+| `allocate` | Allokering | `warehouse_tools/flows.py::flow_allocate` | `warehouse_tools/engine.py`, `warehouse_tools/vendor/allokering12.1.py`, `warehouse_tools/native_flows.py` |
+| `ytgenerering` | Ytgenerering | `warehouse_tools/flows.py::flow_ytgenerering` | `app/backend/workflow_data.py`, `warehouse_tools/mg_forecast/*`, `warehouse_tools/surface_generation.py`, `warehouse_tools/ytgenerering_map.py`, `warehouse_tools/carrier_clusters.py` |
+| `forecast` | Forecast, tekniskt/legacy | `warehouse_tools/flows.py::flow_forecast` | `warehouse_tools/mg_forecast/*`, anvands framst som intern eller legacy-nara vag |
+| `ordersaldo` | Ordersaldo | `warehouse_tools/flows.py::flow_ordersaldo` | `warehouse_tools/native_flows.py`, `warehouse_tools/compiled_data_paths.py` |
+| `lyx` | LYX-artiklar | `warehouse_tools/flows.py::flow_lyx` | `warehouse_tools/native_flows.py`, `compiled_data_paths.py` |
+| `pafyllnadsprio` | Pafyllnadsprio | `warehouse_tools/flows.py::flow_pafyllnadsprio` | `warehouse_tools/native_flows.py`, orderoversikt och artikel_max-fallback |
+| `hib-koppling` | HIB-koppling | `warehouse_tools/flows.py::flow_hib_koppling` | detaljorder + orderoversikt |
+| `overview-check` | Orderoversiktkontroll | `warehouse_tools/flows.py::flow_overview_check` | orderoversikt + eventuell detaljorder |
+| `dispatch-check` | Dispatchkontroll | `warehouse_tools/flows.py::flow_dispatch_check` | orderoversikt + dispatchpallar |
+| `goods-declaration` | Godsdeklaration | `warehouse_tools/flows.py::flow_goods_declaration` | `item_security_info`, kund-/adressunderlag, API-first for karnfiler |
+| `vecka27-check` | Vecka 27-kontroll | `warehouse_tools/flows.py::flow_vecka27_check` | regelkod i `warehouse_tools/flows.py` |
+| `prognos-report` | Prognosrapport | `warehouse_tools/flows.py::flow_prognos_report` | autoplock/saldo-underlag |
+| `observations-update` | Observations-uppdatering | `warehouse_tools/flows.py::flow_observations_update` | temporara filer, artikel_max/observations |
+| `observations-sync` | Observations-synk | `warehouse_tools/flows.py::flow_observations_sync` | GitHub/lokal observations-kalla, ingen push i flodet |
+| `split-values` | Dela varden | `warehouse_tools/flows.py::flow_split_values` | enklare verktygsflode utan lagerkallor |
+| `update-check` | Uppdateringskoll | `warehouse_tools/flows.py::flow_update_check` | release-/versionskontroll |
 
 ## Bearbeta-floden
 
@@ -71,38 +273,41 @@ Bearbeta ar en egen sidebar-vy (`bearbeta.html`). Den ska inte beskrivas som en 
 
 Att andra `allocationProcess` eller `Vybehorigheter` kraver admin-/Super User-atkomst till Anvandare/installningar. En vanlig anvandare ska kontakta admin eller Super User, inte sjalv ga till Vybehorigheter.
 
-Bearbeta lyssnar pa sidebarens omradestoggle nar floden kors. Rollen maste ha `allocationProcessMatrix=view` for att se knappen `Matris` i Bearbeta och `allocationProcessMatrix=edit` for att spara matrisandringar. Super User har alltid full atkomst, och admin har `Redigera` som standard. Matrisen oppnar en global Bearbeta-matris dar varje toggle kan fa bolagsfilter, exkluderade kundnummer och en lista over vilka Bearbeta-funktioner som ska synas for togglen. Valet `Alla` betyder att togglen ser alla funktioner. `Installningar` ar en egen sidebar-vy med behorigheten `allocationSettings`; dar kan behoriga anvandare panorera/zooma i Ytgenereringens ytkarta, dra ytor, andra storlek/kapacitet och lagga till ytor fran verksamhetens lediga `Typ=U`-lagerplatser.
+Bearbeta lyssnar pa sidebarens omradestoggle nar floden kors. Rollen maste ha `allocationProcessMatrix=view` for att se knappen `Matris` i Bearbeta och `allocationProcessMatrix=edit` for att spara matrisandringar. Super User har alltid full atkomst, och admin har `Redigera` som standard. Matrisen oppnar en global Bearbeta-matris dar varje toggle kan valja vilka Bearbeta-funktioner som ska synas. Valet `Alla` betyder att togglen ser alla funktioner. Matrisen filtrerar inte langre uppladdade filer, API-kallor eller tabellrader och styr inte langre Ytgenereringens UTL-intervall. `Installningar` ar en egen sidebar-vy med behorigheten `allocationSettings`; dar kan behoriga anvandare panorera/zooma i Ytgenereringens ytkarta, dra ytor, andra storlek/kapacitet och lagga till ytor fran verksamhetens lediga `Typ=U`-lagerplatser.
 
 Matrisen sparas i appsettings som `allocation_process_matrix` via `GET/PUT /api/allokering/process-matrix`. Ytkartans redigerbara UTL-ytor sparas per verksamhet som `ytgenerering_map_layout` via `GET/PUT /api/allokering/ytgenerering-map-layout`; vald Bearbeta-toggle (`area_focus`) styr vilket business-scope som lases och skrivs. Bada galler for bade webb och desktop eftersom desktop servar samma frontend och API. Standardmatrisen ar:
 
-- GG filtrerar tabellfiler som har Bolag-/Kundnr-kolumner till `Bolag = GG` och exkluderar `Kundnr = 6005`.
-- MG filtrerar tabellfiler som har Bolag-/Kundnr-kolumner till `Bolag = MG`, exkluderar `Kundnr = 40002` och `90002`, och later Ytgenerering anvanda UTL205-UTL652.
-- Ovriga toggles, inklusive AS, EH, R3 och `∞`, skickar inte nagot radfilter, ser hela underlaget och later Ytgenerering anvanda UTL1-UTL652.
+- Alla toggles ser alla funktioner tills en behorig anvandare begransar synligheten i matrisen.
 
-Reglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix` sa de galler alla Bearbeta-floden oavsett vilken filslot som anvands. Ytgenereringens UTL-intervall anges per toggle i matrisen med `Fran`/`Till` och sparas ihop med ovriga regler. Frontendens `ALLOCATION_PROCESS_MATRIX` ar bara fallback/standard om API:t inte kan lasa matrisen. Radfiltrering sker pa temporara kopior per korning; originaluppladdningen i cache/IndexedDB andras inte.
+Fil- och radfiltrering styrs i stallet av edit-ikonen pa varje Bearbeta-funktion, direkt till vanster om info-ikonen. Modalen visar funktionens filer, coredata och API-first-kallor, later anvandaren vaxla med en pill-switch mellan `API` och `Uppladdning` for API-first-kallor, lagga villkor per fil/kalla och sparar profilen via `GET/PUT /api/allokering/filter-profile`. Standard ar API for API-first-kallor. Om anvandaren valjer `Uppladdning` hoppas API-hamtningen over for just den filen och Bearbeta-knappen kraver uppladdad fil, Windows `localRef` eller sparad coredata. For `Ytgenerering` har samma modal dessutom en egen installningssektion dar anvandaren styr UTL-intervall per toggle och transportorskluster med grupp, ordning, start/end seq, tider och farg. Standard ar MG UTL205-UTL652 och ovriga toggles UTL1-UTL652. Profilen ligger i tabellen `allocation_user_filter_profiles` och ar personlig per anvandare; den foljer med efter utloggning/inloggning men delas inte automatiskt med andra. I samma modal kan anvandaren valja en annan anvandare i rullistan och hamta den personens sparade källval, filtreringar och Ytgenerering-installningar via `POST /api/allokering/filter-profile/import`. Vid korning applicerar backend och desktop samma profil med `allocation_bridge.api_source_map_for_user_profile`, `allocation_bridge.apply_user_flow_filters` pa temporara filkopior efter API-first/fallback och `allocation_bridge.apply_ytgenerering_user_settings` innan Ytgenerering kor lagerflodet. Originaluppladdningen i cache/IndexedDB och lokala filer andras inte. Logg/audit sparar bara radantal och antal villkor, inte filtervarden eller privata raddata.
+
+Matrisreglerna normaliseras server-side i `allocation_bridge.normalize_process_matrix` sa synligheten galler alla Bearbeta-floden oavsett vilken filslot som anvands. Frontendens `ALLOCATION_PROCESS_MATRIX` ar bara fallback/standard om API:t inte kan lasa matrisen. Personliga källval, filter och Ytgenerering-installningar normaliseras server-side i `allocation_bridge.normalize_user_filter_profile`.
 
 | Flode | Kraver | Resultat |
 | --- | --- | --- |
 | Allokering | Detalj Kundorder (Alla), Buffertpall; valfritt Saldo Inkl. Automation, Item Option, Ej Inlagrade Artiklar | Allokerade pallar, near-miss, refill, pallplatser |
 | Ordersaldo | Detalj Kundorder (Alla); valfritt Saldo Inkl. Automation, verksamhetens `artikel_max.csv` | Kompletta ordrar kopieras automatiskt och underskott visas med Antal pa Helpall |
 | LYX-artiklar | Saldofil; valfritt verksamhetens `artikel_max.csv` | Lista LYX-artiklar |
-| Pafyllnadsprio | Detalj Kundorder (Alla); valfritt Saldo Inkl. Automation, Orderöversikt, verksamhetens `artikel_max.csv` | Pafyllnadsprio, ev. lastningsfonster |
+| Pafyllnadsprio | Detalj Kundorder (Alla), Saldo Inkl. Automation, Orderöversikt; valfritt verksamhetens `artikel_max.csv` | Pafyllnadsprio i lastningsfonster-lage |
 | HIB-koppling | Detalj Kundorder (Alla), Orderöversikt | Andringar och missade avgangar |
 | Orderoversiktkontroll | Orderöversikt; valfritt Detalj Kundorder (Alla) | Sändnings-/HIB-kontroller |
 | Dispatchkontroll | Orderöversikt, Dispatchpallar; valfritt Detalj Kundorder (Alla) | Dispatchavvikelser |
 | Godsdeklaration | Detalj Kundorder (Alla), Orderöversikt, Alternativ Leveransadress och verksamhetens `item_security_info` | DG-order blir klara direkt, LQ-order blir bara klara vid Gotlandspostnummer 620-624 och klara ordernummer kopieras automatiskt |
 | Vecka 27-kontroll | Detalj Kundorder (Alla) | Avvikelser/text |
 | Prognosrapport | Prognos eller kampanj, samt Saldo; valfritt Buffert | Prognos vs Autoplock |
-| Forecast | Detalj Kundorder (Alla), Orderöversikt, Buffertpall, karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option` och frivillig `trans_agency` | Forecast per `Sandningsnr`, Excel/CSV-tabell, transportorskluster och sessiondata for Ytgenerering |
-| Ytgenerering | Verksamhetens `location` och att Forecast har korts i samma session | Placering av forecastens sandningar pa `Typ=U`-lagerplatser inom vald toggles globala UTL-intervall och transportorsklustrens UTL-intervall, samt interaktiv ytkarta |
+| Ytgenerering | Detalj Kundorder (Alla), Orderöversikt, Buffertpall, karnfilerna `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`; frivilligt `trans_agency` och `location` | Kor Forecast och visar Forecast-tabellen. Nar `location` finns placeras forecastens sandningar pa `Typ=U`-lagerplatser inom anvandarens sparade UTL-intervall for vald toggle och transportorsklustrens UTL-intervall, visar interaktiv ytkarta och laddar ned ASK-import nar alla sandningar ar placerade |
 
 Godsdeklaration kopplar orderrader via `Detalj Kundorder.Order nr` till `Orderöversikt.Ordernr`. `Orderöversikt.Alt adress` ar adressnumret som matchas mot `Alternativ Leveransadress.Adr num` tillsammans med kundnumret. Flodet filtrerar forst bort artiklar som saknar `DG` eller `LQ` i `item_security_info.Farligt gods nivå`. DG-rader ar alltid klara. LQ-rader ar bara klara nar den alternativa leveransadressens `Post nr` ligger i Gotlandsintervallet 62000-62499. Resultatet visar `Klara ordernummer`, `Klara rader`, `LQ ej klara` och en liten referenstabell for Gotlands postnummerintervall.
 
 Forecastmotorn ligger fristaende i Flow under `warehouse_tools/mg_forecast/`. Den anvander ingen runtime-sokvag till det gamla forecastprojektet och laddar en paketerad kalibreringsartefakt (`calibration.pkl`) sa Render/prod inte behover lokal raw historik for att prediktera. Nar Forecast laser orderoversikten ignoreras hela ordernumret om nagon orderhuvudrad for samma `Ordernr` har `Status` `11`; forst darefter dedupeas senaste orderhuvud per `Ordernr`. Eftersom orderdetaljerna sedan inner-joinas mot den filtrerade orderoversikten forsvinner aven detaljkundorderrader med samma ordernummer. Prediktionen gar direkt via LightGBM-/XGBoost-boosterobjekten i artefakten, sa sklearn-wrapperns `get_params`-vag inte kan stoppa Forecast i miljoer dar wrappern och sklearn skiljer sig. Forecast-tabellen far ocksa en `Kundnamn`-kolumn med den dominanta kunden per sandning (storst andel pallplatser), som Ytgenerering anvander for kundetiketterna pa kartan. Forecast-resultatet sparas som temporar tabellfil i serversessionen, och Ytgenerering laser in filen via session-id nar foljdflodet kors. Backend skapar inte langre en full `forecast_json`-kopia av alla rader bredvid tabellen; det haller serverminnet lagre efter stora Forecast-korningar. Om Forecast far `trans_agency` med kolumner som `agency_alias`, `cluster_group`, `assignment_order`, `start_seq` och `end_seq` sparas ocksa `carrier_clusters` i sessionen. Efter Forecast kan anvandaren klicka `Redigera kluster` i resultatpanelen och andra kluster, UTL-fran/till och ordning for den aktuella kedjan innan Ytgenerering kors; om `carrier_clusters` saknas byggs en redigerbar lista fran Forecast-tabellens unika transportorer. Om orderoversikten saknar transportor pa en sandning anvander Forecast default-transportoren `Schenker` internt for modellens transportorsignal, men resultatet och Ytgenerering far transportoren `Okand` sa fallbacken inte styr ytregler. Ytgenerering cachar ocksa den fardigfiltrerade `location`-ytlistan per filversion med TTL/maxbudget. Nar en ny `location`-karnfil laddas upp sparas den i Postgres, aldre lokala fallbackfiler for samma verksamhet och filtyp tas bort, filen materialiseras till en temporar backendfil for berakningsmotorn, den gamla location-cachen rensas och den nya ytlistan forvarms direkt. Uppladdningar laser karnfilstatus fran servern utan GET-cache, sa upprepade placeringar slipper lasa och filtrera lagerplatser igen utan att riskera gammalt underlag.
 
+Sedan 2026-06-08 ar detta ett enknappsflode i anvandargranssnittet: den synliga Bearbeta-knappen heter `Ytgenerering` och kor Forecast-steget forst utan att krava en tidigare Forecast-session. Den gamla tekniska `forecast`-handlern och sessionbaserad Ytgenerering finns kvar for direkta/legacy-anrop, men nya webb- och desktopklick skickar normalt inte `forecast_session_id`. `trans_agency` skickas vidare direkt till ytdelen nar den finns. `location` ar frivillig for knappens readiness; utan lagerplatser visas Forecast-tabellen och loggen forklarar att ytdelen hoppades over.
+
+Ytgenereringens personliga editprofil styr numera bade vilka UTL-ytor varje toggle far anvanda och vilka transportorer som ska grupperas. Installningarna sparas som `settings.ytgenerering` i `allocation_user_filter_profiles`, bredvid filfiltren. Vid korning skickar webb och desktop profilen som `__allocation_user_filters_json`; backend/lokal runtime satter `__ytgenerering_utl_min`, `__ytgenerering_utl_max` och, nar kluster finns, `__carrier_clusters_json` innan `warehouse_tools.flows.flow_ytgenerering` kor. Om ingen personlig klusterlista ar sparad anvands fortsatt kluster fran `trans_agency` eller Forecast-sessionen.
+
 Transportorskluster har inbyggda standardvarden nar karnfilen eller Forecast bara ger transportorsnummer och saknar klusterfalt. Defaults fyller tider, `clusterGroup`, `assignmentOrder`, `startSeq`, `endSeq` och farg for kanda transportorsnummer; till exempel fylls 39/40 som Freja, 600-652, 09:00/11:00/13:00 och `#c4b5fd`. Tomma standardgrupper lamnas tomma men far fortfarande standardens ordning och UTL-intervall.
 
-Ytgenerering sorterar transportorer efter Forecast-klustren nar de finns: rader med samma `cluster_group` behandlas som en gemensam placeringsenhet, `assignment_order` styr ordningen och `start_seq`/`end_seq` styr vilket UTL-intervall enheten far anvanda. Om en transportor saknar klusterrad faller den tillbaka till tidigare transportorssortering. Placeringen sker fortfarande per sandning: en lagerplats delas aldrig mellan flera sandningar, och en sandning kan spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har. Vilka UTL-ytor som overhuvudtaget far raknas styrs forst av vald Bearbeta-toggles globala `Fran`/`Till`-intervall i matrisen; standard ar MG UTL205-UTL652 och ovriga toggles UTL1-UTL652. Ytkartsinstallningen kompletterar sedan kart- och kapacitetsunderlaget for aktivt sparade ytor: varje sparad UTL-yta har koordinater, storlek och `maxPall`, kan uppdatera kapaciteten pa en befintlig `location`-rad och kan lagga till en saknad `Typ=U`-yta inom UTL1-UTL652. Den egna vyn `Installningar` hamtar dessutom alla `Typ=U`-lagerplatser med UTL-nummer 1-652 fran aktiv verksamhets `location`, aven koder som `UTL01` med inledande nollor, och visar bara de UTL-platser som inte redan finns pa kartan, sa anvandaren kan bygga vidare lagret utan att skriva koordinater for hand. I Installningar kan anvandaren markera flera ytor med Ctrl/Shift, flytta gruppen ihop med drag eller piltangenter och anvanda `Delete`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+Z` och `Ctrl+A`; inklistrade kopior hamnar pa lediga U-platser for att undvika dubbletter. Om ingen karta ar sparad anvands standardkoordinaterna bara for visualisering och inga extra lagerplatser skapas. Resultatet innehaller ocksa en interaktiv SVG-karta: kartan kan pannas, zoomas, roteras och anvandas for att dra en placerad sandning till en annan UTL-yta eller byta plats med en annan sandning. Fullskarm oppnas via en liten ikon i kartans ovre hogra horn. Nar kartan har fokus kan anvandaren ocksa anvanda `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa en vald placering, klistra in den pa vald malyta och angra senaste kartandringen. Ytans etikett visar kort ytkod utan `UTL` i kortsidan och kundnamn som huvudtext; kundnamn med flera ord bryts pa max tva rader, pallrad visas inte inne pa ytan och texten har ingen halo/outline. Fargen baseras pa transportor men ett kluster delar basnyans och varje transportor i klustret far en egen ljushet (`allocationClusterColorMap`); manuell farg i kluster-editorn vinner over auto. En knapp `Saknade kunder` uppe till vanster oppnar en panel som listar ej placerade sandningar med kundnamn, transportor och saknade pallplatser. Sidolistans rader markerar ytan och kopierar samtidigt radens sandningsnummer till urklipp, aven nar sifferserien inte visas direkt i listan. Kartan visar aktuella pallplatser, kapacitet och overkapacitet efter manuella flyttar och kan ladda ner en justerad karta-CSV eller justerad ASK-import lokalt i webblasaren. Nar alla sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer` skapas fortsatt den servergenererade `ASK-import order/yta` och laddas ner automatiskt som `v_ask_order_overview_order_set_area_execute_command.csv`. Importfilen ar tabbseparerad med kolumnerna `area_num`, `company`, `order_num`, `pick_zone`; `area_num` innehaller sandningens UTL-ytor kommaseparerade, `company` ar `MG` och `pick_zone` ar `A`.
+Ytgenerering sorterar transportorer efter Forecast-klustren nar de finns: rader med samma `cluster_group` behandlas som en gemensam placeringsenhet, `assignment_order` styr ordningen och `start_seq`/`end_seq` styr vilket UTL-intervall enheten far anvanda. Om en transportor saknar klusterrad faller den tillbaka till tidigare transportorssortering. Placeringen sker fortfarande per sandning: en lagerplats delas aldrig mellan flera sandningar, och en sandning kan spanna over flera lagerplatser om forecasten kraver mer kapacitet an en enskild yta har. Vilka UTL-ytor som overhuvudtaget far raknas styrs forst av Ytgenereringens personliga editprofil for vald toggle; standard ar MG UTL205-UTL652 och ovriga toggles UTL1-UTL652. Ytkartsinstallningen kompletterar sedan kart- och kapacitetsunderlaget for aktivt sparade ytor: varje sparad UTL-yta har koordinater, storlek och `maxPall`, kan uppdatera kapaciteten pa en befintlig `location`-rad och kan lagga till en saknad `Typ=U`-yta inom UTL1-UTL652. Den egna vyn `Installningar` hamtar dessutom alla `Typ=U`-lagerplatser med UTL-nummer 1-652 fran aktiv verksamhets `location`, aven koder som `UTL01` med inledande nollor, och visar bara de UTL-platser som inte redan finns pa kartan, sa anvandaren kan bygga vidare lagret utan att skriva koordinater for hand. I Installningar kan anvandaren markera flera ytor med Ctrl/Shift, flytta gruppen ihop med drag eller piltangenter och anvanda `Delete`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+Z` och `Ctrl+A`; inklistrade kopior hamnar pa lediga U-platser for att undvika dubbletter. Om ingen karta ar sparad anvands standardkoordinaterna bara for visualisering och inga extra lagerplatser skapas. Resultatet innehaller ocksa en interaktiv SVG-karta: kartan kan pannas, zoomas, roteras och anvandas for att dra en placerad sandning till en annan UTL-yta eller byta plats med en annan sandning. Fullskarm oppnas via en liten ikon i kartans ovre hogra horn. Nar kartan har fokus kan anvandaren ocksa anvanda `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa en vald placering, klistra in den pa vald malyta och angra senaste kartandringen. Ytans etikett visar kort ytkod utan `UTL` i kortsidan och kundnamn som huvudtext; kundnamn med flera ord bryts pa max tva rader, pallrad visas inte inne pa ytan och texten har ingen halo/outline. Fargen baseras pa transportor men ett kluster delar basnyans och varje transportor i klustret far en egen ljushet (`allocationClusterColorMap`); manuell farg i kluster-editorn vinner over auto. En knapp `Saknade kunder` uppe till vanster oppnar en panel som listar ej placerade sandningar med kundnamn, transportor och saknade pallplatser. Sidolistans rader markerar ytan och kopierar samtidigt radens sandningsnummer till urklipp, aven nar sifferserien inte visas direkt i listan. Kartan visar aktuella pallplatser, kapacitet och overkapacitet efter manuella flyttar och kan ladda ner en justerad karta-CSV eller justerad ASK-import lokalt i webblasaren. Nar alla sandningar ar placerade och Forecast-resultatet innehaller `Ordernummer` skapas fortsatt den servergenererade `ASK-import order/yta` och laddas ner automatiskt som `v_ask_order_overview_order_set_area_execute_command.csv`. Importfilen ar tabbseparerad med kolumnerna `area_num`, `company`, `order_num`, `pick_zone`; `area_num` innehaller sandningens UTL-ytor kommaseparerade, `company` ar `MG` och `pick_zone` ar `A`.
 
 Ytgenerering-kartans sidopanel visar `Lediga pallplatser` som total kapacitet minus placerade pallplatser och `Lediga ytor` som antalet kartytor utan placering. Bada vardena raknas om nar anvandaren flyttar, klistrar in eller angrar placeringar pa kartan.
 
@@ -147,8 +352,7 @@ Bearbeta och Dela sparar samtidigt arbetslaget klient-side i `sessionStorage` pe
 | --- | --- |
 | Flodesknapp | Disabled tills kravda filer/falt finns. Visar "Kor..." medan API jobbar. |
 | Info `i` | Visar flodesbeskrivning och kravda filer i popover. |
-| Foljdknapp efter Forecast | Nar Forecast ar klart visas `Kor Ytgenerering` direkt i resultatpanelen om Ytgenerering finns i Bearbeta. Knappen ar disabled tills Forecast-sessionen och verksamhetens `location` finns, och skickar samma `forecast_session_id` som den vanliga Ytgenerering-knappen. Om Forecast har transportorskluster skickas aven `carrier_clusters_json` vidare. |
-| Redigera kluster | Visas i Forecast-resultatet nar Forecast har transportorer. Oppnar en modal med drag-sortering (radordningen satter `assignment_order`), index, Transportor och kolumnerna ASN/Arrive/Depart, Group (`cluster_group`), Start seq/End seq och en fargvaljare. ASN/Arrive/Depart seedas med standardtider (11:00/12:00/14:00) och sparas i `carrier_clusters` som metadata (styr inte placeringen). Om `trans_agency` inte gav klusterrader skapas raderna fran Forecast-tabellens unika transportorer. |
+| Redigera kluster | Legacy-stod for gamla Forecast-sessioner finns kvar i resultatpanelen. I det publika enknappsflodet sparas permanenta per-anvandare-kluster i Ytgenereringens editikon i Bearbeta. |
 | Kopiera text | Fritextrutor, till exempel Vecka 27-rapporten, har en kopieringsikon uppe till hoger som kopierar hela rutans text och visar toasten "Text kopierad". |
 | Resultattabell | Visar kolumnnamn i headern och en kopieringsikon per kolumn. Orderoversiktkontroll behaller `Avvikelsetyp` for samma Excel-/CSV-kontrakt som Allokera. Kolumnkopiering trackas med tabell, kolumnindex, kolumnnamn och radantal. |
 | Oppna i Excel | Skickar session_id och tabellnyckel till `/api/allokering/open-excel`. Vid lyckad OS-start visas toasten "Excel oppnas"; om Windows/Excel inte kan oppna filen visas feltoast. |
@@ -192,7 +396,7 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 | "Vad hander om jag laddar upp ny item_option?" | Den gamla `item_option`-raden for din verksamhet ersatts i Postgres och den nya blir sanningen. R3, Stigamo och framtida verksamheter paverkar inte varandra. |
 | "Vad hander om jag laddar upp ny artikel sakerhetsinformation?" | Den gamla `item_security_info`-filen for din verksamhet tas bort och den nya anvands av Godsdeklaration. Andra karnfiler, till exempel `item_option`, rors inte. |
 | "Vad hander om jag laddar upp nya lagerplatser/location?" | Den gamla `location`-filen for verksamheten tas bort, location-cachen rensas och den nya fardigfiltrerade ytlistan byggs direkt for Ytgenerering. |
-| "Hur styr jag var transportorer placeras i Ytgenerering?" | Ladda upp transportorsfilen som `trans_agency`, `transportorer` eller `agency`. Kor Forecast, klicka `Redigera kluster`, justera `Kluster`, `Fran`, `Till` och `Ordning`, och kor sedan Ytgenerering. |
+| "Hur styr jag var transportorer placeras i Ytgenerering?" | Klicka editikonen pa Ytgenerering i Bearbeta. Dar kan du spara transportorsgrupper, ordning och start/end seq per anvandare. Om ingen personlig klusterlista finns laser Ytgenerering fortsatt kluster fran `trans_agency`, `transportorer` eller `agency`. |
 
 ## Kallor
 

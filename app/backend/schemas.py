@@ -70,6 +70,7 @@ class ActivityOut(BaseModel):
     sort_order: int
     is_active: bool
     required_competency: str | None
+    kpi_process_name: str | None = None
 
 
 class ActivityCreate(BaseModel):
@@ -82,6 +83,7 @@ class ActivityCreate(BaseModel):
     category: str = "work"
     sort_order: int = 0
     required_competency: str | None = None
+    kpi_process_name: str | None = None
 
 
 class ActivityUpdate(BaseModel):
@@ -94,6 +96,7 @@ class ActivityUpdate(BaseModel):
     category: str | None = None
     sort_order: int | None = None
     required_competency: str | None = None
+    kpi_process_name: str | None = None
 
 
 class ActivityImportError(BaseModel):
@@ -113,6 +116,7 @@ class ActivityImportRowInput(BaseModel):
     label: str | int | float | None = None
     area: str | int | float | None = None
     summary_activity: str | int | float | None = None
+    kpi_process_name: str | int | float | None = None
     sort_order: str | int | float | None = None
 
 
@@ -197,6 +201,7 @@ class CellOut(BaseModel):
     minute_start: int
     minute_end: int
     activity_id: int | None
+    loan_area_id: int | None = None
     empty_override: bool = False
     version: int
     updated_at: datetime | None = None
@@ -265,6 +270,7 @@ class BulkCellItem(BaseModel):
     minute_end: int = 60
     person_id: int
     activity_id: int | None
+    loan_area_id: int | None = None
     expected_version: int
 
 
@@ -278,6 +284,7 @@ class RestoreSegment(BaseModel):
     minute_start: int
     minute_end: int
     activity_id: int | None
+    loan_area_id: int | None = None
     empty_override: bool = False
 
 

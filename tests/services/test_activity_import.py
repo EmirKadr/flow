@@ -75,11 +75,12 @@ def test_build_activity_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_activity_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 7)] == [
         "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
+        "KPI Mål (frivillig)",
         "sortering (frivillig)",
     ]
 
@@ -99,6 +100,7 @@ def test_parse_activity_import_excel_accepts_label_only():
     assert rows[0].label == "GG Påfyllning"
     assert rows[0].area is None
     assert rows[0].summary_activity is None
+    assert rows[0].kpi_process_name is None
     assert rows[0].sort_order is None
 
 
@@ -106,8 +108,8 @@ def test_parse_activity_import_excel_accepts_optional_fields():
     rows, errors = parse_activity_import_excel(
         workbook_bytes(
             [
-                ["etikett", "område", "summeras som", "sortering"],
-                ["Frånvaro", "GG", "Ledigt", 20],
+                ["etikett", "område", "summeras som", "KPI Mål", "sortering"],
+                ["Frånvaro", "GG", "Ledigt", "dekant ,  plock", 20],
             ]
         )
     )
@@ -116,7 +118,25 @@ def test_parse_activity_import_excel_accepts_optional_fields():
     assert len(rows) == 1
     assert rows[0].area == "GG"
     assert rows[0].summary_activity == "Ledigt"
+    assert rows[0].kpi_process_name == "dekant, plock"
     assert rows[0].sort_order == 20
+
+
+def test_parse_activity_import_excel_rejects_business_prefixed_kpi_process():
+    rows, errors = parse_activity_import_excel(
+        workbook_bytes(
+            [
+                ["etikett", "KPI Mål"],
+                ["Plock", "GG:decanting, plock"],
+            ]
+        )
+    )
+
+    assert rows == []
+    assert len(errors) == 1
+    assert errors[0].row == 2
+    assert errors[0].label == "Plock"
+    assert errors[0].error == "KPI Mål ska bara vara processnamn, utan bolag"
 
 
 def test_parse_activity_import_excel_ignores_legacy_category_and_color_columns():
@@ -167,18 +187,19 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     workbook = load_workbook(io.BytesIO(response.body))
     assert workbook.active.title == "Aktiviteter"
     sheet = workbook.active
-    assert [sheet.cell(1, column).value for column in range(1, 6)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 7)] == [
         "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
+        "KPI Mål (frivillig)",
         "sortering (frivillig)",
     ]
 
-    sheet.append([None, "Test utan frivilligt", "GG", None, None])
-    sheet.append([None, "Test med allt", "MG", "Ledigt", 42])
-    sheet.append([None, "Test bara summeras", None, "Ledigt", None])
-    sheet.append([None, "Test bara sortering", "GG", None, 77])
+    sheet.append([None, "Test utan frivilligt", "GG", None, None, None])
+    sheet.append([None, "Test med allt", "MG", "Ledigt", "dekant, plock", 42])
+    sheet.append([None, "Test bara summeras", None, "Ledigt", None, None])
+    sheet.append([None, "Test bara sortering", "GG", None, None, 77])
     stream = io.BytesIO()
     workbook.save(stream)
 
@@ -199,12 +220,16 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
         "Test bara sortering",
     }
     assert imported["Test utan frivilligt"].summary_activity_id is None
+    assert imported["Test utan frivilligt"].kpi_process_name is None
     assert imported["Test utan frivilligt"].sort_order == 11
     assert imported["Test med allt"].summary_activity_id == summary.id
+    assert imported["Test med allt"].kpi_process_name == "dekant, plock"
     assert imported["Test med allt"].sort_order == 42
     assert imported["Test bara summeras"].summary_activity_id == summary.id
+    assert imported["Test bara summeras"].kpi_process_name is None
     assert imported["Test bara summeras"].sort_order == 12
     assert imported["Test bara sortering"].summary_activity_id is None
+    assert imported["Test bara sortering"].kpi_process_name is None
     assert imported["Test bara sortering"].sort_order == 77
 
     for activity in imported.values():
@@ -218,7 +243,13 @@ def test_import_activity_rows_creates_from_direct_table(import_db):
     result = import_activity_rows(
         ActivityImportRowsRequest(
             rows=[
-                ActivityImportRowInput(label="Direkt plock", area="GG", summary_activity="Ledigt", sort_order="31"),
+                ActivityImportRowInput(
+                    label="Direkt plock",
+                    area="GG",
+                    summary_activity="Ledigt",
+                    kpi_process_name="manual_pick, pack",
+                    sort_order="31",
+                ),
                 ActivityImportRowInput(label="Direkt plock", area="GG"),
             ]
         ),
@@ -233,6 +264,7 @@ def test_import_activity_rows_creates_from_direct_table(import_db):
     activity = import_db.query(Activity).filter(Activity.label == "Direkt plock").one()
     assert activity.area_id == gg.id
     assert activity.summary_activity_id == summary.id
+    assert activity.kpi_process_name == "manual_pick, pack"
     assert activity.sort_order == 31
     assert activity.category == "work"
 
@@ -244,23 +276,44 @@ def test_bemanningsansvarig_can_manage_activities(import_db):
     assert response.headers["Content-Disposition"] == 'attachment; filename="aktiviteter-importmall.xlsx"'
 
     created = create_activity(
-        payload=ActivityCreate(label="flow test", area_id=gg.id, sort_order=99),
+        payload=ActivityCreate(label="flow test", area_id=gg.id, kpi_process_name="dekant ,  plock", sort_order=99),
         db=import_db,
         admin=staffing,
     )
 
     assert created.id is not None
     assert created.label == "flow test"
+    assert created.kpi_process_name == "dekant, plock"
     assert created.code.startswith("GG_FLOW_TEST")
 
     updated = update_activity(
         activity_id=created.id,
-        payload=ActivityUpdate(label="flow test uppdaterad"),
+        payload=ActivityUpdate(label="flow test uppdaterad", kpi_process_name="manual_pick, pack"),
         db=import_db,
         admin=staffing,
     )
 
     assert updated.label == "flow test uppdaterad"
+    assert updated.kpi_process_name == "manual_pick, pack"
+
+    cleared = update_activity(
+        activity_id=created.id,
+        payload=ActivityUpdate(kpi_process_name=""),
+        db=import_db,
+        admin=staffing,
+    )
+
+    assert cleared.kpi_process_name is None
+
+    with pytest.raises(HTTPException) as exc:
+        create_activity(
+            payload=ActivityCreate(label="fel kpi", area_id=gg.id, kpi_process_name="GG:decanting"),
+            db=import_db,
+            admin=staffing,
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "KPI Mål ska bara vara processnamn, utan bolag"
 
     delete_activity(activity_id=created.id, db=import_db, admin=staffing)
 

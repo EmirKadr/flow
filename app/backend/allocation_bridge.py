@@ -102,53 +102,54 @@ PROCESS_MATRIX_AREA_OPTIONS: tuple[dict[str, str], ...] = (
 )
 PROCESS_AREA_RULES: dict[str, dict] = {
     "GG": {
-        "company": "GG",
-        "exclude_customers": {"6005"},
-        "label": "Bolag=GG, Kundnr!=6005",
         "visible_flow_ids": None,
-        "ytgenerering_utl_min": YTGENERERING_UTL_DEFAULT_MIN,
-        "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
     },
     "MG": {
-        "company": "MG",
-        "exclude_customers": {"40002", "90002"},
-        "label": "Bolag=MG, Kundnr!=40002/90002",
         "visible_flow_ids": None,
-        "ytgenerering_utl_min": 205,
-        "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
     },
 }
 PROCESS_DEFAULT_AREA_RULE: dict[str, object] = {
-    "company": "",
-    "exclude_customers": set(),
-    "label": "",
     "visible_flow_ids": None,
-    "ytgenerering_utl_min": YTGENERERING_UTL_DEFAULT_MIN,
-    "ytgenerering_utl_max": YTGENERERING_UTL_DEFAULT_MAX,
 }
-PROCESS_COMPANY_COLUMN_KEYS = {
-    "bolag",
-    "bolagnr",
-    "bolagskod",
-    "bol",
-    "company",
-    "companyid",
-    "companynum",
+YTGENERERING_DEFAULT_AREA_RULES: dict[str, dict[str, int]] = {
+    "DEFAULT": {"utlMin": YTGENERERING_UTL_DEFAULT_MIN, "utlMax": YTGENERERING_UTL_DEFAULT_MAX},
+    "MG": {"utlMin": 205, "utlMax": YTGENERERING_UTL_DEFAULT_MAX},
 }
-PROCESS_CUSTOMER_COLUMN_KEYS = {
-    "kund",
-    "kundnr",
-    "kundnummer",
-    "kundnum",
-    "custom",
-    "customnum",
-    "customernr",
-    "customernumber",
-    "customer",
-    "customerid",
+USER_FILTERS_PARAM = "__allocation_user_filters_json"
+USER_FILTER_PROFILE_VERSION = 1
+USER_FILTER_OPERATORS = {
+    "=": "EQ",
+    "==": "EQ",
+    "eq": "EQ",
+    "EQ": "EQ",
+    "!=": "NE",
+    "<>": "NE",
+    "ne": "NE",
+    "NE": "NE",
+    ">": "GT",
+    "gt": "GT",
+    "GT": "GT",
+    ">=": "GTE",
+    "gte": "GTE",
+    "GTE": "GTE",
+    "<": "LT",
+    "lt": "LT",
+    "LT": "LT",
+    "<=": "LTE",
+    "lte": "LTE",
+    "LTE": "LTE",
+    "between": "Between",
+    "Between": "Between",
+    "in": "In",
+    "In": "In",
+    "terms": "In",
+    "Terms": "In",
+    "not in": "NotIn",
+    "not_in": "NotIn",
+    "notin": "NotIn",
+    "Not In": "NotIn",
+    "NotIn": "NotIn",
 }
-
-
 def _default_warehouse_tools_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "warehouse_tools"
 
@@ -324,22 +325,6 @@ def _process_rule_values(raw: dict | None, *keys: str):
     return None
 
 
-def _process_customer_values(value: object) -> set[str]:
-    if value is None:
-        return set()
-    if isinstance(value, str):
-        raw_values = re.split(r"[,;\s]+", value)
-    elif isinstance(value, (list, tuple, set)):
-        raw_values = list(value)
-    else:
-        raw_values = [value]
-    return {
-        _process_customer_value(item)
-        for item in raw_values
-        if _process_customer_value(item)
-    }
-
-
 def _process_visible_flow_ids(value: object, allowed_flow_ids: set[str] | None = None) -> set[str] | None:
     if value is None:
         return None
@@ -364,9 +349,9 @@ def _process_utl_number(value: object, fallback: int) -> int:
 
 
 def _process_utl_range(raw: dict, defaults: dict | None = None) -> tuple[int, int]:
-    defaults = defaults or PROCESS_DEFAULT_AREA_RULE
-    default_min = _process_utl_number(defaults.get("ytgenerering_utl_min"), YTGENERERING_UTL_DEFAULT_MIN)
-    default_max = _process_utl_number(defaults.get("ytgenerering_utl_max"), YTGENERERING_UTL_DEFAULT_MAX)
+    defaults = defaults or YTGENERERING_DEFAULT_AREA_RULES["DEFAULT"]
+    default_min = _process_utl_number(defaults.get("utlMin") or defaults.get("ytgenerering_utl_min"), YTGENERERING_UTL_DEFAULT_MIN)
+    default_max = _process_utl_number(defaults.get("utlMax") or defaults.get("ytgenerering_utl_max"), YTGENERERING_UTL_DEFAULT_MAX)
     raw_min = _process_rule_values(
         raw,
         "ytgenerering_utl_min",
@@ -392,52 +377,19 @@ def _process_utl_range(raw: dict, defaults: dict | None = None) -> tuple[int, in
     return min_number, max_number
 
 
-def _process_rule_label(rule: dict) -> str:
-    company = str(rule.get("company") or "").strip().upper()
-    excluded = sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value))
-    parts: list[str] = []
-    if company:
-        parts.append(f"Bolag={company}")
-    if excluded:
-        parts.append(f"Kundnr!={'/'.join(excluded)}")
-    return ", ".join(parts)
-
-
-def _process_rule_filter_notice(rule: dict) -> str:
-    company = str(rule.get("company") or "").strip().upper()
-    excluded = sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value))
-    parts: list[str] = []
-    if company:
-        parts.append(f"Bolag {company}")
-    if excluded:
-        parts.append(f"exkl. kundnr {' och '.join(excluded)}")
-    return f"Filter: {', '.join(parts)}" if parts else ""
-
-
 def _normalize_process_area_rule(
     raw: dict | None,
     allowed_flow_ids: set[str] | None = None,
     defaults: dict | None = None,
 ) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    utl_min, utl_max = _process_utl_range(raw, defaults)
-    company = str(_process_rule_values(raw, "company", "bolag") or "").strip().upper()
-    excluded = _process_customer_values(
-        _process_rule_values(raw, "exclude_customers", "excludeCustomers", "excluded_customers", "excludedCustomers")
-    )
     visible_flow_ids = _process_visible_flow_ids(
         _process_rule_values(raw, "visible_flow_ids", "visibleFlowIds", "flow_ids", "flowIds"),
         allowed_flow_ids=allowed_flow_ids,
     )
-    rule = {
-        "company": company,
-        "exclude_customers": excluded,
+    return {
         "visible_flow_ids": visible_flow_ids,
-        "ytgenerering_utl_min": utl_min,
-        "ytgenerering_utl_max": utl_max,
     }
-    rule["label"] = _process_rule_label(rule)
-    return rule
 
 
 def default_process_matrix(flows: list[dict] | None = None) -> dict[str, dict]:
@@ -488,13 +440,8 @@ def process_flow_visible(flow_id: str, area_focus: object, matrix: dict[str, dic
     return visible_flow_ids is None or flow_id in visible_flow_ids
 
 
-def process_ytgenerering_utl_range(area_focus: object, matrix: dict[str, dict] | None = None) -> tuple[int, int]:
-    rule = process_area_rule(area_focus, matrix=matrix) or PROCESS_DEFAULT_AREA_RULE
-    return _process_utl_range({}, rule)
-
-
 def process_rule_has_filters(rule: dict | None) -> bool:
-    return bool(rule and (rule.get("company") or rule.get("exclude_customers")))
+    return False
 
 
 def process_matrix_storage_payload(matrix: dict[str, dict] | None = None) -> dict[str, dict]:
@@ -505,11 +452,7 @@ def process_matrix_storage_payload(matrix: dict[str, dict] | None = None) -> dic
             continue
         visible_flow_ids = rule.get("visible_flow_ids")
         payload[code] = {
-            "company": str(rule.get("company") or ""),
-            "excludeCustomers": sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value)),
             "visibleFlowIds": None if visible_flow_ids is None else sorted(str(value) for value in visible_flow_ids),
-            "ytgenereringUtlMin": int(rule.get("ytgenerering_utl_min") or YTGENERERING_UTL_DEFAULT_MIN),
-            "ytgenereringUtlMax": int(rule.get("ytgenerering_utl_max") or YTGENERERING_UTL_DEFAULT_MAX),
         }
     return payload
 
@@ -539,13 +482,7 @@ def process_matrix_public_payload(
     for code, rule in rules.items():
         visible_flow_ids = rule.get("visible_flow_ids")
         public_rules[code] = {
-            "company": str(rule.get("company") or ""),
-            "excludeCustomers": sorted(str(value) for value in (rule.get("exclude_customers") or set()) if str(value)),
             "visibleFlowIds": None if visible_flow_ids is None else sorted(str(value) for value in visible_flow_ids),
-            "ytgenereringUtlMin": int(rule.get("ytgenerering_utl_min") or YTGENERERING_UTL_DEFAULT_MIN),
-            "ytgenereringUtlMax": int(rule.get("ytgenerering_utl_max") or YTGENERERING_UTL_DEFAULT_MAX),
-            "label": str(rule.get("label") or ""),
-            "filterLabel": _process_rule_filter_notice(rule),
         }
     return {
         "areas": areas,
@@ -558,13 +495,6 @@ def _process_column_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
 
 
-def _process_filter_column(columns, aliases: set[str]) -> str | None:
-    for column in columns:
-        if _process_column_key(column) in aliases:
-            return column
-    return None
-
-
 def _process_filter_text(value: object) -> str:
     if value is None:
         return ""
@@ -572,17 +502,6 @@ def _process_filter_text(value: object) -> str:
     if text.lower() in {"", "nan", "nat", "none"}:
         return ""
     return text
-
-
-def _process_company_value(value: object) -> str:
-    return _process_filter_text(value).upper()
-
-
-def _process_customer_value(value: object) -> str:
-    text = re.sub(r"\s+", "", _process_filter_text(value))
-    if re.fullmatch(r"\d+([,.]0+)?", text):
-        return re.split(r"[,.]", text, maxsplit=1)[0]
-    return text.upper()
 
 
 def _read_process_filter_table(path: Path):
@@ -601,52 +520,6 @@ def _read_process_filter_table(path: Path):
     except Exception:
         df = pd.read_csv(path, dtype=str, sep="\t", engine="python", encoding="utf-8-sig")
     return df
-
-
-def _process_filter_cache_paths(path: Path, *, source_key: str, area_focus: str, rule: dict) -> tuple[Path, Path]:
-    stat = path.stat()
-    payload = {
-        "path": str(path.resolve()),
-        "size": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
-        "source_key": source_key,
-        "area_focus": area_focus,
-        "company": str(rule.get("company") or "").upper(),
-        "exclude_customers": sorted(str(value).upper() for value in (rule.get("exclude_customers") or set())),
-    }
-    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
-    cache_dir = _active_upload_cache_dir()
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / f"filter_{digest}.csv", cache_dir / f"filter_{digest}.json"
-
-
-def _read_process_filter_cache_meta(path: Path) -> dict | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        stat = payload.get("stat")
-        if isinstance(stat, dict):
-            return stat
-    except Exception:
-        return None
-    return None
-
-
-def _write_process_filter_cache_meta(path: Path, stat: dict) -> None:
-    tmp = tempfile.NamedTemporaryFile(
-        delete=False,
-        dir=path.parent,
-        prefix="pending_filter_meta_",
-        suffix=".json",
-        mode="w",
-        encoding="utf-8",
-    )
-    try:
-        json.dump({"stat": stat}, tmp, ensure_ascii=False, sort_keys=True)
-        tmp.close()
-        Path(tmp.name).replace(path)
-    except Exception:
-        Path(tmp.name).unlink(missing_ok=True)
-        raise
 
 
 def _write_process_filter_table(
@@ -678,86 +551,508 @@ def _write_process_filter_table(
     return path
 
 
-def _apply_process_area_rule_to_table(df, rule: dict) -> tuple[object | None, dict | None]:
-    company_column = _process_filter_column(df.columns, PROCESS_COMPANY_COLUMN_KEYS)
-    customer_column = _process_filter_column(df.columns, PROCESS_CUSTOMER_COLUMN_KEYS)
-    company = str(rule.get("company") or "").upper()
-    excluded = {str(value).upper() for value in (rule.get("exclude_customers") or set())}
-    if not company and not excluded:
-        return None, None
-    can_apply_company = bool(company and company_column is not None)
-    can_apply_customer = bool(excluded and customer_column is not None)
-    if not can_apply_company and not can_apply_customer:
-        return None, None
-
-    before = int(len(df))
-    mask = None
-    if can_apply_company:
-        mask = df[company_column].map(_process_company_value).eq(company)
-    if can_apply_customer:
-        customer_mask = ~df[customer_column].map(_process_customer_value).isin(excluded)
-        mask = customer_mask if mask is None else (mask & customer_mask)
-
-    filtered = df.loc[mask].copy() if mask is not None else df.copy()
-    return filtered, {
-        "before": before,
-        "after": int(len(filtered)),
-        "company_column": str(company_column or ""),
-        "customer_column": str(customer_column or ""),
-    }
-
-
 def apply_process_area_filters(
     files: dict[str, Path],
     area_focus: object,
     matrix: dict[str, dict] | None = None,
 ) -> tuple[dict[str, Path], list[Path], list[str]]:
-    rule = process_area_rule(area_focus, matrix=matrix)
-    if not process_rule_has_filters(rule):
+    # Bearbeta-matrisen styr numera bara flodessynlighet. Fil-/radfilter och
+    # Ytgenereringens egna installningar ar anvandarspecifika.
+    return files, [], []
+
+
+def _normalize_user_filter_operator(value: object) -> str:
+    key = str(value or "").strip()
+    return USER_FILTER_OPERATORS.get(key) or USER_FILTER_OPERATORS.get(key.lower()) or "EQ"
+
+
+def _split_user_filter_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        raw_values = list(value)
+    else:
+        raw_values = re.split(r"[\n,;]+", str(value))
+    result: list[str] = []
+    for item in raw_values:
+        text = _process_filter_text(item)
+        if text:
+            result.append(text)
+    return result
+
+
+def _normalize_user_filter_condition(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    column = str(raw.get("column") or raw.get("id") or raw.get("field") or "").strip()
+    column_label = str(raw.get("columnLabel") or raw.get("label") or "").strip()
+    if not column and not column_label:
+        return None
+    operator = _normalize_user_filter_operator(raw.get("operator"))
+    value = raw.get("value")
+    if operator in {"In", "NotIn"}:
+        normalized_value = _split_user_filter_values(value)
+        if not normalized_value:
+            return None
+    elif operator == "Between":
+        normalized_value = _split_user_filter_values(value)
+        if len(normalized_value) < 2:
+            return None
+        normalized_value = normalized_value[:2]
+    else:
+        normalized_value = _process_filter_text(value)
+        if not normalized_value:
+            return None
+    return {
+        "column": column[:160],
+        "columnLabel": column_label[:160],
+        "operator": operator,
+        "value": normalized_value,
+    }
+
+
+def _normalize_user_source_mode(value: object) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in {"api", "external", "hamta", "hämta"}:
+        return "api"
+    if text in {"upload", "uploaded", "file", "local", "uppladdning", "fil"}:
+        return "upload"
+    return None
+
+
+def _normalize_user_source_modes(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    modes: dict[str, str] = {}
+    for raw_file_key, raw_mode in value.items():
+        file_key = str(raw_file_key or "").strip()
+        if not file_key or not re.fullmatch(r"[A-Za-z0-9_:-]{1,80}", file_key):
+            continue
+        mode = _normalize_user_source_mode(raw_mode)
+        if mode:
+            modes[file_key] = mode
+    return modes
+
+
+def _ytgenerering_default_area_rule(code: object) -> dict[str, int]:
+    area_code = normalize_process_area_focus(code) or "DEFAULT"
+    defaults = YTGENERERING_DEFAULT_AREA_RULES.get(area_code) or YTGENERERING_DEFAULT_AREA_RULES["DEFAULT"]
+    return {
+        "utlMin": _process_utl_number(defaults.get("utlMin"), YTGENERERING_UTL_DEFAULT_MIN),
+        "utlMax": _process_utl_number(defaults.get("utlMax"), YTGENERERING_UTL_DEFAULT_MAX),
+    }
+
+
+def default_ytgenerering_area_settings() -> dict[str, dict[str, int]]:
+    areas = {"DEFAULT": _ytgenerering_default_area_rule("DEFAULT")}
+    for area in PROCESS_MATRIX_AREA_OPTIONS:
+        code = normalize_process_area_focus(area.get("code"))
+        if code:
+            areas[code] = _ytgenerering_default_area_rule(code)
+    return areas
+
+
+def _normalize_ytgenerering_area_settings(value: object) -> dict[str, dict[str, int]]:
+    areas = default_ytgenerering_area_settings()
+    raw_areas = value.get("areas") if isinstance(value, dict) and isinstance(value.get("areas"), dict) else value
+    if not isinstance(raw_areas, dict):
+        return areas
+
+    known_area_codes = set(areas)
+    for raw_code, raw_rule in raw_areas.items():
+        code = normalize_process_area_focus(raw_code)
+        if not code or not re.fullmatch(r"[A-Z0-9_:-]{1,40}", code):
+            continue
+        if code not in known_area_codes:
+            continue
+        base = areas.get(code) or areas["DEFAULT"]
+        if isinstance(raw_rule, dict):
+            utl_min, utl_max = _process_utl_range(raw_rule, base)
+        else:
+            utl_min, utl_max = base["utlMin"], base["utlMax"]
+        areas[code] = {"utlMin": utl_min, "utlMax": utl_max}
+    return areas
+
+
+def _carrier_cluster_text(value: object, *, max_length: int = 160) -> str:
+    text = _process_filter_text(value)
+    return text[:max_length]
+
+
+def _carrier_cluster_sequence(value: object) -> str:
+    text = _carrier_cluster_text(value, max_length=20).replace(",", ".")
+    if not text:
+        return ""
+    try:
+        number = int(float(text))
+    except (TypeError, ValueError):
+        return ""
+    return str(max(YTGENERERING_UTL_DEFAULT_MIN, min(YTGENERERING_UTL_DEFAULT_MAX, number)))
+
+
+def _carrier_cluster_order(value: object, fallback: int) -> str:
+    text = _carrier_cluster_text(value, max_length=20).replace(",", ".")
+    if not text:
+        return str(fallback)
+    try:
+        number = int(float(text))
+    except (TypeError, ValueError):
+        number = fallback
+    return str(max(0, min(10000, number)))
+
+
+def _normalize_user_carrier_cluster_row(raw: object, index: int) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    carrier_num = _carrier_cluster_text(
+        raw.get("carrierNum")
+        or raw.get("carrier_num")
+        or raw.get("agencyNum")
+        or raw.get("agency_num")
+        or raw.get("AGENCY_NUM"),
+        max_length=80,
+    )
+    if carrier_num.endswith(".0"):
+        carrier_num = carrier_num[:-2]
+    description = _carrier_cluster_text(
+        raw.get("description")
+        or raw.get("agencyDesc")
+        or raw.get("agency_desc")
+        or raw.get("AGENCY_DESC")
+        or raw.get("carrier")
+        or raw.get("transportor")
+    )
+    alias = _carrier_cluster_text(raw.get("alias") or raw.get("agencyAlias") or raw.get("agency_alias") or raw.get("AGENCY_ALIAS"))
+    if not (carrier_num or description or alias):
+        return None
+    row = {
+        "id": _carrier_cluster_text(raw.get("id"), max_length=100) or carrier_num or f"row-{index + 1}",
+        "carrierNum": carrier_num,
+        "description": description,
+        "alias": alias,
+        "clusterGroup": _carrier_cluster_text(raw.get("clusterGroup") or raw.get("cluster_group") or raw.get("CLUSTER_GROUP") or raw.get("cluster")),
+        "assignmentOrder": _carrier_cluster_order(raw.get("assignmentOrder") or raw.get("assignment_order") or raw.get("ASSIGNMENT_ORDER"), index + 1),
+        "startSeq": _carrier_cluster_sequence(raw.get("startSeq") or raw.get("start_seq") or raw.get("START_SEQ") or raw.get("from") or raw.get("utlFrom")),
+        "endSeq": _carrier_cluster_sequence(raw.get("endSeq") or raw.get("end_seq") or raw.get("END_SEQ") or raw.get("to") or raw.get("utlTo")),
+        "asn": _carrier_cluster_text(raw.get("asn") or raw.get("agency_asn") or raw.get("agencyAsn") or raw.get("ASN"), max_length=40),
+        "arrive": _carrier_cluster_text(raw.get("arrive") or raw.get("agency_arrive") or raw.get("agencyArrive") or raw.get("ARRIVE"), max_length=40),
+        "depart": _carrier_cluster_text(raw.get("depart") or raw.get("agency_depart") or raw.get("agencyDepart") or raw.get("DEPART"), max_length=40),
+        "color": _carrier_cluster_text(raw.get("color") or raw.get("colour"), max_length=24),
+    }
+    return row
+
+
+def _normalize_user_carrier_clusters(value: object) -> dict | None:
+    if value is None:
+        return None
+    rows = value if isinstance(value, list) else value.get("rows") if isinstance(value, dict) else None
+    if not isinstance(rows, list):
+        return None
+    normalized_rows = [
+        row
+        for row in (_normalize_user_carrier_cluster_row(item, index) for index, item in enumerate(rows[:200]))
+        if row is not None
+    ]
+    if not normalized_rows:
+        return None
+    source = value.get("source") if isinstance(value, dict) and isinstance(value.get("source"), dict) else {}
+    return {
+        "version": 1,
+        "source": {
+            "name": _carrier_cluster_text(source.get("name"), max_length=120) or "Transportorer",
+            "rowCount": len(normalized_rows),
+        },
+        "rows": normalized_rows,
+    }
+
+
+def _normalize_user_ytgenerering_settings(value: object) -> dict | None:
+    raw = value if isinstance(value, dict) else {}
+    if not raw:
+        return None
+    areas = _normalize_ytgenerering_area_settings(raw.get("areas") if isinstance(raw.get("areas"), dict) else raw)
+    carrier_clusters = _normalize_user_carrier_clusters(raw.get("carrierClusters") or raw.get("carrier_clusters"))
+    settings: dict[str, object] = {"areas": areas}
+    if carrier_clusters:
+        settings["carrierClusters"] = carrier_clusters
+    return settings
+
+
+def normalize_user_filter_profile(value: object, *, flows: list[dict] | None = None) -> dict:
+    allowed_flow_ids = _process_matrix_flow_ids(flows)
+    raw_profile = value if isinstance(value, dict) else {}
+    raw_flows = raw_profile.get("flows")
+    if not isinstance(raw_flows, dict):
+        raw_flows = {}
+    profile_flows: dict[str, dict] = {}
+    for raw_flow_id, raw_flow in raw_flows.items():
+        flow_id = str(raw_flow_id or "").strip()
+        if not flow_id or not re.fullmatch(r"[A-Za-z0-9_:-]{1,80}", flow_id):
+            continue
+        if allowed_flow_ids is not None and flow_id not in allowed_flow_ids:
+            continue
+        if not isinstance(raw_flow, dict):
+            continue
+        raw_files = raw_flow.get("files") if isinstance(raw_flow, dict) else None
+        files_payload: dict[str, list[dict]] = {}
+        if isinstance(raw_files, dict):
+            for raw_file_key, raw_conditions in raw_files.items():
+                file_key = str(raw_file_key or "").strip()
+                if not file_key or not re.fullmatch(r"[A-Za-z0-9_:-]{1,80}", file_key):
+                    continue
+                conditions = [
+                    condition
+                    for condition in (_normalize_user_filter_condition(item) for item in (raw_conditions or []))
+                    if condition is not None
+                ]
+                if conditions:
+                    files_payload[file_key] = conditions[:20]
+        flow_payload: dict[str, object] = {}
+        source_modes = _normalize_user_source_modes(raw_flow.get("sources") or raw_flow.get("sourceModes"))
+        if source_modes:
+            flow_payload["sources"] = source_modes
+        if files_payload:
+            flow_payload["files"] = files_payload
+        raw_settings = raw_flow.get("settings") if isinstance(raw_flow.get("settings"), dict) else {}
+        raw_ytgenerering_settings = raw_settings.get("ytgenerering") if isinstance(raw_settings, dict) else None
+        if raw_ytgenerering_settings is None:
+            raw_ytgenerering_settings = raw_flow.get("ytgenerering")
+        if flow_id == "ytgenerering":
+            ytgenerering_settings = _normalize_user_ytgenerering_settings(raw_ytgenerering_settings)
+            if ytgenerering_settings:
+                flow_payload["settings"] = {"ytgenerering": ytgenerering_settings}
+        if flow_payload:
+            profile_flows[flow_id] = flow_payload
+    return {"version": USER_FILTER_PROFILE_VERSION, "flows": profile_flows}
+
+
+def user_filter_profile_count(profile: object) -> int:
+    normalized = normalize_user_filter_profile(profile)
+    file_count = sum(
+        len(conditions)
+        for flow in normalized.get("flows", {}).values()
+        for conditions in flow.get("files", {}).values()
+    )
+    source_count = sum(
+        len(flow.get("sources", {}))
+        for flow in normalized.get("flows", {}).values()
+        if isinstance(flow, dict)
+    )
+    settings_count = 0
+    for flow in normalized.get("flows", {}).values():
+        ytgenerering = ((flow.get("settings") or {}).get("ytgenerering") or {}) if isinstance(flow, dict) else {}
+        if not isinstance(ytgenerering, dict):
+            continue
+        if ytgenerering.get("areas"):
+            settings_count += 1
+        carrier_clusters = ytgenerering.get("carrierClusters") if isinstance(ytgenerering.get("carrierClusters"), dict) else None
+        settings_count += len(carrier_clusters.get("rows") or []) if carrier_clusters else 0
+    return file_count + source_count + settings_count
+
+
+def user_source_modes(profile: object, flow_id: str) -> dict[str, str]:
+    normalized = normalize_user_filter_profile(profile)
+    flow = normalized.get("flows", {}).get(str(flow_id or ""), {})
+    sources = flow.get("sources") if isinstance(flow, dict) else None
+    return dict(sources) if isinstance(sources, dict) else {}
+
+
+def api_source_map_for_user_profile(source_map: dict[str, str], flow_id: str, profile: object) -> dict[str, str]:
+    modes = user_source_modes(profile, flow_id)
+    if not modes:
+        return dict(source_map)
+    return {
+        file_key: source_key
+        for file_key, source_key in source_map.items()
+        if modes.get(str(file_key)) != "upload"
+    }
+
+
+def ytgenerering_user_settings(profile: object, *, area_focus: object = None) -> dict[str, object]:
+    normalized = normalize_user_filter_profile(profile)
+    settings = (
+        normalized.get("flows", {})
+        .get("ytgenerering", {})
+        .get("settings", {})
+        .get("ytgenerering")
+    )
+    settings = settings if isinstance(settings, dict) else {}
+    areas = _normalize_ytgenerering_area_settings(settings.get("areas") if isinstance(settings.get("areas"), dict) else {})
+    focus_code = normalize_process_area_focus(area_focus) or "ALLT"
+    rule = areas.get(focus_code) or areas.get("DEFAULT") or _ytgenerering_default_area_rule("DEFAULT")
+    carrier_clusters = settings.get("carrierClusters") if isinstance(settings.get("carrierClusters"), dict) else None
+    rows = carrier_clusters.get("rows") if isinstance(carrier_clusters, dict) else None
+    return {
+        "areas": areas,
+        "utlRange": (int(rule["utlMin"]), int(rule["utlMax"])),
+        "carrierClusters": carrier_clusters if rows else None,
+    }
+
+
+def apply_ytgenerering_user_settings(
+    params: dict[str, str],
+    profile: object,
+    *,
+    area_focus: object = None,
+) -> dict[str, object]:
+    settings = ytgenerering_user_settings(profile, area_focus=area_focus)
+    utl_min, utl_max = settings["utlRange"]
+    params[YTGENERERING_UTL_MIN_PARAM] = str(utl_min)
+    params[YTGENERERING_UTL_MAX_PARAM] = str(utl_max)
+    carrier_clusters = settings.get("carrierClusters")
+    if isinstance(carrier_clusters, dict) and carrier_clusters.get("rows"):
+        params["__carrier_clusters_json"] = json.dumps(carrier_clusters, ensure_ascii=False)
+    return settings
+
+
+def _user_filter_column(df, condition: dict) -> str | None:
+    candidates = {
+        _process_column_key(value)
+        for value in (condition.get("column"), condition.get("columnLabel"))
+        if _process_column_key(value)
+    }
+    if not candidates:
+        return None
+    for column in df.columns:
+        if _process_column_key(column) in candidates:
+            return column
+    return None
+
+
+def _user_filter_text_series(series):
+    return series.map(_process_filter_text)
+
+
+def _user_filter_casefold(value: object) -> str:
+    return _process_filter_text(value).casefold()
+
+
+def _user_filter_number(value: object) -> float | None:
+    text = _process_filter_text(value).replace(",", ".")
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _user_filter_numeric_mask(series, operator: str, values: list[str] | str):
+    import pandas as pd  # type: ignore
+
+    if isinstance(values, str):
+        compare_values = [values]
+    else:
+        compare_values = list(values)
+    numbers = [_user_filter_number(value) for value in compare_values]
+    if any(number is None for number in numbers):
+        return None
+    numeric_series = pd.to_numeric(
+        _user_filter_text_series(series).map(lambda value: str(value).replace(",", ".")),
+        errors="coerce",
+    )
+    first = numbers[0]
+    if first is None:
+        return None
+    if operator == "GT":
+        return numeric_series > first
+    if operator == "GTE":
+        return numeric_series >= first
+    if operator == "LT":
+        return numeric_series < first
+    if operator == "LTE":
+        return numeric_series <= first
+    if operator == "Between" and len(numbers) >= 2 and numbers[1] is not None:
+        low, high = sorted((first, numbers[1]))
+        return numeric_series.between(low, high, inclusive="both")
+    return None
+
+
+def _user_filter_condition_mask(series, condition: dict):
+    operator = str(condition.get("operator") or "EQ")
+    value = condition.get("value")
+    text_series = _user_filter_text_series(series).map(lambda item: str(item).casefold())
+    if operator == "EQ":
+        return text_series.eq(_user_filter_casefold(value))
+    if operator == "NE":
+        return ~text_series.eq(_user_filter_casefold(value))
+    if operator in {"GT", "GTE", "LT", "LTE"}:
+        numeric = _user_filter_numeric_mask(series, operator, _process_filter_text(value))
+        if numeric is not None:
+            return numeric.fillna(False)
+        compare = _user_filter_casefold(value)
+        if operator == "GT":
+            return text_series.gt(compare)
+        if operator == "GTE":
+            return text_series.ge(compare)
+        if operator == "LT":
+            return text_series.lt(compare)
+        return text_series.le(compare)
+    if operator == "Between":
+        values = value if isinstance(value, list) else _split_user_filter_values(value)
+        numeric = _user_filter_numeric_mask(series, operator, values[:2])
+        if numeric is not None:
+            return numeric.fillna(False)
+        if len(values) < 2:
+            return text_series.eq("")
+        low, high = sorted((_user_filter_casefold(values[0]), _user_filter_casefold(values[1])))
+        return text_series.between(low, high, inclusive="both")
+    if operator in {"In", "NotIn"}:
+        values = {_user_filter_casefold(item) for item in _split_user_filter_values(value)}
+        mask = text_series.isin(values)
+        return ~mask if operator == "NotIn" else mask
+    return text_series.eq(_user_filter_casefold(value))
+
+
+def apply_user_flow_filters(
+    files: dict[str, Path],
+    flow_id: str,
+    profile: object,
+) -> tuple[dict[str, Path], list[Path], list[str]]:
+    normalized = normalize_user_filter_profile(profile)
+    flow_filters = (normalized.get("flows") or {}).get(str(flow_id or ""), {}).get("files") or {}
+    if not flow_filters:
         return files, [], []
 
-    code = normalize_process_area_focus(area_focus)
     filtered_files = dict(files)
     temp_paths: list[Path] = []
-    stats: list[dict] = []
-    _cleanup_upload_cache()
-
-    for key, raw_path in files.items():
-        path = Path(raw_path)
+    log_lines: list[str] = []
+    for file_key, conditions in flow_filters.items():
+        if file_key not in files or not conditions:
+            continue
+        path = Path(files[file_key])
         try:
-            cache_path, meta_path = _process_filter_cache_paths(path, source_key=key, area_focus=code, rule=rule)
-            cached_stat = _read_process_filter_cache_meta(meta_path) if cache_path.is_file() else None
-            if cached_stat is not None:
-                filtered_files[key] = cache_path
-                stats.append({"key": key, **cached_stat})
-                continue
             df = _read_process_filter_table(path)
-            filtered_df, stat = _apply_process_area_rule_to_table(df, rule)
-        except Exception:
+        except Exception as exc:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Filtret for {file_key} kunde inte lasa tabellen.",
+            ) from exc
+        mask = None
+        missing_columns: list[str] = []
+        for condition in conditions:
+            column = _user_filter_column(df, condition)
+            if column is None:
+                missing_columns.append(str(condition.get("columnLabel") or condition.get("column") or "kolumn"))
+                continue
+            condition_mask = _user_filter_condition_mask(df[column], condition)
+            mask = condition_mask if mask is None else (mask & condition_mask)
+        if missing_columns:
+            missing = ", ".join(sorted(set(missing_columns))[:5])
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Filtret for {file_key} saknar kolumn: {missing}.",
+            )
+        if mask is None:
             continue
-        if filtered_df is None or stat is None:
-            continue
-        filtered_path = _write_process_filter_table(
-            filtered_df,
-            source_key=key,
-            area_focus=code,
-            target_path=cache_path,
-        )
-        _write_process_filter_cache_meta(meta_path, stat)
-        filtered_files[key] = filtered_path
-        stats.append({"key": key, **stat})
-
-    if not stats:
-        return filtered_files, temp_paths, []
-
-    lines = [f"Omradesfilter {code}: {rule['label']}."]
-    for stat in stats:
-        columns = ", ".join(
-            value for value in (stat.get("company_column"), stat.get("customer_column")) if value
-        )
-        suffix = f" ({columns})" if columns else ""
-        lines.append(f"{stat['key']}: {stat['before']} -> {stat['after']} rader{suffix}.")
-    return filtered_files, temp_paths, lines
+        before = int(len(df))
+        filtered_df = df.loc[mask].copy()
+        filtered_path = _write_process_filter_table(filtered_df, source_key=file_key, area_focus="userfilter")
+        filtered_files[file_key] = filtered_path
+        temp_paths.append(filtered_path)
+        log_lines.append(f"Anvandarfilter {file_key}: {before} -> {int(len(filtered_df))} rader ({len(conditions)} villkor).")
+    return filtered_files, temp_paths, log_lines
 
 
 def _cell(value: object) -> str:

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -30,6 +32,7 @@ def add_cell(session, person, activity, *, hour=7, minute_start=0, minute_end=60
 
 
 def seed_presence_data(session):
+    existing_person_created_at = datetime(2026, 1, 1)
     stigamo = Business(code="STIGAMO", name="Stigamo", sort_order=1)
     r3 = Business(code="R3", name="R3", sort_order=2)
     session.add_all([stigamo, r3])
@@ -47,13 +50,65 @@ def seed_presence_data(session):
     session.add_all([work, pack, absence, r3_work])
     session.flush()
 
-    current_work = Person(business_id=stigamo.id, name="Current Work", home_area_id=gg.id, competencies=[], sort_order=1)
-    absence_now = Person(business_id=stigamo.id, name="Absence Now", home_area_id=gg.id, competencies=[], sort_order=2)
-    absent_only = Person(business_id=stigamo.id, name="Absent Only", home_area_id=gg.id, competencies=[], has_fixed_schedule=False, sort_order=3)
-    later_work = Person(business_id=stigamo.id, name="Later Work", home_area_id=gg.id, competencies=[], has_fixed_schedule=False, sort_order=4)
-    empty_current = Person(business_id=stigamo.id, name="Empty Current", home_area_id=gg.id, competencies=[], sort_order=5)
-    split_current = Person(business_id=stigamo.id, name="Split Current", home_area_id=gg.id, competencies=[], has_fixed_schedule=False, sort_order=6)
-    r3_person = Person(business_id=r3.id, name="R3 Current", home_area_id=r3_area.id, competencies=[], sort_order=1)
+    current_work = Person(
+        business_id=stigamo.id,
+        name="Current Work",
+        home_area_id=gg.id,
+        competencies=[],
+        sort_order=1,
+        created_at=existing_person_created_at,
+    )
+    absence_now = Person(
+        business_id=stigamo.id,
+        name="Absence Now",
+        home_area_id=gg.id,
+        competencies=[],
+        sort_order=2,
+        created_at=existing_person_created_at,
+    )
+    absent_only = Person(
+        business_id=stigamo.id,
+        name="Absent Only",
+        home_area_id=gg.id,
+        competencies=[],
+        has_fixed_schedule=False,
+        sort_order=3,
+        created_at=existing_person_created_at,
+    )
+    later_work = Person(
+        business_id=stigamo.id,
+        name="Later Work",
+        home_area_id=gg.id,
+        competencies=[],
+        has_fixed_schedule=False,
+        sort_order=4,
+        created_at=existing_person_created_at,
+    )
+    empty_current = Person(
+        business_id=stigamo.id,
+        name="Empty Current",
+        home_area_id=gg.id,
+        competencies=[],
+        sort_order=5,
+        created_at=existing_person_created_at,
+    )
+    split_current = Person(
+        business_id=stigamo.id,
+        name="Split Current",
+        home_area_id=gg.id,
+        competencies=[],
+        has_fixed_schedule=False,
+        sort_order=6,
+        created_at=existing_person_created_at,
+    )
+    r3_person = Person(
+        business_id=r3.id,
+        name="R3 Current",
+        home_area_id=r3_area.id,
+        competencies=[],
+        sort_order=1,
+        created_at=existing_person_created_at,
+    )
     session.add_all([current_work, absence_now, absent_only, later_work, empty_current, split_current, r3_person])
     session.flush()
 

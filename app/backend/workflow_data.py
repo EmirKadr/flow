@@ -107,7 +107,19 @@ SOURCE_SPECS: dict[str, WorkflowSourceSpec] = {
     "item_alias": WorkflowSourceSpec("item_alias", "Item Alias", "item_alias"),
     "dimension": WorkflowSourceSpec("dimension", "Dimensioner", "dimension"),
     "pallet_type": WorkflowSourceSpec("pallet_type", "Palltyp", "pallet_type"),
-    "item_option": WorkflowSourceSpec("item_option", "Item Option", "item_option"),
+    "item_option": WorkflowSourceSpec(
+        "item_option",
+        "Item Option",
+        "item_option",
+        required_columns=(
+            "not_stackable",
+            "whole_pallet_near_miss_percent",
+        ),
+        extra_headers=(
+            ("not_stackable", "Ej staplingsbar"),
+            ("whole_pallet_near_miss_percent", "Helpalls avvikelse %"),
+        ),
+    ),
     "trans_agency": WorkflowSourceSpec("trans_agency", "Transportör", "trans_agency"),
     "location": WorkflowSourceSpec("location", "Lagerplatser", "location"),
     "item_security_info": WorkflowSourceSpec("item_security_info", "Artikel Säkerhetsinformation", "item_security_info"),
@@ -115,6 +127,20 @@ SOURCE_SPECS: dict[str, WorkflowSourceSpec] = {
     "trans": WorkflowSourceSpec("trans", "Translogg", "v_ask_trans_log"),
     "pallet": WorkflowSourceSpec("pallet", "Pallastningslogg", "v_ask_palletloading_log"),
     "kpi": WorkflowSourceSpec("kpi", "KPI-Mål", "v_ask_kpi_target"),
+}
+
+
+FORECAST_FLOW_API_SOURCES: dict[str, str] = {
+    "orders": "orders",
+    "overview": "overview",
+    "buffer": "buffer",
+    "custom": "custom",
+    "item": "item",
+    "item_alias": "item_alias",
+    "dimension": "dimension",
+    "pallet_type": "pallet_type",
+    "item_option": "item_option",
+    "trans_agency": "trans_agency",
 }
 
 
@@ -138,19 +164,9 @@ ALLOCATION_FLOW_API_SOURCES: dict[str, dict[str, str]] = {
     },
     "ordersaldo": {"orders": "orders", "saldo": "saldo"},
     "lyx": {"saldo": "saldo"},
-    "forecast": {
-        "orders": "orders",
-        "overview": "overview",
-        "buffer": "buffer",
-        "custom": "custom",
-        "item": "item",
-        "item_alias": "item_alias",
-        "dimension": "dimension",
-        "pallet_type": "pallet_type",
-        "item_option": "item_option",
-        "trans_agency": "trans_agency",
-    },
-    "ytgenerering": {"location": "location"},
+    "pafyllnadsprio": {"orders": "orders", "saldo": "saldo", "overview": "overview"},
+    "forecast": FORECAST_FLOW_API_SOURCES,
+    "ytgenerering": {**FORECAST_FLOW_API_SOURCES, "location": "location"},
 }
 
 
@@ -178,6 +194,33 @@ def source_spec(source_key: str) -> WorkflowSourceSpec:
         return SOURCE_SPECS[key]
     except KeyError as exc:
         raise WorkflowDataError(f"Okänd API-källa: {source_key}", status_code=404) from exc
+
+
+def source_public_metadata(source_key: str) -> dict[str, Any]:
+    spec = source_spec(source_key)
+    columns: list[dict[str, str]] = []
+    try:
+        view = load_catalog().view(spec.view)
+        seen: set[str] = set()
+        for column in view.columns:
+            column_id = str(column.id or "").strip()
+            if not column_id or column_id in seen:
+                continue
+            seen.add(column_id)
+            columns.append({"id": column_id, "label": _column_label(column), "type": "String"})
+        for column_id, label in spec.extra_headers:
+            if column_id in seen:
+                continue
+            seen.add(column_id)
+            columns.append({"id": column_id, "label": label, "type": "String"})
+    except (DataFetchConfigError, DataFetchPlanError):
+        columns = []
+    return {
+        "key": spec.key,
+        "label": spec.label,
+        "view": spec.view,
+        "columns": columns,
+    }
 
 
 def api_config_missing() -> list[str]:
@@ -246,7 +289,6 @@ def _row_value(row: dict[str, Any], column_id: str) -> Any:
     actual = lower.get(str(column_id).lower())
     return row.get(actual) if actual is not None else ""
 
-
 def _assert_required_columns(spec: WorkflowSourceSpec, rows: list[dict[str, Any]], view: DataView) -> None:
     catalog_columns = {str(column.id).lower() for column in view.columns}
     row_columns = {str(key).lower() for row in rows for key in row.keys()}
@@ -260,7 +302,6 @@ def _assert_required_columns(spec: WorkflowSourceSpec, rows: list[dict[str, Any]
             f"API-svaret för {spec.label} saknar kolumnen {', '.join(missing)}.",
             status_code=502,
         )
-
 
 def _materialize_csv(spec: WorkflowSourceSpec, rows: list[dict[str, Any]], view: DataView) -> Path:
     _assert_required_columns(spec, rows, view)

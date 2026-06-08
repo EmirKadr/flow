@@ -883,8 +883,26 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "applyScheduleData(cachedData)" in schedule
     assert "function openScheduleLoanMenu" in schedule
     assert "function scheduleLoanTargetOptions" in schedule
+    assert "function scheduleLoanStartHour" in schedule
+    assert "function localYmdString" in schedule
+    assert "function selectedScheduleYmdString" in schedule
+    assert "function scheduleLoanStartHint" in schedule
+    assert "return HOURS[0]" not in schedule
+    assert "Klicka först på timmen där flytten ska börja" in schedule
+    assert "function scheduleLoanCellsForHour(personId, hour, areaId)" in schedule
+    assert "selectedPersonId" in schedule
+    assert "function selectPersonRow" in schedule
+    assert "person-row-selected" in schedule
+    assert "selectedPersonId" in overview
+    assert "function selectPersonRow" in overview
+    assert "person-row-selected" in overview
+    assert "tr.person-row-selected" in styles
     assert "async function sendPersonToArea" in schedule
     assert 'action: "loan_to_area"' in schedule
+    assert "loan_area_id" in schedule
+    assert "Number(cell.loan_area_id) === selectedAreaId" in schedule
+    assert "loan_area_id: Number(areaId)" in schedule
+    assert "Tomt från" in schedule
     assert "Skicka till" in schedule
     assert "schedule-loan-enabled" in schedule
     assert ".schedule-loan-menu" in styles
@@ -915,6 +933,36 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "productivityGroupFilter" not in productivity
 
 
+def test_plain_view_tables_get_clickable_sort_headers():
+    frontend = ROOT / "app" / "frontend"
+    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function setupClientSortableTable" in common
+    assert "function sortClientTableByHeader" in common
+    assert "function clientTableSortToken" in common
+    assert "function scheduleClientTableResort" in common
+    assert "cell.style.background || cell.style.backgroundColor" in common
+    assert "setupClientSortableTables(document)" in common
+    assert "new MutationObserver" in common
+    assert "window.setupClientSortableTables = setupClientSortableTables" in common
+    assert "client-sortable-table" in common
+    assert "client-sortable-header" in common
+    assert "aria-sort" in common
+    assert 'table.matches(CLIENT_TABLE_SORT_EXCLUDE_SELECTOR)' in common
+    assert '"table.matrix"' in common
+    assert '"table.overview"' in common
+    assert '"table.businesses-table"' in common
+    assert '"table.business-areas-table"' in common
+    assert '"table.bulk-import-table"' in common
+    assert '"table.role-access-table"' in common
+    assert '"table.meta-admin-table"' in common
+    assert 'table.querySelector("tr.sort-row")' in common
+    assert 'table.closest(".modal, [class*=\'allocation-\']")' in common
+    assert "table.client-sortable-table th.client-sortable-header" in styles
+    assert "table.client-sortable-table th.client-sortable-header:hover" in styles
+
+
 def test_bearbeta_area_focus_filter_contract():
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "frontend" / "css" / "styles.css").read_text(encoding="utf-8")
@@ -922,17 +970,41 @@ def test_bearbeta_area_focus_filter_contract():
 
     assert "ALLOCATION_PROCESS_MATRIX" in allocation
     assert 'GG: {' in allocation
-    assert "Filter: Bolag GG, exkl. kundnr 6005" in allocation
-    assert "Filter: Bolag MG, exkl. kundnr 40002 och 90002" in allocation
+    assert "Filter: Bolag GG, exkl. kundnr 6005" not in allocation
+    assert "Filter: Bolag MG, exkl. kundnr 40002 och 90002" not in allocation
+    assert "data-matrix-company" not in allocation
+    assert "data-matrix-exclude" not in allocation
     assert 'const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus"' in allocation
+    assert 'const ALLOCATION_USER_FILTERS_PARAM = "__allocation_user_filters_json"' in allocation
     assert "formData.append(ALLOCATION_PROCESS_AREA_PARAM, focusCode)" in allocation
+    assert "appendAllocationFilterProfile(fd)" in allocation
     assert "appendAllocationAreaFocus(fd)" in allocation
     assert 'allocationJson(`${ALLOCATION_API}/process-matrix`)' in allocation
     assert 'allocationJson(`${ALLOCATION_API}/process-matrix`, {' in allocation
+    assert 'allocationJson(`${ALLOCATION_API}/filter-profile`)' in allocation
+    assert 'allocationJson(`${ALLOCATION_API}/filter-profile/import`, {' in allocation
     assert 'canViewPage?.(allocationState.user, "allocationProcessMatrix")' in allocation
     assert 'canEditPage?.(allocationState.user, "allocationProcessMatrix")' in allocation
     assert 'id="allocation-process-matrix">Matris</button>' in allocation
+    assert 'data-flow-filter="${allocationEscape(flow.id)}"' in allocation
+    assert "allocation-flow-filter" in allocation
+    assert "allocation-filter-modal" in styles
+    assert "allocation-filter-layout" in styles
+    assert "allocation-source-mode-toggle" in styles
+    assert "allocation-source-switch-track" in styles
+    assert "allocation-source-switch-knob" in styles
+    assert "input:checked + .allocation-source-switch-track" in styles
+    assert "data-filter-source-mode-toggle" in allocation
+    assert "normalizeAllocationSourceModes" in allocation
+    assert "allocationSourceModeForFile" in allocation
+    assert 'draft.flows[flowId].sources[source.key] = "upload"' in allocation
+    assert 'input.apiPreferred && allocationSourceModeForFile(flow.id, fileKey, input) !== "upload"' in allocation
+    assert "width: min(1480px, calc(100vw - 96px));" in styles
+    assert "grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);" in styles
+    assert "title=\"${allocationEscape(columnType)}\"" in allocation
+    assert "${allocationEscape(columnLabel)} ${column.type" not in allocation
     assert "openAllocationProcessMatrixModal" in allocation
+    assert "openAllocationFlowFilterModal" in allocation
     assert '"settings") return "allocationSettings"' in allocation
     assert "renderAllocationMapSettingsView" in allocation
     assert "ytgenerering-map-layout" in allocation
@@ -1001,10 +1073,14 @@ def test_bearbeta_area_focus_filter_contract():
     assert ".allocation-map-settings-context-menu {\n  position: absolute;" in styles
     assert "fill: #94a3b8;" in styles
     assert "allocation-process-matrix-table" in allocation
-    assert "Ytgenerering UTL" in allocation
-    assert "ytgenereringUtlMin" in allocation
-    assert "data-matrix-utl-min" in allocation
-    assert "data-matrix-utl-max" in allocation
+    assert "Ytgenerering UTL" not in allocation
+    assert "data-matrix-utl-min" not in allocation
+    assert "data-matrix-utl-max" not in allocation
+    assert "ALLOCATION_YTGENERERING_SETTINGS_SOURCE" in allocation
+    assert "data-ytgenerering-utl-min" in allocation
+    assert "data-ytgenerering-carrier-add" in allocation
+    assert "editableCarrier: true" in allocation
+    assert ".allocation-ytgenerering-utl-grid" in styles
     assert "allocationResultMaps" in allocation
     assert "setupAllocationWarehouseMap" in allocation
     assert "data-map-export-ask" in allocation
@@ -1184,17 +1260,24 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
+    activities_html = (frontend / "aktiviteter.html").read_text(encoding="utf-8")
+    users_html = (frontend / "anvandare.html").read_text(encoding="utf-8")
     businesses = (frontend / "js" / "businesses.js").read_text(encoding="utf-8")
     businesses_html = (frontend / "verksamheter.html").read_text(encoding="utf-8")
 
     for source in (persons, activities, users):
         assert 'api.get("/api/businesses")' in source
+        assert "function businessName" in source
         assert 'label>Verksamhet</label>' in source
         assert 'id="m-business"' in source
         assert "payload.business_id" in source
         assert 'key: "business", label: "Verksamhet"' in source
         assert 'value: business.code' in source
 
+    assert "<th>Verksamhet</th>" in activities_html
+    assert "<th>Verksamhet</th>" in users_html
+    assert "businessName(a.business_id)" in activities
+    assert "businessName(user)" in users
     assert 'initPage("businesses", { requireSuperUser: true })' in businesses
     assert 'api.get(`/api/businesses?include_inactive=${includeInactive}`)' in businesses
     assert 'api.get("/api/areas?include_inactive=true")' in businesses
@@ -1348,11 +1431,18 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="download-activity-template"' in activities_html
     assert 'id="import-activities"' in activities_html
     assert 'id="activity-import-help"' in activities_html
+    assert "<th>KPI Mål</th>" in activities_html
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js
     assert "openBulkActivitiesModal" in activities_js
     assert re.search(r'key:\s*"label",\s*label:\s*"Etikett",\s*required:\s*true', activities_js)
     assert re.search(r'key:\s*"area",\s*label:\s*"[^"]+",\s*required:\s*false', activities_js)
+    assert re.search(r'key:\s*"kpi_process_name",\s*label:\s*"KPI Mål",\s*required:\s*false', activities_js)
+    assert 'id="m-kpi-process-name"' in activities_js
+    assert 'maxlength="255"' in activities_js
+    assert 'placeholder="dekant, plock"' in activities_js
+    assert "kpi_process_name" in activities_js
+    assert "KPI Mål ska bara vara processnamn, utan bolag" in activities_js
     assert 'api.download("/api/activities/import-template", "aktiviteter-importmall.xlsx")' in activities_js
     assert 'window.location.href = "/api/activities/import-template"' not in activities_js
     assert "/api/activities/import" in activities_js
@@ -1489,8 +1579,13 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert '<body class="with-sidebar">' in html
     assert "/js/common.js" in html
     assert "/js/meta.js" in html
-    assert "Sändningsanalys" in html
-    assert "Sändningsnummer" in html
+    assert 'id="metaShipmentTitle"' in html
+    assert 'id="metaSearch"' in html
+    assert 'id="metaExportFiltered"' in html
+    assert 'id="metaExportAll"' in html
+    assert 'data-sort-key="shipment_number"' in html
+    assert 'data-sort-key="updated_at"' in html
+    assert 'data-sort-key="label_status"' in html
     assert "Längd" in html
     assert "Uppdaterad" in html
     assert "Rad-ID" in html
@@ -1504,6 +1599,10 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert 'initPage("meta", { requireSuperUser: true })' in js
     assert 'api.get(`/api/meta/uploads?${params.toString()}`' in js
     assert 'api.get("/api/meta/shipment-observations?limit=200"' in js
+    assert "function filteredShipmentItems" in js
+    assert "function exportShipmentRows" in js
+    assert "/api/meta/shipment-observations/export" in js
+    assert "metaSortState" in js
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
     assert "appendQuery" in js
     assert 'download: "1"' in js
@@ -1518,6 +1617,7 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "Ladda ner" in js
     assert "Analysera" in js
     assert "shipment_number" in js
+    assert 'key === "label_status"' in js
     assert "formatTimestamp(item.updated_at || item.created_at)" in js
     assert "meta-admin-timestamp" in js
     assert "formatDuration" in js
@@ -1533,6 +1633,8 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "Öppna" not in js
     assert "openMediaModal" not in js
     assert ".meta-admin-grid" not in styles
+    assert ".meta-admin-controls" in styles
+    assert ".meta-sort-button" in styles
     assert ".meta-admin-table" in styles
     assert ".meta-icon-button" in styles
     assert ".meta-icon-button.is-download-queued" in styles
@@ -1647,7 +1749,9 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert 'fd.append("forecast_session_id"' in allocation
     assert '"id": "forecast"' in catalog
     assert '"id": "ytgenerering"' in catalog
-    assert '"requiresSessionFlow": {"flowId": "forecast"' in catalog
+    assert '"hidden": True' in catalog
+    assert '"location", "label": "Lagerplatser", "required": False' in catalog
+    assert '"requiresSessionFlow": {"flowId": "forecast"' not in catalog
     assert "flow_forecast" in flows
     assert "flow_ytgenerering" in flows
     assert "Sammanställd data" in allocation

@@ -1,13 +1,13 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-08
 tags: [anvandare, settings, roller, ui]
 ---
 
 # Anvandare och installningar
 
-Kort svar: Anvandare-sidan hanterar konton, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
+Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
 
 Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `∞` visar alla omraden i den verksamheten nar verksamheten har aktivt `ANNAT`; for Super User betyder `∞` globalt allt. Nar en ny anvandare skapas forvalt valt omradesfokus som anvandarens omrade, men omradet kan fortfarande andras i modalen eller lamnas tomt.
 
@@ -22,6 +22,7 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Vybehorigheter | Oppnar rollmatris | Sparar global vyatkomst for roller | `GET/PUT /api/settings/role-access` | Fel matris kan dolja vyer for rollen i alla verksamheter. |
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
+| Tabellrubriker | Klickar pa t.ex. Anvandarnamn, Verksamhet, Roll, Omrade eller Skapad | Sorterar synliga anvandarrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus, roller eller serverdata. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas. |
 | Ta bort | Bekraftar borttagning | Tar bort konto permanent och nollar gamla `updated_by`/audit-referenser | `DELETE /api/users/{id}` | Eget konto, sista admin i en verksamhet och demo-användaren skyddas. |
 | Verksamheter | Sidebar-vy for Super User | Skapar verksamheter och omraden, redigerar celler inline och kan lagga till `∞`/`ANNAT` per verksamhet | `GET/POST/PUT /api/businesses`, `GET/POST/PUT/DELETE /api/areas` | Vanliga anvandare ser inte vyn. Omraden med kopplad data inaktiveras i stallet for att hardraderas. |

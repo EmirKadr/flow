@@ -13,15 +13,13 @@
 <body class="with-sidebar">
   <header class="topbar"></header>
 
-  <section class="controls">
-    <label>Typ
-      <select id="metaMediaType">
-        <option value="">Alla</option>
-        <option value="video">Videor</option>
-        <option value="image">Bilder</option>
-      </select>
+  <section class="controls meta-admin-controls">
+    <label>Sök
+      <input id="metaSearch" class="meta-search-input" type="search" placeholder="Sök i sändningsanalys" autocomplete="off" />
     </label>
     <button id="metaRefresh">Uppdatera</button>
+    <button id="metaExportFiltered" type="button" disabled>Exportera filtrerade</button>
+    <button id="metaExportAll" type="button" disabled>Exportera alla</button>
   </section>
 
   <main>
@@ -39,18 +37,18 @@
         <table class="meta-admin-table">
           <thead>
             <tr>
-              <th>Ordernummer</th>
-              <th>Sändningsnummer</th>
-              <th>Användarnamn</th>
-              <th>Kund</th>
-              <th>Pall-ID</th>
-              <th>Avvikelser</th>
-              <th>Status</th>
-              <th>Uppdaterad</th>
-              <th>Video</th>
-              <th>Längd</th>
-              <th>Etikett</th>
-              <th>Rad-ID</th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="order_number">Ordernummer</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="shipment_number">Sändningsnummer</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="username">Användarnamn</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="customer_name">Kund</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="pallet_id">Pall-ID</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="deviations">Avvikelser</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="analysis_status">Status</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="updated_at">Uppdaterad</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="video_filename">Video</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="video_duration_seconds">Längd</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="label_status">Etikett</button></th>
+              <th><button type="button" class="meta-sort-button" data-sort-key="record_hash">Rad-ID</button></th>
               <th>Åtgärd</th>
             </tr>
           </thead>
@@ -58,8 +56,6 @@
         </table>
       </div>
     </section>
-
-    <section id="metaGrid" class="meta-admin-grid" aria-live="polite"></section>
   </main>
 
   <script src="/js/api.js"></script>

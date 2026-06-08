@@ -1,7 +1,7 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-08
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
@@ -26,6 +26,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Tema | Sidebar footer | Alla inloggade | Växlar ljust/morkt tema och sparar `flow-theme` | Tema ar lokalt for webblasaren/desktopprofilen. |
 | Logga ut | Sidebar botten | Alla inloggade | `POST /api/auth/logout`, rensar sidebar-user-cache, gar till login | Om sessionen redan ar dod skickas anvandaren anda till login. |
 | Toast | Globalt | Alla | Korta status-/felmeddelanden fran JS | Viktig for chatt: be anvandaren citera toasten exakt. |
+| Tabellrubriker | Vanliga list- och rapporttabeller | Alla som ser tabellen | Klick sorterar synliga rader stigande/fallande klient-side. Matristabeller, inline-edit-tabeller, importmodaler och tabeller med egen specialsortering anvander sitt eget beteende. | Sorteringen skickar inte nytt API-filter och paverkar bara raderna som redan ar synliga. |
 | Enter i dialogruta | Alla modaler | Alla | Klickar modalens primara knapp, t.ex. `Spara`, `Skapa` eller `Stang` | Galler inte flerradiga textfalt, checkboxar eller knappar som redan har fokus. |
 | Interaction-tracking | Globalt via `common.js` | Inloggade vyer, samt allowlistad Meta-uppladdning | Auto-capturar klick, submit, select/checkbox/file-change, contextmenu och kopplar API-resultat till senaste interaction | Syns i Historik > Funktioner/Knappar/Kolumner/Floden. Klartextprover sparas bara om `TRACKING_ALLOW_VALUE_SAMPLES=true`; secrets, filnamn och sokvagar sparas aldrig. |
 

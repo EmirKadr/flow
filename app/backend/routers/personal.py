@@ -19,7 +19,7 @@ from ..schemas import (
     PersonalScheduleSegment,
     PersonalWeekSummary,
 )
-from ..template_service import get_template_hours_map
+from ..template_service import get_template_hours_map_for_dates
 from ..user_access import PERSON_ROLE, can_view_personal_pages, is_super_user, user_roles
 from .schedule import HOURS, _covered_intervals, _schedule_date, _uncovered_intervals
 
@@ -196,7 +196,8 @@ def _build_schedule_payload(db: Session, person: Person, year: int, week: int) -
     areas = _areas_for_business(db, person.business_id)
     activities_by_id = {activity.id: activity for activity in activities}
     home_activity_id = build_home_activity_resolver(activities, areas)(person)
-    template_hours_map = get_template_hours_map(db, [person.id], range(1, 8))
+    week_dates = {weekday: _schedule_date(year, week, weekday) for weekday in range(1, 8)}
+    template_hours_map = get_template_hours_map_for_dates(db, [person.id], week_dates.values())
 
     cells = (
         db.execute(
@@ -222,7 +223,7 @@ def _build_schedule_payload(db: Session, person: Person, year: int, week: int) -
 
     for weekday in range(1, 8):
         selected_date = _schedule_date(year, week, weekday)
-        template_hours = template_hours_map.get((person.id, weekday))
+        template_hours = template_hours_map.get((person.id, week_dates[weekday]))
         segments: list[PersonalScheduleSegment] = []
         day_totals: dict[tuple[int | None, str, str | None, str | None], int] = defaultdict(int)
 

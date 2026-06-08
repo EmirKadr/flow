@@ -36,6 +36,7 @@ miljövariabler och skickas aldrig till modellen.
 | Uppdatera plan | Planpanelen | `dataFetch` view | Skriver om planen lokalt med kvarvarande kolumner och rensar gammalt resultat | `data_fetch.js` | Knappen är spärrad tills minst en kolumn markerats. |
 | Hämta data | Promptpanelen | `dataFetch` view | Kör validerad plan mot extern datakälla | `POST /api/query-data/run` | Fel om `DATA_SOURCE_API_BASE_URL`, `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE` eller nyckel-/header-env saknas/fel. |
 | Exportera Excel | Resultatpanelen | `dataFetch` view | Laddar ner senaste begränsade resultat som `.xlsx` | `GET /api/query-data/export/{session_id}` | Fel om resultatet har gått förlorat och hämtningen måste köras igen. |
+| Resultatrubriker | Resultattabellen | `dataFetch` view | Sorterar de synliga resultatraderna stigande/fallande klient-side | `common.js` klienttabellsortering | Skickar inte ny fråga och påverkar inte Excel-exportens serverurval. |
 
 ## Säkerhetsmodell
 
@@ -64,6 +65,8 @@ miljövariabler och skickas aldrig till modellen.
 - `max_rows` i `/api/query-data/run` är valfritt. `null` eller utelämnat värde betyder att backend inte beskär raderna efter fetch; ett ifyllt tal begränsas fortfarande av serverns maxinställning.
 - Resultatens export-rader skrivs till temporara serverfiler per `session_id` med TTL, maxantal och byte-budget. Sessionens RAM-del haller bara anvandarkoppling, plan, kolumner, radantal och filreferens; Excel-exporten laser filen vid behov.
 - `app/backend/workflow_data.py` ateranvander `ExternalDataClient` for Bearbeta och Produktivitet, men utan MiniMax-plan, utan prompt och utan radbegransning. Den hamtar en bestamd katalogvy, materialiserar raderna till temporar tabbseparerad CSV och later workflowt avgora behorighet/fallback. Det ar inte samma anvandarflode som Hamta data och kraver inte `dataFetch`.
+
+- Vid API-first/workflow-materialisering ar tekniskt kolumn-id i katalogen primar kontraktssanning. Svenska och engelska labels ar presentation eller CSV-rubrik. Om en gammal motor kraver svensk rubrik ska `workflow_data.py` mappa fran tekniskt id till legacy-rubrik med explicita alias; om svensk rubrik inte hittas far agenten inte anta att kolumnen saknas innan tekniskt id och engelsk label har kontrollerats.
 
 ## Felsökningssvar för framtida chat
 

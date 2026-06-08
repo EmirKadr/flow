@@ -57,6 +57,7 @@ def _area_has_linked_data(db: Session, area_id: int) -> bool:
             db.query(Person.id).filter(Person.home_area_id == area_id),
             db.query(Activity.id).filter(Activity.area_id == area_id),
             db.query(User.id).filter(User.area_id == area_id),
+            db.query(ScheduleCell.id).filter(ScheduleCell.loan_area_id == area_id),
         )
     )
 
@@ -77,6 +78,9 @@ def _detach_area_references(db: Session, area_id: int) -> dict[str, int]:
         "home_activities": 0,
         "summary_activities": 0,
         "schedule_cells": 0,
+        "loan_schedule_cells": db.query(ScheduleCell)
+        .filter(ScheduleCell.loan_area_id == area_id)
+        .update({ScheduleCell.loan_area_id: None}, synchronize_session=False),
     }
     if activity_ids:
         detached["home_activities"] = db.query(Person).filter(Person.home_activity_id.in_(activity_ids)).update(

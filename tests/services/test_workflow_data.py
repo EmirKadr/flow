@@ -35,6 +35,19 @@ def _catalog_for(*view_ids: str, columns: tuple[str, ...] = ("article", "robot_i
     return DataCatalog(views=views)
 
 
+def test_allocation_api_source_maps_cover_api_first_order_and_saldo_flows():
+    assert workflow_data.allocation_api_source_map("lyx") == {"saldo": "saldo"}
+    assert workflow_data.allocation_api_source_map("hib-koppling") == {
+        "details": "orders",
+        "overview": "overview",
+    }
+    assert workflow_data.allocation_api_source_map("pafyllnadsprio") == {
+        "orders": "orders",
+        "saldo": "saldo",
+        "overview": "overview",
+    }
+
+
 def test_fetch_source_materializes_api_rows_with_saldo_alias_headers(monkeypatch):
     client = FakeExternalClient(
         [
@@ -80,6 +93,103 @@ def test_fetch_source_rejects_saldo_rows_without_robot_column(monkeypatch):
         workflow_data.fetch_source_to_temp("saldo")
 
     assert "robot_ind" in str(excinfo.value)
+
+
+def test_fetch_source_rejects_item_option_without_forecast_legacy_headers(monkeypatch):
+    client = FakeExternalClient(
+        [
+            {
+                "item_num": "A100",
+                "company": "MG",
+                "pick_zone": "A",
+                "automated_robotpick": "Y",
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        workflow_data,
+        "load_catalog",
+        lambda: _catalog_for(
+            "item_option",
+            columns=("item_num", "company", "pick_zone", "automated_robotpick"),
+        ),
+    )
+    monkeypatch.setattr(workflow_data, "_api_client", lambda: client)
+
+    with pytest.raises(workflow_data.WorkflowDataError) as excinfo:
+        workflow_data.fetch_source_to_temp("item_option")
+
+    assert "not_stackable" in str(excinfo.value)
+    assert "whole_pallet_near_miss_percent" in str(excinfo.value)
+
+
+def test_fetch_source_materializes_item_option_forecast_legacy_headers(monkeypatch):
+    client = FakeExternalClient(
+        [
+            {
+                "item_num": "A100",
+                "company": "MG",
+                "pick_zone": "A",
+                "automated_robotpick": "Y",
+                "not_stackable": "Y",
+                "whole_pallet_near_miss_percent": "12",
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        workflow_data,
+        "load_catalog",
+        lambda: DataCatalog(
+            views={
+                "item_option": DataView(
+                    id="item_option",
+                    label_en="item_option",
+                    label_sv="item_option",
+                    columns=(
+                        DataColumn(id="item_num", label_en="item_num", label_sv="Artikel", order=0),
+                        DataColumn(id="company", label_en="company", label_sv="Bolag", order=1),
+                        DataColumn(id="pick_zone", label_en="pick_zone", label_sv="Plockzon", order=2),
+                        DataColumn(
+                            id="automated_robotpick",
+                            label_en="automated_robotpick",
+                            label_sv="Automatiserat robotplock",
+                            order=3,
+                        ),
+                        DataColumn(
+                            id="not_stackable",
+                            label_en="not_stackable",
+                            label_sv="Ej staplingsbar",
+                            order=4,
+                        ),
+                        DataColumn(
+                            id="whole_pallet_near_miss_percent",
+                            label_en="whole_pallet_near_miss_percent",
+                            label_sv="Helpalls avvikelse %",
+                            order=5,
+                        ),
+                    ),
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(workflow_data, "_api_client", lambda: client)
+
+    path, _entry = workflow_data.fetch_source_to_temp("item_option")
+
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.reader(handle, delimiter="\t"))
+        assert rows[0] == [
+            "Artikel",
+            "Bolag",
+            "Plockzon",
+            "Automatiserat robotplock",
+            "Ej staplingsbar",
+            "Helpalls avvikelse %",
+        ]
+        assert rows[1][-2:] == ["Y", "12"]
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def test_resolve_sources_uses_upload_fallback_and_sanitizes_audit(monkeypatch, tmp_path):

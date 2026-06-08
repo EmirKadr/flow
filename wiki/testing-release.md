@@ -1,7 +1,7 @@
 ---
 title: Test och release
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-08
 tags: [test, release, agent]
 ---
 
@@ -42,11 +42,11 @@ python -m tools.desktop_app_probe
 | Halsa/vantetid/drift | `tools.healthcheck report --local --no-render` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar auth och Render-secrets finns. Kontrollera `Serverminne` efter cache-, Bearbeta-, Meta- eller Forecast-andringar. |
 | flow/Oversikt | Interaktiv E2E for celler, drag, undo/redo och roller |
 | Sidebar/roller | Rolltester + visual smoke for flera roller |
-| Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots. Forecast-regler for orderoversikt, till exempel att status `11` filtrerar bort samma ordernummer ur detaljkundorder, ska ha riktat handler-/domantest. Ytgenereringens ytkartsinstallningar ska testas bade som handlerkapacitet/koordinater och som API-parametrar i `tests/services/test_allocation_bridge.py`. |
+| Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots. Forecast-regler for orderoversikt, till exempel att status `11` filtrerar bort samma ordernummer ur detaljkundorder, ska ha riktat handler-/domantest. Ytgenereringens enknappsflode ska testas for bade komplett ytdel nar `location` finns och Forecast-only nar `location` saknas. Ytgenereringens ytkartsinstallningar ska testas bade som handlerkapacitet/koordinater och som API-parametrar i `tests/services/test_allocation_bridge.py`. |
 | Uppladdningar/filpreview | `tests/services/test_coredata_service.py` for serverlagrad karn-/sammanstalld preview, `tests/tools/test_visual_tools.py` for UI-kontrakt och `node --check app/frontend/js/allocation_tools.js` for modal-JS |
 | Nytt Bearbeta-flode | Register-/handler-test i `tests/services/test_warehouse_tools_local_data.py`, API/sessiontest i `tests/services/test_allocation_bridge.py`, statiskt UI-kontrakt i `tests/tools/test_visual_tools.py` och Playwright-test i `tests/tools/test_allocation_split_browser.py` om knappar eller readiness andras |
 | Nytt Bearbeta-flode med karnfil | Testa bade flodesdefault i `tests/services/test_allocation_bridge.py`, att uppladdning av karnfilen ersatter tidigare fil for samma verksamhet i `tests/services/test_coredata_service.py`, och att frontend laser karnfilstatus utan GET-cache |
-| Bearbeta-flode med sessionberoende | Testa att forsta flodet sparar artifact/session, att nasta flode kraver den, och att frontend skickar session-id:t vidare. Om flodet ocksa styrs av omradestoggle, till exempel Ytgenerering for MG, testa att toggle-parametern gar fran frontend/API till handler och paverkar resultatet. Om anvandaren kan redigera en artifact mellan flodena, till exempel transportorskluster efter Forecast, testa bade backend-overriden och att Playwright ser den redigerade JSON-parametern. |
+| Bearbeta-flode med sessionberoende | Testa att forsta flodet sparar artifact/session, att nasta flode kraver den, och att frontend skickar session-id:t vidare. Om sessionberoendet blir legacy eller frivilligt ska testet ocksa verifiera att nya normalvagen inte skickar session-id. Om flodet ocksa styrs av omradestoggle, till exempel Ytgenerering for MG, testa att toggle-parametern gar fran frontend/API till handler och paverkar resultatet. Om anvandaren kan redigera en artifact mellan flodena, till exempel transportorskluster efter Forecast, testa bade backend-overriden och att Playwright ser den redigerade JSON-parametern. |
 | Desktop-app | `desktop\main.py --smoke-test`, desktop probe/shell screens |
 | Dokumentation/wiki | Kontrollera att nya wiki-lankar finns och att `index.md`/`log.md` ar uppdaterade |
 

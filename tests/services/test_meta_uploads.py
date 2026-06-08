@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -140,6 +141,18 @@ def test_meta_analysis_normalizes_audio_only_fields():
     assert fields["deviations"] == ["Pall behöver plastas"]
 
 
+def test_meta_analysis_treats_godsmarkning_as_pallet_id():
+    fields = meta_analysis_service.normalize_meta_analysis(
+        {
+            "godsm\u00e4rkning": "PALL-7788",
+            "deviations": ["Fel m\u00e5tt"],
+        }
+    )
+
+    assert fields["pallet_id"] == "PALL-7788"
+    assert fields["deviations"] == ["Fel m\u00e5tt"]
+
+
 def test_meta_record_hash_ignores_future_lookup_fields():
     base = {
         "video_hash": "b" * 64,
@@ -186,7 +199,7 @@ def test_meta_ffmpeg_resolver_uses_imageio_fallback(monkeypatch):
     assert meta_analysis_service._resolve_ffmpeg() == "bundled-ffmpeg"
 
 
-def test_analyze_meta_upload_keeps_future_lookup_fields_blank_and_allows_missing_still(monkeypatch):
+def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
     monkeypatch.setattr(settings, "META_LABEL_STILL_TIME_SECONDS", 1.0)
     monkeypatch.setattr(
@@ -202,6 +215,7 @@ def test_analyze_meta_upload_keeps_future_lookup_fields_blank_and_allows_missing
         },
     )
     monkeypatch.setattr(meta_analysis_service, "extract_label_still_bytes", lambda upload, seconds: None)
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: False)
     engine, session = make_session()
     row = MetaMediaUpload(
         batch_id="batch",
@@ -231,6 +245,78 @@ def test_analyze_meta_upload_keeps_future_lookup_fields_blank_and_allows_missing
         assert result.deviations == ["Pall lutar"]
         assert result.label_image_upload_id is None
         assert result.label_frame_time_seconds == "1"
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "META_LABEL_STILL_TIME_SECONDS", 1.0)
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {
+            "pallet_id": "BOX-001",
+            "deviations": ["Pall lutar"],
+        },
+    )
+    monkeypatch.setattr(meta_analysis_service, "extract_label_still_bytes", lambda upload, seconds: None)
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+
+    class FakeDispatchClient:
+        def __init__(self):
+            self.calls = []
+
+        def fetch_data(self, view, filters=None, identifiers=None):
+            self.calls.append((view, filters, identifiers))
+            return [
+                {
+                    "pick_pall_num": "BOX-001",
+                    "order_num": "100001",
+                    "shipment_id": "RIG-REF-1",
+                    "user_id": "LOTS01",
+                    "custom_desc": "Kund AB",
+                }
+            ]
+
+    fake_client = FakeDispatchClient()
+    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda: fake_client)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="b" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert fake_client.calls == [
+            (
+                "v_ask_dispatch_pallet",
+                [{"id": "pick_pall_num", "value": "BOX-001", "operator": "EQ"}],
+                None,
+            )
+        ]
+        assert result.analysis_status == "analyzed"
+        assert result.order_number == "100001"
+        assert result.shipment_number == "RIG-REF-1"
+        assert result.username == "LOTS01"
+        assert result.customer_name == "Kund AB"
+        assert result.pallet_id == "BOX-001"
+        assert result.deviations == ["Pall lutar"]
     finally:
         session.close()
         Base.metadata.drop_all(engine)
@@ -669,6 +755,16 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
 
     monkeypatch.setattr(meta_uploads, "_resolve_ffmpeg", lambda: "ffmpeg")
     monkeypatch.setattr(meta_uploads.subprocess, "run", fake_run)
+    queue_events = []
+
+    class FakeSemaphore:
+        def __enter__(self):
+            queue_events.append("enter")
+
+        def __exit__(self, exc_type, exc, tb):
+            queue_events.append("exit")
+
+    monkeypatch.setattr(meta_uploads, "_PLAYABLE_TRANSCODE_SEMAPHORE", FakeSemaphore())
 
     def override_get_db():
         yield session
@@ -686,6 +782,7 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
         assert content.content == b"playable-video"
         assert content.headers["content-type"].startswith("video/mp4")
         assert "20260531_120102_123456Z_01.mp4" in content.headers["content-disposition"]
+        assert queue_events == ["enter", "exit"]
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -758,6 +855,92 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         analysis = client.post(f"/api/meta/uploads/{row.id}/analyze")
         assert analysis.status_code == 200
         assert analysis.json()["status"] == "needs_configuration"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_super_user_can_export_meta_shipment_observations_excel():
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-export",
+        original_filename="etikettfilm.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        duration_seconds=75.4,
+        content_hash="b" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    shipment = MetaShipmentObservation(
+        media_upload_id=row.id,
+        video_hash=row.content_hash,
+        record_hash="c" * 64,
+        order_number="100001",
+        shipment_number="RIG-REF-1",
+        username="LOTS01",
+        customer_name="Kund AB",
+        pallet_id="PALL-1",
+        deviations=["D\u00e5ligt byggd pall"],
+        analysis_status="manual_review",
+        uncertainty_notes="Kontrollera",
+    )
+    session.add(shipment)
+    session.commit()
+    session.refresh(shipment)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.get(f"/api/meta/shipment-observations/export?ids={shipment.id}")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        workbook = load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
+        sheet = workbook.active
+        assert [cell.value for cell in sheet[1]][:7] == [
+            "Ordernummer",
+            "S\u00e4ndningsnummer",
+            "Anv\u00e4ndarnamn",
+            "Kund",
+            "Pall-ID",
+            "Avvikelser",
+            "Status",
+        ]
+        values = [cell.value for cell in sheet[2]]
+        assert values[:8] == [
+            "100001",
+            "RIG-REF-1",
+            "LOTS01",
+            "Kund AB",
+            "PALL-1",
+            "D\u00e5ligt byggd pall",
+            "manual_review",
+            "Kontrollera",
+        ]
+        assert values[9] == "20260531_120102_123456Z_01.mov"
+        assert values[10] == "1:15"
+        assert values[12] == "c" * 64
+        workbook.close()
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
