@@ -22,7 +22,7 @@ Aktiviteter. Faltet finns i ny/redigera-dialogen, Excelmallen och direktimporten
 
 ## [2026-06-08] data | Fyller KPI Mal pa befintliga aktiviteter
 
-Alembic-revision `0036_backfill_activity_kpi_processes` fyller en gang i
+Alembic-revision `0036_activity_kpi_backfill` fyller en gang i
 `kpi_process_name` for befintliga aktiviteter utifran verksamhetens processlista.
 Migrationen skapar inga aktiviteter och skriver bara i tomma KPI Mal-falt, sa
 anvandarnas senare andringar i Aktiviteter fortsatter vara vanliga sparade

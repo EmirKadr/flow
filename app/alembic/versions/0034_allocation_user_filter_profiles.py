@@ -1,6 +1,6 @@
 """add allocation user filter profiles
 
-Revision ID: 0034_allocation_user_filter_profiles
+Revision ID: 0034_alloc_filter_profiles
 Revises: 0033_schedule_loan_area
 Create Date: 2026-06-08
 """
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0034_allocation_user_filter_profiles"
+revision: str = "0034_alloc_filter_profiles"
 down_revision: Union[str, None] = "0033_schedule_loan_area"
 branch_labels: Union[str, tuple[str, ...], None] = None
 depends_on: Union[str, tuple[str, ...], None] = None

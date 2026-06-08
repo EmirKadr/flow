@@ -61,7 +61,7 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 - KPI Mal ar bara processnamn. Flera processer separeras med komma och normaliseras till `dekant, plock`. Format med bolag, till exempel `GG:decanting`, stoppas eftersom verksamheten redan kommer fran aktiviteten.
 - Importerade aktiviteter far vit standardfarg, kategori `work` och aktiv status.
 - Dubbletter i fil, i direkttabellen eller mot befintliga aktiviteter stoppas och visas i resultatmodalen.
-- Befintliga aktiviteter fick initiala KPI Mal-processer via engangsmigrationen `0036_backfill_activity_kpi_processes`. Den skapar inga nya aktiviteter och fyller bara tomma falt; efter det andrar anvandarna vardena fritt i Aktiviteter.
+- Befintliga aktiviteter fick initiala KPI Mal-processer via engangsmigrationen `0036_activity_kpi_backfill`. Den skapar inga nya aktiviteter och fyller bara tomma falt; efter det andrar anvandarna vardena fritt i Aktiviteter.
 
 ## Felsokningssvar for framtida chat
 

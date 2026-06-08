@@ -1,7 +1,7 @@
 """backfill activity kpi process mappings
 
-Revision ID: 0036_backfill_activity_kpi_processes
-Revises: 0035_activity_kpi_process_name
+Revision ID: 0036_activity_kpi_backfill
+Revises: 0035_activity_kpi
 Create Date: 2026-06-08
 """
 from __future__ import annotations
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = "0036_backfill_activity_kpi_processes"
-down_revision: Union[str, None] = "0035_activity_kpi_process_name"
+revision: str = "0036_activity_kpi_backfill"
+down_revision: Union[str, None] = "0035_activity_kpi"
 branch_labels: Union[str, tuple[str, ...], None] = None
 depends_on: Union[str, tuple[str, ...], None] = None
 

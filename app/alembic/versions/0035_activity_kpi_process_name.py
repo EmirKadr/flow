@@ -1,7 +1,7 @@
 """add activity kpi process name
 
-Revision ID: 0035_activity_kpi_process_name
-Revises: 0034_allocation_user_filter_profiles
+Revision ID: 0035_activity_kpi
+Revises: 0034_alloc_filter_profiles
 Create Date: 2026-06-08
 """
 from __future__ import annotations
@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0035_activity_kpi_process_name"
-down_revision: Union[str, None] = "0034_allocation_user_filter_profiles"
+revision: str = "0035_activity_kpi"
+down_revision: Union[str, None] = "0034_alloc_filter_profiles"
 branch_labels: Union[str, tuple[str, ...], None] = None
 depends_on: Union[str, tuple[str, ...], None] = None
 
