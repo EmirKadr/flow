@@ -1,11 +1,17 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-08
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-08] polish | Meta-vyn visar bara sandningsanalysen
+
+Meta-vyn har inte langre den nedre kortgridden for uppladdade bilder och videor.
+Super User arbetar i stallet direkt i sandningsanalystabellen, dar video,
+etikettstillbild, timestamp, nedladdning och analys finns samlade per rad.
 
 ## [2026-06-05] fix | Minska serverminne for Bearbeta och Meta
 
@@ -923,3 +929,7 @@ Trackinglagret har nu Playwright-tester for auto-capture av klick/change/submit,
 ## [2026-06-08] polish | Meta-tabellen visar uppdaterad timestamp
 
 Sändningsanalysen i Meta-vyn visar nu kolumnen `Uppdaterad`, baserad på `meta_shipment_observations.updated_at` med `created_at` som fallback. Hover-title visar både skapad och uppdaterad tid, så Super User kan skilja historiska etikettanalyser från nya audio-only-rader där bara pall-id och avvikelser ska fyllas.
+
+## [2026-06-08] feature | API-first for Bearbeta och Produktivitet
+
+Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern datakalla vid knapptryck, utan MiniMax och utan radbegransning. Uppladdade filer och Windows `localRef` anvands som fallback nar API eller katalog inte kan nas. Wikin dokumenterar source-mapping, `/api/workflow-data/source`, Produktivitetens `api_first`-status, sanerad source-audit och nya fallbackfel.

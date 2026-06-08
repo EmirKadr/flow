@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-04
+updated: 2026-06-08
 tags: [api, backend]
 ---
 
@@ -77,13 +77,14 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/healthcheck` - Super User-halsa for app, databas och Render-koppling. Render-data hamtas bara nar `RENDER_API_KEY` och resurs-id finns i secrets; build-loggar anvander Render `ownerId` + service-id och kan falla tillbaka pa `RENDER_OWNER_ID`.
 - `POST /api/healthcheck/wait-metrics` - tyst insamling av anvandarens vantetider for vyload, API-anrop, nedladdningar och bakgrundsladdning. Payloaden ar sanerad till event, vy, steg, duration, status och begransad teknisk detalj.
 - `GET /api/healthcheck/wait-metrics/summary` - Super User-summering for Historik-fliken `Vantetider` och CLI-verktyget `tools.healthcheck`; accepterar `business_id`.
-- `GET /api/productivity/files`, `GET /api/productivity/targets`, `GET /api/productivity` - produktivitet, kraver `productivity=view`.
+- `GET /api/productivity/files`, `GET /api/productivity/targets`, `GET /api/productivity` - produktivitet, kraver `productivity=view`. Nar externa kallor ar tillgangliga kan filstatus returnera `api_first=true` och rapporten hamtar pick/trans/pallet/kpi via API-first med lokal fallback.
 - `POST /api/productivity/files`, `POST /api/productivity/files/raw`, `DELETE /api/productivity/files/{file_type}` - serverhanterade produktivitetsfiler, kraver `productivity=edit`. Raw-upload av Plocklogg Full, Translogg och Pallastningslogg uppdaterar dessutom verksamhetens sammanstallda csv.gz-observationer.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler fran Postgres-tabellen `coredata_files` med filbaserad fallback, samt sammanstalld data som `artikel_max.csv`, `productivity_pick_observations`, `productivity_trans_observations` och `productivity_pallet_observations`.
 - `GET /api/coredata/files/{file_key}/preview` - forhandsvisar en serverlagrad coredata-karnfil eller sammanstalld datafil for anvandarens verksamhet. Svaret innehaller begransad textpreview, filnamn, storlek och metadata men ska inte anvandas for full nedladdning.
 - `GET /api/coredata/files/{file_key}/download` - laddar ner serverlagrad coredata-karnfil eller sammanstalld data forst nar anvandaren klickar explicit nedladdning.
 - `POST /api/coredata/files/raw` - laddar upp en coredata-karnfil eller sammanstalld datafil till anvandarens verksamhet och ersatter aldre fil med samma prefix, kraver `allocationUploads=edit`. Coredata-karnfiler sparas som blobbar i Postgres; sammanstalld data behaller sitt befintliga lagringsflode.
 - `GET /api/allokering/health`, `/flows`, `/pool`, `GET/PUT /process-matrix`, `GET/PUT /ytgenerering-map-layout`, `POST /detect`, `POST /flow/{flow_id}`, `POST /open-excel`, `GET /table-column/...`, `GET /download/...` - lagerverktyg. `ytgenerering-map-layout` kraver `allocationSettings` och returnerar aven `available_locations` fran aktiv verksamhets `location`-karnfil.
+- `POST /api/workflow-data/source` - desktop/runtime-endpoint som returnerar en temporar CSV for en tillaten workflow-kalla. Body ar `{ feature, flow_id, source_key }`. Behorighet styrs av malfunktionen (`allocationProcess` eller `productivity`) och svaret innehaller bara CSV + sanerade source-headers, inte privata API-detaljer.
 - Desktop-only lokala endpoints finns bara i Windows-proxyn: `/api/desktop/capabilities`, `/api/desktop/jobs`, `/api/desktop/cache/sync`, `/api/desktop/files/{ref}/detect|open|open-folder`, `/api/desktop/sync/coredata`, `/api/desktop/sync/productivity` och `/api/desktop/productivity/files/register`. De proxas inte som centrala serverkontrakt.
 - `GET /api/public/...` - publika text/CSV-summeringar for timmar/personer. Queryparametern `business` defaultar till `STIGAMO`; publika endpoints summerar inte globalt.
 - `POST /api/meta/uploads` - publik multipart-uppladdning for flera bilder/videor utan inloggning. Sparar filer i `meta_media_uploads` med tidsstamplat `stored_filename`, `content_hash`, eventuell `duration_seconds` och status `pending_analysis`. Exakta dubbletter hoppas over och returneras i `skipped`. Fel som hinner na backend loggas sanerat som `meta_media_upload/upload_failed`, sa anonyma 4xx/5xx fran den publika sidan syns i Historik > Felkoder utan filnamn eller filinnehall.
@@ -104,4 +105,6 @@ python -m tools.flow_cli api GET /api/health
 - `../tools/flow_cli.py`
 - `../app/backend/business_scope.py`
 - `../app/backend/routers/coredata.py`
+- `../app/backend/routers/workflow_data.py`
+- `../app/backend/workflow_data.py`
 - `../tests/tools/test_flow_cli.py`

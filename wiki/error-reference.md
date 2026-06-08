@@ -1,7 +1,7 @@
 ---
 title: Felkoder och felmeddelanden
 status: aktiv
-updated: 2026-06-03
+updated: 2026-06-08
 tags: [felkoder, http, support, api, chat]
 ---
 
@@ -128,6 +128,7 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 404 | "Produktivitetsmappen finns inte..." | Serverns data-dir saknas | Kontrollera serverkonfiguration. |
 | 404 | "Saknar referensfil med prefix..." | KPI eller referensfil saknas | Ladda upp KPI eller kontrollera data-dir. |
 | 404 | "Saknar produktivitetsunderlag: ..." | Kravda loggar saknas | Lagg in saknade loggar. |
+| 502/503 | "Extern datakalla kunde inte nas... Ladda upp ..." | API-first kunde inte hamta extern Produktivitets-kalla och ingen lokal fallback finns | Ladda upp den namnda loggen/KPI-filen eller kontrollera extern datakalla och `DATA_SOURCE_*`. |
 | 404 | "Produktivitetsunderlagen saknar datum" | Datum kunde inte tolkas | Kontrollera CSV/header. |
 | 404 | "Saknar produktivitetsdata for YYYY-MM-DD" | Vald dag finns inte | Valj annat datum. |
 | 500 | "Kunde inte lasa KPI-mal..." | KPI-filen finns men kan inte lasas | Kontrollera filformat. |
@@ -162,6 +163,7 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | Runtime | "Saknar Excel-skrivare..." | `openpyxl`/`xlsxwriter` saknas | Ladda ner CSV eller installera beroende. |
 | Flode | "Ange minst en prognosfil eller en kampanjfil." | Prognosrapport saknar input | Lagg in prognos/kampanj. |
 | Flode | "Saldo/automation kravs..." | Prognosrapport saknar saldo | Lagg in Saldo ink. Automation. |
+| Flode | "Extern datakalla kunde inte nas... Ladda upp ..." | API-first kunde inte hamta en Bearbeta-kalla och ingen uppladdad/localRef fallback finns | Ladda upp den namnda filen och kor igen, eller kontrollera extern datakalla. |
 | Flode | "Inga varden angivna..." | Dela saknar lista | Klistra in eller ladda textfil. |
 
 ## Apphjalp och LLM-chatt

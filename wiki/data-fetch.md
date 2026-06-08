@@ -1,7 +1,7 @@
 ---
 title: Hämta data
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-08
 tags: [datahamtning, extern-data, minimax, api]
 ---
 
@@ -63,6 +63,7 @@ miljövariabler och skickas aldrig till modellen.
 - `app/backend/routers/data_fetch.py` kör planering, datahämtning och Excel-export.
 - `max_rows` i `/api/query-data/run` är valfritt. `null` eller utelämnat värde betyder att backend inte beskär raderna efter fetch; ett ifyllt tal begränsas fortfarande av serverns maxinställning.
 - Resultatens export-rader skrivs till temporara serverfiler per `session_id` med TTL, maxantal och byte-budget. Sessionens RAM-del haller bara anvandarkoppling, plan, kolumner, radantal och filreferens; Excel-exporten laser filen vid behov.
+- `app/backend/workflow_data.py` ateranvander `ExternalDataClient` for Bearbeta och Produktivitet, men utan MiniMax-plan, utan prompt och utan radbegransning. Den hamtar en bestamd katalogvy, materialiserar raderna till temporar tabbseparerad CSV och later workflowt avgora behorighet/fallback. Det ar inte samma anvandarflode som Hamta data och kraver inte `dataFetch`.
 
 ## Felsökningssvar för framtida chat
 
@@ -103,4 +104,5 @@ Svar: Backend accepterar bara vyer, kolumner och filteroperatorer som finns i ka
 - `../app/backend/routers/data_fetch.py`
 - `../app/backend/data_fetch_service.py`
 - `../app/backend/external_data_client.py`
+- `../app/backend/workflow_data.py`
 - `../tools/build_external_data_catalog.py`

@@ -1,7 +1,7 @@
 ---
 title: Lagerverktyg
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-08
 tags: [lagerverktyg, allokering, filer, ui]
 ---
 
@@ -47,6 +47,23 @@ Nar en slot redan har verksamhetens karnfil eller sammanstallda data, till exemp
 `Rensa alla` i Uppladdningar tar bara bort vanliga lokala filval. Permanenta karnfiler, sammanstalld data och skyddade poster ligger kvar, sa anvandaren kan rensa order-/buffert-/loggfiler utan att tappa verksamhetens standardunderlag. Om en bakgrundssynk fran Produktivitet redan ar igang ignoreras dess gamla filkopior efter rensningen, sa till exempel Pallastningslogg inte dyker upp igen.
 
 Produktivitetens sammanstallda loggar skapas nar Plocklogg Full, Translogg eller Pallastningslogg laddas upp i Produktivitet. Plocklogg Full tar bara in nya `Radid` (kolumn-id `rowid`) och Translogg tar bara in nya `Rowid`; Pallastningslogg tar bara in rader nyare an senaste `Andrad`/`timestamp` i den befintliga csv.gz-filen. I produktion skrivs de verksamhetsscopeade csv.gz-filerna till persistent disk via `PRODUCTIVITY_DATA_DIR` eller `MEDIA_STORE_ROOT/flow-data`, inte till repot. Lokalt/dev kan fortfarande falla tillbaka till gamla `data/coredata`-vagar.
+
+## API-first for Bearbeta
+
+Bearbeta hamtar nu flera vanliga underlag direkt fran extern datakalla nar anvandaren klickar pa flodesknappen. Det galler bade webb och Windows, men Windows gar via den centrala serverns `/api/workflow-data/source` sa den lokala appen inte behover privata API-detaljer. Endpointen anvander flodets behorighet (`allocationProcess`) och inte `dataFetch`.
+
+API-kallan vinner alltid for API-preferred slots. Om extern datakalla inte kan nas, katalogen saknas eller API-svaret ar ogiltigt anvands befintlig uppladdad fil eller Windows `localRef` som fallback. Om varken API eller fallback finns stoppas flodet med en begriplig text, till exempel `Extern datakalla kunde inte nas... Ladda upp Saldo Inkl. Automation och kor igen.` Resultatloggen och Historik/audit markerar varje kallstatus som `api`, `upload_fallback`, `local_ref_fallback`, `missing` eller `optional_skipped`, men sparar inte URL:er, headers, nycklar, request bodies, filnamn, lokala sokvagar eller raddata.
+
+API-first-kartor:
+
+- `buffer` -> `v_ask_article_buffertpallet`.
+- `saldo` -> `v_ask_item_summary_stock_automation`, med gamla rubrikalias som `Robot`, `Saldo autoplock`, `Plocksaldo` och `Plockplats`. Om API-rader saknar `robot_ind` underkanns API-saldot och fallback anvands.
+- `orders`/`details` -> `v_ask_customer_order_details_all`.
+- `overview` -> `v_ask_order_overview`.
+- `dispatch` -> `v_ask_dispatch_pallet`.
+- `custom_adr` -> `v_ask_custom_adr`.
+- `not_putaway` -> `v_ask_booking_putaway`.
+- karnfiler som `custom`, `item`, `item_alias`, `dimension`, `pallet_type`, `item_option`, `trans_agency`, `location` och `item_security_info` kan hamtas API-first nar flodet kraver dem.
 
 ## Bearbeta-floden
 
@@ -118,6 +135,8 @@ Bearbeta-uppladdningar sparas content-addressed i serverns temporara cachekatalo
 
 I Windows-appen skickar Bearbeta inte vanliga korfiler till central server for sjalva berakningen. Filval via Qt-bron sparar en `localRef`, den lokala desktop-servern fangar `/api/allokering/flow/*`, laser aktuell fil fran disk och kor samma `warehouse_tools`-motor lokalt. Bara sanerad historik skickas centralt: feature/flode/status, filslotar, varaktighet och rad-/resultatraknare, aldrig lokal sokvag eller filinnehall. Karnfiler/KPI och sammanstalld data kan fortfarande syncas centralt i bakgrundsko.
 
+Nar ett Bearbeta-flode har API-first-kallor provar desktop-servern forst att hamta motsvarande temporara CSV fran central server. Vid fel fortsatter den med localRef-filen om den finns. Det gor att Windows och webb far samma API-prioritet men behaller samma fallback som tidigare vid driftstorning.
+
 Bearbeta-resultat lagras som temporara serversessioner med TTL och maxantal. Sessionens RAM-del innehaller flow-id, agare, labels, artifact-nycklar och filreferenser; fulla tabeller, stora artifacts och auto-download-filer ligger i temporara serverfiler. Sessionen binds till anvandaren som korde flodet, sa `Oppna i Excel`, `Ladda ner CSV` och kolumnkopiering inte kan hamta en annan anvandares resultat aven om ett session-id skulle delas. Om servern startas om eller sessionen hinner rensas kan previewn finnas kvar i klienten, men export/kopiering kraver ny korning.
 
 Bearbeta och Dela sparar samtidigt arbetslaget klient-side i `sessionStorage` per inloggad anvandare och vy. Det gor att Dela-listan, antal per kolumn, Bearbetas senaste status och den senaste resultatpreviewn finns kvar nar anvandaren gar till en annan vy och sedan tillbaka i samma session. Fulla Excel-/CSV- och kolumnhamtningar anvander fortfarande serverns temporara `session_id`; om servern har startats om kan previewn synas men export/kolumnkopiering krava ny korning.
@@ -179,7 +198,10 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 
 - `../app/frontend/js/allocation_tools.js`
 - `../app/backend/routers/allocation.py`
+- `../app/backend/workflow_data.py`
+- `../app/backend/routers/workflow_data.py`
 - `../app/backend/allocation_bridge.py`
+- `../desktop/local_runtime.py`
 - `../app/backend/coredata_service.py`
 - `../app/backend/routers/coredata.py`
 - `../warehouse_tools/catalog.py`
