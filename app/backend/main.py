@@ -35,6 +35,7 @@ from .routers import (
     schedule,
     settings as app_settings,
     users,
+    workflow_data,
 )
 
 app = FastAPI(title="flow", version="0.1.5")
@@ -209,6 +210,7 @@ app.include_router(overview.router)
 app.include_router(productivity.router)
 app.include_router(app_settings.router)
 app.include_router(users.router)
+app.include_router(workflow_data.router)
 app.include_router(public.router)
 
 
