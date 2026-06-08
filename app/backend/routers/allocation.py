@@ -18,6 +18,7 @@ from ..deps import get_db, require_allocation_tools_user, require_view_access
 from ..models import Area, Business, User
 from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
 from ..user_access import can_access_view, can_use_allocation_process, is_super_user
+from ..workflow_data import WorkflowDataError, allocation_api_source_map, resolve_sources
 
 
 router = APIRouter(
@@ -86,6 +87,7 @@ def _flow_audit_payload(
     area_focus: str | None = None,
     business_code: str | None = None,
     filter_log: list[str] | None = None,
+    source_status: list[dict] | None = None,
     path: str | None = None,
 ) -> dict:
     payload = {
@@ -99,6 +101,8 @@ def _flow_audit_payload(
         payload["business_code"] = business_code
     if filter_log:
         payload["filter_log"] = [_clean_audit_text(line, max_length=220) for line in filter_log[:8]]
+    if source_status:
+        payload["source_status"] = source_status
     if path:
         payload["path"] = path
     if result is not None:
@@ -224,6 +228,47 @@ def _allocation_process_matrix_flows() -> list[dict]:
             }
         )
     return flows
+
+
+def _allocation_flow_required_file_keys(flow: dict | None) -> set[str]:
+    required: set[str] = set()
+    for item in (flow or {}).get("inputs") or []:
+        if item.get("type") == "file" and item.get("required"):
+            required.add(str(item.get("key") or ""))
+    for item in (flow or {}).get("coredata") or []:
+        if item.get("required"):
+            required.add(str(item.get("key") or ""))
+    return {key for key in required if key}
+
+
+def _with_api_source_metadata(flow: dict) -> dict:
+    source_map = allocation_api_source_map(str(flow.get("id") or ""))
+    if not source_map:
+        return flow
+    result = dict(flow)
+    result["apiFirstSources"] = source_map
+
+    inputs = []
+    for item in flow.get("inputs") or []:
+        next_item = dict(item)
+        source_key = source_map.get(str(item.get("key") or ""))
+        if source_key:
+            next_item["apiPreferred"] = True
+            next_item["apiSourceKey"] = source_key
+        inputs.append(next_item)
+    result["inputs"] = inputs
+
+    coredata = []
+    for item in flow.get("coredata") or []:
+        next_item = dict(item)
+        source_key = source_map.get(str(item.get("key") or ""))
+        if source_key:
+            next_item["apiPreferred"] = True
+            next_item["apiSourceKey"] = source_key
+        coredata.append(next_item)
+    if coredata:
+        result["coredata"] = coredata
+    return result
 
 
 def _stored_process_matrix(db: Session | object, *, flows: list[dict] | None = None) -> dict[str, dict]:
@@ -450,7 +495,7 @@ def list_flows(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    flows = bridge.public_registry()
+    flows = [_with_api_source_metadata(flow) for flow in bridge.public_registry()]
     if not can_use_allocation_process(user, _role_access_for_user(db, user)):
         flows = [flow for flow in flows if flow.get("id") in SELF_SERVICE_FLOW_IDS]
     return {"flows": flows}
@@ -699,6 +744,8 @@ async def run_flow(
         raise
     business_code = None
     area_filter_log: list[str] = []
+    source_log: list[str] = []
+    source_status: list[dict] = []
     flow_path = f"{ALLOCATION_FLOW_PATH_PREFIX}/{flow_id}"
     try:
         process_matrix = _stored_process_matrix(db)
@@ -710,6 +757,20 @@ async def run_flow(
         coredata_files = _business_coredata_default_files(flow_id, files, business_code, db)
         if coredata_files:
             files = {**coredata_files, **files}
+        source_map = allocation_api_source_map(flow_id)
+        if source_map:
+            flow = bridge.public_registry()
+            flow_by_id = {str(item.get("id") or ""): item for item in flow}
+            required_keys = _allocation_flow_required_file_keys(flow_by_id.get(flow_id))
+            try:
+                source_resolution = resolve_sources(source_map, files, required_keys=required_keys)
+            except WorkflowDataError as exc:
+                source_status = exc.audit_entries
+                raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            files = source_resolution.files
+            temp_paths.extend(source_resolution.temp_paths)
+            source_log = source_resolution.log_lines
+            source_status = source_resolution.audit_entries
         files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
         temp_paths.extend(filter_temp_paths)
         if flow_id == "ytgenerering":
@@ -739,6 +800,9 @@ async def run_flow(
                 "area_focus": area_focus,
                 "lines": area_filter_log,
             }
+        if source_log:
+            result["log"] = source_log + list(result.get("log") or [])
+            result["source_status"] = source_status
         session_id = result.get("session_id")
         if session_id in bridge.SESSIONS:
             bridge.SESSIONS[session_id]["owner"] = _session_owner_payload(user)
@@ -754,6 +818,7 @@ async def run_flow(
                 area_focus=area_focus,
                 business_code=business_code,
                 filter_log=area_filter_log,
+                source_status=source_status,
             ),
         )
         return result
@@ -775,6 +840,7 @@ async def run_flow(
                 area_focus=area_focus,
                 business_code=business_code,
                 filter_log=area_filter_log,
+                source_status=source_status,
                 path=flow_path,
             ),
         )

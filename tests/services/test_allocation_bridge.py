@@ -1745,6 +1745,34 @@ def test_allocation_router_exposes_flow_registry_and_pool(monkeypatch):
     assert allocation_router.list_pool(user=route_user("super_user")) == {"pool": [{"key": "orders", "label": "Bestallningslinjer"}]}
 
 
+def test_allocation_router_marks_api_first_sources(monkeypatch):
+    monkeypatch.setattr(
+        bridge,
+        "public_registry",
+        lambda: [
+            {
+                "id": "prognos-report",
+                "label": "Prognosrapport",
+                "inputs": [
+                    {"key": "prognos", "label": "Prognosfil", "type": "file", "required": False},
+                    {"key": "campaign", "label": "Kampanjfil", "type": "file", "required": False},
+                    {"key": "saldo", "label": "Saldo Inkl. Automation", "type": "file", "required": True},
+                    {"key": "buffer", "label": "Buffertpall", "type": "file", "required": False},
+                ],
+            }
+        ],
+    )
+
+    flow = allocation_router.list_flows(user=route_user("super_user"))["flows"][0]
+    inputs = {item["key"]: item for item in flow["inputs"]}
+
+    assert flow["apiFirstSources"] == {"saldo": "saldo", "buffer": "buffer"}
+    assert inputs["saldo"]["apiPreferred"] is True
+    assert inputs["buffer"]["apiPreferred"] is True
+    assert "apiPreferred" not in inputs["prognos"]
+    assert "apiPreferred" not in inputs["campaign"]
+
+
 def test_allocation_router_limits_lager_and_artikelplacering_to_self_service_flows(monkeypatch):
     monkeypatch.setattr(
         bridge,

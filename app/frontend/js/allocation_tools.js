@@ -1693,11 +1693,16 @@ function slotsForFlow(flow) {
 function missingForFlow(flow) {
   const missing = (flow?.inputs || []).filter((input) => {
     if (!input.required) return false;
+    if (input.apiPreferred) return false;
     if (input.type === "file") return !allocationDisplayFile(allocationFileInputKey(input));
     return !allocationState.values[input.key];
   });
   for (const input of flow?.coredata || []) {
+    if (input.apiPreferred) continue;
     if (input.required && !allocationPersistentStatusFile(input.key)) missing.push({ ...input, type: "coredata" });
+  }
+  if (flow?.id === "prognos-report" && !allocationDisplayFile("prognos") && !allocationDisplayFile("campaign")) {
+    missing.push({ key: "prognos_or_campaign", label: "Prognosfil eller Kampanjfil", type: "file" });
   }
   if (flow?.requiresSessionFlow && !allocationRequiredSessionId(flow)) {
     missing.push({
