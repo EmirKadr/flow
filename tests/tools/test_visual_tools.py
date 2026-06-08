@@ -709,6 +709,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "/api/productivity/files/raw" in productivity_uploads
     assert "productivityLocalFiles" in productivity
     assert "syncProductivityLocalFilesFromStore" in productivity
+    assert "serverStatus?.api_first" in productivity
+    assert "productivityFileStatus?.api_first" in productivity
     assert "renderProductivityFileRequirements" in productivity
     assert 'id="productivityFileRequirements"' in productivity_html
     assert "window.productivityUploads.loadFiles()" in productivity
@@ -724,6 +726,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "v_ask_receive_log" not in allocation_tools
     assert "v_ask_palletloading_log" in allocation_tools
     assert "routeProductivityFilesFromSharedUpload" in allocation_tools
+    assert "input.apiPreferred" in allocation_tools
+    assert "Prognosfil eller Kampanjfil" in allocation_tools
     assert "reportUnknown: false" in allocation_tools
     assert "statusItems" in productivity_uploads
     assert "clearFiles" in productivity_uploads
@@ -1474,7 +1478,7 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert "@media (max-width: 520px)" in css
 
 
-def test_super_user_meta_view_lists_uploaded_media():
+def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     frontend = ROOT / "app" / "frontend"
     html = (frontend / "meta.html").read_text(encoding="utf-8")
     js = (frontend / "js" / "meta.js").read_text(encoding="utf-8")
@@ -1491,6 +1495,8 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert "Uppdaterad" in html
     assert "Rad-ID" in html
     assert 'id="metaShipmentRows"' in html
+    assert 'id="metaGrid"' not in html
+    assert 'id="metaMediaType"' not in html
     assert 'id: "meta"' in common
     assert 'label: "Meta"' in common
     assert 'href: "/meta.html"' in common
@@ -1498,32 +1504,41 @@ def test_super_user_meta_view_lists_uploaded_media():
     assert 'initPage("meta", { requireSuperUser: true })' in js
     assert 'api.get(`/api/meta/uploads?${params.toString()}`' in js
     assert 'api.get("/api/meta/shipment-observations?limit=200"' in js
-    assert "/api/meta/uploads/${encodeURIComponent(item.id)}/content" in js
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
-    assert "api.download(mediaUrl(item, { download: true })" in js
     assert "appendQuery" in js
-    assert "download: true" in js
-    assert "{ direct: true }" in js
+    assert 'download: "1"' in js
+    assert "{ direct: true }" not in js
+    assert "META_DOWNLOAD_CONCURRENCY = 1" in js
+    assert "function enqueueMetaDownload" in js
+    assert 'downloadShipmentMedia(item, "video", button)' in js
+    assert 'downloadShipmentMedia(item, "label", button)' in js
     assert "variant: kind === \"video\" ? \"playable\" : \"\"" in js
     assert "function downloadDirect" in api_js
     assert 'fetch(path, { method: "HEAD", credentials: "include" })' in api_js
-    assert "api.del(`/api/meta/uploads/${encodeURIComponent(item.id)}`" in js
     assert "Ladda ner" in js
-    assert "Radera" in js
     assert "Analysera" in js
     assert "shipment_number" in js
     assert "formatTimestamp(item.updated_at || item.created_at)" in js
     assert "meta-admin-timestamp" in js
-    assert "Video-ID" in js
     assert "formatDuration" in js
     assert "data-duration-for" in js
+    assert "metaGrid" not in js
+    assert "metaMediaType" not in js
+    assert "mediaUrl" not in js
+    assert "downloadMetaItem" not in js
+    assert "deleteMetaItem" not in js
+    assert "formatBytes" not in js
+    assert "data-open-media" not in js
+    assert "data-delete-media" not in js
     assert "Öppna" not in js
-    assert "openMediaModal" in js
-    assert ".meta-admin-grid" in styles
+    assert "openMediaModal" not in js
+    assert ".meta-admin-grid" not in styles
     assert ".meta-admin-table" in styles
     assert ".meta-icon-button" in styles
+    assert ".meta-icon-button.is-download-queued" in styles
+    assert ".meta-icon-button.is-download-running" in styles
     assert ".meta-status-pill" in styles
-    assert ".meta-preview-frame video" in styles
+    assert ".meta-preview-frame video" not in styles
 
 
 def test_allocation_pages_are_wired_to_shared_tool_shell():

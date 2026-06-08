@@ -534,6 +534,7 @@ async function syncProductivityLocalFilesFromStore() {
 }
 
 function buildLocalFileStatus(serverStatus = {}) {
+  if (serverStatus?.api_first) return serverStatus;
   const files = Object.fromEntries(VISIBLE_PRODUCTIVITY_SOURCE_SPECS.map((spec) => {
     const entry = productivityLocalFiles[spec.key];
     const file = entry?.file;
@@ -1070,17 +1071,19 @@ function cacheReport(report) {
 
 async function fetchProductivityReport(dateValue = "") {
   const cacheKey = `${localFilesSignature()}|${productivityTargetsSignature}|${dateValue || "latest"}`;
-  if (dateValue && productivityReportCache.has(cacheKey)) {
+  const serverPreferred = Boolean(productivityFileStatus?.api_first) || allRequiredProductivityFilesAreDesktopRefs();
+  if (!productivityFileStatus?.api_first && dateValue && productivityReportCache.has(cacheKey)) {
     return productivityReportCache.get(cacheKey);
   }
-  if (productivityReportRequests.has(cacheKey)) {
+  if (!productivityFileStatus?.api_first && productivityReportRequests.has(cacheKey)) {
     return productivityReportRequests.get(cacheKey);
   }
 
   const request = (async () => {
-    if (allRequiredProductivityFilesAreDesktopRefs()) {
+    if (serverPreferred) {
       const query = dateValue ? `?date=${encodeURIComponent(dateValue)}` : "";
-      return cacheReport(await api.get(`/api/productivity${query}`, { skipCache: true }));
+      const report = await api.get(`/api/productivity${query}`, { skipCache: true });
+      return productivityFileStatus?.api_first ? report : cacheReport(report);
     }
     const [dataset, targets] = await Promise.all([
       getProductivityDataset(),
@@ -1089,7 +1092,7 @@ async function fetchProductivityReport(dateValue = "") {
     return cacheReport(buildProductivityReportFromLocalDataset(dataset, targets, dateValue));
   })().finally(() => productivityReportRequests.delete(cacheKey));
 
-  productivityReportRequests.set(cacheKey, request);
+  if (!productivityFileStatus?.api_first) productivityReportRequests.set(cacheKey, request);
   return request;
 }
 
@@ -1227,7 +1230,7 @@ async function loadProductivity() {
       status.textContent = "Saknar produktivitetsunderlag.";
       return;
     }
-    status.textContent = "Ber\u00e4knar produktivitet lokalt...";
+    status.textContent = fileStatus.api_first ? "Hämtar produktivitet från API..." : "Ber\u00e4knar produktivitet lokalt...";
     const report = await fetchProductivityReport(dateInput.value);
     renderProductivityReport(report);
     prefetchAdjacentReports(report);
