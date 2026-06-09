@@ -10,11 +10,14 @@ from desktop.local_runtime import LOCAL_REF_PREFIX, DesktopLocalRuntime
 
 
 class FakeUpstreamHandler(BaseHTTPRequestHandler):
+    seen_accept_encoding = ""
+
     def log_message(self, _format, *_args):  # noqa: A002
         return
 
     def do_GET(self):  # noqa: N802
         if self.path == "/api/login":
+            type(self).seen_accept_encoding = self.headers.get("Accept-Encoding", "")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header(
@@ -96,9 +99,14 @@ def test_local_app_server_serves_frontend_and_proxies_api(tmp_path):
         assert requests.get(local_url, timeout=5).text == "<h1>flow</h1>"
 
         client = requests.Session()
-        login = client.get(f"{local_url}api/login", timeout=5)
+        login = client.get(
+            f"{local_url}api/login",
+            headers={"Accept-Encoding": "br, gzip, deflate, zstd"},
+            timeout=5,
+        )
         assert login.status_code == 200
         assert "Secure" not in login.headers["Set-Cookie"]
+        assert FakeUpstreamHandler.seen_accept_encoding == "identity"
 
         cookie_echo = client.get(f"{local_url}api/cookie", timeout=5).json()
         assert cookie_echo["cookie"] == "flow_session=abc"

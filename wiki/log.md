@@ -1,11 +1,19 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-09
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-09] fix | Windows-login via desktop-proxy
+
+Windows-appens lokala API-proxy skickar nu `Accept-Encoding: identity` till
+central server i stallet for att vidarebefordra webviewens komprimeringslista.
+Det skyddar login och andra JSON-svar fran att visas som trasiga bytes i
+desktop-webviewen nar den paketerade appen saknar samma dekodning som servern
+eller utvecklingsmiljon.
 
 ## [2026-06-08] docs | Tog bort projektkarta Mermaid
 

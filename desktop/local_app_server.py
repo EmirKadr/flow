@@ -75,7 +75,7 @@ def localize_set_cookie(value: str) -> str:
 def _iter_forward_request_headers(headers) -> Iterable[tuple[str, str]]:
     for key, value in headers.items():
         lowered = key.lower()
-        if lowered in HOP_BY_HOP_HEADERS or lowered == "host":
+        if lowered in HOP_BY_HOP_HEADERS or lowered in {"host", "accept-encoding"}:
             continue
         yield key, value
 
@@ -172,6 +172,7 @@ def make_handler(
                 upstream_url = f"{upstream_url}?{parsed.query}"
 
             headers = dict(_iter_forward_request_headers(self.headers))
+            headers["Accept-Encoding"] = "identity"
             try:
                 _clear_session_cookies(session)
                 response = session.request(

@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-05-26
+updated: 2026-06-09
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -21,7 +21,7 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 ## Windows-app
 
 - `desktop/app.py` skapar PyQt6-fonster, laddningsvy, felvy, meny och updateflode.
-- `desktop/local_app_server.py` serverar den lokala frontendmappen och proxar `/api/*` till `SERVER_BASE_URL`.
+- `desktop/local_app_server.py` serverar den lokala frontendmappen och proxar `/api/*` till `SERVER_BASE_URL`. Proxyn skickar `Accept-Encoding: identity` mot central server sa Windows-webviewen alltid far okomprimerade JSON-/CSV-svar.
 - Desktop ska bete sig som webben eftersom den anvander samma frontend och samma API.
 - Fonsterikonen laddas primart fran `desktop/assets/flow_icon.svg`. `.ico` ligger kvar for exe-/genvagsikon och fallback.
 - Tillatna desktop-specifika skillnader ar installation, auto-update, genvagar, lokalt skal och serverdrift.
