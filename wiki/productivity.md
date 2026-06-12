@@ -1,111 +1,162 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-08
-tags: [produktivitet, filer, kpi, ui]
+updated: 2026-06-10
+tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
 # Produktivitet
 
-Kort svar: Produktivitet ar API-first nar extern datakalla ar konfigurerad. Webben hamtar da Plocklogg Full, Translogg, Pallastningslogg och KPI-mal via backend nar rapporten kors, och lokala filer anvands bara som fallback. Windows-appen hamtar samma temporara CSV-kallor via central server och faller tillbaka pa `localRef`/cache om API:t inte kan nas. KPI-malet ar fortsatt en verksamhetsseparerad karnfil i Postgres nar lokal fallback anvands. Nar en lokal logg laddas upp eller syncas uppdaterar backend samtidigt verksamhetens sammanstallda csv.gz-observationer for samma loggtyp. Atkomst styrs via Vybehorigheter for `productivity`, inte via hard Super User-krav.
+Kort svar: Produktivitet ar nu den tidigare oversiktsvyn, men med Produktivitets
+befintliga menyplats, namn och ikon. Vyn visar globalt sparad
+produktivitetsdata som ett fokuserbart trad for verksamhet, omrade,
+aktivitet, person, timme och processpoang. Produktivitetsdata hamtas inte per
+anvandare och laddas inte upp manuellt i vyn.
 
 ## Behorighet
 
-Rollen behover minst `productivity=view` for att oppna sidan och lasa status/KPI-mal. `productivity=edit` kravs for serverhanterade produktivitetsfiler, till exempel uppladdning eller rensning av permanent KPI-mal. Super User har fortfarande full atkomst automatiskt.
+Rollen behover minst `productivity=view` for att oppna Produktivitet och lasa
+rapporterna. `productivity=edit` kravs bara for manuell drift/test-sync via
+`POST /api/productivity/sync`. Den separata vyn/behorigheten
+`productivityOverview` finns inte langre. Gamla `/oversikt-produktivitet.html`
+ar borttagen och ska inte langre anvandas.
 
-## Knappar och kontroller pa sidan
+## Vad vyn visar
 
-| Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
-| --- | --- | --- | --- | --- |
-| Datum | Valjer rapportdatum | Renderar rapport for datumet | `loadProductivity`, lokal cache | Om filerna saknar datumet visas tom/ingen data. |
-| Foregaende/nasta datum | Klickar pilar | Hoppar till narliggande datum som finns i datasetet | `shiftProductivityDate` | Disabled om inget fore/efter-datum finns. |
-| Omradesfokus i sidebar | Valjer Alla/GG/AS/EH/MG | Filtrerar rapportsektioner; `∞` visar alla block | `flow:areaFocusChanged`, `preferredProductivityGroupFilter` | Om fel block visas, kontrollera togglen nere i sidebar. |
-| Sok | Skriver text | Filtrerar sektioner/rader klient-side | `activeSearch`, `renderContent` | Sokningen ar lokal och paverkar inte datan. |
-| Rapporttabellrubriker | Klickar pa anvandare, timme eller nyckeltal | Sorterar synliga rapportrader stigande/fallande klient-side | `common.js` klienttabellsortering | Paverkar inte sokning, omradesfokus eller datakallor. |
-| Filkrav/dropzoner | Drar filer till kravslot | Webben sparar fil i IndexedDB; Windows sparar `localRef` och registrerar den hos desktop-servern | `productivityUploads.saveFiles`, `/api/desktop/productivity/files/register` | Okand filtyp om namn/header inte matchar. |
-| Välj per filslot | Oppnar filval for viss filtyp | Sparar vald fil pa den sloten | IndexedDB `flow-productivity-files` | Vald fel fil kan klassas om targetKey anvands. |
-| Rensa per filslot | Klick pa x | Tar bort lokal fil | `deleteFile` | KPI-mal ar permanent och kan inte rensas via x. |
+- Periodval for `Dag`, `Vecka`, `Manad` och `Ar`.
+- Datum-/periodruta med foregaende/nasta. I daglage visas datumet, i veckolage
+  visas `Vecka N`, i manadslage visas manadens namn och i arslage visas artalet.
+- `Helbild`, som fokuserar tradet tillbaka till verksamhetsroten.
+- `Exportera flowchart`, som oppnar en dialog for val av exportnivaer och
+  laddar ner aktuell fokuserad vy som SVG.
+- Noder for verksamhet, omrade, aktivitet, person, timme och processpoang.
+- Barnnoder visas som en sammanhangande horisontell tradgren. Nar det finns
+  manga barn scrollas tradytan i sidled i stallet for att bryta upp grenlinjen.
+- Snittet visas som poang per arbetad timme med en decimal. Stodtid raknas som
+  verklig arbetstid i tradets timmar och rullar upp till omrade/helbild, men
+  en ren stodnod saknar egen KPI-tid och visar darfor `-` efter likhetstecknet.
+  Fargskalan ar rod under 70, orange 70-79,9 och gron fran 80.
+- Omradesnivan i tradet bygger pa schemacellens aktivitetomrade, inte
+  personens hemomrade. En person med hemomrade Autostore som bemannas pa en
+  GG-aktivitet ger darfor KPI-tid och poang under GG.
+- En person med bara stodtid syns i tradet under stodaktiviteten med sina
+  poang och timmar. Personens egen produktivitetsvy fortsatter daremot att
+  visa bara KPI-aktiviteter.
 
-## Filer och identifiering
+Dagens datum raknas bara till och med senaste avslutade heltimme. Aldre datum i
+vald period raknar hela dagen. Innevarande vecka, manad och ar klipps vid dagens
+datum sa framtida dagar inte ingar.
 
-| Nyckel | Label | Prefix/header-hints | Var sparas |
-| --- | --- | --- | --- |
-| `pick` | Plocklogg Full | `v_ask_pick_log_full`, headers `Zon`, `Plockat`, `Anvandare`, `Andrad`, `Bolag` | IndexedDB eller Windows `localRef` + `productivity_pick_observations` |
-| `trans` | Translogg | `v_ask_trans_log`, headers `Pallid`, `Fran`, `Till`, `Antal`, `Timestamp` | IndexedDB eller Windows `localRef` + `productivity_trans_observations` |
-| `pallet` | Pallastningslogg | `v_ask_palletloading_log`, headers `Plockpallsnr.`, `Palltyp`, `Pallplacering`, `Transnr.`, `Vikt` | IndexedDB eller Windows `localRef` + `productivity_pallet_observations` |
-| `kpi` | KPI-mal | `v_ask_kpi_target`, headers `Flodesnamn`, `Processnamn`, `Beskrivning`, `Rader`, `Kollin` | Postgres/permanent verksamhetsdata |
+## Global snapshot
 
-## API-first och fallback
+Nar `DATA_SOURCE_*` och extern datakatalog ar konfigurerade ar serverns globala
+API-snapshot primar sanning. Forsta startup-syncen fyller 13 dagar bakat plus
+dagens datum. Efter det uppdateras dagens snapshot vid varje hel- och halvtimme
+i Europe/Berlin-tid. En global historik-backfill hamtar sedan en aldre dag per
+kalenderdag tills historiken ar fylld.
 
-Nar `DATA_SOURCE_*` och extern datakatalog ar konfigurerade visar `/api/productivity/files` `api_first=true`, `ready=true` och filraderna som `Hamtas fran API`. Da behover anvandaren inte lagga in lokala loggfiler innan rapporten kors. `/api/productivity` hamtar hela vyerna utan MiniMax och utan radbegransning:
+Servern lagrar snapshots under
+`compiled_data_root()/productivity_snapshots/` som gzip-CSV plus metadata per
+datum. Mappen ar global for programmet, inte per anvandare eller session. Gamla
+dagsmappar rensas inte av produktivitetsflodet; dagens filer kan ersattas
+atomiskt nar dagens data uppdateras, medan aldre datum ligger kvar.
+`backfill.json` i samma rot sparar hur langt den langsamma historikhamtningen
+har kommit.
 
-- `pick` -> `v_ask_pick_log_full`.
-- `trans` -> `v_ask_trans_log`.
-- `pallet` -> `v_ask_palletloading_log`.
-- `kpi` -> `v_ask_kpi_target`.
+Nar en vy behover snabba person-/dagssvar kan backend materialisera snapshoten
+till `person_productivity_daily`. Det ar beraknad cache, inte masterdata pa
+personen. Bemanningens V+H och produktivitetskolumn laser denna cache och bygger
+om en dag nar snapshot- eller schemasignaturen andras.
 
-Om API-hamtningen misslyckas anvands befintliga lokala filer i sessionen, Windows `localRef` eller KPI-cache som fallback. Om ingen fallback finns stoppas rapporten med en anvandartext som sager vilken fil som maste laddas upp. Rapportens svar och audit innehaller `source_status` med `api`, `upload_fallback`, `local_ref_fallback`, `missing` eller `optional_skipped`, men inte URL, headers, nycklar, request body, filnamn eller raddata.
+Snapshoten innehaller kallorna:
 
-## Sammanstallda loggar
+| Nyckel | API-vy | Anvands till |
+| --- | --- | --- |
+| `pick` | `v_ask_pick_log_full` | Plockrader, kollin och helpallsregler |
+| `trans` | `v_ask_trans_log` | Dekantering, HBW, buffer och pafyllnad |
+| `pallet` | `v_ask_palletloading_log` / `LOADING_LOG` | Pack/pallastning |
+| `receive` | `v_ask_receive_log` | Receiving och buffer update |
+| `order_log` | `v_ask_order_log` | Orderlogg for KPI-regler som kopplar order till pall |
+| `sort` | `sort_conveyor_log` | Sortering e-com/store |
+| `base_pallet` | `v_ask_article_buffertpallet` | Base pallet-/buffertpallsunderlag |
+| `kpi` | `v_ask_kpi_target` | KPI-mal och poangkolumner |
 
-Plocklogg Full, Translogg och Pallastningslogg har varsin sammanstalld csv.gz-fil per verksamhet. I produktion ligger de pa persistent disk via `PRODUCTIVITY_DATA_DIR` eller `MEDIA_STORE_ROOT/flow-data`; repo-vagen `data/coredata/<verksamhetskod>/` ar bara lokal/dev- eller legacy-fallback:
+KPI-mal hamtas som API-kalla fran `v_ask_kpi_target`. Om just KPI-kallan inte
+kan hamtas via API kan permanent KPI-coredata for verksamheten anvandas som
+fallback i snapshotbygget. Snapshotens `source_status` visar da `kpi` med
+`status=coredata_fallback`; nar API-felet ar kant skickas aven
+`fallback_reason`, till exempel HTTP 403 om API-klienten saknar behorighet till
+KPI-vyn.
 
-- `v_ask_pick_log_full_observations.csv.gz` for Plocklogg Full.
-- `v_ask_trans_log_observations.csv.gz` for Translogg.
-- `v_ask_palletloading_log_observations.csv.gz` for Pallastningslogg.
+KPI-malet fran `v_ask_kpi_target` ar den enda externa KPI-kallan som kravs for
+poang. Hur loggrader klassificeras till processer och matt (rader, kolli,
+pallar eller order) ligger i kodens interna standardlogik baserad pa
+`referens/kpi.sql`. Det finns ingen anvandaruppladdad separat regelfil i
+Produktivitet.
 
-Flodet liknar `artikel_max.csv`: ny uppladdad logg bevaras lokalt for aktuell klient men skickas ocksa till `/api/productivity/files/raw`, dar backend lagger till nya observationer i den verksamhetsscopeade csv.gz-filen. Plocklogg Full dedupliceras pa `Radid` (katalogens kolumn-id `rowid`) och Translogg pa `Rowid`, inklusive dubbletter i samma upload. Pallastningslogg anvander i stallet en strikt timestamp-grans pa `Ändrad`/`timestamp`: bara rader nyare an senaste timestampen som redan finns laggs till. Nya pallastningsrader med samma timestamp i samma upload far vara dubbletter.
+## API-kontrakt
 
-De tre sammanstallda filerna visas under `Sammanstalld data` i Uppladdningar och `/api/coredata/files`. De blandas aldrig mellan verksamheter.
+- `GET /api/productivity` returnerar personbaserad dagrapport med `people[]`,
+  `summary`, `sync`, `backfill`, `available_dates` och `source_status`.
+- `GET /api/productivity/overview` returnerar periodpaketet som
+  `produktivitet.html` anvander: `reports[]`, `period`, `summary`,
+  `missing_dates`, `source_status`, `sync` och `backfill`. Endpointen laser
+  befintliga snapshots for perioden och triggar inte extern historikhamtning vid
+  varje periodbyte.
+- `GET /api/productivity/persons/{person_id}` returnerar personens snitt per
+  aktivitet for `period=week|month|year|custom`. Dagar som inte hunnit
+  backfillas returneras i `missing_dates`.
+- `GET /api/personal/productivity` anvander samma globala snapshotberakning for
+  Min produktivitet, men personrollen far bara se sin egen kopplade person.
+- `GET /api/schedule/productivity-summary` returnerar en mindre
+  Bemanning-specifik personkarta fran `person_productivity_daily`.
+- `POST /api/productivity/sync` kor manuell snapshot-sync for drift/test och
+  kraver `productivity=edit`.
 
-## Karnfiler och verksamhet
+Produktivitetsfilroutes ar borttagna: det finns inte langre
+`/api/productivity/files`, `/api/productivity/files/raw`,
+`/api/productivity/files/{file_type}` eller `/api/productivity/targets`.
+Produktivitet laddar inte heller `productivity.js` eller
+`productivity_uploads.js`.
 
-- KPI-mal ar permanent serverdata och fungerar som produktivitetens karnfil.
-- Backend laser och sparar nya KPI-mal via inloggad anvandares verksamhetskod i Postgres-tabellen `coredata_files`.
-- Stigamo, R3 och nyare verksamheter far separata DB-rader per verksamhet och filtyp. Backend materialiserar KPI-raden till en temporar CSV-fil nar produktivitetsmotorn behover lasa den.
-- En KPI-fil uppladdad for R3 ska aldrig anvandas for Stigamo, och tvartom.
-- Stigamo kan lasa den gamla root-filen i `data/` som bakatkompatibel fallback om ingen Stigamo-scopead KPI-fil finns. Gamla `data/coredata/`-filer kan ocksa vara fallback tills en ny Postgres-rad finns.
+## Desktop
 
-## Berakningsgrupper
+Windows-appen anvander central `/api/productivity`,
+`/api/productivity/overview`, `/api/productivity/persons/{id}` och
+`/api/schedule/productivity-summary` som sanning.
+Den lokala desktop-proxyn har inte langre produktivitetsspecifika endpoints for
+filregistrering eller produktivitetsfil-sync. Om central server inte kan nas
+returnerar desktop-proxyn ett 503-svar som sager att rapporten kraver central
+serverdata for schema och KPI-snapshot.
 
-Rapporten grupperar bland annat:
+## Knappar och kontroller
 
-- Granngarden: plockzon A/B och S.
-- Autostore: butik plock AS, dekantering GG/MG.
-- E-Handel: GG/MG E-handel plock och pack.
-- Mestergruppen: plockzon A/B/N och O.
-
-Vissa anvandare exkluderas hardkodat i frontend/backendlogik for specifika grupper.
-
-## Tekniskt flode
-
-1. `productivity.js` fragar `/api/productivity/files`. Om svaret ar `api_first` anvands serverrapporten som primar vag.
-2. `/api/productivity` hamtar `pick`, `trans`, `pallet` och `kpi` via den gemensamma workflow-resolvern och materialiserar temporara CSV-filer med katalogens kolumnordning.
-3. `productivity_uploads.js` sparar synliga loggar lokalt i IndexedDB for webben eller som `localRef` i Windows nar fallback behovs.
-4. Windows registrerar refsen hos desktop-servern. Full produktivitetsrapport via `/api/productivity` fangas lokalt; desktop-servern hamtar forst centrala workflow-kallor och bygger annars rapporten av filerna pa disk.
-5. Samma loggfil syncas ocksa till `/api/productivity/files/raw` i bakgrundsko; backend uppdaterar ratt sammanstalld csv.gz-fil om filtypen ar Plocklogg Full, Translogg eller Pallastningslogg.
-6. KPI-fil syncas via `/api/productivity/files/raw` och sparas som verksamhetens `kpi`-rad i Postgres. I Windows kan en nyvald KPI-ref anvandas direkt lokalt innan syncen ar klar.
-7. Nar API-first inte ar aktivt laser webben lokala IndexedDB-filer radvis i browsern och hamtar verksamhetens KPI-mal via `/api/productivity/targets`.
-8. Serverhanterade uppladdningar/rensningar via `/api/productivity/files*` auditloggas som `productivity_file`; rapportkorsningar auditloggas som `productivity_report` med sanerad `source_status`. Lokala Windows-korningar auditloggas som `desktop_local_run` med metadata, men utan lokala sokvagar, filnamn eller filinnehall.
+| Kontroll | Vad anvandaren gor | Vad systemet gor |
+| --- | --- | --- |
+| Period | Valjer Dag, Vecka, Manad eller Ar | Hamtar periodpayload fran `/api/productivity/overview` |
+| Datum-/periodruta | Valjer ankardatum for rapporten | Visar datum, vecka, manad eller ar beroende pa periodlage |
+| Foregaende/nasta datum | Klickar pilar | Hoppar inom tillgangliga datum eller kalenderdagar |
+| Helbild | Klickar knappen | Fokuserar tradet tillbaka till verksamhetsroten |
+| Nod | Klickar verksamhet, omrade, aktivitet eller person | Flyttar fokus och visar nasta niva i hierarkin |
+| Exportera flowchart | Klickar knappen, valjer nivaer och klickar Exportera | Laddar ner aktuell fokuserad vy som SVG med valda nivaer |
 
 ## Felsokningssvar for framtida chat
 
 | Fraga | Svar |
 | --- | --- |
-| "Varfor raknas inte Produktivitet?" | Om API-first ar aktivt: kontrollera feltexten for vilken extern kalla som inte gick att hamta. Om fallback kravs: lagg in Plocklogg Full, Translogg, Pallastningslogg och KPI-mal. |
-| "Varfor ar nasta/foregaende datum disabled?" | Datasetet har inget tillgangligt datum i den riktningen. |
-| "Varfor kanner appen inte igen filen?" | Filnamnet maste matcha prefix eller header-raden maste innehalla forvantade kolumner. |
-| "Varfor syns KPI inte som fil jag kan rensa?" | KPI-mal ar permanent serverdata for verksamheten, inte lokal loggfil. |
-| "Varfor star det 0 nya rader for sammanstalld data?" | Loggen var igenkand, men alla rowid/timestamps fanns redan i verksamhetens sammanstallda fil. |
-| "Varfor skiljer Produktivitet fran annan anvandares dator?" | De stora loggfilerna ar lokala per klient; KPI-mal ar gemensamt inom verksamheten. |
+| "Varfor saknas dagar?" | Historik-backfillen har inte hunnit hamta alla datum an. Saknade dagar visas i `missing_dates`. |
+| "Hamtas data varje gang jag oppnar en person?" | Nej. Persondialogen laser sparade globala snapshots och klienten cachar nyligen hamtade perioder kort. Om datum saknas beror det pa att backfill/snapshot inte ar klar. |
+| "Varfor ska periodbyte i Produktivitet inte starta en stor API-korning?" | Periodbyte ska bara lasa de snapshots som redan finns. API-syncen sker vid startup, hel-/halvtimme, manuell sync eller historik-backfill. |
+| "Varfor gar det inte att ladda upp produktivitetsfiler?" | Den manuella produktivitetsuppladdningen ar borttagen. Produktivitet bygger pa global API-snapshot. |
+| "Vilken KPI-fil kravs for poang?" | `v_ask_kpi_target`/`kpi` kravs. Den gamla separata regelfilen anvands inte. |
+| "Varfor kan desktop inte visa rapport offline?" | Den nya rapporten kraver central schema- och snapshotdata. |
 
 ## Kallor
 
-- `../app/frontend/produktivitet.html`
-- `../app/frontend/js/productivity.js`
-- `../app/frontend/js/productivity_uploads.js`
-- `../app/backend/productivity_service.py`
-- `../app/backend/workflow_data.py`
-- `../app/backend/coredata_service.py`
+- `../app/backend/productivity_kpi_rules.py`
+- `../app/backend/productivity_sync.py`
 - `../app/backend/routers/productivity.py`
+- `../app/backend/workflow_data.py`
+- `../app/frontend/produktivitet.html`
+- `../app/frontend/js/productivity_overview.js`
 - `../desktop/local_runtime.py`

@@ -99,15 +99,17 @@ verksamheter.
 | `areas.create` | `POST` | `/api/areas` | Skapa område |
 | `areas.update` | `PUT` | `/api/areas/{area_id}` | Uppdatera område |
 | `areas.delete` | `DELETE` | `/api/areas/{area_id}` | Ta bort eller inaktivera område |
-| `activities.list` | `GET` | `/api/activities` | Lista aktiviteter med KPI Mal-processnamn |
+| `activities.list` | `GET` | `/api/activities` | Lista aktiviteter med KPI Mal-processnamn och arbetstyp |
 | `activities.import_template` | `GET` | `/api/activities/import-template` | Hämta importmall för aktiviteter |
 | `activities.import` | `POST` | `/api/activities/import` | Importera aktiviteter |
-| `activities.import_rows` | `POST` | `/api/activities/import-rows` | Importera aktivitetsrader med valfria KPI Mal-processnamn |
-| `activities.create` | `POST` | `/api/activities` | Skapa aktivitet med valfria KPI Mal-processnamn |
-| `activities.update` | `PUT` | `/api/activities/{activity_id}` | Uppdatera aktivitet med valfria KPI Mal-processnamn |
+| `activities.import_rows` | `POST` | `/api/activities/import-rows` | Importera aktivitetsrader med valfria KPI Mal-processnamn och arbetstyp (`normal`/`VAS`) |
+| `activities.create` | `POST` | `/api/activities` | Skapa aktivitet med valfria KPI Mal-processnamn och arbetstyp |
+| `activities.update` | `PUT` | `/api/activities/{activity_id}` | Uppdatera aktivitet med valfria KPI Mal-processnamn och arbetstyp |
 | `activities.delete` | `DELETE` | `/api/activities/{activity_id}` | Ta bort aktivitet |
 | `settings.get` | `GET` | `/api/settings` | Hämta verksamhetens inställningar |
 | `settings.update` | `PUT` | `/api/settings` | Uppdatera verksamhetens inställningar |
+| `settings.staffing_get` | `GET` | `/api/settings/staffing` | Hämta bemanningens historiktimmar och V+H-aktivitetsval |
+| `settings.staffing_update` | `PUT` | `/api/settings/staffing` | Uppdatera bemanningens historiktimmar och V+H-aktivitetsval |
 | `settings.sidebar_get` | `GET` | `/api/settings/sidebar` | Hämta verksamhetens sidomeny |
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera verksamhetens sidomeny |
 | `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta verksamhetens roll-vyåtkomst |
@@ -144,6 +146,12 @@ verksamheter.
 | `schedule.summary` | `GET` | `/api/schedule/summary` | Schema-summering |
 | `schedule.revision` | `GET` | `/api/schedule/revision` | Schema-revision |
 | `schedule.presence` | `GET` | `/api/schedule/presence` | NÃ¤rvarolista fÃ¶r utskrift |
+| `schedule.calculator_profile` | `GET` | `/api/schedule/calculator-profile` | Hamta personliga automatiska bemanningskalkyler |
+| `schedule.calculator_profile_update` | `PUT` | `/api/schedule/calculator-profile` | Spara personliga automatiska bemanningskalkyler |
+| `schedule.calculator_profile_import` | `POST` | `/api/schedule/calculator-profile/import` | Kopiera bemanningskalkyler fran anvandare |
+| `schedule.calculator_automatic` | `GET` | `/api/schedule/calculator/automatic` | Berakna automatiska bemanningskalkyler |
+| `schedule.activity_capacity` | `GET` | `/api/schedule/activity-capacity` | Historiskt snitt per person och vald V+H-bemanningsaktivitet |
+| `schedule.productivity_summary` | `GET` | `/api/schedule/productivity-summary` | Latt produktivitetsprocent per person for Bemanning |
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |
 | `schedule.fill_from_left` | `POST` | `/api/schedule/fill-from-left` | Fyll från vänster |
@@ -156,7 +164,7 @@ Det anvands for tomma utlanade timmar: `activity_id=null` och
 aktivitetstimmar.
 | `personal.persons` | `GET` | `/api/personal/persons` | Personval för personliga vyer |
 | `personal.schedule` | `GET` | `/api/personal/schedule` | Mitt schema för en person |
-| `personal.productivity` | `GET` | `/api/personal/productivity` | Min produktivitet för en person |
+| `personal.productivity` | `GET` | `/api/personal/productivity` | Min produktivitet med schema och global personproduktivitet |
 | `overview.week` | `GET` | `/api/overview` | Översikt vecka |
 | `overview.month` | `GET` | `/api/overview/month` | Översikt månad |
 | `overview.revision` | `GET` | `/api/overview/revision` | Översikt revision |
@@ -170,12 +178,34 @@ aktivitetstimmar.
 | `users.create` | `POST` | `/api/users` | Skapa användare |
 | `users.update` | `PUT` | `/api/users/{user_id}` | Uppdatera användare |
 | `users.delete` | `DELETE` | `/api/users/{user_id}` | Ta bort användare |
-| `productivity.files` | `GET` | `/api/productivity/files` | Produktivitetsfilstatus |
-| `productivity.targets` | `GET` | `/api/productivity/targets` | Hämta KPI-mål |
-| `productivity.upload` | `POST` | `/api/productivity/files` | Ladda upp produktivitetsfil(er) |
-| `productivity.upload_raw` | `POST` | `/api/productivity/files/raw` | Ladda upp rå produktivitetsfil och uppdatera sammanstallda loggar |
-| `productivity.delete_file` | `DELETE` | `/api/productivity/files/{file_type}` | Ta bort produktivitetsfil |
-| `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport |
+| `productivity.sync` | `POST` | `/api/productivity/sync` | Synka valt datum, eller dagens produktivitetsdata om datum saknas |
+| `productivity.person` | `GET` | `/api/productivity/persons/{person_id}` | Personens produktivitetssnitt per aktivitet for vecka/manad/ar/datumperiod |
+| `productivity.overview` | `GET` | `/api/productivity/overview` | Produktivitetsoversikt for dag/vecka/manad/ar/datumperiod |
+| `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
+
+Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
+(`LOADING_LOG`), `receive`, `order_log`, `sort`, `base_pallet` och `kpi`.
+Schedulerstart fyller 13 dagar bakåt plus idag; därefter uppdateras bara dagens
+snapshot vid varje hel- och halvtimme. En global historik-backfill hamtar sedan
+en aldre dag per kalenderdag och sparar snapshots permanent i serverns
+produktivitetsdata.
+
+`GET /api/schedule/productivity-summary` returnerar en mindre Bemanning-specifik
+personkarta byggd fran materialiserade `person_productivity_daily`-cellrader.
+
+`GET /api/productivity` returnerar personrader med `time_cells[]`. Cellerna har
+`points`, `expected_points`, `score_status`, `process_points[]`, `diff_count`
+och `diffs[]`. Personer utan KPI-kopplad tid, till exempel heldags STOD/absence,
+ingar inte i rapporten.
+
+`GET /api/productivity/overview?period=day|week|month|year&date=YYYY-MM-DD`
+returnerar periodmetadata och `reports[]` for tradvyn. Dagens datum raknas bara
+till senaste avslutade heltimme i klienten; servern klipper innevarande
+vecka/manad/ar vid dagens datum och returnerar `missing_dates` om en dag saknar
+snapshot/fallback. Periodvyn laser befintliga snapshots och triggar inte extern
+historikhamtning vid varje periodbyte; schemalagd sync/backfill ansvarar for att
+fylla pa data.
+
 | `public.hours` | `GET` | `/api/public/hours` | Publika timmar för dag |
 | `public.hours_week` | `GET` | `/api/public/hours/week` | Publika timmar för vecka |
 | `public.persons` | `GET` | `/api/public/persons` | Publika FTE för dag |
@@ -183,9 +213,9 @@ aktivitetstimmar.
 | `public.summary` | `GET` | `/api/public/summary` | Publik CSV-summering för dag |
 | `public.summary_week` | `GET` | `/api/public/summary/week` | Publik CSV-summering för vecka |
 | `meta.uploads` | `POST` | `/api/meta/uploads` | Publik meta-uppladdning av bilder och videor; backendfel auditloggas sanerat som `meta_media_upload/upload_failed` |
-| `meta.list_uploads` | `GET` | `/api/meta/uploads` | Super User-lista över meta-uppladdningar |
-| `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | Sändningsanalys för Meta-videor |
-| `meta.shipment_observations_export` | `GET` | `/api/meta/shipment-observations/export` | Excel-export for Meta-sandningsanalys |
+| `meta.list_uploads` | `GET` | `/api/meta/uploads` | Super User-lista över meta-uppladdningar med hash, storlek och videolängd |
+| `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | Sändningsanalys för Meta-videor med video-ID, längd och storlek |
+| `meta.shipment_observations_export` | `GET` | `/api/meta/shipment-observations/export` | Excel-export for Meta-sandningsanalys med videostorlek |
 | `meta.analyze` | `POST` | `/api/meta/uploads/{upload_id}/analyze` | Analysera Meta-video |
 | `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Visa eller spela upp meta-uppladdning |
 | `meta.delete` | `DELETE` | `/api/meta/uploads/{upload_id}` | Radera meta-uppladdning |

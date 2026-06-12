@@ -942,6 +942,7 @@ def test_forecast_inference_uses_default_transportor_when_overview_value_missing
 
     assert summary["antal_grupper"] == 1
     assert out["Transportör"].tolist() == ["Okänd"]
+    assert out["Bolag"].tolist() == ["MG"]
     assert "Kundnamn" in out.columns
 
 
@@ -1273,10 +1274,11 @@ def test_ytgenerering_flow_uses_transport_cluster_json(monkeypatch, tmp_path):
 
 def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface(monkeypatch, tmp_path):
     forecast_payload = {
-        "columns": ["Sändningsnr", "Ordernummer", "Transportör", "Predikterade pallplatser"],
+        "columns": ["Sändningsnr", "Bolag", "Ordernummer", "Transportör", "Predikterade pallplatser"],
         "rows": [
             {
                 "Sändningsnr": "S-1",
+                "Bolag": "T3",
                 "Ordernummer": "1001, 1002",
                 "Transportör": "Akeri A",
                 "Predikterade pallplatser": 1.5,
@@ -1304,9 +1306,10 @@ def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface
     tables = {key: table for key, _label, table in result["tables"]}
     import_table = tables["order_set_area_import"]
     assert result["maps"][0]["assignments"][0]["orderNumbers"] == ["1001", "1002"]
+    assert result["maps"][0]["assignments"][0]["orderCompanies"] == {"1001": "T3", "1002": "T3"}
     assert import_table.to_dict("records") == [
-        {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1001", "pick_zone": "A"},
-        {"area_num": "UTL100, UTL101", "company": "MG", "order_num": "1002", "pick_zone": "A"},
+        {"area_num": "UTL100, UTL101", "company": "T3", "order_num": "1001", "pick_zone": "A"},
+        {"area_num": "UTL100, UTL101", "company": "T3", "order_num": "1002", "pick_zone": "A"},
     ]
     assert result["auto_downloads"] == [
         {
@@ -1316,8 +1319,8 @@ def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface
     ]
     assert result["download_files"]["order_set_area_import"]["content"] == (
         "area_num\tcompany\torder_num\tpick_zone\n"
-        "UTL100, UTL101\tMG\t1001\tA\n"
-        "UTL100, UTL101\tMG\t1002\tA\n"
+        "UTL100, UTL101\tT3\t1001\tA\n"
+        "UTL100, UTL101\tT3\t1002\tA\n"
     )
 
 

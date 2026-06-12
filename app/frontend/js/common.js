@@ -35,7 +35,6 @@ const ALLOCATION_PROTECTED_UPLOAD_KEYS = [
   "item_security_info",
   "item_option",
   "kpi",
-  "kpi_target_rule",
   "location",
   "location_cost",
   "max_csv",
@@ -44,7 +43,6 @@ const ALLOCATION_PROTECTED_UPLOAD_KEYS = [
 ];
 const UPLOAD_FILE_STORES = [
   { dbName: "flow-allokering-files", storeName: "files", protectedKeys: ALLOCATION_PROTECTED_UPLOAD_KEYS },
-  { dbName: "flow-productivity-files", storeName: "files", protectedKeys: ["kpi"] },
 ];
 const SHARED_ALLOCATION_API = "/api/allokering";
 const SHARED_ALLOCATION_DB_NAME = "flow-allokering-files";
@@ -65,7 +63,6 @@ const SHARED_ALLOCATION_FILE_TYPE_KEYS = {
   wms_booking: ["wms_booking"],
   wms_trans: ["wms_trans"],
   wms_pick: ["wms_pick"],
-  productivity_pallet: ["productivity_pallet"],
 };
 const SHARED_ALLOCATION_SLOT_MIRRORS = {
   wms_booking: ["not_putaway"],
@@ -85,23 +82,11 @@ const SHARED_ALLOCATION_FILE_WORDS = {
   wms_booking: ["v_ask_booking_putaway", "booking_putaway", "inlagringslogg"],
   wms_trans: ["v_ask_trans_log", "trans_log", "transaktionslogg"],
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
-  productivity_pallet: ["v_ask_palletloading_log", "palletloading_log", "pallastningslogg", "palllastningslogg"],
 };
 const AREA_FOCUS_STORAGE_KEY = "flow-area-focus";
-const AREA_FOCUS_OPTIONS = [
-  { value: "MG", label: "MG", title: "Mestergruppen" },
-  { value: "GG", label: "GG", title: "Granngården" },
-  { value: "AS", label: "AS", title: "Autostore" },
-  { value: "EH", label: "EH", title: "E-Handel" },
-  { value: "ALLT", label: "∞", title: "Alla områden" },
-];
-const AREA_FOCUS_FALLBACK_NAMES = {
-  MG: "Mestergruppen",
-  GG: "Granngården",
-  AS: "Autostore",
-  EH: "E-Handel",
-};
+const AREA_FOCUS_ALL_OPTION = { value: "ALLT", label: "∞", title: "Alla områden", code: null, areaId: null };
 let dynamicAreaFocusOptions = null;
+let areaFocusLoadState = "idle";
 let areaFocusAreasRequest = null;
 const appLogEntries = readStoredAppLogEntries();
 let appLogSignalTimer = null;
@@ -230,6 +215,7 @@ const ROLE_VIEW_IDS = [
   "allocationProcessMatrix",
   "allocationSettings",
   "allocationSplit",
+  "staffingSettings",
   "persons",
   "personSortOrder",
   "personImport",
@@ -289,6 +275,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     areas: "edit",
     users: "edit",
     appSettings: "edit",
+    staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",
   },
@@ -303,6 +290,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     areas: "edit",
     users: "edit",
     appSettings: "edit",
+    staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",
   },
@@ -475,9 +463,7 @@ applyAppZoom(readAppZoom(), { persist: false });
 initAppZoomShortcuts();
 
 function areaFocusOptions() {
-  return Array.isArray(dynamicAreaFocusOptions) && dynamicAreaFocusOptions.length
-    ? dynamicAreaFocusOptions
-    : AREA_FOCUS_OPTIONS;
+  return Array.isArray(dynamicAreaFocusOptions) ? dynamicAreaFocusOptions : [];
 }
 
 function areaFocusValueForArea(area) {
@@ -494,18 +480,15 @@ function hasAllAreasMarker(areas = []) {
 }
 
 function buildAreaFocusOptions(areas = [], user = null) {
-  const preferredOrder = ["MG", "GG", "AS", "EH", "R3"];
   const activeAreas = (areas || [])
     .filter((area) => area?.is_active !== false);
   const visibleAreas = activeAreas
     .filter((area) => !isAllAreasMarker(area))
     .slice()
     .sort((a, b) => {
-      const ac = String(a?.code || "").trim().toUpperCase();
-      const bc = String(b?.code || "").trim().toUpperCase();
-      const ai = preferredOrder.includes(ac) ? preferredOrder.indexOf(ac) : 99;
-      const bi = preferredOrder.includes(bc) ? preferredOrder.indexOf(bc) : 99;
-      return ai - bi || (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0) || ac.localeCompare(bc, "sv");
+      const sortDiff = (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0);
+      if (sortDiff !== 0) return sortDiff;
+      return String(a?.name || a?.code || "").localeCompare(String(b?.name || b?.code || ""), "sv");
     });
   const options = visibleAreas.map((area) => ({
     value: areaFocusValueForArea(area),
@@ -515,23 +498,36 @@ function buildAreaFocusOptions(areas = [], user = null) {
     areaId: Number(area?.id),
   })).filter((option) => option.value && option.label);
   if (user?.is_super_user || hasAllAreasMarker(activeAreas)) {
-    options.push({ value: "ALLT", label: "∞", title: "Alla områden", code: null, areaId: null });
+    options.push({ ...AREA_FOCUS_ALL_OPTION });
   }
-  return options.length ? options : AREA_FOCUS_OPTIONS;
+  return options;
 }
 
 function setAreaFocusAreas(areas = [], user = null) {
   dynamicAreaFocusOptions = buildAreaFocusOptions(areas, user);
+  areaFocusLoadState = "ready";
   const current = readAreaFocus();
-  try { localStorage.setItem(AREA_FOCUS_STORAGE_KEY, current); } catch (e) {}
+  try {
+    if (current) localStorage.setItem(AREA_FOCUS_STORAGE_KEY, current);
+    else localStorage.removeItem(AREA_FOCUS_STORAGE_KEY);
+  } catch (e) {}
   updateAreaFocusToggle(current);
   return dynamicAreaFocusOptions;
 }
 
 function loadAreaFocusAreas(user = null) {
   if (areaFocusAreasRequest) return areaFocusAreasRequest;
+  areaFocusLoadState = "loading";
+  dynamicAreaFocusOptions = [];
+  updateAreaFocusToggle();
   areaFocusAreasRequest = api.get("/api/areas")
     .then((areas) => setAreaFocusAreas(areas, user))
+    .catch((error) => {
+      areaFocusLoadState = "error";
+      dynamicAreaFocusOptions = [];
+      updateAreaFocusToggle();
+      throw error;
+    })
     .finally(() => {
       areaFocusAreasRequest = null;
     });
@@ -545,37 +541,43 @@ function areaFocusMenuOptions() {
 function normalizeAreaFocus(value) {
   const normalized = String(value || "").trim().toUpperCase();
   const options = areaFocusOptions();
+  if (!options.length) return "";
   const exact = options.find((option) => String(option.value || "").toUpperCase() === normalized);
   if (exact) return exact.value;
   const byCode = options.find((option) => option.code && option.code === normalized);
   if (byCode) return byCode.value;
   const allOption = options.find((option) => option.value === "ALLT");
-  return allOption ? allOption.value : (options[0]?.value || "ALLT");
+  return allOption ? allOption.value : (options[0]?.value || "");
 }
 
 function areaFocusOption(value) {
   const normalized = normalizeAreaFocus(value);
   const options = areaFocusOptions();
-  return options.find((option) => option.value === normalized) || options[options.length - 1];
+  return options.find((option) => option.value === normalized) || options[0] || null;
 }
 
 function nextAreaFocus(value = readAreaFocus()) {
   const normalized = normalizeAreaFocus(value);
   const options = areaFocusOptions();
+  if (!options.length) return "";
   const index = options.findIndex((option) => option.value === normalized);
-  return options[(index + 1) % options.length].value;
+  return options[(Math.max(0, index) + 1) % options.length].value;
 }
 
 function readAreaFocus() {
   try {
     return normalizeAreaFocus(localStorage.getItem(AREA_FOCUS_STORAGE_KEY));
   } catch (e) {
-    return "ALLT";
+    return normalizeAreaFocus("");
   }
 }
 
 function writeAreaFocus(value) {
   const normalized = normalizeAreaFocus(value);
+  if (!normalized) {
+    updateAreaFocusToggle("");
+    return "";
+  }
   try { localStorage.setItem(AREA_FOCUS_STORAGE_KEY, normalized); } catch (e) {}
   updateAreaFocusToggle(normalized);
   window.dispatchEvent(new CustomEvent("flow:areaFocusChanged", { detail: { value: normalized } }));
@@ -596,7 +598,7 @@ function findAreaByCode(areas, code) {
 
 function preferredAreaIdFromFocus(areas) {
   const focus = readAreaFocus();
-  if (focus === "ALLT") return null;
+  if (!focus || focus === "ALLT") return null;
   const visibleAreas = Array.isArray(areas)
     ? areas.filter((area) => area?.is_active !== false)
     : null;
@@ -606,7 +608,7 @@ function preferredAreaIdFromFocus(areas) {
     if (!visibleAreas || visibleAreas.some((area) => Number(area?.id) === areaId)) {
       return areaId;
     }
-    writeAreaFocus("ALLT");
+    writeAreaFocus(normalizeAreaFocus(""));
     return null;
   }
   const areaIdMatch = String(focus || "").match(/^AREA:(\d+)$/i);
@@ -615,12 +617,12 @@ function preferredAreaIdFromFocus(areas) {
     if (!visibleAreas || visibleAreas.some((area) => Number(area?.id) === areaId)) {
       return areaId;
     }
-    writeAreaFocus("ALLT");
+    writeAreaFocus(normalizeAreaFocus(""));
     return null;
   }
   const area = findAreaByCode(visibleAreas || areas, option?.code || focus);
   if (area) return Number(area.id);
-  if (visibleAreas) writeAreaFocus("ALLT");
+  if (visibleAreas) writeAreaFocus(normalizeAreaFocus(""));
   return null;
 }
 
@@ -631,10 +633,15 @@ function areaFocusAreaId(areas) {
 function areaFocusName(areas, value = readAreaFocus()) {
   const focus = normalizeAreaFocus(value);
   if (focus === "ALLT") return "Alla områden";
+  if (!focus) {
+    if (areaFocusLoadState === "error") return "Områden kunde inte läsas";
+    if (areaFocusLoadState === "loading") return "Läser områden";
+    return "Inga områden";
+  }
   const option = areaFocusOption(focus);
   if (option?.title) return option.title;
   const area = findAreaByCode(areas || [], option?.code || focus);
-  return area?.name || AREA_FOCUS_FALLBACK_NAMES[option?.code || focus] || focus;
+  return area?.name || focus;
 }
 
 function activityAreaCode(activity, areas) {
@@ -687,11 +694,15 @@ function updateAreaFocusToggle(value = readAreaFocus()) {
   const normalized = normalizeAreaFocus(value);
   const option = areaFocusOption(normalized);
   toggle.dataset.value = normalized;
-  toggle.textContent = option.label;
+  const disabled = !option;
+  toggle.textContent = option?.label || (areaFocusLoadState === "loading" ? "..." : "!");
   toggle.classList.toggle("infinity", normalized === "ALLT");
+  toggle.classList.toggle("is-error", areaFocusLoadState === "error" && !option);
+  toggle.classList.toggle("is-disabled", disabled);
   toggle.title = `Områdesfokus: ${areaFocusName([], normalized)}`;
   toggle.setAttribute("aria-label", toggle.title);
-  toggle.setAttribute("aria-pressed", normalized === "ALLT" ? "false" : "true");
+  toggle.setAttribute("aria-pressed", normalized === "ALLT" || disabled ? "false" : "true");
+  toggle.disabled = disabled;
 }
 
 function closeAreaFocusMenu() {
@@ -1699,7 +1710,8 @@ function roleViewAccessLevel(user, viewId) {
   const roles = userRoles(user);
   if (user?.is_demo && !roles.includes("demo")) roles.push("demo");
   for (const role of roles) {
-    const level = access[role]?.[normalizedViewId] || "none";
+    let level = access[role]?.[normalizedViewId];
+    level = level || "none";
     if ((ROLE_VIEW_LEVEL_RANK[level] || 0) > (ROLE_VIEW_LEVEL_RANK[best] || 0)) best = level;
   }
   return best;
@@ -1736,6 +1748,8 @@ function canUseAllocationTools(user) {
     canViewPage(user, "allocationUploads")
     || canViewPage(user, "allocationSplit")
     || canViewPage(user, "allocationProcess")
+    || canViewPage(user, "allocationProcessMatrix")
+    || canViewPage(user, "allocationSettings")
   );
 }
 
@@ -1814,7 +1828,7 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Inställningar",
       href: "/installningar.html",
       icon: "⚙",
-      visible: canViewPage(user, "allocationSettings"),
+      visible: canViewPage(user, "allocationSettings") || canViewPage(user, "staffingSettings") || canViewPage(user, "allocationProcessMatrix"),
       active: activePage === "allocationSettings",
     },
     {
@@ -2604,7 +2618,9 @@ function clearCachedSidebarUser() {
 
 function pageAccessAllowed(user, activePage, options = {}) {
   if (!user || user.must_change_password) return false;
-  if (activePage && activePage !== "passwordSetup" && !canViewPage(user, activePage)) return false;
+  const allowedViewIds = [activePage, ...(options.anyViewIds || [])].filter(Boolean);
+  const hasViewAccess = allowedViewIds.some((viewId) => canViewPage(user, viewId));
+  if (activePage && activePage !== "passwordSetup" && !hasViewAccess) return false;
   if (options.requireAdmin && !isAdminUser(user)) return false;
   if (options.requireSuperUser && !user?.is_super_user) return false;
   if (options.requirePlanningView && !canViewPage(user, activePage || "schedule")) return false;
@@ -3151,11 +3167,10 @@ const DEMO_TOUR_DESCRIPTIONS = {
     + "<strong>Dra</strong> över flera dagar för att sätta samma heldagsaktivitet snabbt.<br>"
     + "<strong>Närvarande</strong> skriver ut vald dags bemannade personer och <strong>Ångra/Gör om</strong> fungerar som i Bemanning.",
   productivity:
-    "Produktivitet räknar ut KPI per process och bolag baserat på pick/trans/pallet-loggar plus KPI-mål.<br><br>"
-    + "Välj <strong>period</strong> och <strong>verksamhet</strong> i topbaren.<br>"
-    + "Klicka på rubriker för att <strong>sortera</strong> tabellen.<br>"
-    + "Klicka på en rad för att <strong>borra ner</strong> i detaljer per timme.<br>"
-    + "Färgerna i cellerna visar om KPI-målet nås (grönt över, rött under).",
+    "Produktivitet visar den globala produktivitetsöversikten som ett fokuserbart träd.<br><br>"
+    + "Välj <strong>dag</strong>, <strong>vecka</strong>, <strong>månad</strong> eller <strong>år</strong> högst upp.<br>"
+    + "Klicka verksamhet, område, aktivitet eller person för att gå djupare i hierarkin.<br>"
+    + "<strong>Helbild</strong> tar dig tillbaka till roten och <strong>Exportera flowchart</strong> låter dig välja nivåer innan SVG-filen laddas ner.",
   dataFetch:
     "Hämta data låter dig ladda ner valfri vy från det externa lagersystemet, filtrera och exportera till Excel.<br><br>"
     + "Välj <strong>vy</strong> i listan till vänster — sökrutan hjälper dig hitta rätt.<br>"
@@ -3164,8 +3179,8 @@ const DEMO_TOUR_DESCRIPTIONS = {
     + "Klicka <strong>Hämta</strong> för att förhandsgranska och <strong>Exportera till Excel</strong> för att ladda ner.",
   allocationProcess:
     "Bearbeta hjälper dig planera artikelplacering och köra de stora flödena i lagret.<br><br>"
-    + "<strong>Matris</strong>-knappen styr per zon vilka filter (bolag, kundnummer) och flöden som visas.<br>"
     + "Knapparna under varje rubrik kör delflödena — Ordersaldo, LYX, Påfyllnadsprio, Allokering osv.<br>"
+    + "Vilka delflöden som visas per toggle styrs i <strong>Inställningar</strong> under Bearbeta-fliken.<br>"
     + "<strong>Vänsterklick</strong> kör flödet med dina valda filer.<br>"
     + "Resultat visas i en tabell — klicka på cellerna för att <strong>kopiera</strong> värden, och använd <strong>Exportera Excel</strong> för att spara resultatet.",
   allocationSplit:
@@ -3183,8 +3198,8 @@ const DEMO_TOUR_DESCRIPTIONS = {
     + "<strong>Schema</strong>-knappen öppnar veckomallen (vilka timmar personen jobbar).<br>"
     + "<strong>Ta bort</strong> raderar personen permanent (kräver bekräftelse).",
   activities:
-    "Aktiviteter definierar vad personer kan tilldelas: plock, lots, VAS osv — med färg, kategori och summering.<br><br>"
-    + "<strong>Ny aktivitet</strong> skapar en aktivitet med kod, etikett, område, färg och sortering.<br>"
+    "Aktiviteter definierar vad personer kan tilldelas: plock, lots, VAS osv — med färg, kategori, arbetstyp och summering.<br><br>"
+    + "<strong>Ny aktivitet</strong> skapar en aktivitet med kod, etikett, område, arbetstyp, färg och sortering.<br>"
     + "<strong>Vänsterklick</strong> på en rad för att redigera inline.<br>"
     + "<strong>Summeras som</strong> låter dig gruppera flera koder under en huvudaktivitet i rapporter.<br>"
     + "Färgen syns sedan direkt i Bemanningens celler.",
@@ -3568,11 +3583,11 @@ function enqueueVisiblePagePrefetches(user, activePage) {
   }
   if (canViewPage(user, "productivity")) {
     enqueueBackgroundPrefetch("/api/areas");
-    enqueueBackgroundPrefetch("/api/productivity/files", 20 * 1000);
-    enqueueBackgroundPrefetch("/api/productivity/targets", 60 * 1000);
   }
-  if (canViewPage(user, "allocationUploads") || canViewPage(user, "allocationProcess") || canViewPage(user, "allocationSettings") || canViewPage(user, "allocationSplit")) {
+  if (canViewPage(user, "allocationUploads") || canViewPage(user, "allocationProcess") || canViewPage(user, "allocationSettings") || canViewPage(user, "allocationProcessMatrix") || canViewPage(user, "allocationSplit")) {
     enqueueBackgroundPrefetch("/api/allokering/flows", 60 * 1000);
+  }
+  if (activePage === "allocationUploads" && canViewPage(user, "allocationUploads")) {
     enqueueBackgroundPrefetch("/api/coredata/files", 20 * 1000);
     enqueueBackgroundWork("allocation-upload-metadata", warmSharedAllocationMetadataCache);
   }
@@ -3663,7 +3678,9 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/index.html";
     return null;
   }
-  if (activePage !== "passwordSetup" && !canViewPage(user, activePage)) {
+  const allowedViewIds = [activePage, ...(options.anyViewIds || [])].filter(Boolean);
+  const hasViewAccess = allowedViewIds.some((viewId) => canViewPage(user, viewId));
+  if (activePage !== "passwordSetup" && !hasViewAccess) {
     redirectAfterDeniedAccess(user, "Sidan kräver behörighet", activePage);
     return null;
   }

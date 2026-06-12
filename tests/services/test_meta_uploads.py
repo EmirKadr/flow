@@ -849,6 +849,8 @@ def test_super_user_can_list_and_request_meta_shipment_analysis_without_configur
         assert item["video_filename"] == "20260531_120102_123456Z_01.mov"
         assert item["video_duration_seconds"] == 75.4
         assert item["video_duration_label"] == "1:15"
+        assert item["video_size_bytes"] == 11
+        assert item["video_size_label"] == "11 B"
         assert item["created_at"]
         assert item["updated_at"]
 
@@ -926,6 +928,7 @@ def test_super_user_can_export_meta_shipment_observations_excel():
             "Avvikelser",
             "Status",
         ]
+        assert [cell.value for cell in sheet[1]][9:12] == ["Video", "L\u00e4ngd", "Storlek"]
         values = [cell.value for cell in sheet[2]]
         assert values[:8] == [
             "100001",
@@ -939,7 +942,8 @@ def test_super_user_can_export_meta_shipment_observations_excel():
         ]
         assert values[9] == "20260531_120102_123456Z_01.mov"
         assert values[10] == "1:15"
-        assert values[12] == "c" * 64
+        assert values[11] == "11 B"
+        assert values[13] == "c" * 64
         workbook.close()
     finally:
         app.dependency_overrides.pop(get_db, None)

@@ -44,7 +44,6 @@ CORE_DATA_SPECS = (
     CoreDataFileSpec("item_attribute", "Item Attribute", "item_attribute"),
     CoreDataFileSpec("item_option", "Item Option", "item_option"),
     CoreDataFileSpec("item_security_info", "Artikel Säkerhetsinformation", "item_security_info"),
-    CoreDataFileSpec("kpi_target_rule", "KPI-Målregler", "kpi_target_rule"),
     CoreDataFileSpec("location", "Lagerplatser", "location", ("lagerplats", "lagerplatser")),
     CoreDataFileSpec("location_cost", "Lagerplatsavstånd", "location_cost"),
     CoreDataFileSpec("pallet_type", "Palltyp", "pallet_type"),

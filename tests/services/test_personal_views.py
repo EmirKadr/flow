@@ -12,6 +12,7 @@ from app.backend.database import Base
 from app.backend.deps import get_db
 from app.backend.main import app
 from app.backend.models import Activity, Area, Business, Person, User
+from app.backend.routers import personal as personal_router
 from app.backend.security import hash_password
 
 
@@ -151,3 +152,60 @@ def test_super_user_can_select_person_in_personal_views(client, db_session):
     productivity = client.get("/api/personal/productivity?date=2026-06-01&person_id=2")
     assert productivity.status_code == 200
     assert productivity.json()["day"]["total_minutes"] == 480
+
+
+def test_personal_productivity_includes_global_person_activity_stats(client, db_session, monkeypatch, tmp_path):
+    def fake_report(_db, _files, *, report_date, business_id, sync):
+        assert business_id == 1
+        assert sync["ready"] is True
+        return {
+            "date": report_date.isoformat(),
+            "people": [
+                {
+                    "person_id": 1,
+                    "support_minutes": 0,
+                    "absence_minutes": 0,
+                    "time_cells": [
+                        {
+                            "kind": "kpi",
+                            "activity_label": "Packning",
+                            "points": 10,
+                            "expected_points": 20,
+                            "minutes": 60,
+                            "event_count": 2,
+                            "diff_count": 1,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(personal_router, "sources_available", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(personal_router, "productivity_api_source_map", lambda: {"pick": "pick"})
+    monkeypatch.setattr(
+        personal_router,
+        "productivity_snapshot_status",
+        lambda *_args, **_kwargs: {"ready": True, "source": "api_snapshot"},
+    )
+    monkeypatch.setattr(personal_router, "productivity_snapshot_files", lambda day: {"pick": tmp_path / f"{day}.csv"})
+    monkeypatch.setattr(personal_router, "build_person_productivity_report_from_files", fake_report)
+    monkeypatch.setattr(personal_router, "productivity_backfill_status", lambda *_args, **_kwargs: {"status": "idle"})
+
+    login = client.post("/api/auth/login", json={"username": "anna", "password": ""})
+    assert login.status_code == 200
+    password = client.post("/api/auth/set-password", json={"password": "personpass"})
+    assert password.status_code == 200
+
+    response = client.get("/api/personal/productivity?date=2026-06-03")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["person"]["id"] == 1
+    assert payload["productivity"]["day"]["status"] == "ok"
+    assert payload["productivity"]["day"]["activities"][0]["activity"] == "Packning"
+    assert payload["productivity"]["day"]["summary"]["productivity_pct"] == 0.5
+    assert payload["productivity"]["day"]["summary"]["points_per_hour"] == 10
+    assert payload["productivity"]["week"]["period"]["start_date"] == "2026-06-01"
+    assert payload["productivity"]["week"]["period"]["end_date"] == "2026-06-07"
+    assert payload["productivity"]["week"]["summary"]["kpi_points"] == 70
+    assert payload["productivity"]["week"]["summary"]["planned_kpi_points"] == 140

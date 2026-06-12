@@ -401,8 +401,8 @@ function apiActionLabel(path, method = "GET") {
     const lowerPath = String(path || "").toLowerCase();
     return lowerPath.includes("artikel_max") || lowerPath.includes("article_max") ? "Sammanställd data" : "Kärnfil";
   }
-  if (safePath.startsWith("/api/productivity/files")) return "Produktivitetsfil";
-  if (safePath.startsWith("/api/productivity/report")) return "Produktivitet";
+  if (safePath.startsWith("/api/productivity")) return "Produktivitet";
+  if (safePath.startsWith("/api/schedule/productivity-summary")) return "Bemanning: produktivitet";
   if (safePath === "/api/meta/uploads") return verb === "POST" ? "Meta-uppladdning" : "Meta";
   if (safePath.startsWith("/api/meta/shipment-observations")) return "Meta-sändningsanalys";
   if (/^\/api\/meta\/uploads\/\d+\/analyze$/.test(safePath)) return "Meta-analys";

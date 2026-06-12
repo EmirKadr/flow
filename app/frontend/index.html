@@ -42,6 +42,7 @@
     <button id="copyBtn">Kopiera dag…</button>
     <button id="clearBtn" class="danger">Rensa dag</button>
     <button id="presenceBtn" type="button">Närvarande</button>
+    <button id="capacityToggleBtn" class="capacity-toggle" type="button" title="Visa/dölj historiskt snitt (V+H)" aria-pressed="false">V+H</button>
     <button id="undoBtn" class="icon-btn" type="button" title="Ångra (Ctrl+Z)" aria-label="Ångra" disabled>↶</button>
     <button id="redoBtn" class="icon-btn" type="button" title="Gör om (Ctrl+Y)" aria-label="Gör om" disabled>↷</button>
   </section>
@@ -59,6 +60,7 @@
               </div>
             </th>
             <th class="base" data-sort="home_area" title="Klicka för att sortera på hemområde.">Hemområde <span class="sort-ind"></span></th>
+            <th class="productivity-col" title="Produktivitet fram till senaste avslutade KPI-timme.">Produktivitet</th>
           </tr>
         </thead>
         <tbody id="scheduleBody"></tbody>
@@ -78,6 +80,14 @@
       <div class="card calc-card">
         <div class="calc-card-header">
           <h3>Bemanningskalkyl</h3>
+          <div class="calc-card-actions">
+            <button id="calcAddAutomaticBtn" class="icon-btn" type="button" title="Ny automatisk kalkyl" aria-label="Ny automatisk kalkyl">+</button>
+            <input id="calcImportSearch" type="search" placeholder="Sök användare" aria-label="Sök användare" />
+            <select id="calcImportUser" aria-label="Hämta bemanningskalkyler från användare">
+              <option value="">Hämta från användare</option>
+            </select>
+            <button id="calcImportBtn" type="button" disabled>Hämta</button>
+          </div>
         </div>
         <div id="calcPanels" class="calc-panels"></div>
       </div>
@@ -85,7 +95,7 @@
   </main>
 
   <script src="/js/api.js"></script>
-  <script src="/js/common.js?v=20260601-coredata-types"></script>
+  <script src="/js/common.js?v=20260609-productivity-overview"></script>
   <script src="/js/presence_print.js"></script>
   <script src="/js/schedule.js"></script>
 </body>

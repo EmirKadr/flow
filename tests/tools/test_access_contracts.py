@@ -125,7 +125,7 @@ def test_role_default_access_matches_between_frontend_and_backend():
 
 
 def test_productivity_page_uses_view_access_not_super_user_gate():
-    productivity = read_frontend("js/productivity.js")
+    productivity = read_frontend("js/productivity_overview.js")
 
     assert 'initPage("productivity")' in productivity
     assert 'initPage("productivity", { requireSuperUser: true })' not in productivity

@@ -75,12 +75,13 @@ def test_build_activity_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_activity_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet.cell(1, column).value for column in range(1, 7)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 8)] == [
         "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
         "KPI Mål (frivillig)",
+        "arbetstyp (frivillig)",
         "sortering (frivillig)",
     ]
 
@@ -101,6 +102,7 @@ def test_parse_activity_import_excel_accepts_label_only():
     assert rows[0].area is None
     assert rows[0].summary_activity is None
     assert rows[0].kpi_process_name is None
+    assert rows[0].work_type == "normal"
     assert rows[0].sort_order is None
 
 
@@ -108,8 +110,8 @@ def test_parse_activity_import_excel_accepts_optional_fields():
     rows, errors = parse_activity_import_excel(
         workbook_bytes(
             [
-                ["etikett", "område", "summeras som", "KPI Mål", "sortering"],
-                ["Frånvaro", "GG", "Ledigt", "dekant ,  plock", 20],
+                ["etikett", "område", "summeras som", "KPI Mål", "arbetstyp", "sortering"],
+                ["Frånvaro", "GG", "Ledigt", "dekant ,  plock", "VAS", 20],
             ]
         )
     )
@@ -119,6 +121,7 @@ def test_parse_activity_import_excel_accepts_optional_fields():
     assert rows[0].area == "GG"
     assert rows[0].summary_activity == "Ledigt"
     assert rows[0].kpi_process_name == "dekant, plock"
+    assert rows[0].work_type == "vas"
     assert rows[0].sort_order == 20
 
 
@@ -137,6 +140,23 @@ def test_parse_activity_import_excel_rejects_business_prefixed_kpi_process():
     assert errors[0].row == 2
     assert errors[0].label == "Plock"
     assert errors[0].error == "KPI Mål ska bara vara processnamn, utan bolag"
+
+
+def test_parse_activity_import_excel_rejects_unknown_work_type():
+    rows, errors = parse_activity_import_excel(
+        workbook_bytes(
+            [
+                ["etikett", "arbetstyp"],
+                ["Plock", "extra"],
+            ]
+        )
+    )
+
+    assert rows == []
+    assert len(errors) == 1
+    assert errors[0].row == 2
+    assert errors[0].label == "Plock"
+    assert errors[0].error == "Arbetstyp måste vara normal eller VAS"
 
 
 def test_parse_activity_import_excel_ignores_legacy_category_and_color_columns():
@@ -187,19 +207,20 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     workbook = load_workbook(io.BytesIO(response.body))
     assert workbook.active.title == "Aktiviteter"
     sheet = workbook.active
-    assert [sheet.cell(1, column).value for column in range(1, 7)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 8)] == [
         "verksamhet (frivillig)",
         "etikett (obligatorisk)",
         "område (frivillig)",
         "summeras som (frivillig)",
         "KPI Mål (frivillig)",
+        "arbetstyp (frivillig)",
         "sortering (frivillig)",
     ]
 
-    sheet.append([None, "Test utan frivilligt", "GG", None, None, None])
-    sheet.append([None, "Test med allt", "MG", "Ledigt", "dekant, plock", 42])
-    sheet.append([None, "Test bara summeras", None, "Ledigt", None, None])
-    sheet.append([None, "Test bara sortering", "GG", None, None, 77])
+    sheet.append([None, "Test utan frivilligt", "GG", None, None, None, None])
+    sheet.append([None, "Test med allt", "MG", "Ledigt", "dekant, plock", "VAS", 42])
+    sheet.append([None, "Test bara summeras", None, "Ledigt", None, None, None])
+    sheet.append([None, "Test bara sortering", "GG", None, None, None, 77])
     stream = io.BytesIO()
     workbook.save(stream)
 
@@ -224,6 +245,7 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     assert imported["Test utan frivilligt"].sort_order == 11
     assert imported["Test med allt"].summary_activity_id == summary.id
     assert imported["Test med allt"].kpi_process_name == "dekant, plock"
+    assert imported["Test med allt"].work_type == "vas"
     assert imported["Test med allt"].sort_order == 42
     assert imported["Test bara summeras"].summary_activity_id == summary.id
     assert imported["Test bara summeras"].kpi_process_name is None
@@ -235,6 +257,7 @@ def test_downloaded_activity_template_imports_mixed_optional_summary_and_sorting
     for activity in imported.values():
         assert activity.category == "work"
         assert activity.color == "#ffffff"
+    assert imported["Test utan frivilligt"].work_type == "normal"
 
 
 def test_import_activity_rows_creates_from_direct_table(import_db):
@@ -248,6 +271,7 @@ def test_import_activity_rows_creates_from_direct_table(import_db):
                     area="GG",
                     summary_activity="Ledigt",
                     kpi_process_name="manual_pick, pack",
+                    work_type="VAS",
                     sort_order="31",
                 ),
                 ActivityImportRowInput(label="Direkt plock", area="GG"),
@@ -265,6 +289,7 @@ def test_import_activity_rows_creates_from_direct_table(import_db):
     assert activity.area_id == gg.id
     assert activity.summary_activity_id == summary.id
     assert activity.kpi_process_name == "manual_pick, pack"
+    assert activity.work_type == "vas"
     assert activity.sort_order == 31
     assert activity.category == "work"
 
@@ -276,7 +301,13 @@ def test_bemanningsansvarig_can_manage_activities(import_db):
     assert response.headers["Content-Disposition"] == 'attachment; filename="aktiviteter-importmall.xlsx"'
 
     created = create_activity(
-        payload=ActivityCreate(label="flow test", area_id=gg.id, kpi_process_name="dekant ,  plock", sort_order=99),
+        payload=ActivityCreate(
+            label="flow test",
+            area_id=gg.id,
+            kpi_process_name="dekant ,  plock",
+            work_type="VAS",
+            sort_order=99,
+        ),
         db=import_db,
         admin=staffing,
     )
@@ -284,17 +315,30 @@ def test_bemanningsansvarig_can_manage_activities(import_db):
     assert created.id is not None
     assert created.label == "flow test"
     assert created.kpi_process_name == "dekant, plock"
+    assert created.work_type == "vas"
+    assert created.category == "work"
     assert created.code.startswith("GG_FLOW_TEST")
 
     updated = update_activity(
         activity_id=created.id,
-        payload=ActivityUpdate(label="flow test uppdaterad", kpi_process_name="manual_pick, pack"),
+        payload=ActivityUpdate(label="flow test uppdaterad", kpi_process_name="manual_pick, pack", work_type="normal"),
         db=import_db,
         admin=staffing,
     )
 
     assert updated.label == "flow test uppdaterad"
     assert updated.kpi_process_name == "manual_pick, pack"
+    assert updated.work_type == "normal"
+
+    absence = update_activity(
+        activity_id=created.id,
+        payload=ActivityUpdate(category="absence", work_type="vas"),
+        db=import_db,
+        admin=staffing,
+    )
+
+    assert absence.category == "absence"
+    assert absence.work_type == "normal"
 
     cleared = update_activity(
         activity_id=created.id,

@@ -92,28 +92,14 @@ YTGENERERING_UTL_MIN_PARAM = "__ytgenerering_utl_min"
 YTGENERERING_UTL_MAX_PARAM = "__ytgenerering_utl_max"
 YTGENERERING_UTL_DEFAULT_MIN = 1
 YTGENERERING_UTL_DEFAULT_MAX = 652
-PROCESS_MATRIX_AREA_OPTIONS: tuple[dict[str, str], ...] = (
-    {"code": "GG", "label": "GG"},
-    {"code": "MG", "label": "MG"},
-    {"code": "AS", "label": "AS"},
-    {"code": "EH", "label": "EH"},
-    {"code": "R3", "label": "R3"},
-    {"code": "ALLT", "label": "Alla"},
-)
-PROCESS_AREA_RULES: dict[str, dict] = {
-    "GG": {
-        "visible_flow_ids": None,
-    },
-    "MG": {
-        "visible_flow_ids": None,
-    },
-}
+PROCESS_MATRIX_ALL_CODE = "ALLT"
+PROCESS_MATRIX_ALL_AREA_OPTION: dict[str, str] = {"code": PROCESS_MATRIX_ALL_CODE, "label": "Alla"}
+PROCESS_AREA_RULES: dict[str, dict] = {}
 PROCESS_DEFAULT_AREA_RULE: dict[str, object] = {
     "visible_flow_ids": None,
 }
 YTGENERERING_DEFAULT_AREA_RULES: dict[str, dict[str, int]] = {
     "DEFAULT": {"utlMin": YTGENERERING_UTL_DEFAULT_MIN, "utlMax": YTGENERERING_UTL_DEFAULT_MAX},
-    "MG": {"utlMin": 205, "utlMax": YTGENERERING_UTL_DEFAULT_MAX},
 }
 USER_FILTERS_PARAM = "__allocation_user_filters_json"
 USER_FILTER_PROFILE_VERSION = 1
@@ -305,6 +291,51 @@ def normalize_process_area_focus(value: object) -> str:
     return str(value or "").strip().upper()
 
 
+def _valid_process_matrix_code(code: str) -> bool:
+    return bool(code and re.fullmatch(r"[A-Z0-9_:-]{1,40}", code))
+
+
+def normalize_process_area_options(
+    area_options: object = None,
+    *,
+    include_all: bool = True,
+) -> tuple[dict[str, str], ...]:
+    if isinstance(area_options, dict):
+        raw_options = area_options.get("areas")
+    else:
+        raw_options = area_options
+    if raw_options is None:
+        raw_options = []
+    if not isinstance(raw_options, (list, tuple)):
+        raw_options = []
+
+    options: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in raw_options:
+        if isinstance(raw, dict):
+            code = normalize_process_area_focus(raw.get("code") or raw.get("value"))
+            label = str(raw.get("label") or raw.get("name") or raw.get("title") or code).strip()
+        else:
+            code = normalize_process_area_focus(raw)
+            label = code
+        if not _valid_process_matrix_code(code) or code == "DEFAULT":
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        option = {"code": code, "label": label or code}
+        if isinstance(raw, dict):
+            for source_key, target_key in (("title", "title"), ("areaId", "areaId"), ("businessId", "businessId")):
+                value = raw.get(source_key)
+                if value is not None:
+                    option[target_key] = str(value)
+        options.append(option)
+
+    if include_all and PROCESS_MATRIX_ALL_CODE not in seen:
+        options.append(dict(PROCESS_MATRIX_ALL_AREA_OPTION))
+    return tuple(options)
+
+
 def _process_matrix_flow_ids(flows: list[dict] | None) -> set[str] | None:
     if flows is None:
         return None
@@ -392,31 +423,46 @@ def _normalize_process_area_rule(
     }
 
 
-def default_process_matrix(flows: list[dict] | None = None) -> dict[str, dict]:
+def default_process_matrix(
+    flows: list[dict] | None = None,
+    *,
+    area_options: object = None,
+) -> dict[str, dict]:
     allowed_flow_ids = _process_matrix_flow_ids(flows)
     matrix: dict[str, dict] = {
         "DEFAULT": _normalize_process_area_rule(PROCESS_DEFAULT_AREA_RULE, allowed_flow_ids=allowed_flow_ids)
     }
-    for area in PROCESS_MATRIX_AREA_OPTIONS:
+    for code, rule in PROCESS_AREA_RULES.items():
+        area_code = normalize_process_area_focus(code)
+        if _valid_process_matrix_code(area_code):
+            matrix[area_code] = _normalize_process_area_rule(rule, allowed_flow_ids=allowed_flow_ids)
+    for area in normalize_process_area_options(area_options):
         code = normalize_process_area_focus(area.get("code"))
-        matrix[code] = _normalize_process_area_rule(PROCESS_AREA_RULES.get(code), allowed_flow_ids=allowed_flow_ids)
+        matrix[code] = _normalize_process_area_rule(
+            PROCESS_AREA_RULES.get(code),
+            allowed_flow_ids=allowed_flow_ids,
+            defaults=matrix.get(code) or matrix.get("DEFAULT"),
+        )
     return matrix
 
 
-def normalize_process_matrix(value: object = None, *, flows: list[dict] | None = None) -> dict[str, dict]:
+def normalize_process_matrix(
+    value: object = None,
+    *,
+    flows: list[dict] | None = None,
+    area_options: object = None,
+) -> dict[str, dict]:
     allowed_flow_ids = _process_matrix_flow_ids(flows)
-    matrix = default_process_matrix(flows=flows)
+    matrix = default_process_matrix(flows=flows, area_options=area_options)
     raw_matrix = value.get("matrix") if isinstance(value, dict) and isinstance(value.get("matrix"), dict) else value
     if not isinstance(raw_matrix, dict):
         return matrix
 
-    known_area_codes = {normalize_process_area_focus(area.get("code")) for area in PROCESS_MATRIX_AREA_OPTIONS}
-    known_area_codes.add("DEFAULT")
     for raw_code, raw_rule in raw_matrix.items():
         code = normalize_process_area_focus(raw_code)
-        if not code or not re.fullmatch(r"[A-Z0-9_:-]{1,40}", code):
+        if code != "DEFAULT" and not _valid_process_matrix_code(code):
             continue
-        if code not in known_area_codes and not isinstance(raw_rule, dict):
+        if not isinstance(raw_rule, dict):
             continue
         matrix[code] = _normalize_process_area_rule(
             raw_rule,
@@ -444,8 +490,12 @@ def process_rule_has_filters(rule: dict | None) -> bool:
     return False
 
 
-def process_matrix_storage_payload(matrix: dict[str, dict] | None = None) -> dict[str, dict]:
-    rules = normalize_process_matrix(matrix)
+def process_matrix_storage_payload(
+    matrix: dict[str, dict] | None = None,
+    *,
+    area_options: object = None,
+) -> dict[str, dict]:
+    rules = normalize_process_matrix(matrix, area_options=area_options)
     payload: dict[str, dict] = {}
     for code, rule in rules.items():
         if code == "DEFAULT":
@@ -461,17 +511,32 @@ def process_matrix_public_payload(
     matrix: dict[str, dict] | None = None,
     *,
     flows: list[dict] | None = None,
+    area_options: object = None,
     area_codes: set[str] | None = None,
 ) -> dict:
-    rules = normalize_process_matrix(matrix, flows=flows)
-    active_codes = None if area_codes is None else {normalize_process_area_focus(code) for code in area_codes}
-    areas = [
-        area
-        for area in PROCESS_MATRIX_AREA_OPTIONS
-        if active_codes is None
-        or normalize_process_area_focus(area.get("code")) == "ALLT"
-        or normalize_process_area_focus(area.get("code")) in active_codes
-    ]
+    active_codes: set[str] | None = None
+    if area_options is not None:
+        areas = list(normalize_process_area_options(area_options))
+        active_codes = {normalize_process_area_focus(area.get("code")) for area in areas}
+    elif area_codes is not None:
+        active_code_list = sorted(
+            code
+            for code in {normalize_process_area_focus(code) for code in area_codes}
+            if _valid_process_matrix_code(code) and code != PROCESS_MATRIX_ALL_CODE
+        )
+        active_codes = set(active_code_list)
+        areas = [{"code": code, "label": code} for code in active_code_list]
+        areas.append(dict(PROCESS_MATRIX_ALL_AREA_OPTION))
+    else:
+        base_rules = normalize_process_matrix(matrix, flows=flows)
+        rule_codes = sorted(
+            code
+            for code in base_rules
+            if code != "DEFAULT" and _valid_process_matrix_code(code) and code != PROCESS_MATRIX_ALL_CODE
+        )
+        areas = [{"code": code, "label": code} for code in rule_codes]
+        areas.append(dict(PROCESS_MATRIX_ALL_AREA_OPTION))
+    rules = normalize_process_matrix(matrix, flows=flows, area_options=areas)
     known_codes = {normalize_process_area_focus(area.get("code")) for area in areas}
     for code in sorted(rules):
         if code != "DEFAULT" and code not in known_codes and (active_codes is None or code in active_codes):
@@ -480,6 +545,8 @@ def process_matrix_public_payload(
 
     public_rules: dict[str, dict] = {}
     for code, rule in rules.items():
+        if active_codes is not None and code != "DEFAULT" and code not in known_codes:
+            continue
         visible_flow_ids = rule.get("visible_flow_ids")
         public_rules[code] = {
             "visibleFlowIds": None if visible_flow_ids is None else sorted(str(value) for value in visible_flow_ids),
@@ -643,29 +710,29 @@ def _ytgenerering_default_area_rule(code: object) -> dict[str, int]:
     }
 
 
-def default_ytgenerering_area_settings() -> dict[str, dict[str, int]]:
+def default_ytgenerering_area_settings(area_options: object = None) -> dict[str, dict[str, int]]:
     areas = {"DEFAULT": _ytgenerering_default_area_rule("DEFAULT")}
-    for area in PROCESS_MATRIX_AREA_OPTIONS:
+    for code in YTGENERERING_DEFAULT_AREA_RULES:
+        if code != "DEFAULT":
+            areas[code] = _ytgenerering_default_area_rule(code)
+    for area in normalize_process_area_options(area_options):
         code = normalize_process_area_focus(area.get("code"))
         if code:
             areas[code] = _ytgenerering_default_area_rule(code)
     return areas
 
 
-def _normalize_ytgenerering_area_settings(value: object) -> dict[str, dict[str, int]]:
-    areas = default_ytgenerering_area_settings()
+def _normalize_ytgenerering_area_settings(value: object, area_options: object = None) -> dict[str, dict[str, int]]:
+    areas = default_ytgenerering_area_settings(area_options)
     raw_areas = value.get("areas") if isinstance(value, dict) and isinstance(value.get("areas"), dict) else value
     if not isinstance(raw_areas, dict):
         return areas
 
-    known_area_codes = set(areas)
     for raw_code, raw_rule in raw_areas.items():
         code = normalize_process_area_focus(raw_code)
-        if not code or not re.fullmatch(r"[A-Z0-9_:-]{1,40}", code):
+        if code != "DEFAULT" and not _valid_process_matrix_code(code):
             continue
-        if code not in known_area_codes:
-            continue
-        base = areas.get(code) or areas["DEFAULT"]
+        base = areas.get(code) or _ytgenerering_default_area_rule(code)
         if isinstance(raw_rule, dict):
             utl_min, utl_max = _process_utl_range(raw_rule, base)
         else:

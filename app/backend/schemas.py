@@ -67,6 +67,7 @@ class ActivityOut(BaseModel):
     summary_activity_id: int | None
     color: str
     category: str
+    work_type: str = "normal"
     sort_order: int
     is_active: bool
     required_competency: str | None
@@ -81,6 +82,7 @@ class ActivityCreate(BaseModel):
     summary_activity_id: int | None = None
     color: str = "#ffffff"
     category: str = "work"
+    work_type: str = "normal"
     sort_order: int = 0
     required_competency: str | None = None
     kpi_process_name: str | None = None
@@ -94,6 +96,7 @@ class ActivityUpdate(BaseModel):
     summary_activity_id: int | None = None
     color: str | None = None
     category: str | None = None
+    work_type: str | None = None
     sort_order: int | None = None
     required_competency: str | None = None
     kpi_process_name: str | None = None
@@ -117,6 +120,7 @@ class ActivityImportRowInput(BaseModel):
     area: str | int | float | None = None
     summary_activity: str | int | float | None = None
     kpi_process_name: str | int | float | None = None
+    work_type: str | int | float | None = None
     sort_order: str | int | float | None = None
 
 
@@ -327,6 +331,11 @@ class SummaryRow(BaseModel):
     persons_equiv: float
 
 
+class SplitSegmentRange(BaseModel):
+    minute_start: int
+    minute_end: int
+
+
 class SplitCellRequest(BaseModel):
     year: int
     week: int
@@ -335,6 +344,8 @@ class SplitCellRequest(BaseModel):
     person_id: int
     segments: list[SegmentVersionRef] = Field(default_factory=list)
     merge_minute_start: int | None = None
+    split_minute: int = 30
+    split_segments: list[SplitSegmentRange] = Field(default_factory=list)
 
 
 class SplitCellResponse(BaseModel):
@@ -734,6 +745,18 @@ class AppSettingsUpdate(BaseModel):
     lock_foreign_schedule_cells: bool
 
 
+class StaffingSettingsOut(BaseModel):
+    history_hours: float = 40.0
+    min_history_hours: float = 1.0
+    max_history_hours: float = 240.0
+    activity_capacity_activity_ids: list[int] | None = None
+
+
+class StaffingSettingsUpdate(BaseModel):
+    history_hours: float = Field(ge=1.0, le=240.0)
+    activity_capacity_activity_ids: list[int] | None = None
+
+
 class SidebarLayoutItem(BaseModel):
     id: str
     heading: str = ""
@@ -809,6 +832,59 @@ class PersonalWeekSummary(BaseModel):
     activities: list[PersonalActivityTotal] = Field(default_factory=list)
 
 
+class PersonalProductivityPeriod(BaseModel):
+    type: str
+    label: str
+    start_date: str
+    end_date: str
+    requested_days: int
+
+
+class PersonalProductivityActivity(BaseModel):
+    activity: str
+    productivity_pct: float | None = None
+    points_per_hour: float | None = None
+    kpi_points: float = 0
+    planned_kpi_points: float = 0
+    kpi_minutes: int = 0
+    kpi_hours: float = 0
+    periods: int = 0
+    event_count: int = 0
+    diff_count: int = 0
+
+
+class PersonalProductivityStatsSummary(BaseModel):
+    days_with_data: int = 0
+    days_with_activity: int = 0
+    kpi_points: float = 0
+    planned_kpi_points: float = 0
+    productivity_pct: float | None = None
+    points_per_hour: float | None = None
+    kpi_minutes: int = 0
+    kpi_hours: float = 0
+    support_minutes: int = 0
+    absence_minutes: int = 0
+    event_count: int = 0
+    diff_count: int = 0
+
+
+class PersonalProductivityStats(BaseModel):
+    status: str
+    period: PersonalProductivityPeriod
+    dates: list[str] = Field(default_factory=list)
+    missing_dates: list[str] = Field(default_factory=list)
+    source_status: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    activities: list[PersonalProductivityActivity] = Field(default_factory=list)
+    summary: PersonalProductivityStatsSummary = Field(default_factory=PersonalProductivityStatsSummary)
+
+
+class PersonalProductivityData(BaseModel):
+    day: PersonalProductivityStats
+    week: PersonalProductivityStats
+    backfill: dict[str, Any] = Field(default_factory=dict)
+
+
 class PersonalScheduleOut(BaseModel):
     year: int
     week: int
@@ -825,3 +901,4 @@ class PersonalProductivityOut(BaseModel):
     person: PersonalPersonOut
     day: PersonalScheduleDay
     summary: PersonalWeekSummary
+    productivity: PersonalProductivityData | None = None

@@ -400,6 +400,7 @@ def build_inference_features(
 
     feats = orders.groupby("grupp").agg(
         kund=("Kund", "first"),
+        bolag=("Bolag", "first"),
         orderdatum=("Orderdatum", "first"),
         ordernummer=("Ordernr", lambda s: ", ".join(sorted({str(v).strip() for v in s.dropna() if str(v).strip()}))),
         n_rader=("Ordernr", "size"),
@@ -614,6 +615,7 @@ def run_forecast(
 
     out_cols = [
         "grupp",
+        "bolag",
         "kund",
         "kundnamn",
         "orderdatum",
@@ -633,6 +635,7 @@ def run_forecast(
     out = out.rename(
         columns={
             "grupp": "Sändningsnr",
+            "bolag": "Bolag",
             "kund": "Kund",
             "kundnamn": "Kundnamn",
             "orderdatum": "Orderdatum",

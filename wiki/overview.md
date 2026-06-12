@@ -1,7 +1,7 @@
 ---
 title: Projektoversikt
 status: aktiv
-updated: 2026-05-25
+updated: 2026-06-08
 tags: [produkt, oversikt]
 ---
 
@@ -18,14 +18,14 @@ Kort svar: flow ersatter en Excel-bemanningsfil med en gemensam webbapp och Wind
 - Anvandare: roller, omrade, forsta losenord, vybehorigheter, settings och borttagning.
 - Historik: auditlogg, enkel analytics och felkodsdashboard over anvandartraffade API-fel.
 - Hamta data: promptstyrd extern data-export via MiniMax-planering, backendvalidering och Excel-export.
-- Produktivitet: lokal analys av stora WMS-loggar mot centrala KPI-mal.
+- Produktivitet: personbaserad dags-KPI fran schema, KPI-mal och serverns API-snapshot.
 - Lagerverktyg: uppladdning, allokering/orderkontroller och dela varden.
 
 ## Viktiga produktprinciper
 
 - Webb och Windows ar samma produkt. En beteendeforandring i `app/` maste bedomas mot `desktop/`.
 - Databasen ar den centrala sanningen for anvandare, roller, schema, personer, aktiviteter, historik, settings och KPI-mal.
-- Stora produktivitetsloggar ar lokala i klienten for att undvika tunga serveruppladdningar.
+- Produktivitetens rapport byggs centralt fran dagens API-snapshot nar extern datakalla finns; lokala filer finns kvar som fallback/filhantering.
 - Schemaceller har versioner for att upptacka samtidiga andringar.
 - Personer, aktiviteter och anvandare tas bort via delete-floden; anvandare som finns kvar ar alltid aktiva.
 

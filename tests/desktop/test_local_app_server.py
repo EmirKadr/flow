@@ -1,6 +1,7 @@
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import requests
 
@@ -153,6 +154,133 @@ def test_desktop_allocation_flow_fetches_central_workflow_source(monkeypatch, tm
         }
     ]
     assert result["source_status"][0]["status"] == "api"
+
+
+def test_desktop_productivity_report_proxies_central_server(monkeypatch, tmp_path):
+    runtime = DesktopLocalRuntime(tmp_path)
+    calls = []
+    audits = []
+
+    monkeypatch.setattr(
+        runtime,
+        "enqueue_local_audit",
+        lambda **kwargs: audits.append(kwargs["payload"]),
+    )
+
+    def fake_upstream(upstream_root, path, headers):
+        calls.append({"root": upstream_root, "path": path, "headers": headers})
+        return {"people": [{"name": "Alvin"}], "summary": {"people": 1}}
+
+    monkeypatch.setattr(local_runtime, "_upstream_json", fake_upstream)
+
+    response = local_runtime.local_response_for_request(
+        runtime,
+        SimpleNamespace(command="GET", headers={"Cookie": "flow_session=abc"}),
+        parsed=SimpleNamespace(path="/api/productivity", query="date=2026-06-08"),
+        upstream_root="https://flow.example/",
+    )
+
+    assert response is not None
+    status_code, content_type, body = response
+    assert status_code == 200
+    assert content_type.startswith("application/json")
+    assert json.loads(body.decode("utf-8"))["people"] == [{"name": "Alvin"}]
+    assert calls == [
+        {
+            "root": "https://flow.example/",
+            "path": "/api/productivity?date=2026-06-08",
+            "headers": {"Cookie": "flow_session=abc"},
+        }
+    ]
+    assert audits[0]["status"] == "ok"
+
+
+def test_desktop_person_productivity_proxies_central_server(monkeypatch, tmp_path):
+    runtime = DesktopLocalRuntime(tmp_path)
+    calls = []
+
+    monkeypatch.setattr(runtime, "enqueue_local_audit", lambda **_kwargs: None)
+
+    def fake_upstream(upstream_root, path, headers):
+        calls.append({"root": upstream_root, "path": path, "headers": headers})
+        return {"person": {"id": 4, "name": "Alvin"}, "activities": []}
+
+    monkeypatch.setattr(local_runtime, "_upstream_json", fake_upstream)
+
+    response = local_runtime.local_response_for_request(
+        runtime,
+        SimpleNamespace(command="GET", headers={"Cookie": "flow_session=abc"}),
+        parsed=SimpleNamespace(path="/api/productivity/persons/4", query="period=week&date=2026-06-09"),
+        upstream_root="https://flow.example/",
+    )
+
+    assert response is not None
+    status_code, content_type, body = response
+    assert status_code == 200
+    assert content_type.startswith("application/json")
+    assert json.loads(body.decode("utf-8"))["person"]["name"] == "Alvin"
+    assert calls == [
+        {
+            "root": "https://flow.example/",
+            "path": "/api/productivity/persons/4?period=week&date=2026-06-09",
+            "headers": {"Cookie": "flow_session=abc"},
+        }
+    ]
+
+
+def test_desktop_schedule_productivity_summary_proxies_central_server(monkeypatch, tmp_path):
+    runtime = DesktopLocalRuntime(tmp_path)
+    calls = []
+
+    monkeypatch.setattr(runtime, "enqueue_local_audit", lambda **_kwargs: None)
+
+    def fake_upstream(upstream_root, path, headers):
+        calls.append({"root": upstream_root, "path": path, "headers": headers})
+        return {"people": {"4": {"percent": 88}}}
+
+    monkeypatch.setattr(local_runtime, "_upstream_json", fake_upstream)
+
+    response = local_runtime.local_response_for_request(
+        runtime,
+        SimpleNamespace(command="GET", headers={"Cookie": "flow_session=abc"}),
+        parsed=SimpleNamespace(path="/api/schedule/productivity-summary", query="year=2026&week=24&weekday=2"),
+        upstream_root="https://flow.example/",
+    )
+
+    assert response is not None
+    status_code, content_type, body = response
+    assert status_code == 200
+    assert content_type.startswith("application/json")
+    assert json.loads(body.decode("utf-8"))["people"]["4"]["percent"] == 88
+    assert calls == [
+        {
+            "root": "https://flow.example/",
+            "path": "/api/schedule/productivity-summary?year=2026&week=24&weekday=2",
+            "headers": {"Cookie": "flow_session=abc"},
+        }
+    ]
+
+
+def test_desktop_productivity_report_requires_central_server(monkeypatch, tmp_path):
+    runtime = DesktopLocalRuntime(tmp_path)
+    audits = []
+
+    monkeypatch.setattr(runtime, "enqueue_local_audit", lambda **kwargs: audits.append(kwargs["payload"]))
+    monkeypatch.setattr(local_runtime, "_upstream_json", lambda *_args, **_kwargs: None)
+
+    response = local_runtime.local_response_for_request(
+        runtime,
+        SimpleNamespace(command="GET", headers={}),
+        parsed=SimpleNamespace(path="/api/productivity", query=""),
+        upstream_root="",
+    )
+
+    assert response is not None
+    status_code, _content_type, body = response
+    payload = json.loads(body.decode("utf-8"))
+    assert status_code == 503
+    assert "central serverdata" in payload["detail"]
+    assert audits[0]["status"] == "error"
 
 
 def test_desktop_allocation_flow_falls_back_to_local_ref(monkeypatch, tmp_path):

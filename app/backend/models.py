@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -118,6 +119,7 @@ class Activity(Base):
     summary_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     color: Mapped[str] = mapped_column(String(20), nullable=False, default="#ffffff")
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="work")
+    work_type: Mapped[str] = mapped_column(String(20), nullable=False, default="normal", server_default="normal")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     required_competency: Mapped[str | None] = mapped_column(String(40))
@@ -168,6 +170,54 @@ class PersonScheduleTemplate(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class PersonProductivityDaily(Base):
+    __tablename__ = "person_productivity_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "business_id",
+            "snapshot_date",
+            "person_id",
+            "row_type",
+            "item_key",
+            "metric",
+            name="uq_person_productivity_daily_row",
+        ),
+        Index("ix_person_productivity_daily_lookup", "business_id", "snapshot_date", "person_id", "row_type"),
+        Index("ix_person_productivity_daily_process", "business_id", "process_key", "snapshot_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    person_id: Mapped[int] = mapped_column(ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    row_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    metric: Mapped[str] = mapped_column(String(40), nullable=False, default="points")
+    unit: Mapped[str | None] = mapped_column(String(40))
+    activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
+    activity_label: Mapped[str | None] = mapped_column(String(120))
+    process_key: Mapped[str | None] = mapped_column(String(120))
+    process_label: Mapped[str | None] = mapped_column(String(255))
+    kind: Mapped[str | None] = mapped_column(String(20))
+    start_minute: Mapped[int | None] = mapped_column(Integer)
+    end_minute: Mapped[int | None] = mapped_column(Integer)
+    kpi_points: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    planned_kpi_points: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    kpi_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    support_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    absence_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    units: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    diff_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_snapshot_at: Mapped[str | None] = mapped_column(String(40))
+    schedule_signature: Mapped[str | None] = mapped_column(String(120))
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    business: Mapped[Business | None] = relationship()
+    person: Mapped[Person] = relationship()
+    activity: Mapped[Activity | None] = relationship()
 
 
 class AuditLog(Base):
@@ -327,6 +377,16 @@ class MetaShipmentObservation(Base):
 
 class AllocationUserFilterProfile(Base):
     __tablename__ = "allocation_user_filter_profiles"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    profile: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class StaffingCalculatorProfile(Base):
+    __tablename__ = "staffing_calculator_profiles"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     profile: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)

@@ -1,13 +1,13 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-11
 tags: [databas, modeller]
 ---
 
 # Datamodell
 
-Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, schemaceller, personliga veckomallar, anvandare, auditlogg och verksamhetsspecifika appsettings. Schemaceller ar segmenterade per timme och kan vara hel timme eller tva halvtimmar.
+Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, schemaceller, personliga veckomallar, anvandare, auditlogg och verksamhetsspecifika appsettings. Schemaceller ar segmenterade per timme och kan vara hel timme eller 2-4 sammanhangande minutdelar.
 
 ## Centrala tabeller
 
@@ -17,13 +17,15 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `users` | `User` | Inloggning, roller, verksamhet, omrade och eventuell personkoppling | `business_id`, `username`, `password_hash`, `role`, `roles`, `area_id`, `person_id`, `is_active`, `must_change_password` |
 | `areas` | `Area` | Omraden/stallen inom en verksamhet | `business_id`, `code`, `name`, `sort_order`, `is_active` |
 | `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
-| `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `sort_order`, `is_active` |
+| `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `work_type`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
+| `person_productivity_daily` | `PersonProductivityDaily` | Materialiserad personproduktivitet per dag for Bemanning, V+H och framtida personnara snitt | `business_id`, `snapshot_date`, `person_id`, `row_type`, `item_key`, `metric`, `activity_id`, `process_key`, `kpi_points`, `planned_kpi_points`, `kpi_minutes`, `units`, `source_snapshot_at`, `schedule_signature` |
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
 | `user_wait_metrics` | `UserWaitMetric` | Tyst vantetids- och klientprestanda for Historik/Halsa | `business_id`, `user_id`, `event_type`, `view_id`, `target`, `duration_ms`, `status`, `detail`, `created_at` |
 | `user_interaction_events` | `UserInteractionEvent` | Tyst interaction-tracking for Historik > Funktioner/Knappar/Kolumner/Floden/AI-analys | `business_id`, `user_id`, `event_type`, `view_id`, `control_id`, `feature`, `flow_id`, `table_key`, `column_label`, `client_surface`, `detail`, `created_at` |
 | `allocation_user_filter_profiles` | `AllocationUserFilterProfile` | Personliga Bearbeta-källval, filtreringar och Ytgenerering-installningar per anvandare | `user_id`, `profile`, `updated_at` |
+| `staffing_calculator_profiles` | `StaffingCalculatorProfile` | Personliga automatiska bemanningskalkyler per anvandare | `user_id`, `profile`, `updated_at` |
 | `app_settings` | `AppSetting` | Verksamhetsspecifika settings JSON/text | `business_id`, `key`, `value`, `updated_by` |
 | `coredata_files` | `CoreDataFile` | Central sanning for uppladdade coredata-karnfiler | `business_code`, `file_type`, `filename`, `content_hash`, `data`, `uploaded_by`, `updated_at` |
 | `meta_media_uploads` | `MetaMediaUpload` | Publikt uppladdade bilder/videor for senare LLM-analys | `batch_id`, `original_filename`, `stored_filename`, `content_type`, `media_type`, `size_bytes`, `duration_seconds`, `content_hash`, `data`, `status`, `analysis`, `source`, `created_at` |
@@ -43,7 +45,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 
 - Timmar ar 06-23 i UI. `hour` ar heltimmen.
 - En hel cell har `minute_start=0`, `minute_end=60`.
-- En delad cell har normalt tva segment: `0-30` och `30-60`.
+- En delad cell har 2-4 sammanhangande segment som tacker minuten `0-60`, till exempel `0-30`/`30-60`, `0-17`/`17-60` eller `0-20`/`20-40`/`40-60`.
 - `activity_id=null` betyder tomt/ledig.
 - `empty_override=true` betyder att anvandaren uttryckligen tomt en schemalagd malltimme.
 - `version` anvands som optimistic concurrency-skydd. Klienten skickar aktuell version som `expected_version`.
@@ -54,6 +56,13 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - Om person har nagon egen mallrad blir saknade dagar lediga.
 - `has_fixed_schedule=false` gor personen till timmis utan fast schema.
 - Malltider maste ligga 06-24 och start < slut.
+
+## Produktivitetscache
+
+- `person_productivity_daily` ar beraknad data, inte masterdata pa personen.
+- Raderna materialiseras fran global Produktivitet-snapshot, schema och KPI-regler.
+- `row_type=person` summerar personen for dagen, `cell` lagrar KPI-/stod-/franvaroceller med minutintervall, `activity` summerar aktivitet och `process` lagrar historiska enheter per KPI-process/metrik for V+H och automatisk bemanningskalkyl.
+- `source_snapshot_at` och `schedule_signature` gor att backend kan bygga om en dags cache nar snapshoten eller schemat for dagen andras.
 
 ## Borttagning och aktivflaggor
 
@@ -66,6 +75,8 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 Viktiga settings:
 
 - `lock_foreign_schedule_cells`: ledare far inte andra celler som annan anvandare fyllt, admin/super user kan passera.
+- `staffing_history_hours`: historikfonster i timmar for V+H-kapacitet och automatisk bemanningskalkyl, default 40.
+- `staffing_activity_capacity_activity_ids`: V+H-aktiviteter som far visa parentesvarde. `null` betyder alla KPI-aktiviteter och `[]` betyder inga.
 - sidebar-layout: menyordning/rubrik/undervyer per verksamhet.
 - role-view-access: matris per verksamhet for rollernas vyatkomst (`none`, `view`, `edit`).
 
@@ -101,3 +112,4 @@ Viktiga settings:
 - `../app/alembic/versions/0028_coredata_files.py`
 - `../app/alembic/versions/0032_user_interaction_events.py`
 - `../app/alembic/versions/0034_allocation_user_filter_profiles.py`
+- `../app/alembic/versions/0037_staffing_calculator_profiles.py`

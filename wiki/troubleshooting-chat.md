@@ -1,7 +1,7 @@
 ---
 title: Felsokning och framtida LLM-chat
 status: aktiv
-updated: 2026-05-22
+updated: 2026-06-08
 tags: [felsokning, chat, support]
 ---
 
@@ -29,7 +29,7 @@ Kort svar: nar en anvandare fragar "varfor funkar inte X?" ska chatten oversatta
 | Cell i Bemanning gar inte att andra | Read-only, cell-las, konflikt eller saknad edit-roll | Kontrollera toast; admin kan passera cell-las, viewer kan aldrig redigera. |
 | "Cellen andrades av nagon annan" | Versionskonflikt | Serverns senaste varde vann; gor andringen igen efter omladdning. |
 | Undo/redo fungerar inte | Tom stack eller fel dag | Undo/redo ar lokal och knuten till dagen/perioden dar andringen gjordes. |
-| Produktivitet visar inte rapport | Saknade lokala loggar eller KPI-mal | Lagg in Plocklogg Full, Translogg, Pallastningslogg och KPI-mal. |
+| Produktivitet visar inte rapport | API-snapshot saknas/felar, central server kan inte nas fran desktop, eller KPI-mal/fallback saknas | Kontrollera syncstatus i kallorna, servernatverk och `DATA_SOURCE_*`; vid fallback: lagg in loggar och KPI-mal. |
 | Lagerflode ar disabled | Kravda filer/falt saknas | Klicka `i` pa flodet eller se filtaggar med kryss. |
 | Bearbeta saknas eller stoppar | Rollen saknar `allocationProcess=edit` | Bearbeta ar egen vy. Be admin/Super User kontrollera Vybehorigheter. Vanlig lagerroll ser oftast Dela men inte Bearbeta. |
 | Fil hamnar inte i ratt slot | Filnamn/header matchar inte detektion | Anvand Välj pa specifik slot eller kontrollera filens rubriker. |

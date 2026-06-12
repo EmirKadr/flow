@@ -1,7 +1,7 @@
 ---
 title: Roller och behorighet
 status: aktiv
-updated: 2026-06-02
+updated: 2026-06-11
 tags: [auth, roller, behorighet]
 ---
 
@@ -58,6 +58,7 @@ Vyer som kan styras:
 - `schedule`, `overview`, `productivity`, `dataFetch`
 - `mySchedule`, `myProductivity`
 - `allocationUploads`, `allocationProcess`, `allocationProcessMatrix`, `allocationSplit`
+- `allocationSettings`, `staffingSettings`
 - `persons`, `personSortOrder`, `personImport`
 - `activities`, `activityImport`, `areas`
 - `analytics`, `meta`, `users`, `userImport`
@@ -81,8 +82,9 @@ Om anvandaren bara har `view`:
 - Historik eller Meta nekas: kraver Super User. Produktivitet nekas: rollen saknar `productivity` i vyatkomst.
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
 - Bearbeta saknas eller nekas: rollen saknar `allocationProcess=edit` i vyatkomst. Lagerroller har som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
-- Matris-knappen i Bearbeta saknas: rollen saknar `allocationProcessMatrix=view`. Knappen visas lasande med `view` och kan spara forst med `allocationProcessMatrix=edit`; admin har `edit` som standard och Super User har alltid full atkomst.
+- Bearbeta-fliken i Installningar saknas eller Bearbeta-matrisen kan inte sparas: rollen saknar `allocationProcessMatrix=view` eller `allocationProcessMatrix=edit`. Med `view` visas matrisen lasande; med `edit` kan den sparas. Admin har `edit` som standard och Super User har alltid full atkomst.
 - Installningar saknas eller Ytgenereringens ytkarta inte kan sparas: rollen saknar `allocationSettings=view` eller `allocationSettings=edit`. Admin har `edit` som standard och Super User har alltid full atkomst.
+- Bemanning-fliken i Installningar saknas eller historiktimmar inte kan sparas: rollen saknar `staffingSettings=view` eller `staffingSettings=edit`. Admin har `edit` som standard och Super User har alltid full atkomst.
 - Mitt schema eller Min produktivitet saknas: kontot saknar rollen `person` och ar inte Super User. Person-konton kan bara se sin egen `person_id`; Super User kan valja person i vyernas rullista.
 
 ## Kallor

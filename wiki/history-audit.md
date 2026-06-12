@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-06-05
+updated: 2026-06-09
 tags: [historik, audit, ui]
 ---
 
@@ -39,8 +39,8 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `Vantetider`: p50/p95/max for vyload, API-anrop, nedladdningar och bakgrundsladdning, sa flaskhalsar syns utan manuell magkansla.
 - `Halsa`: app-, databas- och Render-status for lokal/serverdrift; samma signal anvands av `tools.healthcheck`, visar processens RSS-minne och varnar nar webprocessen nar hog minnesniva. Render-loggar laser app-loggar forst och build-loggar som fallback nar API-nyckel, service-id och ownerId finns.
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
-- Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, serverhanterade produktivitetsfiler och korda lagerverktygsfloden.
-- Misslyckade filuppladdningar som hinner na backend loggas som `productivity_file/upload_failed`, `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
+- Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, produktivitetens snapshot-/rapportstatus och korda lagerverktygsfloden.
+- Misslyckade filuppladdningar som hinner na backend loggas som `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
 - Misslyckade publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar dem som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
 - Windows-lokala Bearbeta-/Produktivitet-korningar loggas som `desktop_local_run` via `/api/audit/local-run`. Payloaden innehaller feature, flode, status, feltyp, varaktighet, filslotar och rad-/resultatraknare, men aldrig lokal sokvag, localRef, filnamn eller filinnehall.

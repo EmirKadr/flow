@@ -126,6 +126,10 @@ SOURCE_SPECS: dict[str, WorkflowSourceSpec] = {
     "pick": WorkflowSourceSpec("pick", "Plocklogg Full", "v_ask_pick_log_full"),
     "trans": WorkflowSourceSpec("trans", "Translogg", "v_ask_trans_log"),
     "pallet": WorkflowSourceSpec("pallet", "Pallastningslogg", "v_ask_palletloading_log"),
+    "receive": WorkflowSourceSpec("receive", "Varumottagningslogg", "v_ask_receive_log"),
+    "order_log": WorkflowSourceSpec("order_log", "Orderlogg", "v_ask_order_log"),
+    "sort": WorkflowSourceSpec("sort", "Sorteringslogg", "sort_conveyor_log"),
+    "base_pallet": WorkflowSourceSpec("base_pallet", "Base pallet-logg", "v_ask_article_buffertpallet"),
     "kpi": WorkflowSourceSpec("kpi", "KPI-Mål", "v_ask_kpi_target"),
 }
 
@@ -174,6 +178,10 @@ PRODUCTIVITY_API_SOURCES: dict[str, str] = {
     "pick": "pick",
     "trans": "trans",
     "pallet": "pallet",
+    "receive": "receive",
+    "order_log": "order_log",
+    "sort": "sort",
+    "base_pallet": "base_pallet",
     "kpi": "kpi",
 }
 
@@ -322,7 +330,10 @@ def _materialize_csv(spec: WorkflowSourceSpec, rows: list[dict[str, Any]], view:
     return Path(tmp.name)
 
 
-def fetch_source_to_temp(source_key: str) -> tuple[Path, WorkflowSourceEntry]:
+def fetch_source_to_temp(
+    source_key: str,
+    filters: list[dict[str, Any]] | None = None,
+) -> tuple[Path, WorkflowSourceEntry]:
     spec = source_spec(source_key)
     try:
         catalog = load_catalog()
@@ -332,7 +343,7 @@ def fetch_source_to_temp(source_key: str) -> tuple[Path, WorkflowSourceEntry]:
     except DataFetchPlanError as exc:
         raise WorkflowDataError(str(exc), status_code=503) from exc
     try:
-        rows = _api_client().fetch_data(spec.view)
+        rows = _api_client().fetch_data(spec.view, filters=filters)
     except ExternalDataClientError as exc:
         raise WorkflowDataError(str(exc), status_code=502) from exc
     path = _materialize_csv(spec, rows, view)

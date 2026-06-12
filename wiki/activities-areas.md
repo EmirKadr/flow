@@ -1,13 +1,13 @@
 ---
 title: Aktiviteter och omraden
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-10
 tags: [aktiviteter, omraden, ui, import]
 ---
 
 # Aktiviteter och omraden
 
-Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje aktivitet har etikett, verksamhet, farg, omrade, KPI Mal/processnamn, kategori, sortering och eventuell summeringsaktivitet. KPI Mal kan innehalla flera processnamn separerade med komma.
+Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje aktivitet har etikett, verksamhet, farg, omrade, KPI Mal/processnamn, kategori, arbetstyp, sortering och eventuell summeringsaktivitet. KPI Mal kan innehalla flera processnamn separerade med komma.
 
 ## Knappar och kontroller
 
@@ -33,7 +33,8 @@ Falt:
 - Summeras som: pekar pa annan aktivitet for summering.
 - KPI Mal: ett eller flera valfria processnamn fran KPI-malet, t.ex. `dekant, plock`. Bolag skrivs inte i faltet.
 - Farg: anvands i schema och oversikt.
-- Kategori: t.ex. work/annan kategori enligt UI.
+- Kategori: `work` eller `absence`; VAS ska inte laggas som kategori.
+- Arbetstyp: `Normal` eller `VAS`. VAS betyder Value Added Services men aktiviteten raknas fortfarande som arbete i schema och produktivitet.
 - Sortering: ordning i listor/dropdowns.
 
 Knappar:
@@ -55,13 +56,14 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 
 ## Importregler
 
-- Direktimporten `Flera nya aktiviteter` har samma falt som Excelmallen: verksamhet vid behov, etikett, omrade, summeras som, KPI Mal/processnamn och sortering.
+- Direktimporten `Flera nya aktiviteter` har samma falt som Excelmallen: verksamhet vid behov, etikett, omrade, summeras som, KPI Mal/processnamn, arbetstyp och sortering.
 - Varje kolumn i direkttabellen visar om faltet ar `Obligatoriskt` eller `Frivilligt` i rubriken.
 - Vanliga anvandare importerar alltid till egen verksamhet. Super User kan ange verksamhet med kod, namn eller id, eller lata omrade/summeringsaktivitet harleda den.
 - KPI Mal ar bara processnamn. Flera processer separeras med komma och normaliseras till `dekant, plock`. Format med bolag, till exempel `GG:decanting`, stoppas eftersom verksamheten redan kommer fran aktiviteten.
-- Importerade aktiviteter far vit standardfarg, kategori `work` och aktiv status.
+- Importerade aktiviteter far vit standardfarg, kategori `work`, arbetstyp `normal` om inget annat anges, och aktiv status. Giltiga arbetstyper ar `normal` och `VAS`.
 - Dubbletter i fil, i direkttabellen eller mot befintliga aktiviteter stoppas och visas i resultatmodalen.
 - Befintliga aktiviteter fick initiala KPI Mal-processer via engangsmigrationen `0036_activity_kpi_backfill`. Den skapar inga nya aktiviteter och fyller bara tomma falt; efter det andrar anvandarna vardena fritt i Aktiviteter.
+- Befintliga aktiviteter fick arbetstyp `normal` via migrationen `0038_activity_work_type`. Att markera en aktivitet som `VAS` andrar inte kategori eller work/absence-berakningar.
 
 ## Felsokningssvar for framtida chat
 
@@ -70,6 +72,7 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 | "Varfor ser jag inte kodkolumnen?" | Endast anvandare med ratt behorighet/super-user-lage ser eller far andra aktivitetskoder. |
 | "Varfor kan jag inte skapa aktivitet?" | Anvandaren saknar edit-atkomst till `activities` eller etiketten saknas. |
 | "Varfor blir summeringen fel?" | Kontrollera `Summeras som`; aktiviteten kan vara mappad till annan summeringsaktivitet. |
+| "Ska VAS vara kategori?" | Nej. Lat kategori vara `work` och satt Arbetstyp till `VAS`, sa bemanning och produktivitet fortfarande raknar aktiviteten som arbete. |
 | "Varfor hittar jag inte Stallen?" | `stallen.html` redirectar till Aktiviteter. Begreppet har migrerats. |
 
 ## Kallor

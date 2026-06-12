@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-06-09
+updated: 2026-06-10
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -36,7 +36,9 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `users.py`, `settings.py`: anvandare, appsettings, sidebar och roll-vyatkomst.
 - `audit_logs.py`: historik och summering.
 - `data_fetch.py`: MiniMax-planerad datahamtning fran extern datakalla, katalogstatus och Excel-export.
-- `productivity.py`: produktivitetsstatus, KPI-fil, rapport och session/loggfiler.
+- `productivity.py`: produktivitetsstatus, KPI-fil, personrapport och manuell API-snapshot-sync.
+- `productivity_sync.py`: global schemalagd Produktivitet-snapshot vid startup och varje hel-/halvtimme samt daglig historik-backfill bakat.
+- `productivity_kpi_rules.py`: KPI-mal fran `v_ask_kpi_target`, intern `kpi.sql`-baserad logik, personmatchning och schedule-aware rapportmodell.
 - `allocation.py`: lagerverktyg, filidentifiering, kor flode, resultat, Excel/CSV.
 - `public.py`: enkla publika text/CSV-varden for timmar, personer och summering.
 
@@ -45,7 +47,6 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `localStorage`: tema, sidebar-collapse, sidebar-layout-cache, role-view-access-cache.
 - `sessionStorage`: vald datumkontext, sidebar-user-cache, upload notice, dokumentlogg och kortlivad GET-/vycache for snabb navigation.
 - IndexedDB `flow-allokering-files`: lokala filer for lagerverktyg.
-- IndexedDB `flow-productivity-files`: lokala produktivitetsloggar.
 
 ## Deployment och lokal drift
 

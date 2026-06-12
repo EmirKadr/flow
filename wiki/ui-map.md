@@ -1,7 +1,7 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-11
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
@@ -19,7 +19,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Hamburgare | Sidebar topp | Alla inloggade | Faller ihop/oppnar sidebar och sparar `sidebar-collapsed` i `localStorage` | Om menyn ser "for liten" ut ar den troligen hopfallen. |
 | Appzoom | Sidebar topp, forstoringsglas med minus/plus | Alla inloggade | Zoomar hela appytan ut/in. Reset finns pa `Ctrl+0`; zoom kan ocksa andras med `Ctrl+-`, `Ctrl++` och `Ctrl+scroll`, och sparas lokalt i `flow-app-zoom`. | Om tabeller eller text kanns for stora/sma kan anvandaren justera utan webblasarmenyn. |
 | Redigera meny | Sidebar topp, pennikon | Anvandare med edit pa `sidebarLayout` | Oppnar modal dar menyordning, rubriker och undervyer kan andras for aktuell verksamhet | Andringen galler aktuell verksamhet efter sparning. |
-| Omradesfokus | Sidebar footer | Alla inloggade | Byggs dynamiskt fran synliga omraden. Vanligt klick stegar mellan fokuslagen; hogerklick oppnar en meny dar anvandaren kan valja omrade direkt. Menyn kan scrollas utan att stangas nar manga omraden finns. Vanliga anvandare ser omraden i egen verksamhet och far `∞` om verksamheten har aktivt `ANNAT`; Super User ser alla aktiva omraden plus globalt `∞`. Filtrerar Bemanning, Oversikt, Produktivitet, Aktiviteter och Anvandare. | Om "fel" omrade visas kan fokus ligga pa annat omrade eller verksamhet an forvantat. Gammalt lokalt fokus migreras fran kod till omrades-id. |
+| Omradesfokus | Sidebar footer | Alla inloggade | Byggs dynamiskt fran synliga omraden. Vanligt klick stegar mellan fokuslagen; hogerklick oppnar en meny dar anvandaren kan valja omrade direkt. Menyn kan scrollas utan att stangas nar manga omraden finns. Vanliga anvandare ser omraden i egen verksamhet och far `∞` om verksamheten har aktivt `ANNAT`; Super User ser alla aktiva omraden plus globalt `∞`. Filtrerar Bemanning, Oversikt, Aktiviteter och Anvandare. Produktivitet visar alla personer i verksamheten. | Om "fel" omrade visas kan fokus ligga pa annat omrade eller verksamhet an forvantat. Gammalt lokalt fokus migreras fran kod till omrades-id. |
 | Apphjalp/pratbubblor | Sidebar footer, direkt under omradesfokus/infinity | Alla inloggade | Oppnar/stanger en liten chattpanel. Dialog, oppet lage och utkast sparas i aktuell session. | Max 10 lyckade fragor per session. `Rensa dialog` nollstaller dialog och kvot. Se [Apphjalp och LLM-chatt](app-chat.md). |
 | Logg | Sidebar footer | Alla inloggade | Oppnar sidopanel med app-logg for t.ex. observations-uppdatering. Ikonen visar en kort pil- och bubbelsignal varje gang nagot loggas, utan att spara eller visa en raknare efterat. | Tom logg betyder bara att inget har loggats i aktuell session. Sjalva loggraderna sparas i aktuell browserflik tills anvandaren rensar loggen. |
 | Uppladdningar/databasikon | Sidebar utility | Roller med `allocationUploads` | Genvag till `uppladdningar.html`; visar badge nar filer lagts in | Hogerklick pa ikonen visar "Rensa filer". |
@@ -37,8 +37,8 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Login | `login.html` | Anvandarnamn, losenord, Logga in | [Roller och behorighet](auth-roles-access.md) |
 | Skapa losenord | `set-password.html` | Nytt losenord, Bekrafta, Spara losenord | [Roller och behorighet](auth-roles-access.md) |
 | Mitt schema | `mitt-schema.html` | Veckonavigering, personval for Super User, dagens status, just nu, veckans dagar och aktiviteter | [Roller och behorighet](auth-roles-access.md) |
-| Min produktivitet | `min-produktivitet.html` | Datumnavigering, personval for Super User, dagens aktivitetssummering, pass och veckosummering | [Roller och behorighet](auth-roles-access.md) |
-| Bemanning | `index.html` | Ar, vecka, dag, datum, Kopiera dag, Rensa dag, undo/redo, celler, tips, kalkyl | [Bemanning](bemanning-schedule.md) |
+| Min produktivitet | `min-produktivitet.html` | Datumnavigering, personval for Super User, dagens produktivitetssnitt, pass och veckans produktivitet per aktivitet | [Roller och behorighet](auth-roles-access.md) |
+| Bemanning | `index.html` | Ar, vecka, dag, datum, Produktivitet-kolumn, V+H-kapacitet i celler, Kopiera dag, Rensa dag, undo/redo, celler, tips, manuell/automatisk kalkyl och kalkylimport | [Bemanning](bemanning-schedule.md) |
 | Oversikt | `overblick.html` | Vy vecka/manad, prev/next, ar, vecka/manad, undo/redo, dagceller | [Oversikt](overview-page.md) |
 | Personer | `personer.html` | Ny person, Flera nya personer, importmall, importera Excel, hjalp, filter/sortering, Schema, Ta bort | [Personer](persons.md) |
 | Aktiviteter | `aktiviteter.html` | Ny aktivitet, Flera nya aktiviteter, importmall, importera Excel, hjalp, Redigera, Ta bort | [Aktiviteter och omraden](activities-areas.md) |
@@ -46,12 +46,12 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Verksamheter | `verksamheter.html` | Ny verksamhet, klickbara celler, rubriksortering, Visa inaktiva, Nytt omrade, Lagg till `∞`, Ta bort omrade | [Anvandare och installningar](users-settings.md) |
 | Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera, Funktioner, Knappar, Kolumner, Floden, AI-analys | [Historik och audit](history-audit.md) |
 | Hamta data | `hamta-data.html` | Prompt, max rader, Tolka, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
-| Produktivitet | `produktivitet.html` | Datum, prev/next, sok, filkrav/drag-drop | [Produktivitet](productivity.md) |
+| Produktivitet | `produktivitet.html` | Periodval Dag/Vecka/Manad/Ar, datumankare, prev/next, Helbild, Exportera flowchart med nivaval, hierarkitrad for verksamhet, omrade, aktivitet, person, timme och processpoang | [Produktivitet](productivity.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
-| Installningar | `installningar.html` | Ytgenereringens ytkarta, zoom/pan, lediga U-platser, spara global kartlayout | [Lagerverktyg](warehouse-tools.md) |
+| Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till V+H/automatisk kalkyl och val av V+H-aktiviteter | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |
 | Dela | `dela.html` | Textfil/textarea, antal per kolumn, Dela varden | [Lagerverktyg](warehouse-tools.md) |
-| Meta | `meta.html` | Typfilter, Uppdatera, Sändningsanalys med ordernummer, sändningsnummer, Video-ID/längd, Analysera, Visa, Ladda ner och Radera media | [Meta-uppladdning](meta-upload.md) |
+| Meta | `meta.html` | Sok, Uppdatera, export, Sandningsanalys med ordernummer, sandningsnummer, Video-ID/langd/storlek, Analysera och nedladdning av video/stillbild | [Meta-uppladdning](meta-upload.md) |
 | Meta-uppladdning | `meta-upload.html` | Valj flera bilder/videor, visa vald videolangd nar metadata finns, automatisk uppladdning | [Meta-uppladdning](meta-upload.md) |
 
 ## Generella UI-regler

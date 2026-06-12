@@ -7,8 +7,14 @@ const HALF_SEGMENTS = [
   { minute_start: 0, minute_end: 30 },
   { minute_start: 30, minute_end: 60 },
 ];
-const CALC_AREA_FALLBACK_KEYS = ["GG", "MG", "AS", "EH"];
-
+const DEFAULT_SPLIT_MINUTES = 30;
+const DEFAULT_SPLIT_BOUNDARIES = {
+  2: [30],
+  3: [20, 40],
+  4: [15, 30, 45],
+};
+const MIN_SPLIT_PARTS = 2;
+const MAX_SPLIT_PARTS = 4;
 const state = {
   currentUser: null,
   year: 0,
@@ -34,9 +40,25 @@ const state = {
   sortAsc: true,
   summaryRows: [],
   allSummaryRows: [],
+  productivityReport: null,
+  productivityByPersonId: new Map(),
+  productivityKey: "",
   lockForeignScheduleCells: false,
-  calcSelection: "",
-  calcInputs: {},
+  calcInputs: { manual: { rows: "", time: "", goal: "" } },
+  calculatorProfile: { version: 1, calculators: [] },
+  calculatorUsers: [],
+  calculatorProcessOptions: [],
+  calculatorImportSearch: "",
+  automaticCalculatorResults: [],
+  automaticCalculatorLoading: false,
+  automaticCalculatorError: "",
+  scheduleRevisionKey: "",
+  activityCapacityVisible: false,
+  activityCapacityLoading: false,
+  activityCapacityError: "",
+  activityCapacityKey: "",
+  activityCapacity: { people: {}, activities: {} },
+  activityCapacityActivityIds: null,
 };
 
 const drag = {
@@ -75,6 +97,18 @@ const summaryState = {
   calcFrame: 0,
 };
 
+const automaticCalculatorState = {
+  timer: null,
+  requestSeq: 0,
+  loadedKey: "",
+};
+const activityCapacityState = {
+  controller: null,
+  requestSeq: 0,
+  pressedKeys: new Set(),
+  toggledWhilePressed: false,
+};
+
 const scheduleLoadState = {
   controller: null,
   requestSeq: 0,
@@ -86,12 +120,17 @@ const scheduleAllFetchState = {
   controller: null,
   key: "",
 };
+const scheduleProductivityLoadState = {
+  controller: null,
+  key: "",
+};
 const SCHEDULE_ALL_CACHE_LIMIT = 4;
 const SCHEDULE_AREA_CACHE_LIMIT = 24;
 const SCHEDULE_REVALIDATE_ACTIVE_MS = 10000;
 const SCHEDULE_REVALIDATE_IDLE_MS = 30000;
 const SCHEDULE_REVALIDATE_SOON_MS = 1500;
 const SCHEDULE_REVALIDATE_ACTIVE_WINDOW_MS = 60000;
+const SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY = "flow-schedule-activity-capacity-visible";
 const scheduleRevalidateState = {
   timer: null,
   controller: null,
@@ -334,6 +373,7 @@ function scheduleHourIsFocused(personId, hour) {
 
 function patchScheduleFromAllData(allData) {
   const data = filterScheduleDataForArea(allData, state.areaId);
+  const previousRevisionKey = state.scheduleRevisionKey || "";
   const personsChanged = schedulePersonSignature(state.allPersons) !== schedulePersonSignature(data.persons || []);
   const scheduledChanged = scheduleMapPayloadSignature() !== scheduleDataPayloadSignature(data);
   if (personsChanged || scheduledChanged) {
@@ -365,7 +405,11 @@ function patchScheduleFromAllData(allData) {
 
   if (changedCount) {
     refreshCurrentHourHighlight();
-    scheduleSummaryRefresh(0);
+    scheduleSummaryRefresh(0, { refreshCalculator: true });
+  }
+  state.scheduleRevisionKey = data.revision_key || "";
+  if (changedCount || state.scheduleRevisionKey !== previousRevisionKey) {
+    scheduleAutomaticCalculatorRefresh(800);
   }
   if (skippedFocused) scheduleNextScheduleRevalidate(SCHEDULE_REVALIDATE_SOON_MS);
   return { changed: changedCount > 0 || skippedFocused, patched: changedCount > 0, skippedFocused };
@@ -430,6 +474,10 @@ function selectedScheduleYmdString() {
   return ymdString(dateFromYWD(state.year, state.week, state.weekday));
 }
 
+function scheduleProductivityKey() {
+  return `${scheduleScopeKey()}|${selectedScheduleYmdString()}`;
+}
+
 function dateFromYmd(str) {
   const [y, m, d] = String(str).split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -444,7 +492,7 @@ function escapeHtml(s) {
 
 function buildHeader() {
   const header = document.getElementById("headerRow");
-  while (header.children.length > 2) header.removeChild(header.lastChild);
+  while (header.children.length > 3) header.removeChild(header.lastChild);
   HOURS.forEach((h) => {
     const th = document.createElement("th");
     th.dataset.hour = h;
@@ -459,12 +507,90 @@ function currentHourIfToday() {
   return now.getHours();
 }
 
+function scheduleCompletedProductivityCutoffMinute(reportDate) {
+  const dateValue = reportDate || selectedScheduleYmdString();
+  if (dateValue !== localYmdString()) return 24 * 60;
+  return new Date().getHours() * 60;
+}
+
+function scheduleProductivityStatusClass(percent) {
+  if (percent >= 100) return "good";
+  if (percent >= 80) return "warn";
+  return "low";
+}
+
+function scheduleCompletedProductivity(personReport, reportDate) {
+  const cutoffMinute = scheduleCompletedProductivityCutoffMinute(reportDate);
+  let points = 0;
+  let expectedPoints = 0;
+  (personReport?.time_cells || []).forEach((cell) => {
+    if (cell?.kind !== "kpi") return;
+    if (Number(cell?.end_minute || 0) > cutoffMinute) return;
+    const expected = Number(cell?.expected_points || 0);
+    if (expected <= 0) return;
+    expectedPoints += expected;
+    points += Number(cell?.points || 0);
+  });
+  if (expectedPoints <= 0) return null;
+  const percent = Math.floor((points / expectedPoints) * 100);
+  return {
+    percent,
+    points,
+    expectedPoints,
+    hours: expectedPoints / 100,
+    status: scheduleProductivityStatusClass(percent),
+  };
+}
+
+function buildScheduleProductivityMap(report) {
+  const map = new Map();
+  const reportDate = report?.date || selectedScheduleYmdString();
+  (report?.people || []).forEach((person) => {
+    const value = scheduleCompletedProductivity(person, reportDate);
+    if (value) map.set(Number(person.person_id), value);
+  });
+  return map;
+}
+
+function buildScheduleProductivityMapFromSummary(summary) {
+  const map = new Map();
+  Object.values(summary?.people || {}).forEach((person) => {
+    const percent = Number(person?.percent);
+    if (!Number.isFinite(percent)) return;
+    const planned = Number(person?.planned_kpi_points || 0);
+    if (planned <= 0) return;
+    map.set(Number(person.person_id), {
+      percent,
+      points: Number(person?.kpi_points || 0),
+      expectedPoints: planned,
+      hours: Number(person?.kpi_minutes || 0) / 60,
+      status: scheduleProductivityStatusClass(percent),
+    });
+  });
+  return map;
+}
+
+function updateScheduleProductivityCells() {
+  document.querySelectorAll("#scheduleBody td.schedule-productivity[data-person-id]").forEach((td) => {
+    const person = personById(Number(td.dataset.personId));
+    renderScheduleProductivityCell(td, person);
+  });
+}
+
+function refreshScheduleProductivityFromReport() {
+  if (!state.productivityReport || state.productivityKey !== scheduleProductivityKey()) return;
+  state.productivityByPersonId = buildScheduleProductivityMapFromSummary(state.productivityReport);
+  updateScheduleProductivityCells();
+}
+
 function refreshCurrentHourHighlight() {
   const hour = currentHourIfToday();
   document.querySelectorAll("table.matrix .now-hour").forEach((el) => el.classList.remove("now-hour"));
-  if (hour == null) return;
-  document.querySelectorAll(`table.matrix th[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
-  document.querySelectorAll(`table.matrix td[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
+  if (hour != null) {
+    document.querySelectorAll(`table.matrix th[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
+    document.querySelectorAll(`table.matrix td[data-hour="${hour}"]`).forEach((el) => el.classList.add("now-hour"));
+  }
+  refreshScheduleProductivityFromReport();
 }
 
 function activityById(id) {
@@ -491,6 +617,92 @@ function colorFor(activityId) {
 function activityLabel(activityId) {
   const a = activityById(activityId);
   return a ? a.label : "";
+}
+
+function readActivityCapacityVisible() {
+  try {
+    return localStorage.getItem(SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY) === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function writeActivityCapacityVisible(visible) {
+  try {
+    localStorage.setItem(SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY, visible ? "1" : "0");
+  } catch (e) {}
+}
+
+function activityCapacityRequestKey() {
+  return `${scheduleScopeKey()}|${state.year}|${state.week}|${state.weekday}`;
+}
+
+function normalizeActivityCapacityActivityIds(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value)) return null;
+  const ids = [];
+  value.forEach((item) => {
+    const id = Number(item);
+    if (Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id);
+  });
+  return ids;
+}
+
+function activityCapacityActivityIsVisible(activityId) {
+  if (state.activityCapacityActivityIds == null) return true;
+  const id = Number(activityId);
+  return Number.isInteger(id) && state.activityCapacityActivityIds.includes(id);
+}
+
+function updateActivityCapacityToggleButton() {
+  const button = document.getElementById("capacityToggleBtn");
+  if (!button) return;
+  const active = !!state.activityCapacityVisible;
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+  button.setAttribute("aria-busy", state.activityCapacityLoading ? "true" : "false");
+  button.textContent = state.activityCapacityLoading ? "V+H..." : "V+H";
+  button.title = active ? "Dölj historiskt snitt (V+H)" : "Visa historiskt snitt (V+H)";
+}
+
+function formatActivityCapacityValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  if (number >= 10) return String(Math.round(number));
+  return number.toFixed(1).replace(".", ",").replace(",0", "");
+}
+
+function activityCapacityFor(personId, activityId) {
+  if (!state.activityCapacityVisible || personId == null || activityId == null) return null;
+  if (!activityCapacityActivityIsVisible(activityId)) return null;
+  const personPayload = state.activityCapacity?.people?.[String(personId)];
+  const capacity = personPayload?.[String(activityId)] || null;
+  const value = Number(capacity?.value_per_hour);
+  return Number.isFinite(value) && value > 0 ? capacity : null;
+}
+
+function activityLabelWithCapacity(activityId, personId) {
+  const label = activityLabel(activityId);
+  const capacity = activityCapacityFor(personId, activityId);
+  const value = formatActivityCapacityValue(capacity?.value_per_hour);
+  return label && value ? `${label}(${value})` : label;
+}
+
+function applyActivityCapacityToSelect(select, personId, activityId) {
+  if (!select || activityId == null) return;
+  const option = Array.from(select.options).find((item) => item.value === String(activityId));
+  if (!option) return;
+  option.textContent = activityLabelWithCapacity(activityId, personId);
+  const capacity = activityCapacityFor(personId, activityId);
+  if (capacity) {
+    option.title = `${formatActivityCapacityValue(capacity.value_per_hour)} ${capacity.unit || "enheter"}/timme`;
+  }
+}
+
+function rerenderScheduleCellsForCapacity() {
+  document.querySelectorAll("#scheduleBody td[data-hour]").forEach((td) => renderHourCell(td));
+  applySelectedPersonRow();
+  refreshCurrentHourHighlight();
 }
 
 function defaultHomeActivityId(person) {
@@ -587,8 +799,8 @@ function scheduleLoanStartHint() {
 function scheduleLoanCellsForHour(personId, hour, areaId) {
   const segments = segmentsForHour(personId, hour);
   const fullSegment = segments.find((segment) => segment.minute_start === 0 && segment.minute_end === 60) || null;
-  const targetRanges = (isSplitHour(segments) || segments.some((segment) => segment.minute_end - segment.minute_start === 30))
-    ? HALF_SEGMENTS
+  const targetRanges = (isSplitHour(segments) || segments.some((segment) => isPartialRange(segment)))
+    ? splitRangesForSegments(segments)
     : [FULL_SEGMENT];
   return targetRanges.map(({ minute_start, minute_end }) => {
     const matching = segments.find(
@@ -737,7 +949,7 @@ async function sendPersonToArea(personId, areaId) {
     return;
   }
   if (cells.length > 200) {
-    showToast("För många celler eller halvor (max 200)", "error");
+    showToast("För många celler eller delar (max 200)", "error");
     return;
   }
 
@@ -763,7 +975,7 @@ async function sendPersonToArea(personId, areaId) {
     invalidateScheduleAllCache();
     pushScheduleUndo(`skicka ${person.name} till ${option.area.name || option.area.code}`, snapshots);
     applySegmentsByHourResponse(resp.applied);
-    scheduleSummaryRefresh(0);
+    scheduleSummaryRefresh(0, { refreshCalculator: true });
     const changedHours = new Set(cells.map((cell) => hourKey(cell.person_id, cell.hour))).size;
     showToast(
       lockedHours.length
@@ -1007,6 +1219,104 @@ function hourKey(personId, hour) {
 
 function sortSegments(segments) {
   return [...segments].sort((a, b) => a.minute_start - b.minute_start || a.minute_end - b.minute_end);
+}
+
+function isFullRange(range) {
+  return Number(range?.minute_start) === 0 && Number(range?.minute_end) === 60;
+}
+
+function isPartialRange(range) {
+  const start = Number(range?.minute_start);
+  const end = Number(range?.minute_end);
+  return Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 60 && start < end && !isFullRange(range);
+}
+
+function normalizeSplitPartCount(partCount) {
+  const parsed = Number.parseInt(String(partCount), 10);
+  if (!Number.isInteger(parsed)) return MIN_SPLIT_PARTS;
+  return Math.max(MIN_SPLIT_PARTS, Math.min(MAX_SPLIT_PARTS, parsed));
+}
+
+function defaultSplitBoundaries(partCount = MIN_SPLIT_PARTS, firstBoundary = DEFAULT_SPLIT_MINUTES) {
+  const count = normalizeSplitPartCount(partCount);
+  if (count === 2) {
+    const first = Math.max(1, Math.min(59, Number.parseInt(String(firstBoundary), 10) || DEFAULT_SPLIT_MINUTES));
+    return [first];
+  }
+  return [...(DEFAULT_SPLIT_BOUNDARIES[count] || DEFAULT_SPLIT_BOUNDARIES[MIN_SPLIT_PARTS])];
+}
+
+function orderedSplitBoundariesAreValid(boundaries, partCount = MIN_SPLIT_PARTS) {
+  if (!Array.isArray(boundaries) || boundaries.length !== normalizeSplitPartCount(partCount) - 1) return false;
+  let previous = 0;
+  return boundaries.every((boundary) => {
+    const value = Number(boundary);
+    const valid = Number.isInteger(value) && value > previous && value < 60;
+    previous = value;
+    return valid;
+  });
+}
+
+function splitSegmentsForBoundaries(boundaries, partCount = MIN_SPLIT_PARTS) {
+  if (!orderedSplitBoundariesAreValid(boundaries, partCount)) return null;
+  return [0, ...boundaries.map((boundary) => Number(boundary)), 60].slice(0, normalizeSplitPartCount(partCount) + 1)
+    .map((minute, index, all) => index === all.length - 1 ? null : ({
+      minute_start: minute,
+      minute_end: all[index + 1],
+    }))
+    .filter(Boolean);
+}
+
+function splitSegmentsForMinute(minutes = DEFAULT_SPLIT_MINUTES) {
+  return splitSegmentsForBoundaries(defaultSplitBoundaries(MIN_SPLIT_PARTS, minutes), MIN_SPLIT_PARTS)
+    || HALF_SEGMENTS.map((segment) => ({ ...segment }));
+}
+
+function isCompleteSplitRangeList(values) {
+  if (!Array.isArray(values) || values.length < MIN_SPLIT_PARTS || values.length > MAX_SPLIT_PARTS) return false;
+  if (values[0].minute_start !== 0 || values[values.length - 1].minute_end !== 60) return false;
+  return values.every((range, index) => (
+    range.minute_start >= 0
+    && range.minute_end <= 60
+    && range.minute_start < range.minute_end
+    && (index === 0 || values[index - 1].minute_end === range.minute_start)
+  ));
+}
+
+function splitRangesFromRanges(ranges) {
+  const unique = new Map();
+  (ranges || []).forEach((range) => {
+    const start = Number(range?.minute_start);
+    const end = Number(range?.minute_end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > 60 || start >= end) return;
+    unique.set(`${start}:${end}`, { minute_start: start, minute_end: end });
+  });
+  const values = Array.from(unique.values()).sort((a, b) => a.minute_start - b.minute_start || a.minute_end - b.minute_end);
+  if (isCompleteSplitRangeList(values)) {
+    return values;
+  }
+  const partial = values.find((range) => isPartialRange(range));
+  if (partial?.minute_start === 0 && partial.minute_end > 0 && partial.minute_end < 60) {
+    return splitSegmentsForMinute(partial.minute_end);
+  }
+  if (partial?.minute_end === 60 && partial.minute_start > 0 && partial.minute_start < 60) {
+    return splitSegmentsForMinute(partial.minute_start);
+  }
+  return null;
+}
+
+function splitRangesForSegments(segments) {
+  return splitRangesFromRanges(segments) || HALF_SEGMENTS.map((segment) => ({ ...segment }));
+}
+
+function splitRangesForItems(items) {
+  return splitRangesFromRanges(items) || HALF_SEGMENTS.map((segment) => ({ ...segment }));
+}
+
+function firstSplitRangeForTd(td) {
+  const personId = Number(td?.dataset?.personId);
+  const hour = Number(td?.dataset?.hour);
+  return splitRangesForSegments(segmentsForHour(personId, hour))[0] || { ...HALF_SEGMENTS[0] };
 }
 
 function setAllSegments(cells) {
@@ -1254,7 +1564,7 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
     applyRestoredHours(resp.hours);
     oppositeStack.push({ label: action.label, snapshots: inverseSnapshots });
     if (oppositeStack.length > 50) oppositeStack.shift();
-    scheduleSummaryRefresh(0);
+    scheduleSummaryRefresh(0, { refreshCalculator: true });
     showToast(`${oppositeLabel}: ${action.label}`);
     updateUndoRedoButtons();
     return true;
@@ -1333,11 +1643,10 @@ function snapshotHoursFromCells(cells) {
 function optimisticSegmentsForHour(personId, hour, items) {
   const current = cloneSegments(segmentsForHour(personId, hour));
   const scheduled = isScheduledHour(personId, hour);
-  const needsHalfSegments = items.some(
-    (item) => Number(item.minute_end) - Number(item.minute_start) === 30
-  );
+  const needsSplitSegments = items.some((item) => isPartialRange(item));
+  const targetSplitRanges = splitRangesForItems(items);
 
-  if (!needsHalfSegments && items.length === 1 && Number(items[0].minute_start) === 0 && Number(items[0].minute_end) === 60) {
+  if (!needsSplitSegments && items.length === 1 && Number(items[0].minute_start) === 0 && Number(items[0].minute_end) === 60) {
     return [
       {
         person_id: personId,
@@ -1355,9 +1664,9 @@ function optimisticSegmentsForHour(personId, hour, items) {
   }
 
   let segments = current;
-  if (needsHalfSegments) {
+  if (needsSplitSegments) {
     if (segments.length === 0) {
-      segments = HALF_SEGMENTS.map(({ minute_start, minute_end }) => ({
+      segments = targetSplitRanges.map(({ minute_start, minute_end }) => ({
         person_id: personId,
         hour,
         minute_start,
@@ -1375,7 +1684,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
       segments[0].minute_end === 60
     ) {
       const source = segments[0];
-      segments = HALF_SEGMENTS.map(({ minute_start, minute_end }) => ({
+      segments = targetSplitRanges.map(({ minute_start, minute_end }) => ({
         person_id: personId,
         hour,
         minute_start,
@@ -1393,8 +1702,8 @@ function optimisticSegmentsForHour(personId, hour, items) {
   const byRange = new Map(
     segments.map((segment) => [`${segment.minute_start}:${segment.minute_end}`, cloneSegment(segment)])
   );
-  if (needsHalfSegments) {
-    HALF_SEGMENTS.forEach(({ minute_start, minute_end }) => {
+  if (needsSplitSegments) {
+    targetSplitRanges.forEach(({ minute_start, minute_end }) => {
       const key = `${minute_start}:${minute_end}`;
       if (byRange.has(key)) return;
       byRange.set(key, {
@@ -1470,13 +1779,7 @@ function targetMatchesCurrentDay(year, week, weekday) {
 }
 
 function isSplitHour(segments) {
-  return (
-    segments.length === 2 &&
-    segments[0].minute_start === 0 &&
-    segments[0].minute_end === 30 &&
-    segments[1].minute_start === 30 &&
-    segments[1].minute_end === 60
-  );
+  return !!splitRangesFromRanges(segments);
 }
 
 function isScheduledHour(personId, hour) {
@@ -1492,38 +1795,15 @@ function scheduledDefaultActivityId(personId, hour) {
 
 function formatHours(value) {
   const num = Number(value) || 0;
-  return Number.isInteger(num) ? String(num) : num.toFixed(1).replace(/\.0$/, "");
+  const rounded = Math.round((num + Number.EPSILON) * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function areaCodeById(id) {
-  return state.areas.find((area) => area.id === id)?.code || null;
-}
-
-function areaNameByCode(code) {
-  return state.areas.find((area) => area.code === code)?.name
-    || ({ GG: "Granngården", MG: "Mestergruppen", AS: "Autostore", EH: "E-Handel" }[code] || code);
-}
-
-function calcAreaKeys() {
-  const seen = new Set();
-  const keys = [];
-  state.areas
-    .filter((area) => area?.is_active !== false)
-    .sort((a, b) => (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0))
-    .forEach((area) => {
-      const code = String(area?.code || "").trim().toUpperCase();
-      if (!code || code === "ANNAT" || seen.has(code)) return;
-      seen.add(code);
-      keys.push(code);
-    });
-  return keys.length ? keys : CALC_AREA_FALLBACK_KEYS;
-}
-
-function ensureCalcInput(areaKey) {
-  if (!state.calcInputs[areaKey]) {
-    state.calcInputs[areaKey] = { rows: "", time: "", goal: "" };
+function ensureManualCalcInput() {
+  if (!state.calcInputs.manual) {
+    state.calcInputs.manual = { rows: "", time: "", goal: "" };
   }
-  return state.calcInputs[areaKey];
+  return state.calcInputs.manual;
 }
 
 function sanitizeNumericInput(value) {
@@ -1540,17 +1820,21 @@ function parseNumericInput(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function activityHoursByCode(code) {
-  const row = state.allSummaryRows.find((item) => item.activity_code === code);
-  return row ? Number(row.hours) || 0 : 0;
+function manualPlockHours() {
+  return (state.summaryRows || []).reduce((sum, item) => {
+    const code = String(item.activity_code || "").toUpperCase();
+    const label = String(item.activity_label || "").toUpperCase();
+    if (!code.includes("PLOCK") && !label.includes("PLOCK")) return sum;
+    return sum + (Number(item.hours) || 0);
+  }, 0);
 }
 
-function calcMetrics(areaKey) {
-  const values = ensureCalcInput(areaKey);
+function calcMetrics() {
+  const values = ensureManualCalcInput();
   const rows = parseNumericInput(values.rows);
   const time = parseNumericInput(values.time);
   const goal = parseNumericInput(values.goal);
-  const plockHours = activityHoursByCode(`${areaKey}_PLOCK`);
+  const plockHours = manualPlockHours();
 
   let need = null;
   let hours = null;
@@ -1568,8 +1852,8 @@ function calcValueText(value) {
   return value == null ? "–" : formatHours(value);
 }
 
-function updateCalcPanel(panel, areaKey) {
-  const { need, hours, diff } = calcMetrics(areaKey);
+function updateCalcPanel(panel) {
+  const { need, hours, diff } = calcMetrics();
   const outputs = {
     need: calcValueText(need),
     hours: calcValueText(hours),
@@ -1589,6 +1873,41 @@ function updateCalcPanel(panel, areaKey) {
   }
 }
 
+function calcResultText(value) {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  return formatHours(Number(value));
+}
+
+function renderAutomaticCalculatorPanel(result) {
+  const calc = (state.calculatorProfile.calculators || []).find((item) => item.id === result.id) || {};
+  const isError = result.status === "error";
+  const remaining = result.rows_remaining_after_schedule;
+  return `
+    <div class="calc-panel calc-panel-auto" data-calc-id="${escapeHtml(result.id || "")}">
+      <div class="calc-panel-title calc-panel-title-row">
+        <span>${escapeHtml(result.name || calc.name || "Automatisk")}</span>
+        <span class="calc-panel-actions">
+          <button type="button" class="icon-btn" data-calc-edit="${escapeHtml(result.id || "")}" title="Ändra" aria-label="Ändra">✎</button>
+          <button type="button" class="icon-btn danger" data-calc-delete="${escapeHtml(result.id || "")}" title="Ta bort" aria-label="Ta bort">×</button>
+        </span>
+      </div>
+      ${isError ? `
+        <p class="note error">${escapeHtml(result.message || "Kalkylen kunde inte beräknas.")}</p>
+      ` : `
+        <table class="calc-table auto-calc-table">
+          <thead>
+            <tr><th>Rader kvar efter schemalagd tid</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="calc-output ${remaining > 0 ? "negative" : "positive"}">${calcResultText(remaining)}</td></tr>
+          </tbody>
+        </table>
+        <p class="note">Rader ${calcResultText(result.order_rows)} · schemalagt ${calcResultText(result.scheduled_hours)} h · plan ${calcResultText(result.expected_rows)} rader</p>
+      `}
+    </div>
+  `;
+}
+
 function renderCalculator() {
   const container = document.getElementById("calcPanels");
   if (!container) return;
@@ -1596,67 +1915,73 @@ function renderCalculator() {
   const active = document.activeElement;
   let focusState = null;
   if (active && container.contains(active) && active.matches("input[data-field]")) {
-    const panel = active.closest(".calc-panel");
     focusState = {
-      areaKey: panel?.dataset.areaKey || "",
       field: active.dataset.field || "",
       selectionStart: typeof active.selectionStart === "number" ? active.selectionStart : null,
       selectionEnd: typeof active.selectionEnd === "number" ? active.selectionEnd : null,
     };
   }
 
-  const availableKeys = calcAreaKeys();
-  if (state.calcSelection !== "ALL" && !availableKeys.includes(state.calcSelection)) {
-    state.calcSelection = "ALL";
-  }
-  const selectedKeys = state.calcSelection === "ALL" ? availableKeys : [state.calcSelection];
-  container.innerHTML = selectedKeys.map((areaKey) => {
-    const values = ensureCalcInput(areaKey);
-    const metrics = calcMetrics(areaKey);
-    return `
-      <div class="calc-panel" data-area-key="${areaKey}">
-        <div class="calc-panel-title">${escapeHtml(areaNameByCode(areaKey))}</div>
-        <table class="calc-table">
-          <thead>
-            <tr>
-              <th>Dagens rader</th>
-              <th>Tid kvar</th>
-              <th>Mål</th>
-              <th>Behov</th>
-              <th>Timmar</th>
-              <th>Diff</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><input type="text" inputmode="decimal" data-field="rows" value="${escapeHtml(values.rows)}" /></td>
-              <td><input type="text" inputmode="decimal" data-field="time" value="${escapeHtml(values.time)}" /></td>
-              <td><input type="text" inputmode="decimal" data-field="goal" value="${escapeHtml(values.goal)}" /></td>
-              <td class="calc-output" data-output="need">${calcValueText(metrics.need)}</td>
-              <td class="calc-output" data-output="hours">${calcValueText(metrics.hours)}</td>
-              <td class="calc-output ${metrics.diff > 0 ? "positive" : metrics.diff < 0 ? "negative" : ""}" data-output="diff">${calcValueText(metrics.diff)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>`;
-  }).join("");
+  const values = ensureManualCalcInput();
+  const metrics = calcMetrics();
+  const automatic = state.automaticCalculatorResults || [];
+  container.innerHTML = `
+    <div class="calc-panel calc-panel-manual" data-calc-kind="manual">
+      <div class="calc-panel-title">Manuell</div>
+      <table class="calc-table">
+        <thead>
+          <tr>
+            <th>Dagens rader</th>
+            <th>Tid kvar</th>
+            <th>Mål</th>
+            <th>Behov</th>
+            <th>Timmar</th>
+            <th>Diff</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><input type="text" inputmode="decimal" data-field="rows" value="${escapeHtml(values.rows)}" /></td>
+            <td><input type="text" inputmode="decimal" data-field="time" value="${escapeHtml(values.time)}" /></td>
+            <td><input type="text" inputmode="decimal" data-field="goal" value="${escapeHtml(values.goal)}" /></td>
+            <td class="calc-output" data-output="need">${calcValueText(metrics.need)}</td>
+            <td class="calc-output" data-output="hours">${calcValueText(metrics.hours)}</td>
+            <td class="calc-output ${metrics.diff > 0 ? "positive" : metrics.diff < 0 ? "negative" : ""}" data-output="diff">${calcValueText(metrics.diff)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${state.automaticCalculatorLoading ? `<div class="calc-panel"><div class="calc-panel-title">Automatiska</div><p class="note">Beräknar automatiska kalkyler...</p></div>` : ""}
+    ${state.automaticCalculatorError ? `<div class="calc-panel"><div class="calc-panel-title">Automatiska</div><p class="note error">${escapeHtml(state.automaticCalculatorError)}</p></div>` : ""}
+    ${automatic.map(renderAutomaticCalculatorPanel).join("")}
+  `;
 
   container.querySelectorAll("input[data-field]").forEach((input) => {
     input.addEventListener("input", (e) => {
       const panel = e.target.closest(".calc-panel");
       if (!panel) return;
-      const areaKey = panel.dataset.areaKey;
       const field = e.target.dataset.field;
       const sanitized = sanitizeNumericInput(e.target.value);
       if (sanitized !== e.target.value) e.target.value = sanitized;
-      state.calcInputs[areaKey][field] = sanitized;
-      updateCalcPanel(panel, areaKey);
+      state.calcInputs.manual[field] = sanitized;
+      updateCalcPanel(panel);
+    });
+  });
+  container.querySelectorAll("[data-calc-edit]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const calc = (state.calculatorProfile.calculators || []).find((item) => item.id === button.dataset.calcEdit);
+      if (calc) openCalculatorModal(calc);
+    });
+  });
+  container.querySelectorAll("[data-calc-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await deleteAutomaticCalculator(button.dataset.calcDelete);
     });
   });
 
-  if (focusState?.areaKey && focusState.field) {
+  if (focusState?.field) {
     const nextInput = container.querySelector(
-      `.calc-panel[data-area-key="${focusState.areaKey}"] input[data-field="${focusState.field}"]`
+      `.calc-panel[data-calc-kind="manual"] input[data-field="${focusState.field}"]`
     );
     if (nextInput) {
       nextInput.focus({ preventScroll: true });
@@ -1670,20 +1995,248 @@ function renderCalculator() {
 }
 
 function setupCalculator() {
-  if (!state.calcSelection) {
-    const currentAreaCode = areaCodeById(state.areaId);
-    const availableKeys = calcAreaKeys();
-    state.calcSelection = availableKeys.includes(currentAreaCode) ? currentAreaCode : "ALL";
-  }
-
   renderCalculator();
 }
 
 function syncCalculatorWithSelectedArea() {
-  const currentAreaCode = areaCodeById(state.areaId);
-  const availableKeys = calcAreaKeys();
-  state.calcSelection = availableKeys.includes(currentAreaCode) ? currentAreaCode : "ALL";
   renderCalculator();
+}
+
+function normalizeCalculatorProfile(profile) {
+  const items = Array.isArray(profile?.calculators) ? profile.calculators : [];
+  return {
+    version: 1,
+    calculators: items
+      .map((item) => ({
+        id: String(item?.id || `calc-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        name: String(item?.name || "").trim(),
+        process: String(item?.process || "").trim(),
+        company: String(item?.company || "").trim().toUpperCase(),
+        zone: String(item?.zone || "").trim().toUpperCase(),
+        pick_days: Number.parseInt(item?.pick_days ?? 0, 10) || 0,
+      }))
+      .filter((item) => item.name && item.process && item.company && item.zone),
+  };
+}
+
+function updateCalculatorToolbar() {
+  const importUser = document.getElementById("calcImportUser");
+  if (!importUser) return;
+  const search = String(state.calculatorImportSearch || "").trim().toLowerCase();
+  const currentValue = importUser.value;
+  const users = (state.calculatorUsers || [])
+    .filter((user) => user.has_calculators && !user.is_current)
+    .filter((user) => {
+      if (!search) return true;
+      return `${user.name || ""} ${user.username || ""}`.toLowerCase().includes(search);
+    });
+  importUser.innerHTML = `
+    <option value="">Hämta från användare</option>
+    ${users.map((user) => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name || user.username)} (${escapeHtml(user.calculator_count || 0)})</option>`).join("")}
+  `;
+  if (users.some((user) => String(user.id) === String(currentValue))) importUser.value = currentValue;
+  importUser.disabled = users.length === 0;
+  const button = document.getElementById("calcImportBtn");
+  if (button) button.disabled = users.length === 0 || !importUser.value;
+}
+
+function applyCalculatorProfilePayload(data) {
+  state.calculatorProfile = normalizeCalculatorProfile(data?.profile);
+  state.calculatorUsers = Array.isArray(data?.users) ? data.users : [];
+  state.calculatorProcessOptions = Array.isArray(data?.process_options) ? data.process_options : [];
+  updateCalculatorToolbar();
+  renderCalculator();
+}
+
+async function loadCalculatorProfile() {
+  try {
+    const data = await api.get("/api/schedule/calculator-profile", { cacheTtlMs: 10 * 1000 });
+    applyCalculatorProfilePayload(data);
+  } catch (error) {
+    console.warn("Kunde inte läsa bemanningskalkyler", error);
+    state.calculatorProfile = { version: 1, calculators: [] };
+    state.calculatorUsers = [];
+    state.calculatorProcessOptions = [];
+    updateCalculatorToolbar();
+    renderCalculator();
+  }
+}
+
+async function saveCalculatorProfile(profile) {
+  const data = await api.put("/api/schedule/calculator-profile", { profile: normalizeCalculatorProfile(profile) });
+  applyCalculatorProfilePayload(data);
+  await loadAutomaticCalculatorResults({ force: true });
+}
+
+async function importCalculatorProfile(userId) {
+  const data = await api.post("/api/schedule/calculator-profile/import", { user_id: Number(userId) });
+  applyCalculatorProfilePayload(data);
+  showToast("Bemanningskalkyler hämtades", "success");
+  await loadAutomaticCalculatorResults({ force: true });
+}
+
+function automaticCalculatorProfileKey() {
+  return JSON.stringify(normalizeCalculatorProfile(state.calculatorProfile));
+}
+
+function automaticCalculatorHalfHourKey() {
+  return Math.floor(Date.now() / (30 * 60 * 1000));
+}
+
+function automaticCalculatorRequestKey() {
+  return [
+    scheduleScopeKey(),
+    state.year,
+    state.week,
+    state.weekday,
+    state.scheduleRevisionKey || "",
+    automaticCalculatorHalfHourKey(),
+    automaticCalculatorProfileKey(),
+  ].join("|");
+}
+
+function scheduleAutomaticCalculatorRefresh(delay = 250, { force = false } = {}) {
+  clearTimeout(automaticCalculatorState.timer);
+  automaticCalculatorState.timer = setTimeout(() => {
+    automaticCalculatorState.timer = null;
+    void loadAutomaticCalculatorResults({ force });
+  }, delay);
+}
+
+async function loadAutomaticCalculatorResults({ force = false } = {}) {
+  if (!state.calculatorProfile?.calculators?.length) {
+    state.automaticCalculatorResults = [];
+    state.automaticCalculatorLoading = false;
+    state.automaticCalculatorError = "";
+    automaticCalculatorState.loadedKey = automaticCalculatorRequestKey();
+    renderCalculator();
+    return;
+  }
+  const requestKey = automaticCalculatorRequestKey();
+  if (!force && automaticCalculatorState.loadedKey === requestKey && !state.automaticCalculatorError) {
+    renderCalculator();
+    return;
+  }
+  const requestSeq = ++automaticCalculatorState.requestSeq;
+  state.automaticCalculatorLoading = true;
+  state.automaticCalculatorError = "";
+  renderCalculator();
+  try {
+    const result = await api.get(
+      `/api/schedule/calculator/automatic?year=${state.year}&week=${state.week}&weekday=${state.weekday}`,
+      { skipCache: true },
+    );
+    if (requestSeq !== automaticCalculatorState.requestSeq || requestKey !== automaticCalculatorRequestKey()) return;
+    state.automaticCalculatorResults = Array.isArray(result.calculators) ? result.calculators : [];
+    automaticCalculatorState.loadedKey = requestKey;
+  } catch (error) {
+    if (requestSeq !== automaticCalculatorState.requestSeq) return;
+    state.automaticCalculatorResults = [];
+    state.automaticCalculatorError = error.message || "Kunde inte beräkna automatiska kalkyler.";
+  } finally {
+    if (requestSeq === automaticCalculatorState.requestSeq) {
+      state.automaticCalculatorLoading = false;
+      renderCalculator();
+    }
+  }
+}
+
+function setupCalculatorToolbar() {
+  document.getElementById("calcAddAutomaticBtn")?.addEventListener("click", () => openCalculatorModal());
+  document.getElementById("calcImportSearch")?.addEventListener("input", (event) => {
+    state.calculatorImportSearch = event.target.value;
+    updateCalculatorToolbar();
+  });
+  document.getElementById("calcImportUser")?.addEventListener("change", () => updateCalculatorToolbar());
+  document.getElementById("calcImportBtn")?.addEventListener("click", async () => {
+    const select = document.getElementById("calcImportUser");
+    const userId = select?.value;
+    if (!userId) return;
+    try {
+      await importCalculatorProfile(userId);
+    } catch (error) {
+      showToast(error.message || "Kunde inte hämta bemanningskalkyler", "error");
+    }
+  });
+}
+
+function openCalculatorModal(existing = null) {
+  const isEdit = Boolean(existing);
+  const calc = existing || { name: "", process: "", company: "", zone: "", pick_days: 0 };
+  const options = state.calculatorProcessOptions || [];
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal">
+      <h2>${isEdit ? "Ändra automatisk kalkyl" : "Ny automatisk kalkyl"}</h2>
+      <label>Namn
+        <input id="calcName" value="${escapeHtml(calc.name || "")}" />
+      </label>
+      <label>Process
+        <select id="calcProcess" ${options.length ? "" : "disabled"}>
+          <option value="">Välj process</option>
+          ${options.map((option) => `
+            <option value="${escapeHtml(option.value)}" ${option.value === calc.process ? "selected" : ""}>${escapeHtml(option.label || option.value)}</option>
+          `).join("")}
+        </select>
+      </label>
+      <label>Bolag
+        <input id="calcCompany" value="${escapeHtml(calc.company || "")}" />
+      </label>
+      <label>Zon
+        <input id="calcZone" value="${escapeHtml(calc.zone || "")}" />
+      </label>
+      <label>Plockdagar
+        <input id="calcPickDays" type="number" step="1" value="${escapeHtml(calc.pick_days ?? 0)}" />
+      </label>
+      <div class="actions">
+        <button type="button" id="calcCancel">Avbryt</button>
+        <button type="button" id="calcSave">Spara</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector("#calcCancel").addEventListener("click", close);
+  backdrop.querySelector("#calcSave").addEventListener("click", async () => {
+    const next = {
+      id: existing?.id || `calc-${Date.now()}`,
+      name: backdrop.querySelector("#calcName").value.trim(),
+      process: backdrop.querySelector("#calcProcess").value.trim(),
+      company: backdrop.querySelector("#calcCompany").value.trim().toUpperCase(),
+      zone: backdrop.querySelector("#calcZone").value.trim().toUpperCase(),
+      pick_days: Number.parseInt(backdrop.querySelector("#calcPickDays").value, 10) || 0,
+    };
+    if (!next.name || !next.process || !next.company || !next.zone) {
+      showToast("Namn, process, bolag och zon krävs", "warn");
+      return;
+    }
+    const calculators = [...(state.calculatorProfile.calculators || [])];
+    const index = calculators.findIndex((item) => item.id === next.id);
+    if (index >= 0) calculators[index] = next;
+    else calculators.push(next);
+    try {
+      await saveCalculatorProfile({ version: 1, calculators });
+      showToast("Bemanningskalkyl sparad", "success");
+      close();
+    } catch (error) {
+      showToast(error.message || "Kunde inte spara kalkylen", "error");
+    }
+  });
+  setTimeout(() => backdrop.querySelector("#calcName")?.focus());
+}
+
+async function deleteAutomaticCalculator(calcId) {
+  const calc = (state.calculatorProfile.calculators || []).find((item) => item.id === calcId);
+  if (!calc) return;
+  if (!confirm(`Ta bort kalkylen "${calc.name}"?`)) return;
+  const calculators = (state.calculatorProfile.calculators || []).filter((item) => item.id !== calcId);
+  try {
+    await saveCalculatorProfile({ version: 1, calculators });
+    showToast("Bemanningskalkyl borttagen", "success");
+  } catch (error) {
+    showToast(error.message || "Kunde inte ta bort kalkylen", "error");
+  }
 }
 
 function appendActivityOptions(select, includeActivityIds = []) {
@@ -1802,9 +2355,10 @@ function effectiveActivityIdForTd(td) {
   const hour = Number(td.dataset.hour);
   const segments = segmentsForHour(personId, hour);
   if (isSplitHour(segments)) {
-    const first = effectiveActivityIdForRange(personId, hour, 0, 30);
-    const second = effectiveActivityIdForRange(personId, hour, 30, 60);
-    return first != null && first === second ? first : null;
+    const values = splitRangesForSegments(segments).map((range) =>
+      effectiveActivityIdForRange(personId, hour, range.minute_start, range.minute_end)
+    );
+    return values.length > 0 && values.every((value) => value != null && value === values[0]) ? values[0] : null;
   }
   return effectiveActivityIdForRange(personId, hour, 0, 60);
 }
@@ -1813,6 +2367,17 @@ function effectiveActivityIdForFocus() {
   if (!state.focusedCell) return null;
   const { personId, hour, minuteStart, minuteEnd } = state.focusedCell;
   return effectiveActivityIdForRange(personId, hour, minuteStart, minuteEnd);
+}
+
+function splitDurationsForRanges(ranges) {
+  return (ranges || []).map((range) => Number(range.minute_end) - Number(range.minute_start));
+}
+
+function formatMinuteList(values) {
+  const textValues = (values || []).map((value) => String(value));
+  if (textValues.length <= 1) return textValues[0] || "";
+  if (textValues.length === 2) return `${textValues[0]} och ${textValues[1]}`;
+  return `${textValues.slice(0, -1).join(", ")} och ${textValues[textValues.length - 1]}`;
 }
 
 function openSelectPicker(select) {
@@ -1831,6 +2396,128 @@ function openSelectPicker(select) {
   try {
     select.click();
   } catch (e) {}
+}
+
+function requestScheduleSplitMinutes(defaultMinutes = DEFAULT_SPLIT_MINUTES) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal schedule-split-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleSplitTitle">
+        <div class="schedule-split-heading">
+          <h2 id="scheduleSplitTitle">Dela timme</h2>
+          <div class="schedule-split-mode" role="group" aria-label="Antal delar">
+            <button type="button" data-split-parts="2">1/2</button>
+            <button type="button" data-split-parts="3">1/3</button>
+            <button type="button" data-split-parts="4">1/4</button>
+          </div>
+        </div>
+        <div id="scheduleSplitFields" class="schedule-split-fields"></div>
+        <p class="note" id="scheduleSplitHint"></p>
+        <div class="actions">
+          <button type="button" id="scheduleSplitCancel">Avbryt</button>
+          <button type="button" class="primary" data-enter-default id="scheduleSplitContinue">Fortsätt</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    let partCount = MIN_SPLIT_PARTS;
+    const boundaryValues = new Map(
+      [2, 3, 4].map((count) => [
+        count,
+        defaultSplitBoundaries(count, defaultMinutes).map((value) => String(value)),
+      ])
+    );
+    const fields = backdrop.querySelector("#scheduleSplitFields");
+    const hint = backdrop.querySelector("#scheduleSplitHint");
+    const modeButtons = Array.from(backdrop.querySelectorAll("[data-split-parts]"));
+    const close = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+    const inputs = () => Array.from(fields.querySelectorAll("input[data-split-boundary]"));
+    const parsedBoundaries = () => inputs().map((input) => Number.parseInt(String(input.value || "").trim(), 10));
+    const persistValues = () => {
+      boundaryValues.set(partCount, inputs().map((input) => String(input.value || "").trim()));
+    };
+    const focusFirstInput = () => {
+      const input = inputs()[0];
+      if (!input) return;
+      input.focus();
+      input.select();
+    };
+    const updateHint = () => {
+      const ranges = splitSegmentsForBoundaries(parsedBoundaries(), partCount);
+      hint.textContent = ranges
+        ? `Delarna blir ${formatMinuteList(splitDurationsForRanges(ranges))} minuter.`
+        : (partCount === 2 ? "Skriv ett heltal mellan 1 och 59." : "Skriv stigande minuter mellan 1 och 59.");
+    };
+    const renderFields = (selectFirst = false) => {
+      modeButtons.forEach((button) => {
+        const isActive = Number(button.dataset.splitParts) === partCount;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      const values = boundaryValues.get(partCount) || defaultSplitBoundaries(partCount).map((value) => String(value));
+      if (partCount === 2) {
+        fields.innerHTML = `
+          <label>Minuter i första delen
+            <input id="scheduleSplitMinutesInput" data-split-boundary="0" type="text" inputmode="numeric" autocomplete="off" value="${escapeHtml(values[0] || DEFAULT_SPLIT_MINUTES)}" />
+          </label>
+        `;
+      } else {
+        fields.innerHTML = `
+          <div class="schedule-split-boundaries">
+            ${values.map((value, index) => `
+              <label>Början del ${index + 2}
+                <input data-split-boundary="${index}" type="text" inputmode="numeric" autocomplete="off" value="${escapeHtml(value)}" />
+              </label>
+            `).join("")}
+          </div>
+        `;
+      }
+      inputs().forEach((input) => input.addEventListener("input", () => {
+        persistValues();
+        updateHint();
+      }));
+      updateHint();
+      if (selectFirst) setTimeout(focusFirstInput, 0);
+    };
+    const submit = () => {
+      persistValues();
+      const ranges = splitSegmentsForBoundaries(parsedBoundaries(), partCount);
+      if (!ranges) {
+        showToast(
+          partCount === 2
+            ? "Skriv minuter för första delen, 1-59."
+            : "Skriv stigande minutstarter mellan 1 och 59.",
+          "warn"
+        );
+        focusFirstInput();
+        updateHint();
+        return;
+      }
+      close(ranges);
+    };
+
+    backdrop.querySelector("#scheduleSplitCancel").addEventListener("click", () => close(null));
+    backdrop.querySelector("#scheduleSplitContinue").addEventListener("click", submit);
+    modeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        persistValues();
+        partCount = normalizeSplitPartCount(button.dataset.splitParts);
+        renderFields(true);
+      });
+    });
+    backdrop.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(null);
+      }
+    });
+    renderFields(true);
+  });
 }
 
 function openFullHourSelect(e, td) {
@@ -1867,7 +2554,7 @@ function openSplitSegmentSelect(e, td, part, minuteStart, minuteEnd) {
   setTimeout(() => openSelectPicker(select), 0);
 }
 
-function toggleFullHourSplitFromEvent(e, td) {
+async function toggleFullHourSplitFromEvent(e, td) {
   e.preventDefault();
   e.stopPropagation();
   if (scheduleIsReadOnly()) {
@@ -1880,7 +2567,9 @@ function toggleFullHourSplitFromEvent(e, td) {
     return;
   }
   focusSegment(td, td, 0, 60);
-  void toggleHourSplit(td, 0);
+  const splitRanges = await requestScheduleSplitMinutes(DEFAULT_SPLIT_MINUTES);
+  if (splitRanges == null) return;
+  void toggleHourSplit(td, 0, splitRanges);
 }
 
 function toggleSplitSegmentFromEvent(e, td, part, minuteStart, minuteEnd) {
@@ -1914,6 +2603,14 @@ function splitPartFromPoint(td, clientX, clientY) {
   const parts = Array.from(td.querySelectorAll(".hour-segment"));
   if (parts.length <= 1) return parts[0] || null;
 
+  const ranges = splitRangesForSegments(segmentsForHour(Number(td.dataset.personId), Number(td.dataset.hour)));
+  if (ranges.length >= 2) {
+    const rect = td.getBoundingClientRect();
+    const minuteAtPoint = Math.max(0, Math.min(59.999, ((clientX - rect.left) / Math.max(1, rect.width)) * 60));
+    const index = ranges.findIndex((range) => minuteAtPoint >= range.minute_start && minuteAtPoint < range.minute_end);
+    return parts[Math.max(0, index)] || parts[0];
+  }
+
   const rect = td.getBoundingClientRect();
   return clientX >= rect.left + (rect.width / 2) ? parts[1] : parts[0];
 }
@@ -1928,7 +2625,7 @@ function rangeFromSegmentPart(part) {
 
 function targetRangeFromPoint(td, clientX, clientY) {
   if (!td || td.dataset.split !== "1") return { ...FULL_SEGMENT };
-  return rangeFromSegmentPart(splitPartFromPoint(td, clientX, clientY)) || { ...HALF_SEGMENTS[0] };
+  return rangeFromSegmentPart(splitPartFromPoint(td, clientX, clientY)) || firstSplitRangeForTd(td);
 }
 
 function dragCellKeyForTd(td) {
@@ -2000,6 +2697,7 @@ function renderFullHourCell(td, segment, isScheduled) {
     ? explicitActivityId
     : (showScheduledDefault ? scheduledActivityId : null);
   setSelectActivityValue(select, selectedActivityId);
+  applyActivityCapacityToSelect(select, personId, selectedActivityId);
   select.dataset.minuteStart = "0";
   select.dataset.minuteEnd = "60";
   select.dataset.version = String(segment?.version || 0);
@@ -2025,7 +2723,7 @@ function renderFullHourCell(td, segment, isScheduled) {
   td.appendChild(select);
   if (showScheduledDefault && scheduledActivityId != null) {
     td.classList.add("with-display-label");
-    td.appendChild(buildDisplayLabel(activityLabel(scheduledActivityId), "cell-display-label"));
+    td.appendChild(buildDisplayLabel(activityLabelWithCapacity(scheduledActivityId, personId), "cell-display-label"));
   }
 }
 
@@ -2052,15 +2750,16 @@ function renderSplitHourCell(td, segments, isScheduled) {
   const scheduledActivityId = isScheduled ? scheduledActivityIdForHour(personId, hour) : null;
   if (segments.some((segment) => isForeignLockedSegment(segment))) {
     td.classList.add("locked-cell");
-    td.title = "En eller flera halvtimmar är låsta av annan användare";
+    td.title = "En eller flera delar är låsta av annan användare";
   }
 
-  HALF_SEGMENTS.forEach(({ minute_start, minute_end }) => {
+  splitRangesForSegments(segments).forEach(({ minute_start, minute_end }) => {
     const segment = currentSegment(personId, hour, minute_start, minute_end);
     const part = document.createElement("div");
     part.className = "hour-segment";
     part.dataset.minuteStart = String(minute_start);
     part.dataset.minuteEnd = String(minute_end);
+    part.style.flex = `${Math.max(1, minute_end - minute_start)} 1 0`;
     part.tabIndex = -1;
     const locked = isForeignLockedSegment(segment);
     if (locked) {
@@ -2090,6 +2789,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
       ? segment.activity_id
       : (!segment.empty_override && scheduledActivityId != null ? scheduledActivityId : null);
     setSelectActivityValue(select, selectedActivityId);
+    applyActivityCapacityToSelect(select, personId, selectedActivityId);
     select.dataset.minuteStart = String(minute_start);
     select.dataset.minuteEnd = String(minute_end);
     select.dataset.version = String(segment.version || 0);
@@ -2124,7 +2824,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
     part.appendChild(select);
     if (segment.activity_id == null && !segment.empty_override && scheduledActivityId != null) {
       part.classList.add("with-display-label");
-      part.appendChild(buildDisplayLabel(activityLabel(scheduledActivityId), "hour-segment-label"));
+      part.appendChild(buildDisplayLabel(activityLabelWithCapacity(scheduledActivityId, personId), "hour-segment-label"));
     }
     wrapper.appendChild(part);
   });
@@ -2141,7 +2841,7 @@ function renderHourCell(td) {
   const segments = sortSegments(segmentsForHour(personId, hour));
   const isScheduled = isScheduledHour(personId, hour);
 
-  if (isSplitHour(segments) || segments.some((segment) => segment.minute_end - segment.minute_start === 30)) {
+  if (isSplitHour(segments) || segments.some((segment) => isPartialRange(segment))) {
     renderSplitHourCell(td, segments, isScheduled);
     if (td.classList.contains("pending-save")) setHourPending(td, true);
     return;
@@ -2172,6 +2872,22 @@ function selectPersonRow(personId) {
   applySelectedPersonRow();
 }
 
+function renderScheduleProductivityCell(td, person) {
+  td.textContent = "";
+  td.className = "schedule-productivity";
+  td.dataset.personId = String(person?.id || td.dataset.personId || "");
+  const value = state.productivityByPersonId.get(Number(person?.id));
+  if (!value) {
+    td.title = "Ingen avslutad KPI-tid";
+    return;
+  }
+  const span = document.createElement("span");
+  span.className = `schedule-productivity-value ${value.status}`;
+  span.textContent = `${value.percent}%`;
+  td.title = `${Math.round(value.points)} p / ${value.hours.toFixed(1).replace(".", ",")} avslutade KPI-timmar`;
+  td.appendChild(span);
+}
+
 function buildRows() {
   const body = document.getElementById("scheduleBody");
   const fragment = document.createDocumentFragment();
@@ -2193,6 +2909,12 @@ function buildRows() {
     const homeArea = state.areas.find((a) => a.id === person.home_area_id);
     base.textContent = homeArea ? homeArea.name : "";
     tr.appendChild(base);
+
+    const productivity = document.createElement("td");
+    productivity.className = "schedule-productivity";
+    productivity.dataset.personId = person.id;
+    renderScheduleProductivityCell(productivity, person);
+    tr.appendChild(productivity);
 
     HOURS.forEach((hour, colIndex) => {
       const td = document.createElement("td");
@@ -2282,12 +3004,15 @@ function summaryRefreshErrorMessage(error) {
   return `Summeringen kunde inte uppdateras just nu. Orsak: ${compactSummaryErrorReason(error)}. Kontext: ${summaryRefreshContextLabel()}.`;
 }
 
-function scheduleSummaryRefresh(delay = 90) {
+function scheduleSummaryRefresh(delay = 90, { refreshCalculator = false } = {}) {
   clearSummaryRefreshTimer();
   summaryState.timer = setTimeout(() => {
     summaryState.timer = null;
     void refreshSummary();
   }, delay);
+  if (refreshCalculator) {
+    scheduleAutomaticCalculatorRefresh(Math.max(250, delay), { force: true });
+  }
 }
 
 async function onSegmentChange(td, minuteStart, minuteEnd) {
@@ -2331,7 +3056,7 @@ async function onSegmentChange(td, minuteStart, minuteEnd) {
     replaceHourSegments(personId, hour, [...others, updated]);
     renderHourCell(td);
     focusMatchingSegment(td, minuteStart, minuteEnd);
-    scheduleSummaryRefresh();
+    scheduleSummaryRefresh(90, { refreshCalculator: true });
   } catch (err) {
     if (err.status === 409) {
       showToast("Cellen ändrades av någon annan – läste in på nytt", "warn");
@@ -2356,9 +3081,10 @@ function focusMatchingSegment(td, minuteStart, minuteEnd) {
   if (part) focusSegment(td, part, minuteStart, minuteEnd);
 }
 
-async function toggleHourSplit(td, mergeMinuteStart = 0) {
+async function toggleHourSplit(td, mergeMinuteStart = 0, splitRanges = splitSegmentsForMinute(DEFAULT_SPLIT_MINUTES)) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
+  const requestedSplitRanges = splitRangesFromRanges(splitRanges) || splitSegmentsForMinute(DEFAULT_SPLIT_MINUTES);
   if (scheduleIsReadOnly()) {
     showReadOnlyToast();
     return;
@@ -2378,6 +3104,11 @@ async function toggleHourSplit(td, mergeMinuteStart = 0) {
       hour,
       person_id: personId,
       merge_minute_start: mergeMinuteStart,
+      split_minute: requestedSplitRanges[0]?.minute_end || DEFAULT_SPLIT_MINUTES,
+      split_segments: requestedSplitRanges.map((range) => ({
+        minute_start: range.minute_start,
+        minute_end: range.minute_end,
+      })),
       segments: currentSegments.map((segment) => ({
         minute_start: segment.minute_start,
         minute_end: segment.minute_end,
@@ -2390,13 +3121,15 @@ async function toggleHourSplit(td, mergeMinuteStart = 0) {
     replaceHourSegments(personId, hour, updatedSegments);
     renderHourCell(td);
     if (isSplitHour(updatedSegments)) {
-      focusMatchingSegment(td, 0, 30);
-      showToast("Cellen delades i två halvtimmar.");
+      const ranges = splitRangesForSegments(updatedSegments);
+      const firstRange = ranges[0] || requestedSplitRanges[0] || HALF_SEGMENTS[0];
+      focusMatchingSegment(td, firstRange.minute_start, firstRange.minute_end);
+      showToast(`Cellen delades i ${formatMinuteList(splitDurationsForRanges(ranges))} minuter.`);
     } else {
       focusMatchingSegment(td, 0, 60);
       showToast("Cellen slogs ihop till en hel timme.");
     }
-    scheduleSummaryRefresh();
+    scheduleSummaryRefresh(90, { refreshCalculator: true });
   } catch (err) {
     if (err.status === 409) {
       showToast("Cellen ändrades av någon annan – läste in på nytt", "warn");
@@ -2451,7 +3184,7 @@ async function copyFocused(cut = false) {
       replaceHourSegments(personId, hour, [...others, resp.cell]);
       renderHourCell(td);
       focusMatchingSegment(td, minuteStart, minuteEnd);
-      scheduleSummaryRefresh();
+      scheduleSummaryRefresh(90, { refreshCalculator: true });
       showToast(`Klippt: ${clipboardLabel(activityId)}`);
     } catch (e) {
       if (e.status === 409) {
@@ -2499,7 +3232,7 @@ async function pasteFocused() {
     replaceHourSegments(personId, hour, [...others, resp.cell]);
     renderHourCell(td);
     focusMatchingSegment(td, minuteStart, minuteEnd);
-    scheduleSummaryRefresh();
+    scheduleSummaryRefresh(90, { refreshCalculator: true });
     showToast(`Klistrade in: ${clipboardLabel(state.clipboard.activity_id)}`);
   } catch (e) {
     if (e.status === 409) {
@@ -2684,15 +3417,16 @@ function targetSegmentsForDragTarget(td, targetRangesByCell, fallbackTargetRange
   if (td.dataset.split !== "1") {
     return [{ ...FULL_SEGMENT }];
   }
+  const splitRanges = splitRangesForSegments(segmentsForHour(Number(td.dataset.personId), Number(td.dataset.hour)));
   if (isAreaCopy) {
-    return HALF_SEGMENTS.map((segment) => ({ ...segment }));
+    return splitRanges.map((segment) => ({ ...segment }));
   }
 
-  const sourceHalfFallback = sourceMinuteStart >= 30 ? HALF_SEGMENTS[1] : HALF_SEGMENTS[0];
+  const sourceRangeFallback = splitRanges.find((range) => range.minute_start === sourceMinuteStart) || splitRanges[0];
   const fallbackRange = fallbackTargetRange
-    && fallbackTargetRange.minute_end - fallbackTargetRange.minute_start === 30
+    && isPartialRange(fallbackTargetRange)
     ? fallbackTargetRange
-    : sourceHalfFallback;
+    : sourceRangeFallback;
   const range = targetRangesByCell.get(dragCellKeyForTd(td)) || fallbackRange;
   return [{ minute_start: range.minute_start, minute_end: range.minute_end }];
 }
@@ -2779,7 +3513,7 @@ async function finishDrag() {
 
   if (cells.length === 0) return;
   if (cells.length > 200) {
-    showToast("För många celler eller halvor (max 200)", "error");
+    showToast("För många celler eller delar (max 200)", "error");
     return;
   }
 
@@ -2804,11 +3538,11 @@ async function finishDrag() {
     invalidateScheduleAllCache();
     pushScheduleUndo("drag-fyll", snapshots);
     applySegmentsByHourResponse(resp.applied);
-    scheduleSummaryRefresh(0);
+    scheduleSummaryRefresh(0, { refreshCalculator: true });
     showToast(
       lockedTargetCount
-        ? `Fyllde ${cells.length} celler eller halvor, hoppade över ${lockedTargetCount} låsta`
-        : `Fyllde ${cells.length} celler eller halvor`
+        ? `Fyllde ${cells.length} celler eller delar, hoppade över ${lockedTargetCount} låsta`
+        : `Fyllde ${cells.length} celler eller delar`
     );
   } catch (e) {
     restoreHourSnapshots(snapshots);
@@ -2995,9 +3729,160 @@ async function loadAreasAndActivities() {
   setupCalculator();
 }
 
+async function loadScheduleProductivity() {
+  const key = scheduleProductivityKey();
+  scheduleProductivityLoadState.controller?.abort();
+  const controller = new AbortController();
+  scheduleProductivityLoadState.controller = controller;
+  scheduleProductivityLoadState.key = key;
+  state.productivityReport = null;
+  state.productivityByPersonId = new Map();
+  state.productivityKey = key;
+  updateScheduleProductivityCells();
+
+  try {
+    const report = await api.get(
+      `/api/schedule/productivity-summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}`,
+      { signal: controller.signal, cacheTtlMs: 60 * 1000 },
+    );
+    if (controller.signal.aborted || scheduleProductivityLoadState.key !== key) return;
+    state.productivityReport = report;
+    state.productivityByPersonId = buildScheduleProductivityMapFromSummary(report);
+    state.productivityKey = key;
+    updateScheduleProductivityCells();
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+    console.warn("Kunde inte hamta produktivitet till bemanningen", err);
+    if (scheduleProductivityLoadState.key !== key) return;
+    state.productivityReport = null;
+    state.productivityByPersonId = new Map();
+    state.productivityKey = key;
+    updateScheduleProductivityCells();
+  } finally {
+    if (scheduleProductivityLoadState.controller === controller) {
+      scheduleProductivityLoadState.controller = null;
+    }
+  }
+}
+
+async function loadScheduleActivityCapacity({ force = false } = {}) {
+  updateActivityCapacityToggleButton();
+  if (!state.activityCapacityVisible) {
+    activityCapacityState.controller?.abort();
+    state.activityCapacityLoading = false;
+    state.activityCapacityError = "";
+    state.activityCapacityActivityIds = null;
+    updateActivityCapacityToggleButton();
+    rerenderScheduleCellsForCapacity();
+    return;
+  }
+
+  const requestKey = activityCapacityRequestKey();
+  if (!force && state.activityCapacityKey === requestKey && !state.activityCapacityError) {
+    updateActivityCapacityToggleButton();
+    rerenderScheduleCellsForCapacity();
+    return;
+  }
+
+  const requestSeq = ++activityCapacityState.requestSeq;
+  activityCapacityState.controller?.abort();
+  const controller = new AbortController();
+  activityCapacityState.controller = controller;
+  state.activityCapacityLoading = true;
+  state.activityCapacityError = "";
+  state.activityCapacity = { people: {}, activities: {} };
+  state.activityCapacityActivityIds = null;
+  state.activityCapacityKey = requestKey;
+  updateActivityCapacityToggleButton();
+  rerenderScheduleCellsForCapacity();
+
+  try {
+    const result = await api.get(
+      `/api/schedule/activity-capacity?year=${state.year}&week=${state.week}&weekday=${state.weekday}`,
+      { signal: controller.signal, skipCache: true },
+    );
+    if (controller.signal.aborted || requestSeq !== activityCapacityState.requestSeq || requestKey !== activityCapacityRequestKey()) return;
+    state.activityCapacity = {
+      people: result?.people || {},
+      activities: result?.activities || {},
+    };
+    state.activityCapacityActivityIds = normalizeActivityCapacityActivityIds(result?.visible_activity_ids);
+    state.activityCapacityKey = requestKey;
+    state.activityCapacityError = "";
+    rerenderScheduleCellsForCapacity();
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    if (requestSeq !== activityCapacityState.requestSeq) return;
+    state.activityCapacity = { people: {}, activities: {} };
+    state.activityCapacityActivityIds = null;
+    state.activityCapacityError = error.message || "Kunde inte hämta historiskt snitt.";
+    showToast(state.activityCapacityError, "warn");
+    rerenderScheduleCellsForCapacity();
+  } finally {
+    if (activityCapacityState.controller === controller) {
+      activityCapacityState.controller = null;
+    }
+    if (requestSeq === activityCapacityState.requestSeq) {
+      state.activityCapacityLoading = false;
+      updateActivityCapacityToggleButton();
+    }
+  }
+}
+
+function toggleScheduleActivityCapacity() {
+  state.activityCapacityVisible = !state.activityCapacityVisible;
+  writeActivityCapacityVisible(state.activityCapacityVisible);
+  updateActivityCapacityToggleButton();
+  if (state.activityCapacityVisible) {
+    void loadScheduleActivityCapacity({ force: false });
+  } else {
+    activityCapacityState.controller?.abort();
+    state.activityCapacityError = "";
+    rerenderScheduleCellsForCapacity();
+  }
+}
+
+function isActivityCapacityHotkeyEditableTarget(target) {
+  if (!target) return false;
+  const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+  if (!element) return false;
+  return Boolean(element.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function setupActivityCapacityToggle() {
+  state.activityCapacityVisible = readActivityCapacityVisible();
+  updateActivityCapacityToggleButton();
+  document.getElementById("capacityToggleBtn")?.addEventListener("click", () => toggleScheduleActivityCapacity());
+
+  document.addEventListener("keydown", (event) => {
+    if (event.repeat || isActivityCapacityHotkeyEditableTarget(event.target)) return;
+    const key = String(event.key || "").toLowerCase();
+    if (key !== "v" && key !== "h") return;
+    activityCapacityState.pressedKeys.add(key);
+    if (
+      activityCapacityState.pressedKeys.has("v")
+      && activityCapacityState.pressedKeys.has("h")
+      && !activityCapacityState.toggledWhilePressed
+    ) {
+      event.preventDefault();
+      activityCapacityState.toggledWhilePressed = true;
+      toggleScheduleActivityCapacity();
+    }
+  }, true);
+  document.addEventListener("keyup", (event) => {
+    const key = String(event.key || "").toLowerCase();
+    if (key !== "v" && key !== "h") return;
+    activityCapacityState.pressedKeys.delete(key);
+    if (!activityCapacityState.pressedKeys.has("v") && !activityCapacityState.pressedKeys.has("h")) {
+      activityCapacityState.toggledWhilePressed = false;
+    }
+  }, true);
+}
+
 function applyScheduleData(data) {
   state.allPersons = data.persons || [];
   state.lockForeignScheduleCells = !!data.lock_foreign_schedule_cells;
+  state.scheduleRevisionKey = data.revision_key || "";
   refreshPersons();
   setAllSegments(data.cells || []);
   state.scheduledHours = {};
@@ -3018,7 +3903,11 @@ function applyScheduleData(data) {
   buildRows();
   setupScheduleHorizontalScroll();
   refreshCurrentHourHighlight();
+  void loadScheduleProductivity();
   scheduleSummaryRefresh(0);
+  scheduleAutomaticCalculatorRefresh(800);
+  if (state.activityCapacityVisible) void loadScheduleActivityCapacity({ force: false });
+  else updateActivityCapacityToggleButton();
   scheduleNextScheduleRevalidate();
 }
 
@@ -3155,6 +4044,8 @@ async function loadSchedule() {
   if (!state.currentUser) return;
   applyScheduleReadOnlyMode();
   await loadAreasAndActivities();
+  setupCalculatorToolbar();
+  setupActivityCapacityToggle();
 
   const stored = readSelectedDate();
   if (stored) {
@@ -3194,6 +4085,7 @@ async function loadSchedule() {
   };
 
   writeYWDToInputs();
+  await loadCalculatorProfile();
 
   buildHeader();
   await loadSchedule();
@@ -3316,6 +4208,11 @@ async function loadSchedule() {
   });
   document.getElementById("nameFilter").addEventListener("mousedown", (e) => e.stopPropagation());
   document.getElementById("nameFilter").addEventListener("click", (e) => e.stopPropagation());
+  window.setInterval(() => refreshCurrentHourHighlight(), 60 * 1000);
+  window.setInterval(() => {
+    if (selectedScheduleYmdString() === localYmdString()) void loadScheduleProductivity();
+  }, 5 * 60 * 1000);
+  window.setInterval(() => scheduleAutomaticCalculatorRefresh(0), 60 * 1000);
 
   document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
     th.addEventListener("click", (e) => {
@@ -3380,7 +4277,7 @@ function openCopyModal() {
         const undoSnapshots = snapshotHoursFromCells(r.applied || []);
         pushScheduleUndo("kopiera dag", undoSnapshots);
         applySegmentsByHourResponse(r.applied);
-        scheduleSummaryRefresh(0);
+        scheduleSummaryRefresh(0, { refreshCalculator: true });
       }
     } catch (e) {
       showToast("Fel: " + e.message, "error");

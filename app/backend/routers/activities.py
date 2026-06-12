@@ -40,6 +40,18 @@ MAX_IMPORT_BYTES = 5 * 1024 * 1024
 KPI_PROCESS_NAME_MAX_LENGTH = 255
 KPI_PROCESS_NAME_NO_COMPANY_ERROR = "KPI Mål ska bara vara processnamn, utan bolag"
 
+ACTIVITY_WORK_TYPES = {"normal", "vas"}
+ACTIVITY_WORK_TYPE_ALIASES = {
+    "": "normal",
+    "normal": "normal",
+    "arbete": "normal",
+    "work": "normal",
+    "standard": "normal",
+    "vas": "vas",
+    "valueaddedservices": "vas",
+    "valueaddedservice": "vas",
+}
+
 HEADER_ALIASES = {
     "etikett": "label",
     "aktivitet": "label",
@@ -72,6 +84,13 @@ HEADER_ALIASES = {
     "kpiprocessnamn": "kpi_process_name",
     "process": "kpi_process_name",
     "processnamn": "kpi_process_name",
+    "arbetstyp": "work_type",
+    "worktype": "work_type",
+    "servicetype": "work_type",
+    "tjanstetyp": "work_type",
+    "tjansttyp": "work_type",
+    "vastjanst": "work_type",
+    "vas": "work_type",
     "sortering": "sort_order",
     "sort": "sort_order",
     "sortorder": "sort_order",
@@ -86,6 +105,7 @@ class ImportActivityRow:
     area: str | None
     summary_activity: str | None
     kpi_process_name: str | None
+    work_type: str
     sort_order: int | None
 
 
@@ -153,6 +173,26 @@ def _normalize_kpi_process_name(value: object) -> str | None:
     return normalized
 
 
+def _normalize_work_type(value: object) -> str:
+    key = _compact_key(_cell_text(value))
+    work_type = ACTIVITY_WORK_TYPE_ALIASES.get(key, key)
+    if work_type not in ACTIVITY_WORK_TYPES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Arbetstyp måste vara normal eller VAS")
+    return work_type
+
+
+def _parse_work_type(
+    value: str,
+    *,
+    row_number: int,
+    label: str,
+) -> tuple[str, ActivityImportError | None]:
+    try:
+        return _normalize_work_type(value), None
+    except HTTPException as exc:
+        return "normal", ActivityImportError(row=row_number, label=label or None, error=str(exc.detail))
+
+
 def _parse_kpi_process_name(
     value: str,
     *,
@@ -174,7 +214,7 @@ def _parse_activity_import_values(
     for row_number, raw_values in raw_rows:
         values = {
             field: _cell_text(raw_values.get(field))
-            for field in ("business", "label", "area", "summary_activity", "kpi_process_name", "sort_order")
+            for field in ("business", "label", "area", "summary_activity", "kpi_process_name", "work_type", "sort_order")
         }
         if not any(values.values()):
             continue
@@ -201,6 +241,15 @@ def _parse_activity_import_values(
             errors.append(kpi_error)
             continue
 
+        work_type, work_type_error = _parse_work_type(
+            values.get("work_type", ""),
+            row_number=row_number,
+            label=label,
+        )
+        if work_type_error is not None:
+            errors.append(work_type_error)
+            continue
+
         rows.append(
             ImportActivityRow(
                 row_number=row_number,
@@ -209,6 +258,7 @@ def _parse_activity_import_values(
                 area=values.get("area") or None,
                 summary_activity=values.get("summary_activity") or None,
                 kpi_process_name=kpi_process_name,
+                work_type=work_type,
                 sort_order=sort_order,
             )
         )
@@ -226,6 +276,7 @@ def build_activity_import_template_excel() -> bytes:
         "område (frivillig)",
         "summeras som (frivillig)",
         "KPI Mål (frivillig)",
+        "arbetstyp (frivillig)",
         "sortering (frivillig)",
     ])
     sheet.column_dimensions["A"].width = 22
@@ -233,7 +284,8 @@ def build_activity_import_template_excel() -> bytes:
     sheet.column_dimensions["C"].width = 24
     sheet.column_dimensions["D"].width = 28
     sheet.column_dimensions["E"].width = 22
-    sheet.column_dimensions["F"].width = 14
+    sheet.column_dimensions["F"].width = 18
+    sheet.column_dimensions["G"].width = 14
     sheet.freeze_panes = "A2"
 
     stream = io.BytesIO()
@@ -322,6 +374,7 @@ def _activity_snapshot(activity: Activity) -> dict:
         "summary_activity_id": activity.summary_activity_id,
         "color": activity.color,
         "category": activity.category,
+        "work_type": activity.work_type,
         "sort_order": activity.sort_order,
         "is_active": activity.is_active,
         "required_competency": activity.required_competency,
@@ -480,6 +533,7 @@ def _import_activity_rows(
             summary_activity_id=summary_activity_id,
             color="#ffffff",
             category="work",
+            work_type=row.work_type,
             sort_order=sort_order,
             is_active=True,
             required_competency=None,
@@ -576,6 +630,7 @@ def create_activity(
     )
     data = payload.model_dump()
     data["kpi_process_name"] = _normalize_kpi_process_name(data.get("kpi_process_name"))
+    data["work_type"] = "normal" if data.get("category") == "absence" else _normalize_work_type(data.get("work_type"))
     data["business_id"] = business_id
     data["code"] = _resolve_activity_code(db, payload, admin, business_id)
     data["summary_activity_id"] = _validate_summary_activity(
@@ -631,6 +686,10 @@ def update_activity(
     data = payload.model_dump(exclude_unset=True)
     if "kpi_process_name" in data:
         data["kpi_process_name"] = _normalize_kpi_process_name(data.get("kpi_process_name"))
+    if "work_type" in data:
+        data["work_type"] = _normalize_work_type(data.get("work_type"))
+    if data.get("category", activity.category) == "absence":
+        data["work_type"] = "normal"
     if "business_id" in data and data["business_id"] != activity.business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Aktivitet kan inte flyttas mellan verksamheter")
     if "area_id" in data and data["area_id"] is not None:

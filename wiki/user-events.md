@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandelser
 status: aktiv
-updated: 2026-06-03
+updated: 2026-06-10
 tags: [anvandare, handelser, toast, state, chat]
 ---
 
@@ -27,7 +27,7 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Tema andras | Ikon/vy byter ljust/morkt | Tema sparas lokalt | Inget fel; per enhet/browser. |
 | Appzoom andras | Hela appytan blir storre/mindre | Anvandaren klickar forstoringsglas minus/plus, trycker `Ctrl+-`, `Ctrl++`, `Ctrl+0` eller anvander `Ctrl+scroll` | Zoomnivan sparas lokalt per browser/app i `flow-app-zoom`. `Ctrl+0` aterstaller till 100%. |
 | Sidebar kollapsas | Bara ikoner syns | Anvandaren klickade hamburgare | Klicka hamburgare igen. |
-| Omradesfokus andras | Berorda vyer filtreras till valt omrade eller alla | MG/GG/AS/EH/Alla toggle | Vaxla fokus nere i sidebar. Bemanning och Oversikt anvander bakgrundscache for snabb vaxling nar perioden redan ar hamtad. `∞` visar alla synliga omraden. |
+| Omradesfokus andras | Berorda register-/schemavyer filtreras till valt omrade eller alla | MG/GG/AS/EH/Alla toggle | Vaxla fokus nere i sidebar. Bemanning och Oversikt anvander bakgrundscache for snabb vaxling nar perioden redan ar hamtad. Produktivitet visar alla personer i verksamheten. `∞` visar alla synliga omraden. |
 | Enter i dialogruta | Primar knapp klickas | Fokus ligger i en modal och anvandaren trycker Enter | Anvands for att spara, skapa eller stanga. Shift+Enter och flerradiga textfalt paverkas inte. |
 | Apphjalp oppnas/stangs | Liten chattpanel visas eller doljs | Anvandaren klickar pratbubbelikonen under omradesfokus | Panelen kan vara oppen medan anvandaren navigerar. |
 | Apphjalp skickar fraga | Fragan laggs i dialogen och svar hamtas | Anvandaren trycker Enter i textfaltet eller klickar `Skicka` | `Shift+Enter` ger ny rad om anvandaren vill skriva flera rader. |
@@ -49,9 +49,9 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Read-only | "Visningslage: du kan se bemanningen men inte andra den." | Rollen har bara `view` | Be admin ge edit eller anvand vyn som laslage. |
 | Last cell | "Cellen ar last eftersom en annan anvandare har fyllt i den." | `lock_foreign_schedule_cells` aktiv och annan anvandare ager cellen | Admin kan andra; annars be agaren/admin. |
 | Versionskonflikt | "Cellen andrades av nagon annan - laste in pa nytt" | Nagon sparade samma cell forst | Upprepa andringen efter omladdning. |
-| Split lyckas | "Cellen delades i tva halvtimmar." | Hogerklick/dubbelklick pa hel cell | Välj aktivitet per halva. |
-| Merge lyckas | "Cellen slogs ihop till en hel timme." | Hogerklick/dubbelklick pa delad cell | Kontrollera aktivitet efter sammanslagning. |
-| Drag for stort | "For manga celler eller halvor (max 200)" | Dragmarkerade for mycket | Dela upp i mindre drag. |
+| Split lyckas | "Cellen delades i X, Y och Z minuter." beroende pa antal delar | Dubbelklick pa hel cell, val av `1/2`, `1/3` eller `1/4` och godkanda minutstarter | Valj aktivitet per del. |
+| Merge lyckas | "Cellen slogs ihop till en hel timme." | Dubbelklick pa delad cell | Kontrollera aktivitet efter sammanslagning. |
+| Drag for stort | "For manga celler eller delar (max 200)" | Dragmarkerade for mycket | Dela upp i mindre drag. |
 | Drag konflikt | "X konflikter - laser om" | Nagra celler hann andras | Kontrollera resultat och gor om vid behov. |
 | Ctrl utan fokus | "Ctrl+C: klicka forst pa en cell" | Ingen fokuserad cell | Klicka/fokusera cell och prova igen. |
 | Undo fel dag | "Byt tillbaka till dagen..." | Undo-stackens andring hor till annan dag | Ga tillbaka till dag dar andringen gjordes. |
@@ -90,14 +90,10 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 
 | Handelse | Text/reaktion | Orsak | Atgard |
 | --- | --- | --- | --- |
-| Saknar underlag | "Saknar produktivitetsunderlag." | En eller flera lokala loggar saknas | Lagg in Plocklogg Full, Translogg och Pallastningslogg. |
-| Beraknar lokalt | "Beraknar produktivitet lokalt..." | Browsern laser stora filer | Vanta; byt inte fil mitt i lasning. |
-| Saknar datum | "Produktivitetsunderlagen saknar datum" | Loggarna kunde inte ge datumnycklar | Kontrollera filtyp/header/datumkolumner. |
-| Saknar data for datum | "Saknar produktivitetsdata for YYYY-MM-DD" | Vald dag finns inte i loggarna | Valj datum som finns i underlaget. |
-| Filuppladdning saknas | "Filuppladdningen ar inte laddad." | `productivityUploads` saknas/JS laddade inte | Ladda om sidan, kontrollera JS-fel. |
-| Okand filtyp | Toast med okand fil | Filnamn/header matchar inte | Anvand ratt exportfil eller slot. |
-| Sammanstalld data uppdaterad | "Sammanstalld data uppdaterad (X nya rader)" | Plocklogg Full, Translogg eller Pallastningslogg sparades lokalt och backend lade till nya observationer i verksamhetens csv.gz-fil | Normalt klart; om X ar 0 fanns raderna redan enligt Radid/Rowid/timestamp-regeln. |
-| Sammanstalld data misslyckas | "Sammanstalld data kunde inte uppdateras..." | Lokal logg sparades men serveruppladdningen nekades eller misslyckades | Kontrollera behorighet `productivity=edit`, serverstatus och forsok igen. |
+| Saknar global snapshot | "Produktivitet kunde inte hamtas..." | API-snapshot saknas, ar ofullstandig eller extern datakalla ar inte konfigurerad | Kontrollera snapshot-/backfillstatus och extern datakalla. |
+| Saknade dagar | Status visar att ett antal dagar saknar snapshot och fylls av historiken | Historik-backfillen har inte hunnit hamta alla datum i perioden | Vanta pa backfill eller valj en period med sparad data. |
+| Nodfokus | Klick pa omrade, aktivitet eller person | Tradet flyttar fokus till vald gren | Klicka breadcrumbs eller `Helbild` for att backa. |
+| Export | `Exportera flowchart` oppnar nivaval och laddar sedan ner SVG | Anvandaren vill spara aktuell fokuserad vy med valda nivaer | Filen skapas lokalt i browsern utan serveruppladdning. |
 
 ## Apphjalp
 

@@ -42,7 +42,7 @@ ACTIVITIES: list[dict] = [
     {"code": "GG_STOD",       "label": "GG Stöd",       "area": "GG", "color": "#e0e0e0", "sort_order": 19},
     {"code": "GG_LEDARE",     "label": "GG Ledare",     "area": "GG", "color": "#fff3a3", "sort_order": 20},
     {"code": "GG_OP",         "label": "GG OP",         "area": "GG", "color": "#bfe1c5", "sort_order": 21},
-    {"code": "GG_VAS",        "label": "GG VAS",        "area": "GG", "color": "#b3d9ba", "sort_order": 22},
+    {"code": "GG_VAS",        "label": "GG VAS",        "area": "GG", "color": "#b3d9ba", "work_type": "vas", "sort_order": 22},
     {"code": "GG_VK",         "label": "GG VK",         "area": "GG", "color": "#c1d8ff", "sort_order": 23},
 
     # Mestergruppen
@@ -54,7 +54,7 @@ ACTIVITIES: list[dict] = [
     {"code": "MG_SKJUTARE",   "label": "MG Skjutare",   "area": "MG", "color": "#ffcccb", "sort_order": 36},
     {"code": "MG_SKRYMME",    "label": "MG Skrymme",    "area": "MG", "color": "#ffe066", "sort_order": 37},
     {"code": "MG_STOD",       "label": "MG Stöd",       "area": "MG", "color": "#e6b3b3", "sort_order": 38},
-    {"code": "MG_VAS",        "label": "MG VAS",        "area": "MG", "color": "#ffd1a3", "sort_order": 39},
+    {"code": "MG_VAS",        "label": "MG VAS",        "area": "MG", "color": "#ffd1a3", "work_type": "vas", "sort_order": 39},
     {"code": "MG_AL",         "label": "MG AL",         "area": "MG", "color": "#ffbe7a", "sort_order": 40},
     {"code": "MG_PL",         "label": "MG PL",         "area": "MG", "color": "#ffa873", "sort_order": 41},
 
@@ -63,13 +63,13 @@ ACTIVITIES: list[dict] = [
     {"code": "AS_STOD",       "label": "AS Stöd",       "area": "AS", "color": "#d4c5ff", "sort_order": 52},
     {"code": "AS_DEK",        "label": "AS Dek",        "area": "AS", "color": "#a89cff", "sort_order": 53},
     {"code": "AS_UTLAST",     "label": "AS Utlast",     "area": "AS", "color": "#b3a3e6", "sort_order": 54},
-    {"code": "AS_VAS",        "label": "AS VAS",        "area": "AS", "color": "#c2b5ff", "sort_order": 55},
+    {"code": "AS_VAS",        "label": "AS VAS",        "area": "AS", "color": "#c2b5ff", "work_type": "vas", "sort_order": 55},
 
     # E-Handel
     {"code": "EH_PLOCK",      "label": "EH Plock",      "area": "EH", "color": "#bfdbfe", "sort_order": 61},
     {"code": "EH_PACK",       "label": "EH Pack",       "area": "EH", "color": "#dbeafe", "sort_order": 62},
     {"code": "EH_STOD",       "label": "EH Stöd",       "area": "EH", "color": "#e0f2fe", "sort_order": 63},
-    {"code": "EH_VAS",        "label": "EH VAS",        "area": "EH", "color": "#bae6fd", "sort_order": 64},
+    {"code": "EH_VAS",        "label": "EH VAS",        "area": "EH", "color": "#bae6fd", "work_type": "vas", "sort_order": 64},
 
     # Frånvaro & övrigt
     {"code": "LEDIG", "label": "Ledig", "area": None, "color": "#dddddd", "category": "absence", "sort_order": 91},
@@ -163,6 +163,7 @@ def seed_activities(db: Session, business: Business, areas: dict[str, Area], spe
             "area_id": area_id,
             "color": spec["color"],
             "category": spec.get("category", "work"),
+            "work_type": spec.get("work_type", "normal"),
             "sort_order": spec["sort_order"],
             "is_active": True,
         }

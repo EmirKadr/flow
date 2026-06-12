@@ -10,6 +10,14 @@ from sqlalchemy.orm import Session
 from ..deps import get_current_user, get_db
 from ..home_activity import build_home_activity_resolver
 from ..models import Activity, Area, Business, Person, ScheduleCell, User
+from ..productivity_kpi_rules import build_person_productivity_report_from_files
+from ..productivity_service import ProductivitySourceError
+from ..productivity_sync import (
+    ProductivitySyncError,
+    productivity_backfill_status,
+    productivity_snapshot_files,
+    productivity_snapshot_status,
+)
 from ..schemas import (
     PersonalActivityTotal,
     PersonalPersonOut,
@@ -21,6 +29,8 @@ from ..schemas import (
 )
 from ..template_service import get_template_hours_map_for_dates
 from ..user_access import PERSON_ROLE, can_view_personal_pages, is_super_user, user_roles
+from ..workflow_data import productivity_api_source_map, sources_available
+from .productivity import _aggregate_person_activity_stats, _date_span, _period_bounds
 from .schedule import HOURS, _covered_intervals, _schedule_date, _uncovered_intervals
 
 router = APIRouter(prefix="/api/personal", tags=["personal"])
@@ -374,6 +384,116 @@ def get_personal_schedule(
     return _build_schedule_payload(db, person, selected_year, selected_week)
 
 
+def _empty_personal_productivity_stats(
+    *,
+    period_type: str,
+    period_label: str,
+    period_start: date,
+    period_end: date,
+    requested_days: int,
+    status_text: str,
+    missing_dates: list[str],
+    errors: list[dict],
+) -> dict:
+    return {
+        "status": status_text,
+        "period": {
+            "type": period_type,
+            "label": period_label,
+            "start_date": period_start.isoformat(),
+            "end_date": period_end.isoformat(),
+            "requested_days": requested_days,
+        },
+        "dates": [],
+        "missing_dates": missing_dates,
+        "source_status": [],
+        "errors": errors[:20],
+        "activities": [],
+        "summary": {},
+    }
+
+
+def _personal_productivity_stats(db: Session, person: Person, *, period: str, anchor_date: date) -> dict:
+    period_start, period_end, period_label = _period_bounds(
+        period,
+        anchor_date=anchor_date,
+        start_date=None,
+        end_date=None,
+    )
+    days = _date_span(period_start, period_end)
+    period_type = str(period or "week").strip().lower()
+
+    api_sources_ready = sources_available(tuple(productivity_api_source_map().values()))
+    if not api_sources_ready:
+        return _empty_personal_productivity_stats(
+            period_type=period_type,
+            period_label=period_label,
+            period_start=period_start,
+            period_end=period_end,
+            requested_days=len(days),
+            status_text="unavailable",
+            missing_dates=[day.isoformat() for day in days],
+            errors=[],
+        )
+
+    reports: list[dict] = []
+    missing_dates: list[str] = []
+    errors: list[dict] = []
+    source_status: list[dict] = []
+
+    for day in days:
+        sync_status = productivity_snapshot_status(day)
+        if not sync_status.get("ready"):
+            missing_dates.append(day.isoformat())
+            source_status.append({"date": day.isoformat(), "status": "missing", "source": sync_status.get("source")})
+            continue
+        try:
+            report = build_person_productivity_report_from_files(
+                db,
+                productivity_snapshot_files(day),
+                report_date=day,
+                business_id=person.business_id,
+                sync=sync_status,
+            )
+            reports.append(report)
+            source_status.append({"date": day.isoformat(), "status": "ok", "source": sync_status.get("source")})
+        except (ProductivitySourceError, ProductivitySyncError, OSError, ValueError) as exc:
+            missing_dates.append(day.isoformat())
+            source_status.append({"date": day.isoformat(), "status": "error", "source": sync_status.get("source")})
+            errors.append({"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)})
+
+    aggregate = _aggregate_person_activity_stats(reports, person.id)
+    if reports and missing_dates:
+        status_text = "partial"
+    elif reports:
+        status_text = "ok"
+    else:
+        status_text = "missing"
+    return {
+        "status": status_text,
+        "period": {
+            "type": period_type,
+            "label": period_label,
+            "start_date": period_start.isoformat(),
+            "end_date": period_end.isoformat(),
+            "requested_days": len(days),
+        },
+        "dates": [str(report.get("date") or "") for report in reports],
+        "missing_dates": missing_dates,
+        "source_status": source_status,
+        "errors": errors[:20],
+        **aggregate,
+    }
+
+
+def _personal_productivity_data(db: Session, person: Person, selected_date: date) -> dict:
+    return {
+        "day": _personal_productivity_stats(db, person, period="day", anchor_date=selected_date),
+        "week": _personal_productivity_stats(db, person, period="week", anchor_date=selected_date),
+        "backfill": productivity_backfill_status(),
+    }
+
+
 @router.get("/productivity", response_model=PersonalProductivityOut)
 def get_personal_productivity(
     selected_date: date | None = Query(None, alias="date"),
@@ -394,4 +514,5 @@ def get_personal_productivity(
         person=schedule.person,
         day=matching_day,
         summary=schedule.summary,
+        productivity=_personal_productivity_data(db, person, day),
     )

@@ -7,7 +7,7 @@ tags: [personer, register, ui, import]
 
 # Personer
 
-Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, sortering/filter, mjuk borttagning och personlig veckomall. Nya personer far implicit schemamall forst fran sitt skapandedatum, sa gamla veckor inte fylls med standardtimmar.
+Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, sortering/filter, mjuk borttagning, personlig veckomall och personnara produktivitetssnitt via dubbelklick pa en personrad. Nya personer far implicit schemamall forst fran sitt skapandedatum, sa gamla veckor inte fylls med standardtimmar.
 
 ## Knappar och kontroller
 
@@ -26,6 +26,7 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 | Klick pa Hemomrade | Inline-select | Sparar nytt hemomrade | `PUT /api/persons/{id}` | Omrade styr sort/fokus och standardplacering. |
 | Klick pa Huvudaktivitet | Inline-select | Sparar huvudaktivitet | `PUT /api/persons/{id}` | Visas i schema som personens standardaktivitet. |
 | Klick pa Sortering | Inline-number | Sparar sorteringsnummer | `PUT /api/persons/{id}` | Ctrl+Z kan angra senaste personandring. |
+| Dubbelklick pa personrad | Oppnar produktivitetsdialog | Hamter personens aktivitetssnitt for vecka som standard; anvandaren kan byta till manad, ar eller datumperiod | `GET /api/productivity/persons/{id}` | Kraver produktivitetsatkomst; dagar utan global snapshot visas som saknade och fylls av bakgrundshamtningen. |
 | Dra personnamn i Bemanning/Oversikt | Drar ett namn upp eller ned i planeringsvyn | Uppdaterar samma sorteringsnummer som visas i Personer | `PUT /api/persons/sort-order` | Kraver Personsortering=Redigera. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. |
 | Schema | Oppnar veckomallmodal | Hamter/sparar personlig mall | `GET/PUT /api/persons/{id}/schedule` | Tider maste vara 06-24 och start < slut. |
 | Ta bort | Bekraftar borttagning | Inaktiverar person | `DELETE /api/persons/{id}` | Texten sager "permanent", men backend anvander soft delete. |
@@ -65,6 +66,17 @@ visas personen utan standardtimmar, aven om personen har fast veckomall.
 Explicita schemaceller som nagon faktiskt har lagt in pa gamla datum visas
 fortfarande.
 
+## Produktivitetsdialog
+
+Dubbelklick pa en personrad oppnar en modal med personens snitt per KPI-aktivitet.
+Dialogen visar vecka som standard och kan vaxla till manad, ar eller egen
+datumperiod med `Fran`/`Till`. Snittet raknas viktat som faktiska KPI-poang
+dividerat med planerade KPI-poang for personens schemalagda KPI-tid pa
+aktiviteten. Tabellen visar ocksa poang per timme, KPI-timmar, poang, perioder
+och diffar. Dagar som annu inte har en global produktivitetssnapshot listas inte
+som aktivitetstid; statusraden visar hur manga dagar som saknas och de fylls
+successivt av Produktivitetens globala historik-backfill.
+
 ## Importregler
 
 - Direktimporten `Flera nya personer` har samma falt som Excelmallen: verksamhet vid behov, namn, NoMan, hemomrade, huvudaktivitet och sortering.
@@ -82,7 +94,7 @@ fortfarande.
 | --- | --- |
 | "Varfor syns inte importknapparna?" | Anvandaren saknar edit-atkomst till `personImport`. |
 | "Varfor gick importen inte igenom?" | Kontrollera filstorlek/rubriker vid Excel, eller radfel och dubbletter i resultatmodalen vid direktimport. |
-| "Vad anvands NoMan till?" | Det ar ett obligatoriskt WMS-anvandarnamn for nya personer. Det sparas och kan importeras, men anvands inte av planering eller forecast annu. |
+| "Vad anvands NoMan till?" | Det ar ett obligatoriskt WMS-anvandarnamn for nya personer. Det sparas, kan importeras och anvands av Produktivitet for att matcha externa loggrader till Flow-personer. |
 | "Varfor kan jag inte spara ny person?" | Kontrollera att bade Namn och NoMan ar ifyllda. NoMan ar obligatoriskt i ny person, direktimport och Excelimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
 | "Varfor far den nya personen inga timmar i gamla veckor?" | Implicita malltimmar borjar pa personens skapandedatum. Gamla datum visar bara explicita celler som lagts in manuellt. |

@@ -1,7 +1,7 @@
 ---
 title: Felkoder och felmeddelanden
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-10
 tags: [felkoder, http, support, api, chat]
 ---
 
@@ -69,13 +69,14 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | Status | Text | Orsak | Atgard |
 | --- | --- | --- | --- |
 | 400 | "Timme maste vara 6-23" | Hour utanfor tillatna tider | Anvand synliga timmar 06-23. |
-| 400 | "Ogiltigt segment..." | Segment ar inte 0-60, 0-30 eller 30-60 | Dela/merge via UI, skicka inte eget segment. |
-| 400 | "Duplicerade segment i samma timme." | Två segment med samma start | Ladda om, undvik dubbel bulk. |
+| 400 | "Ogiltigt segment..." | Segment ligger inte inom 0-60 eller startar inte fore slut | Dela/merge via UI, skicka inte eget segment. |
+| 400 | "Duplicerade segment i samma timme." | Flera segment har samma start/slut | Ladda om, undvik dubbel bulk. |
+| 400 | "Delningen maste ha 2-4 sammanhangande delar..." | Split-payload har for fa/manga delar, glapp, overlapp eller minut utanfor 0-60 | Dela via UI och anvand stigande minutstarter mellan 1 och 59. |
 | 400 | "Kan bara dela en tom timme eller en hel timcell." | Split begard pa ogiltig cell | Ladda om eller merge forst. |
 | 400 | "Cellen ar redan delad eller har ogiltigt segmentformat." | Merge/split stammer inte med serverns segment | Ladda om dagen. |
 | 400 | "For manga celler (max 200)" | Bulk/drag for stort | Dela upp draget. |
 | 400 | "For manga timmar (max 200)" | Undo/restore for stor payload | Gora mindre operationer. |
-| 400 | "Undo kan bara aterstalla..." | Undo-snapshot har ogiltigt format | Ladda om; rapportera om det upprepas. |
+| 400 | "Undo kan bara aterstalla..." | Undo-snapshot har ogiltigt segmentformat | Ladda om; rapportera om det upprepas. |
 | 403 | Cell-last detail | Annan anvandare har fyllt cellen och lasning ar aktiv | Admin eller cellens agare far andra. |
 | 404 | "Person hittades inte" | Personen ar borttagen/inaktuell i state | Ladda om sidan. |
 | 404 | "Aktivitet hittades inte" | Aktiviteten saknas/inaktuell i state | Ladda om aktiviteter/sidan. |
@@ -128,7 +129,9 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 404 | "Produktivitetsmappen finns inte..." | Serverns data-dir saknas | Kontrollera serverkonfiguration. |
 | 404 | "Saknar referensfil med prefix..." | KPI eller referensfil saknas | Ladda upp KPI eller kontrollera data-dir. |
 | 404 | "Saknar produktivitetsunderlag: ..." | Kravda loggar saknas | Lagg in saknade loggar. |
-| 502/503 | "Extern datakalla kunde inte nas... Ladda upp ..." | API-first kunde inte hamta extern Produktivitets-kalla och ingen lokal fallback finns | Ladda upp den namnda loggen/KPI-filen eller kontrollera extern datakalla och `DATA_SOURCE_*`. |
+| 200 med `source_status.kpi.status=coredata_fallback` | `fallback_reason` kan visa t.ex. "Extern datakalla svarade med HTTP 403" | API-klienten nekas `v_ask_kpi_target`, sa snapshoten anvander lokal KPI-coredata | Ge API-klienten behorighet till KPI-vyn eller uppdatera lokal KPI-coredata. |
+| 502 | "Extern datakalla kunde inte synkas." | API-snapshot for Produktivitet kunde inte uppdateras | Kontrollera extern datakalla och `DATA_SOURCE_*`; senaste lyckade snapshot ska ligga kvar om den finns. |
+| 503 | "Produktivitetsrapporten kraver central serverdata..." | Windows desktop ar offline fran central server | Oppna central server/webben eller kontrollera natverk; lokal desktop bygger inte langre personrapporten. |
 | 404 | "Produktivitetsunderlagen saknar datum" | Datum kunde inte tolkas | Kontrollera CSV/header. |
 | 404 | "Saknar produktivitetsdata for YYYY-MM-DD" | Vald dag finns inte | Valj annat datum. |
 | 500 | "Kunde inte lasa KPI-mal..." | KPI-filen finns men kan inte lasas | Kontrollera filformat. |
@@ -196,5 +199,6 @@ Be anvandaren skicka:
 - `../app/backend/routers/*.py`
 - `../app/backend/routers/data_fetch.py`
 - `../app/backend/productivity_service.py`
+- `../app/backend/productivity_sync.py`
 - `../app/backend/allocation_bridge.py`
 - `../warehouse_tools/flows.py`

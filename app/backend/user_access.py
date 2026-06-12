@@ -39,6 +39,7 @@ ROLE_VIEW_IDS = {
     "allocationProcessMatrix",
     "allocationSettings",
     "allocationSplit",
+    "staffingSettings",
     "persons",
     "personSortOrder",
     "personImport",
@@ -83,6 +84,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "areas": "edit",
         "users": "edit",
         "appSettings": "edit",
+        "staffingSettings": "edit",
         "allocationProcessMatrix": "edit",
         "allocationSettings": "edit",
     },
@@ -97,6 +99,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "areas": "edit",
         "users": "edit",
         "appSettings": "edit",
+        "staffingSettings": "edit",
         "allocationProcessMatrix": "edit",
         "allocationSettings": "edit",
     },
@@ -231,7 +234,9 @@ def role_view_access_level(user: User, access: dict | None, view_id: str) -> str
     if is_demo_user(user) and DEMO_ROLE not in roles:
         roles = [*roles, DEMO_ROLE]
     for role in roles:
-        level = normalized.get(role, {}).get(view_key, "none")
+        role_access = normalized.get(role, {})
+        level = role_access.get(view_key)
+        level = level or "none"
         if ROLE_ACCESS_LEVEL_RANK.get(level, 0) > ROLE_ACCESS_LEVEL_RANK.get(best, 0):
             best = level
     return best

@@ -1,11 +1,175 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-09
+updated: 2026-06-11
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-11] fix | Installningars ytkarta stoppar max-utzoomning
+
+Ytgenereringens ytkarta i `Installningar` har nu samma max-utzoomning som
+resultatkartan i Bearbeta. `0` aterstaller fit-vyn och minusknapp eller mushjul
+kan inte zooma ut langre an den vyn.
+
+## [2026-06-11] fix | Ytgenerering visar bara aktiv toggle i UTL-editorn
+
+Ytgenereringens filtermodal i Bearbeta visar nu bara `Utlastningsytor`-raden
+for aktiv omradestoggle. `Alla` visar bara `Alla`, medan exempelvis `AS` visar
+bara `AS`. Sparning behaller redan sparade UTL-intervall for andra toggles, sa
+anvandaren kan byta toggle for att andra nasta omrade utan att nollstalla resten.
+
+## [2026-06-11] performance | Bearbeta skippar filstatus for API-kallor
+
+Bearbeta hamtar inte langre uppladdnings-/coredatastatus for synliga floden nar
+kallvalet star pa `API`. `/api/coredata/files` och IndexedDB/localRef-status
+behovs bara i `Uppladdningar` eller for Bearbeta-knappar dar anvandaren valt
+`Uppladdning` som kallval. API-kallor visas darfor som redo utan att lokala
+eller serverlagrade filstatusar kontrolleras vid sidstart.
+
+## [2026-06-11] change | V+H-aktiviteter valjs i Installningar
+
+Bemanningens `V+H` visar nu parentesvarden bara for de KPI-aktiviteter som ar
+valda i `Installningar > Bemanning`. Settingen sparas som
+`staffing_activity_capacity_activity_ids`: `null` betyder alla KPI-aktiviteter,
+en lista betyder bara dessa aktiviteter och `[]` betyder inga. Backendens
+`GET /api/schedule/activity-capacity` filtrerar kapacitetssvaret enligt valet.
+
+## [2026-06-10] performance | Bemanning laser materialiserad personproduktivitet
+
+Bemanning har nu en materialiserad cachetabell, `person_productivity_daily`,
+som byggs fran global Produktivitet-snapshot, schema och KPI-regler. V+H laser
+historiska processrader fran cachen i stallet for att klassificera om gamla
+snapshotfiler vid varje visning. Produktivitetskolumnen i Bemanning hamtar nu
+`GET /api/schedule/productivity-summary`, ett litet person-id-till-procent-svar,
+i stallet for hela `/api/productivity`-rapporten.
+
+## [2026-06-10] change | Bemanningscell kan delas i fler delar
+
+`Dela timme` i Bemanning har nu val for `1/2`, `1/3` och `1/4`. Vid `1/3`
+anges minutstarterna `20` och `40`, och vid `1/4` anges `15`, `30`, `45`.
+Backendens split-endpoint accepterar nu 2-4 sammanhangande minutsegment som
+tacker `0-60`, och merge tillbaka till hel timme raderar alla extra delar.
+
+## [2026-06-10] fix | Bemanningssummering visar decimaler
+
+`Summering per aktivitet` i Bemanning visar nu heltal utan decimaler men
+icke-heltal med upp till tva decimaler. Det gor delade celler med udda minuter,
+till exempel 17/43, synliga som faktiska timandelar i stallet for avrundade
+heltal.
+
+## [2026-06-10] fix | Produktivitet anvander kpi.sql som intern logik
+
+Produktivitet och Bemannings kapacitetsberakning laser inte langre nagon
+separat malregelfil. KPI-malen kommer fran `v_ask_kpi_target`/`kpi`, medan
+klassificeringen av loggrader till processer och matt bygger pa den interna
+standardlogiken fran `referens/kpi.sql`.
+
+## [2026-06-10] fix | Bemanningens V+H anvander ratt verksamhet
+
+Bemanningens aktivitetskapacitet anvander nu anvandarens standardverksamhet for
+historikinstallning nar Super User star i alla-verksamheter-lage. Produktivitet
+visar dessutom KPI-coredatafallback i statusraden nar snapshoten bar med sig
+`fallback_reason`.
+
+## [2026-06-10] fix | Produktivitet visar fallbackorsak for KPI-API
+
+Produktivitetens snapshot-metadata sparar nu `fallback_reason` nar `kpi`
+(`v_ask_kpi_target`) inte kan hamtas via API men lokal KPI-coredata kan anvandas
+i stallet. Produktivitetstradet visar schemalagda timmar/stod med 0 poang
+nar KPI-output saknas och markerar KPI-processerna i `missing_rule_processes`.
+
+## [2026-06-10] change | KPI-mal och KPI-logik separeras
+
+Produktivitetens KPI-mal kommer fran `v_ask_kpi_target`/`kpi`. Klassificeringen
+av loggrader till processer och matt ligger i den interna logiken baserad pa
+`referens/kpi.sql`, och samma logik anvands av Produktivitet, Personer-dialogen,
+Min produktivitet och Bemannings kapacitetsberakning. Den gamla sektionsbaserade
+produktivitetsrapporten i `productivity_service.py` och dess legacytester ar
+borttagna, medan filstatus, KPI-mal, snapshots och sammanstallda loggar finns
+kvar.
+
+## [2026-06-10] change | Bemanningscell kan delas med valfri minut
+
+Dubbelklick pa en hel cell i Bemanning oppnar nu en minutfraga dar `30` ar
+forifyllt och markerat. Enter fortsatter direkt med 30 eller med inskriven
+minut, till exempel 17 som sparas som segmenten `0-17` och `17-60`.
+Backendens split-endpoint, rendering och draglogik accepterar nu tva
+sammanhangande minutdelar i stallet for bara fasta 30/30-halvor.
+
+## [2026-06-10] fix | Omradesfokus slutar falla tillbaka till Stigamo-koder
+
+Sidebarens omradesfokus bygger nu bara valbara omraden fran `/api/areas`.
+`sort_order` fran Area styr ordningen och `∞` laggs bara till som filterlage
+for Super User eller verksamheter med aktiv `ANNAT`-markor. Om `/api/areas`
+misslyckas visas en disabled toggle med feltext i stallet for fallback till
+hardkodade MG/GG/AS/EH/R3-varden.
+
+## [2026-06-10] fix | Stodtimmar raknas i Produktivitetstradet
+
+Produktivitetens tradvy raknar nu stodceller som arbetade timmar i
+verksamhet/omrade/aktivitet/person. Noder med stod men utan KPI-tid visar
+fortfarande `-` som egen kvot, medan blandade omrades- och helbildsnivaer
+raknar poang per alla arbetade timmar. Stod-only-personer behalls i
+dagrapportens `people[]`, men personens egen produktivitetsvy fortsatter
+filtrera pa KPI-celler.
+
+## [2026-06-10] fix | ASK-import anvander forecastens bolag
+
+Ytgenereringens servergenererade ASK-import och kartans lokala justerade
+ASK-export hamtar nu `company` fran Forecast-/orderkolumnen `Bolag` i stallet
+for ett hardkodat `MG`. `pick_zone` ar fortsatt alltid `A`. Om bolag saknas
+stoppas exporten med synlig feltext i stallet for att skriva fel bolag.
+
+## [2026-06-10] fix | Ytgenerering tar bort MG-hardkodad UTL-start
+
+Ytgenereringens osparade UTL-standard ar nu 1-652 for alla toggles. MG eller
+andra omraden som ska borja pa exempelvis 205 styrs i stallet av den personliga
+Ytgenerering-installningen i Bearbetas filtermodal och sparas i
+`allocation_user_filter_profiles`.
+
+## [2026-06-10] fix | Bearbeta-matrisen använder aktiva områden
+
+Bearbeta-matrisens `GET /api/allokering/process-matrix` bygger nu rader från
+aktiva `Area`-poster i databasen i stället för en hårdkodad GG/MG/AS/EH/R3-lista.
+Frontendens fallback innehåller bara `Alla`/default, och `PUT` mergar bara de
+rader användaren kan se så andra verksamheters sparade matrisregler inte raderas.
+
+## [2026-06-10] fix | Bemanningskalkylens dialog stangs inte av bakgrundsklick
+
+Dialogen for ny/andrad automatisk bemanningskalkyl stangs nu bara via
+`Avbryt` eller efter lyckad `Spara`. Klick utanfor rutan stanger inte langre
+modalen, sa anvandaren inte tappar ifyllda falt vid felklick eller textmarkering.
+
+## [2026-06-10] feature | Aktiviteter far separat VAS-arbetstyp
+
+Aktiviteter har nu `work_type` med vardena `normal` och `vas`. VAS visas och
+sparas separat fran `category`, sa kategorin fortsatt kan betyda arbete eller
+franvaro for bemanning, produktivitet och andra berakningar. Importmallen,
+direktimporten och aktivitetsmodalen har faltet `Arbetstyp`; befintliga
+aktiviteter far `normal` via migration.
+
+## [2026-06-10] polish | Produktivitetstradet anvander Omrade
+
+Produktivitetstradet visar nu nivan `Omrade` i stallet for `Avdelning`, i linje
+med resten av Flow-terminologin. Underliggande data ar fortsatt aktivitetens
+omrade fran schemacellen.
+
+## [2026-06-10] docs | Avancerad filfiltrering blir agentbegrepp
+
+Begreppet `Avancerad filfiltrering` finns nu i agentordlistan och betyder
+Bearbetas filterdialog fran edit-ikonen: per fil/API-kalla, API/Uppladdning,
+flera villkor, personlig sparning och import fran annan anvandare. Bemanningens
+kalkyldokumentation pekar pa samma begrepp for framtida ateranvandning i nya
+bemanningskalkylens underlag.
+
+## [2026-06-10] polish | Produktivitetstradet far sammanhangande grenar
+
+Produktivitetens tradvy ritar nu barnnoder med gren-wrappers i stallet for
+fristaende kortlinjer. Roten kopplas till en horisontell gren och varje barn
+har en egen lodrat anslutning; nar det finns manga barn scrollas tradytan i
+sidled sa grenlinjen inte bryts upp.
 
 ## [2026-06-09] fix | Windows-login via desktop-proxy
 
@@ -14,6 +178,140 @@ central server i stallet for att vidarebefordra webviewens komprimeringslista.
 Det skyddar login och andra JSON-svar fran att visas som trasiga bytes i
 desktop-webviewen nar den paketerade appen saknar samma dekodning som servern
 eller utvecklingsmiljon.
+
+## [2026-06-09] polish | Produktivitetens periodruta visar valt lage
+
+Datumrutan i Produktivitet visar nu olika kort etikett beroende pa periodval:
+dag visar datum som tidigare, vecka visar `Vecka N`, manad visar manadens namn
+och ar visar artalet. Sjalva datumet anvands fortsatt som ankare for perioden
+och pilarna hoppar en dag, vecka, manad eller ar beroende pa lage.
+
+## [2026-06-09] polish | Produktivitetens flowchart-export far nivaval
+
+`Exportera flowchart` i Produktivitet oppnar nu forst en dialog med checkboxar
+for vilka nivaer som ska inga i SVG-exporten. Valet sparas lokalt i browsern
+och den fokuserade nodens egen niva tas alltid med sa exporten behaller en
+tydlig rot.
+
+## [2026-06-09] fix | Produktivitet grupperar pa aktivitetens omrade
+
+Produktivitetens tradvy anvander nu aktivitetens omrade fran schemacellen for
+avdelningsnivan, inte personens hemomrade. Det hindrar till exempel att GG
+Helpall/GG Pafyll hamnar under Autostore bara for att personen har hemomrade AS.
+Backend skickar `activity_area_id`, `activity_area_code` och
+`activity_area_name` pa segment/time cells.
+
+## [2026-06-09] change | Bemanningens historiktimmar blir installning
+
+Historikfonstret for V+H-kapacitet och automatiska bemanningskalkyler ar nu
+`staffing_history_hours` i `app_settings`, default 40 timmar. `installningar.html`
+har en Bemanning-flik dar behoriga anvandare kan lasa/andra vardet via
+`GET/PUT /api/settings/staffing`. Egen vybehorighet `staffingSettings` styr
+lasning och sparning.
+
+## [2026-06-09] feature | Automatisk bemanningskalkyl per anvandare
+
+Bemanningskalkylen har nu alltid en fast `Manuell` panel och kan kompletteras
+med personliga automatiska kalkyler. Plusknappen oppnar dialog for Namn,
+Process, Bolag, Zon och Plockdagar. Profilen sparas per anvandare i
+`staffing_calculator_profiles` och kan importeras fran annan atkomlig anvandare.
+Automatkalkylen hamtar `Detalj Kundorder (Alla)`, filtrerar orderrader med
+`line_status < 34`, bolag, zon och orderdatum fran Plockdagar, och visar bara
+`Rader kvar efter schemalagd tid` baserat pa kvarvarande schemalagda timmar och
+personernas konfigurerade historikfonster pa samma process (default 40 timmar).
+
+## [2026-06-09] feature | Min produktivitet visar personens KPI-data
+
+`Min produktivitet` visar nu faktisk personproduktivitet fran den globala
+produktivitetscache som Personer-dialogen anvander. `/api/personal/productivity`
+returnerar fortsatt schema for valt datum, men innehaller ocksa
+`productivity.day` och `productivity.week` med aktivitetssnitt, KPI-poang,
+poang per timme, saknade snapshotdatum och backfillstatus. Personrollen ser
+bara sin egen person; Super User kan fortsatt valja person.
+
+## [2026-06-09] feature | Personer visar produktivitetssnitt
+
+Produktivitetsdata behandlas som global programdata: API-snapshots ligger kvar
+per datum och en daglig backfill hamtar en aldre dag i taget. Produktivitetens
+status visar nu backfill-laget. Personer-vyn har fatt dubbelklick pa personrad
+som oppnar en dialog for aktivitetssnitt per vecka, manad, ar eller datumperiod
+via `GET /api/productivity/persons/{person_id}`. Windows desktop proxar samma
+centrala endpoint.
+
+## [2026-06-09] change | Produktivitetens diff-ikon visar poang direkt
+
+Diff-`!` i Produktivitetens timceller markerar nu att hela cellen kan
+vansterklickas for samma summerade processpoang som tidigare fanns bakom
+hoger-klick -> `Visa poang`.
+Hoger-klickmenyn ar borttagen eftersom den gamla vansterklicksdetaljen var
+mindre anvandbar.
+
+## [2026-06-09] change | Produktivitet visar bemanningsmatris med poang
+
+Personraderna i Produktivitet visas nu som en Bemanning-lik matris fram till
+aktuell timme for dagens datum. Hela schematimmar visas som hela celler,
+halvtimmesbemanning som splittrade celler, och cellen visar aktivitet plus
+samlade KPI-poang. Processnamnet visas inte i celltexten; diffar markeras med
+`!` i cellen och klick visar vilken faktisk process som diffade.
+
+## [2026-06-09] fix | Produktivitet historik och NoMan-matchning
+
+Produktivitetens scheduler gor nu en forsta API-snapshotfyllnad for 13 dagar
+bakat plus dagens datum via en intervallhamtning per kalla som splittas till
+dagsmappar. Darefter uppdateras bara dagens datum vid varje hel- och halvtimme,
+sa dagens filer ersatts medan aldre dagsmappar sparas. Rapporten matchar nu
+loggens `Anvandare`/`user_id` mot personens `NoMan`; visat namn ar fortsatt
+personens `Namn`, och personer utan `NoMan` ingar inte i Produktivitet.
+
+## [2026-06-09] fix | Bearbeta-knappar haller flodesnamn pa en rad
+
+Bearbeta-flodesknapparna ar nu bredare fasta chip i desktopvyn och tavlan haller
+kolumnerna pa en rad med sidledsscroll vid behov. Langa flodesnamn som
+`Orderoversiktkontroll` bryts inte langre mitt i ordet i normal desktopvy.
+
+## [2026-06-09] fix | Produktivitet kan byta API-datum
+
+Produktivitetens datumfalt laser inte langre sig till den enda dagen som finns i
+en dagsbaserad API-snapshot. Nar rapporten bara har ett datum kan anvandaren nu
+valja ett annat datum eller klicka foregaende/nasta kalenderdag, och backend
+forsoker da hamta snapshot for det valda datumet.
+
+## [2026-06-09] fix | Produktivitet synkar hela KPI-underlaget
+
+Produktivitetens API-snapshot hamtar nu hela loggfamiljen som KPI-reglerna bygger
+pa: pick, trans, loading/pallet, receive, order_log, sort, base_pallet och kpi.
+`base_pallet` hamtas som buffertpallsunderlag utan dagfilter, medan dagsloggarna
+filtreras pa dagens timestamp nar API:t stoder det. Om KPI-mal-API:t svarar 403
+kan snapshoten anvanda permanent KPI-coredata for verksamheten som fallback.
+
+## [2026-06-09] polish | Storre Bearbeta-knappar
+
+Bearbeta-flodesknapparna ar bredare, har hogre klickyta och fasta edit-/infoikonsegment.
+Langa flodesnamn far brytas pa knappen i stallet for att tryckas in mot ikonerna.
+Samma frontend-CSS anvands av webb och Windows-appen.
+
+## [2026-06-08] feature | Videostorlek i Meta
+
+Meta-vyn visar nu videostorlek i sandningsanalysen, sorterar pa faktiska bytes
+och inkluderar storlek i Excel-exporten. Sammanfattningen visar aven total
+videomangd for de laddade Meta-uppladdningarna.
+
+## [2026-06-08] feature | Produktivitet visar personbaserad dags-KPI
+
+Produktivitet ar ombyggd fran fasta plock-/dekanteringssektioner till en
+personrad per schemalagd person. Backend synkar dagens API-snapshot for
+pick/trans/loading/receive/order/sort/base pallet/kpi vid startup och vid varje hel- och halvtimme,
+beraknar KPI-poang via kodade regler fran `referens/kpi.sql`, visar STOD och
+absence utan att de drar ner procenten och markerar diffar nar faktisk KPI-process
+inte matchar schemat. Desktop proxar nu central `/api/productivity` som sanning
+for rapporten.
+
+## [2026-06-09] fix | Produktivitet visar fallback nar API-snapshot felar
+
+Produktivitetens filstatus markerar inte langre API-first som klar nar senaste
+API-snapshot-sync har felat och ingen serverfallback finns. Frontenden visar nu
+en tydlig fallbackstatus med filkrav efter exempelvis extern `HTTP 403`, i
+stallet for att lamna rapportytan tom med bara en toast.
 
 ## [2026-06-08] docs | Tog bort projektkarta Mermaid
 
@@ -35,6 +333,15 @@ Alembic-revision `0036_activity_kpi_backfill` fyller en gang i
 Migrationen skapar inga aktiviteter och skriver bara i tomma KPI Mal-falt, sa
 anvandarnas senare andringar i Aktiviteter fortsatter vara vanliga sparade
 registerandringar.
+
+## [2026-06-08] test | Driftkontrakt for Alembic och Render
+
+Testerna skyddar nu deploykritiska kontrakt som annars kan falla forst efter push:
+Alembic-revisioner far plats i `alembic_version.version_num`, ar unika, har
+giltig `down_revision`-kedja och exakt en head. CI-/Render-kontraktet verifierar
+dessutom att push-workflowen simulerar Render-build mot Postgres, att
+`alembic upgrade head` kors fore pytest och att hemliga Render-envs ar
+secret-backed i stallet for literalvarden.
 
 ## [2026-06-08] feature | Verksamhet i registertabeller
 
@@ -680,7 +987,7 @@ Rollernas `Vybehorigheter` laser och sparar nu en global matris i stallet for en
 
 ## [2026-05-25] feature | Coredata-karnfiler ar verksamhetsseparerade
 
-Filerna under `data/coredata/` hanteras nu per verksamhet for prefixen `custom`, `dimension`, `item`, `item_alias`, `item_attribute`, `item_option`, `kpi_target_rule`, `location`, `location_cost`, `pallet_type` och `v_ask_kpi_target`. `artikel_max.csv` visas i samma karnfilslista och sparas till lagerverktygens verksamhetsspecifika artikel_max-sokvag. Ny uppladdning ersatter bara gammal fil med samma prefix i anvandarens egen verksamhet. Allokering anvander dessutom verksamhetens `item_option` som karnfil nar ingen lokal Item option-fil laddats upp.
+Filerna under `data/coredata/` hanteras nu per verksamhet for prefixen `custom`, `dimension`, `item`, `item_alias`, `item_attribute`, `item_option`, `location`, `location_cost`, `pallet_type` och `v_ask_kpi_target`. `artikel_max.csv` visas i samma karnfilslista och sparas till lagerverktygens verksamhetsspecifika artikel_max-sokvag. Ny uppladdning ersatter bara gammal fil med samma prefix i anvandarens egen verksamhet. Allokering anvander dessutom verksamhetens `item_option` som karnfil nar ingen lokal Item option-fil laddats upp.
 
 ## [2026-05-25] fix | Verksamhetsseparerar produktivitetens KPI-karnfil
 
@@ -1108,3 +1415,59 @@ Sändningsanalysen i Meta-vyn visar nu kolumnen `Uppdaterad`, baserad på `meta_
 ## [2026-06-08] feature | API-first for Bearbeta och Produktivitet
 
 Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern datakalla vid knapptryck, utan MiniMax och utan radbegransning. Uppladdade filer och Windows `localRef` anvands som fallback nar API eller katalog inte kan nas. Wikin dokumenterar source-mapping, `/api/workflow-data/source`, Produktivitetens `api_first`-status, sanerad source-audit och nya fallbackfel.
+
+## [2026-06-09] polish | Produktivitetens celler visar poangstatus
+
+Produktivitetsmatrisen fargmarkerar nu KPI-celler efter cellens poangniva, visar diff-`!` bara for KPI-forvantade perioder och later STOD/absence-celler med poang visa en hoger-klicksmeny med `process = poang`-summering. Personer som bara har STOD eller absence hela dagen filtreras bort fran Produktivitet.
+
+## [2026-06-09] feature | Bemanning visar avslutad produktivitet
+
+Bemanning har nu en fast kolumn `Produktivitet` efter Hemomrade. Kolumnen hamtar vald dags personrapport fran `/api/productivity`, raknar bara avslutade KPI-timmar fram till timmen fore pagaende timme for dagens datum och visar heltalsprocent med samma fargskala som Produktivitet: rod under 80, orange 80-99 och gron fran 100. Personer med bara STOD/absence hittills far tom cell.
+
+## [2026-06-09] feature | Oversikt produktivitet visar KPI-trad
+
+Ny vy `Oversikt produktivitet` finns pa `/oversikt-produktivitet.html`. Den laser samma `/api/productivity`-rapport, raknar dagens poang bara till och med senaste avslutade heltimme och visar ett fokuserbart trad: verksamhet -> avdelning -> aktivitet -> person -> timme/processpoang. Vyn har egen `productivityOverview`-behorighet som arver befintlig `productivity`-atkomst nar den inte ar uttryckligen satt.
+
+## [2026-06-09] polish | Oversikt produktivitet visar p/tim
+
+Noderna i `Oversikt produktivitet` visar nu `totalpoang / KPI-timmar = p/tim` i stallet for bara totalpoang. KPI-timmar bygger pa avslutad schemalagd work/KPI-tid, sa KPI-celler med 0 poang syns och drar ner snittet medan STOD/absence inte raknas i namnaren. Snittet fargmarkeras med samma skala som Bemanning: rod under 80, orange 80-99 och gron fran 100.
+
+## [2026-06-09] feature | Oversikt produktivitet far periodval
+
+`Oversikt produktivitet` har nu periodval for Dag, Vecka, Manad och Ar. Vyn hamtar `GET /api/productivity/overview`, summerar dagsrapporterna i samma hierarkitrad och visar hur manga dagar i perioden som ingar. Dagens datum raknas fortsatt bara till senaste avslutade heltimme, och servern klipper innevarande vecka/manad/ar vid dagens datum.
+
+## [2026-06-09] feature | Oversikt produktivitet exporterar flowchart
+
+`Oversikt produktivitet` har nu knappen `Exportera flowchart`. Den skapar en lokal SVG-export av aktuell fokuserad vy och vald period. I `Helbild` exporteras hela verksamhetstradet ner till personniva; i person-/timfokus exporteras detaljgrenen med timme och processpoang.
+
+## [2026-06-09] polish | Oversikt produktivitet kortar snittvarde
+
+Snittvarden i `Oversikt produktivitet` visas nu utan suffixet `p/tim` och med en decimal, till exempel `67,0`. Formeln med totalpoang och KPI-timmar visas fortsatt pa raden ovanfor och fargskalan ar oforandrad.
+
+## [2026-06-09] polish | Oversikt produktivitet far egna farggranser
+
+`Oversikt produktivitet` anvander nu en egen snittskala: gron fran 80 och uppat, orange 70-79,9 och rod under 70. Bemanningens produktivitetskolumn behaller sin tidigare skala.
+
+## [2026-06-09] performance | Produktivitet periodbyte anvander cache
+
+Produktivitetens period-/tradvy och Personer-dialogens produktivitetsmodal cachar nu nyligen hamtade perioder kort i klienten. Backend ateranvander dessutom fardigbyggda dagsrapporter kort baserat pa snapshotfilernas version. `GET /api/productivity/overview` laser befintliga snapshots for vald period och triggar inte langre extern historik-sync nar anvandaren byter dag, vecka, manad eller ar; schemalagd sync och backfill ansvarar for API-hamtning.
+
+## [2026-06-09] feature | Bemanning far V+H-kapacitet i celler
+
+Bemanning har nu en valfri `V+H`-visning som lagger personens historiska snitt pa aktivitetsetiketten i celler, till exempel `GG Plock(70)`. Snittet hamtas fran nya `GET /api/schedule/activity-capacity`, valjer matetal via KPI-regler/KPI-mal och anvander Bemanningens konfigurerade historikfonster pa samma KPI-process.
+
+## [2026-06-09] change | Produktivitet ersatts av tradoversikt
+
+`Produktivitet` pa `/produktivitet.html` anvander nu trad-/periodvyn som tidigare lag pa `Oversikt produktivitet`, men behaller Produktivitets befintliga namn, menyplats och ikon. Separat `productivityOverview`-behorighet togs bort och `/oversikt-produktivitet.html` redirectar till Produktivitet. Gammal manuell produktivitetsfiluppladdning togs bort fran frontend, API och desktop-proxy; vyn bygger pa sparade globala API-snapshots och backfill.
+
+## [2026-06-09] change | Gammal produktivitetsadress borttagen
+
+`/oversikt-produktivitet.html` ar borttagen i stallet for att redirecta. Produktivitet ska bara oppnas via `/produktivitet.html`, med Produktivitets befintliga namn och ikon.
+
+## [2026-06-09] fix | Ytgenerering begransar max utzoomning
+
+Ytgenereringens resultatkarta i Bearbeta anvander nu `Aterstall vy` som minsta tillatna zoomskala. Anvandaren kan zooma in och panorera inom kartans granser, men mushjul/trackpad kan inte zooma ut forbi fit-vyn.
+
+## [2026-06-11] change | Bearbeta-matris flyttad till Installningar
+
+Bearbeta-vyn visar inte langre en egen Matris-knapp. Bearbeta-matrisen ligger nu i `installningar.html` under fliken `Bearbeta`, syns med `allocationProcessMatrix=view` och sparas med `allocationProcessMatrix=edit`. `GET /api/allokering/process-matrix` kan fortfarande lasas av Bearbeta-vyn for flodessynlighet, men kan ocksa lasas av matrisfliken i Installningar.

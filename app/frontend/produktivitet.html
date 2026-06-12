@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Produktivitet - flow</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="alternate icon" href="/favicon.ico" sizes="any" />
@@ -14,34 +17,37 @@
   <header class="topbar"></header>
 
   <section class="controls">
+    <div class="productivity-overview-period-toggle" role="group" aria-label="Period">
+      <button type="button" class="active" data-period="day">Dag</button>
+      <button type="button" data-period="week">Vecka</button>
+      <button type="button" data-period="month">Månad</button>
+      <button type="button" data-period="year">År</button>
+    </div>
     <label class="productivity-date-field">Datum
       <span class="date-nav productivity-date-nav">
-        <button id="productivityPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum" disabled>‹</button>
+        <button id="productivityOverviewPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum">‹</button>
         <div class="date-display-wrap" title="Välj datum">
-          <span class="date-display-text" id="productivityDateDisplayText">YYYY-MM-DD</span>
-          <input id="productivityDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
+          <span class="date-display-text" id="productivityOverviewDateDisplayText">YYYY-MM-DD</span>
+          <input id="productivityOverviewDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
         </div>
-        <button id="productivityNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum" disabled>›</button>
+        <button id="productivityOverviewNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum">›</button>
       </span>
     </label>
-    <label>Sök
-      <input id="productivitySearch" type="search" autocomplete="off" />
-    </label>
+    <button id="productivityOverviewRootBtn" type="button">Helbild</button>
+    <button id="productivityOverviewExportFlowchart" type="button">Exportera flowchart</button>
   </section>
 
-  <main class="productivity-page">
+  <main class="productivity-page productivity-overview-page">
     <div class="section-title">Produktivitet</div>
-    <div id="productivityStatus" class="productivity-status"></div>
-    <div id="productivityFileRequirements"></div>
-    <div id="productivitySummary" class="productivity-summary"></div>
-    <div id="productivitySources" class="productivity-sources"></div>
-    <div id="productivityContent" class="productivity-content"></div>
+    <div id="productivityOverviewStatus" class="productivity-status"></div>
+    <div id="productivityOverviewSummary" class="productivity-overview-summary"></div>
+    <nav id="productivityOverviewBreadcrumbs" class="productivity-overview-breadcrumbs" aria-label="Produktivitetshierarki"></nav>
+    <div id="productivityOverviewTree" class="productivity-overview-tree-wrap"></div>
   </main>
 
   <script src="/js/api.js"></script>
   <script src="/js/desktop_bridge.js"></script>
-  <script src="/js/common.js?v=20260601-coredata-types"></script>
-  <script src="/js/productivity_uploads.js"></script>
-  <script src="/js/productivity.js"></script>
+  <script src="/js/common.js?v=20260609-productivity-overview"></script>
+  <script src="/js/productivity_overview.js?v=20260609-productivity-cache"></script>
 </body>
 </html>

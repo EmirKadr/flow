@@ -80,6 +80,26 @@ def test_persons_view_shows_business_column():
     assert 'tdBusiness.textContent = businessName(p.business_id);' in persons_js
 
 
+def test_persons_view_opens_productivity_dialog_on_double_click():
+    frontend = ROOT / "app" / "frontend"
+    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
+
+    assert "function openPersonProductivityModal(person)" in persons_js
+    assert 'tr.addEventListener("dblclick"' in persons_js
+    assert "`/api/productivity/persons/${personId}?${params.toString()}`" in persons_js
+    assert "PERSON_PRODUCTIVITY_CACHE_TTL_MS" in persons_js
+    assert "cachedPersonProductivity(url)" in persons_js
+    assert "cacheTtlMs: PERSON_PRODUCTIVITY_CACHE_TTL_MS" in persons_js
+    assert "skipCache: true" not in _function_body(persons_js, "loadPersonProductivityModal")
+    assert 'data-period="week"' in persons_js
+    assert 'data-period="month"' in persons_js
+    assert 'data-period="year"' in persons_js
+    assert 'data-period="custom"' in persons_js
+    assert ".person-productivity-summary" in styles
+    assert ".person-productivity-table" in styles
+
+
 def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
     persons_js = (ROOT / "app" / "frontend" / "js" / "persons.js").read_text(encoding="utf-8")
 

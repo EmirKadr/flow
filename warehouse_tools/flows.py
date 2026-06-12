@@ -296,6 +296,7 @@ def _tsv_content(df: pd.DataFrame) -> str:
 def build_order_set_area_import(forecast_df: pd.DataFrame, assignments_df: pd.DataFrame) -> tuple[pd.DataFrame | None, str | None]:
     forecast_shipment_col = _find_table_column(forecast_df, ("Sändningsnr", "Sandningsnr", "Grupp", "Shipment"))
     order_col = _find_table_column(forecast_df, ("Ordernummer", "Ordernr", "order_num"))
+    company_col = _find_table_column(forecast_df, ("Bolag", "Company", "company"))
     assignment_shipment_col = _find_table_column(assignments_df, ("Sändningsnr", "Sandningsnr", "Grupp", "Shipment"))
     location_col = _find_table_column(assignments_df, ("Lagerplats", "Location", "area_num"))
 
@@ -303,6 +304,8 @@ def build_order_set_area_import(forecast_df: pd.DataFrame, assignments_df: pd.Da
         return None, "ASK-importfil skapades inte: Forecast saknar sändningsnummer."
     if order_col is None:
         return None, "ASK-importfil skapades inte: Forecast saknar kolumnen Ordernummer."
+    if company_col is None:
+        return None, "ASK-importfil skapades inte: Forecast saknar kolumnen Bolag."
     if assignment_shipment_col is None or location_col is None:
         return None, "ASK-importfil skapades inte: Ytgenerering saknar sändning/yta-placering."
     if assignments_df.empty:
@@ -317,6 +320,7 @@ def build_order_set_area_import(forecast_df: pd.DataFrame, assignments_df: pd.Da
             surfaces_by_shipment[shipment_key] = ", ".join(surfaces)
 
     orders_by_shipment: dict[str, list[str]] = {}
+    companies_by_shipment_order: dict[str, dict[str, str]] = {}
     for _, forecast_row in forecast_df.iterrows():
         shipment_key = _clean_cell(forecast_row.get(forecast_shipment_col))
         if not shipment_key:
@@ -324,27 +328,41 @@ def build_order_set_area_import(forecast_df: pd.DataFrame, assignments_df: pd.Da
         order_numbers = _split_order_numbers(forecast_row.get(order_col))
         if order_numbers:
             orders_by_shipment.setdefault(shipment_key, []).extend(order_numbers)
+            company = _clean_cell(forecast_row.get(company_col)).upper()
+            if company:
+                company_lookup = companies_by_shipment_order.setdefault(shipment_key, {})
+                for order_number in order_numbers:
+                    company_lookup.setdefault(order_number, company)
 
     rows: list[dict[str, str]] = []
     missing_order_shipments: list[str] = []
+    missing_company_orders: list[str] = []
     for shipment_key, area_num in surfaces_by_shipment.items():
         order_numbers = orders_by_shipment.get(shipment_key, [])
         if not order_numbers:
             missing_order_shipments.append(shipment_key)
             continue
-        rows.extend(
-            {
-                "area_num": area_num,
-                "company": "MG",
-                "order_num": order_num,
-                "pick_zone": "A",
-            }
-            for order_num in order_numbers
-        )
+        company_lookup = companies_by_shipment_order.get(shipment_key, {})
+        for order_num in order_numbers:
+            company = company_lookup.get(order_num, "")
+            if not company:
+                missing_company_orders.append(order_num)
+                continue
+            rows.append(
+                {
+                    "area_num": area_num,
+                    "company": company,
+                    "order_num": order_num,
+                    "pick_zone": "A",
+                }
+            )
 
     if missing_order_shipments:
         sample = ", ".join(missing_order_shipments[:5])
         return None, f"ASK-importfil skapades inte: {len(missing_order_shipments)} placerade sändningar saknar ordernummer ({sample})."
+    if missing_company_orders:
+        sample = ", ".join(missing_company_orders[:5])
+        return None, f"ASK-importfil skapades inte: {len(missing_company_orders)} orderrader saknar bolag ({sample})."
     if not rows:
         return None, "ASK-importfil skapades inte: inga placerade ordernummer hittades."
     return pd.DataFrame(rows, columns=ORDER_SET_AREA_IMPORT_COLUMNS), None

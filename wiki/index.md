@@ -1,7 +1,7 @@
 ---
 title: flow wiki-index
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-09
 tags: [wiki, index]
 ---
 
@@ -18,6 +18,8 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [UI-karta och alla kontroller](ui-map.md) - snabbkarta over knappar, menyer och generella UI-funktioner.
 - [API-karta](api.md) - endpoints grupperade efter funktion.
 - [Test och release](testing-release.md) - hur en agent verifierar andringar.
+- [Begrepp och agentordlista](terminology.md) - namngivna produktbegrepp som
+  ska tolkas konsekvent i framtida chattar.
 
 ## Funktionssidor
 
@@ -31,7 +33,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Historik och audit](history-audit.md) - filter, statistik, auditlogg, felkoder, vantetider och Halsa.
 - [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med publicerbar katalog och Excel-export.
 - [Meta-uppladdning](meta-upload.md) - publik fristaende mobilvy for att ladda upp bilder och videor till senare LLM-analys.
-- [Produktivitet](productivity.md) - lokala loggfiler, KPI-mal, berakningar och vanliga stopp.
+- [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp.
 - [Lagerverktyg](warehouse-tools.md) - Uppladdningar, Bearbeta, Dela och allokeringsfloden.
 
 ## Chat- och felsokningsstod

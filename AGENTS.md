@@ -219,6 +219,16 @@ Nar beteende tas bort eller byts ut ska agenten aktivt leta efter gamla tester
 som bara skyddar det borttagna beteendet. Sadana tester ska tas bort eller
 skrivas om, sa testsviten inte tvingar kvar gammal produktlogik av misstag.
 
+Nar en andring ror databas, Alembic, Render-build, CI-workflows, secret/env-
+konfiguration eller deploy ska agenten ocksa lagga eller uppdatera kontraktstester
+for de driftbegransningar som kan fa push/deploy att falla. Testa inte bara den
+nya funktionen utan aven de invariants som miljoerna kraver, till exempel
+Alembic-revisioners maxlangd, unikhet, down_revision-kedja, exakt en head,
+att Render-builden kor `alembic upgrade head`, att CI simulerar Render mot
+Postgres och att secrets i `render.yaml` inte har literalvarden. Om ett deployfel
+upptacks efter push ska nasta fix helst lagga ett test som hade fangat just den
+felklassen fore push.
+
 ## Riskgenomgang efter nytt bygge
 
 Nar en agent anser sig klar med ett nytt bygge, stor andring eller nytt

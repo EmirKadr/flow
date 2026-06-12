@@ -127,12 +127,14 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_live_local_sync.py` | Lokal SQLite-sync fran live-databas och skydd mot fel target. | `prepare_local_database`, live/local sync eller `start_local.bat`-dataflode. |
 | `tests/services/test_person_import.py` | Personimportmallar, Excel-parsning, dubblettskydd, skapa/uppdatera/ta bort person. | Personimport, person-CRUD eller namnvalidering. |
 | `tests/services/test_person_schedules.py` | Timmis/fast schema-regler for personers veckomallar. | Personschema, timmisflagga eller veckomalllogik. |
-| `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, rapportgruppering och tillgangliga datum. | Produktivitet, plock-/pallloggar, KPI-filer eller rapportbyggnad. |
+| `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, karnfilsfallback och sammanstallda produktivitetsloggar. | Produktivitet, snapshot-/compiled-loggar eller KPI-filer. |
+| `tests/services/test_productivity_v2.py` | Dagens produktivitetsrapport, KPI-mal fran `v_ask_kpi_target`, intern `kpi.sql`-logik, personmatchning och snapshot-backfill. | Produktivitet, KPI-mal, persondialog eller Min produktivitet. |
 | `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
 | `tests/services/test_healthcheck_service.py` | Halsa-service, SQLite-databaskontroll, vantetidsinsamling och sammanfattning. | `/api/healthcheck`, `UserWaitMetric`, Render-/databashalsa eller vantetidsanalys. |
 | `tests/services/test_meta_uploads.py` | Meta-uppladdning, audio-only-analys, ASK-uppslag, media/content, koer och Excel-export. | `meta_uploads`, `meta_analysis_service`, Meta-vyn, nedladdningar eller Dispatchpallar-berikning. |
 | `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
 | `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
+| `tests/services/test_staffing_calculator.py` | Bemanningskalkyler, V+H-kapacitet, materialiserad personproduktivitetscache och Bemanningens produktivitetssummary. | Bemanning, V+H, `person_productivity_daily`, automatisk kalkyl eller produktivitetskolumnen. |
 | `tests/services/test_seed_data.py` | Seed-data, lokal SQLite-bootstrap, verksamhetsbackfill och dubblettsanering. | `backend.seed`, `bootstrap_local`, verksamheter eller standarddata. |
 | `tests/services/test_sidebar_settings.py` | Sidebar-layout och rollbaserad vybehorighet sparas och saneras ratt. | Sidebarinställningar, roll-vy-access eller settingsrouter. |
 | `tests/services/test_template_service.py` | Standardveckomall, saknade dagar och timmis utan ledigmall. | Veckomallar eller schema-template-logik. |

@@ -135,6 +135,7 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         admin_page.click("button.primary")
         admin_page.wait_for_url("**/index.html", timeout=15000)
         admin_page.wait_for_selector("#area-focus-toggle", timeout=15000)
+        expect(admin_page.locator("#area-focus-toggle")).to_be_enabled(timeout=15000)
         admin_page.locator("#area-focus-toggle").click(button="right")
         expect(admin_page.locator(".area-focus-menu")).to_be_visible()
         expect(admin_page.locator(".area-focus-menu button").first).to_be_visible()
@@ -199,6 +200,7 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         r3_page.fill("#password", visual_smoke.VISUAL_PASSWORD)
         r3_page.click("button.primary")
         r3_page.wait_for_url("**/index.html", timeout=15000)
+        expect(r3_page.locator("#area-focus-toggle")).to_be_enabled(timeout=15000)
         expect(r3_page.locator("#area-focus-toggle")).to_have_attribute("data-value", "ALLT")
 
         r3_page.locator("#area-focus-toggle").click(button="right")
@@ -214,3 +216,29 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         assert any(item["value"] == "ALLT" for item in r3_items)
     finally:
         r3_context.close()
+
+
+def test_area_focus_does_not_fallback_to_hardcoded_areas(local_sidebar_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        page.route(
+            "**/api/areas**",
+            lambda route: route.fulfill(
+                status=503,
+                headers={"content-type": "application/json"},
+                body='{"detail":"areas unavailable"}',
+            ),
+        )
+        page.goto(f"{local_sidebar_server}/login.html", wait_until="networkidle")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+        toggle = page.locator("#area-focus-toggle")
+        expect(toggle).to_be_disabled(timeout=15000)
+        expect(toggle).to_have_text("!")
+        expect(toggle).to_have_attribute("data-value", "")
+        expect(toggle).to_have_attribute("aria-label", "Områdesfokus: Områden kunde inte läsas")
+    finally:
+        context.close()

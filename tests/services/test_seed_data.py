@@ -13,10 +13,12 @@ from app.backend.seed import ACTIVITIES, AREAS, PERSONS, remove_duplicate_person
 
 def test_seed_contains_ehandel_area_and_default_activities():
     areas_by_code = {area["code"]: area for area in AREAS}
-    activity_codes = {activity["code"] for activity in ACTIVITIES}
+    activities_by_code = {activity["code"]: activity for activity in ACTIVITIES}
+    activity_codes = set(activities_by_code)
 
     assert areas_by_code["EH"]["name"] == "E-Handel"
     assert {"EH_PLOCK", "EH_PACK", "EH_STOD", "EH_VAS"} <= activity_codes
+    assert activities_by_code["EH_VAS"]["work_type"] == "vas"
 
 
 def test_seed_is_blocked_in_production(monkeypatch):
@@ -185,6 +187,7 @@ def test_local_bootstrap_migrates_legacy_sqlite_business_constraints(tmp_path):
         stigamo_id = connection.exec_driver_sql("SELECT id FROM businesses WHERE code = 'STIGAMO'").scalar_one()
         r3_id = connection.exec_driver_sql("SELECT id FROM businesses WHERE code = 'R3'").scalar_one()
         assert connection.exec_driver_sql("SELECT business_id FROM activities WHERE code = 'LEDIG'").scalar_one() == stigamo_id
+        assert connection.exec_driver_sql("SELECT work_type FROM activities WHERE code = 'LEDIG'").scalar_one() == "normal"
 
         connection.exec_driver_sql(
             "INSERT INTO areas (business_id, code, name, sort_order, is_active) VALUES (?, 'GG', 'GG R3', 1, 1)",

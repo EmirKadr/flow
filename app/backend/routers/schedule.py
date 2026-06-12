@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -10,9 +11,19 @@ from ..audit import log as audit_log
 from ..business_scope import assert_scoped_object, scoped_get, visible_business_id
 from ..deps import get_db, require_view_access
 from ..home_activity import build_home_activity_resolver, person_out_with_home_activity
-from ..models import Activity, Area, Business, Person, ScheduleCell, User
+from ..models import Activity, Area, Business, Person, ScheduleCell, StaffingCalculatorProfile, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
+from ..staffing_calculator_service import (
+    calculate_staffing_automatic,
+    empty_staffing_calculator_profile,
+    normalize_staffing_calculator_profile,
+    schedule_activity_capacity,
+    schedule_productivity_summary,
+    staffing_calculator_profile_count,
+    staffing_process_options,
+)
 from ..template_service import get_template_hours_for_date, get_template_hours_map_for_dates
+from ..user_access import is_super_user
 from ..schemas import (
     BulkCellRequest,
     CellOut,
@@ -32,8 +43,17 @@ router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 HOURS = list(range(6, 24))           # 06..23 = 18 timslots
 HOURS_PER_PERSON_DAY = 8             # för persons_equiv = hours / 8
 FULL_SEGMENT = (0, 60)
-HALF_SEGMENTS = ((0, 30), (30, 60))
-VALID_SEGMENTS = {FULL_SEGMENT, *HALF_SEGMENTS}
+DEFAULT_SPLIT_MINUTE = 30
+MIN_SPLIT_PARTS = 2
+MAX_SPLIT_PARTS = 4
+
+
+class StaffingCalculatorProfileUpdate(BaseModel):
+    profile: dict
+
+
+class StaffingCalculatorProfileImport(BaseModel):
+    user_id: int
 
 
 def _iso(value) -> str:
@@ -334,6 +354,82 @@ def _expected_signature(segments: list) -> list[tuple[int, int, int]]:
     return sorted((item.minute_start, item.minute_end, item.expected_version) for item in segments)
 
 
+def _split_ranges(split_minute: int = DEFAULT_SPLIT_MINUTE) -> tuple[tuple[int, int], ...]:
+    minute = int(split_minute)
+    return ((0, minute), (minute, 60))
+
+
+def _is_valid_minute_range(minute_start: int, minute_end: int) -> bool:
+    return (
+        isinstance(minute_start, int)
+        and isinstance(minute_end, int)
+        and 0 <= minute_start < minute_end <= 60
+    )
+
+
+def _validate_split_minute(split_minute: int) -> int:
+    minute = int(split_minute)
+    if minute <= 0 or minute >= 60:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Forsta delen maste vara 1-59 minuter.",
+        )
+    return minute
+
+
+def _normalize_split_ranges(ranges: list | tuple) -> tuple[tuple[int, int], ...]:
+    ordered = sorted((int(item.minute_start), int(item.minute_end)) for item in ranges)
+    if len(set(ordered)) != len(ordered) or not _is_split_ranges(set(ordered)):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Delningen maste ha 2-4 sammanhangande delar som tacker 0-60 minuter.",
+        )
+    return tuple(ordered)
+
+
+def _split_ranges_from_payload(payload: SplitCellRequest) -> tuple[tuple[int, int], ...]:
+    if payload.split_segments:
+        return _normalize_split_ranges(payload.split_segments)
+    split_minute = _validate_split_minute(payload.split_minute)
+    return _split_ranges(split_minute)
+
+
+def _is_split_ranges(ranges: set[tuple[int, int]]) -> bool:
+    if len(ranges) < MIN_SPLIT_PARTS or len(ranges) > MAX_SPLIT_PARTS:
+        return False
+    ordered = sorted(ranges)
+    if ordered[0][0] != 0 or ordered[-1][1] != 60:
+        return False
+    return all(
+        _is_valid_minute_range(start, end)
+        and (index == 0 or ordered[index - 1][1] == start)
+        for index, (start, end) in enumerate(ordered)
+    )
+
+
+def _split_ranges_for_range(range_key: tuple[int, int]) -> tuple[tuple[int, int], ...] | None:
+    minute_start, minute_end = range_key
+    if minute_start == 0 and 0 < minute_end < 60:
+        return _split_ranges(minute_end)
+    if minute_end == 60 and 0 < minute_start < 60:
+        return _split_ranges(minute_start)
+    return None
+
+
+def _split_ranges_for_items(items: list) -> tuple[tuple[int, int], ...] | None:
+    ranges = {(int(item.minute_start), int(item.minute_end)) for item in items}
+    if _is_split_ranges(ranges):
+        return tuple(sorted(ranges))
+    partials = [range_key for range_key in ranges if range_key != FULL_SEGMENT]
+    if len(partials) == 1:
+        return _split_ranges_for_range(partials[0])
+    return None
+
+
+def _is_split_cells(cells: list[ScheduleCell]) -> bool:
+    return _is_split_ranges({(int(cell.minute_start), int(cell.minute_end)) for cell in cells})
+
+
 def _validate_restore_segments(item) -> None:
     ranges: set[tuple[int, int]] = set()
     for segment in item.segments:
@@ -345,11 +441,11 @@ def _validate_restore_segments(item) -> None:
 
     if not ranges:
         return
-    if ranges == {FULL_SEGMENT} or ranges == set(HALF_SEGMENTS):
+    if ranges == {FULL_SEGMENT} or _is_split_ranges(ranges):
         return
     raise HTTPException(
         status.HTTP_400_BAD_REQUEST,
-        detail="Undo kan bara återställa en hel timme, två halvtimmar eller en tom implicit timme.",
+        detail="Undo kan bara aterstalla en hel timme, 2-4 sammanhangande delar eller en tom implicit timme.",
     )
 
 
@@ -409,8 +505,198 @@ def _bulk_conflict_dict(item, current_segments: list[ScheduleCell]) -> dict:
 def _validate_segment(hour: int, minute_start: int, minute_end: int) -> None:
     if hour not in HOURS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Timme måste vara {HOURS[0]}-{HOURS[-1]}")
-    if (minute_start, minute_end) not in VALID_SEGMENTS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltigt segment. Tillåtna värden är 0-60, 0-30 eller 30-60.")
+    if not _is_valid_minute_range(minute_start, minute_end):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltigt segment. Minuter maste ligga inom 0-60 och starta fore slut.")
+
+
+def _calculator_profile_display_name(user: User) -> str:
+    return str(getattr(user, "display_name", None) or getattr(user, "username", None) or getattr(user, "id", "")).strip()
+
+
+def _accessible_calculator_profile_user_query(db: Session, user: User):
+    query = db.query(User).filter(User.is_active.is_(True))
+    if not is_super_user(user):
+        business_id = getattr(user, "business_id", None)
+        if business_id is not None:
+            query = query.filter(User.business_id == business_id)
+    return query
+
+
+def _assert_calculator_profile_source_allowed(db: Session, user: User, source_user_id: int) -> User:
+    source_user = _accessible_calculator_profile_user_query(db, user).filter(User.id == source_user_id).first()
+    if source_user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Anvandarens bemanningskalkyler hittades inte")
+    return source_user
+
+
+def _user_calculator_profile(db: Session | object, user: User) -> dict:
+    user_id = getattr(user, "id", None)
+    if user_id is None or not hasattr(db, "query"):
+        return empty_staffing_calculator_profile()
+    try:
+        row = db.query(StaffingCalculatorProfile).filter(StaffingCalculatorProfile.user_id == user_id).first()
+    except Exception:
+        return empty_staffing_calculator_profile()
+    return normalize_staffing_calculator_profile(getattr(row, "profile", None) if row is not None else None)
+
+
+def _calculator_profile_users(db: Session, user: User) -> list[dict]:
+    users = _accessible_calculator_profile_user_query(db, user).order_by(func.lower(User.username)).all()
+    user_ids = [int(item.id) for item in users if getattr(item, "id", None) is not None]
+    rows = []
+    if user_ids:
+        rows = db.query(StaffingCalculatorProfile).filter(StaffingCalculatorProfile.user_id.in_(user_ids)).all()
+    profile_by_user = {int(row.user_id): normalize_staffing_calculator_profile(row.profile) for row in rows}
+    result = []
+    for item in users:
+        item_id = int(item.id)
+        profile = profile_by_user.get(item_id, empty_staffing_calculator_profile())
+        count = staffing_calculator_profile_count(profile)
+        result.append({
+            "id": item_id,
+            "username": str(item.username),
+            "name": _calculator_profile_display_name(item),
+            "is_current": item_id == getattr(user, "id", None),
+            "has_calculators": count > 0,
+            "calculator_count": count,
+        })
+    return result
+
+
+def _calculator_profile_response(db: Session, user: User) -> dict:
+    return {
+        "profile": _user_calculator_profile(db, user),
+        "users": _calculator_profile_users(db, user),
+        "process_options": staffing_process_options(db, user),
+    }
+
+
+def _set_user_calculator_profile(db: Session, user: User, profile: object) -> dict:
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Anvandare saknas")
+    normalized = normalize_staffing_calculator_profile(profile)
+    row = db.query(StaffingCalculatorProfile).filter(StaffingCalculatorProfile.user_id == user_id).first()
+    if row is None:
+        row = StaffingCalculatorProfile(user_id=user_id, profile=normalized)
+        db.add(row)
+    else:
+        row.profile = normalized
+    db.flush()
+    return normalized
+
+
+@router.get("/calculator-profile")
+def get_calculator_profile(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    return _calculator_profile_response(db, user)
+
+
+@router.put("/calculator-profile")
+def update_calculator_profile(
+    payload: StaffingCalculatorProfileUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    before = _user_calculator_profile(db, user)
+    after = _set_user_calculator_profile(db, user, payload.profile)
+    if before != after:
+        audit_log(
+            db,
+            entity_type="staffing_calculator_profile",
+            entity_id=int(getattr(user, "id", 0) or 0),
+            action="update_staffing_calculator_profile",
+            old_value={"calculator_count": staffing_calculator_profile_count(before)},
+            new_value={"calculator_count": staffing_calculator_profile_count(after)},
+            user_id=getattr(user, "id", None),
+            business_id=getattr(user, "business_id", None),
+        )
+    db.commit()
+    return _calculator_profile_response(db, user)
+
+
+@router.post("/calculator-profile/import")
+def import_calculator_profile(
+    payload: StaffingCalculatorProfileImport,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    source_user = _assert_calculator_profile_source_allowed(db, user, payload.user_id)
+    source_profile = _user_calculator_profile(db, source_user)
+    if staffing_calculator_profile_count(source_profile) <= 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Anvandaren har inga sparade bemanningskalkyler")
+    before = _user_calculator_profile(db, user)
+    after = _set_user_calculator_profile(db, user, source_profile)
+    audit_log(
+        db,
+        entity_type="staffing_calculator_profile",
+        entity_id=int(getattr(user, "id", 0) or 0),
+        action="import_staffing_calculator_profile",
+        old_value={"calculator_count": staffing_calculator_profile_count(before)},
+        new_value={
+            "calculator_count": staffing_calculator_profile_count(after),
+            "source_user_id": getattr(source_user, "id", None),
+        },
+        user_id=getattr(user, "id", None),
+        business_id=getattr(user, "business_id", None),
+    )
+    db.commit()
+    return _calculator_profile_response(db, user)
+
+
+@router.get("/calculator/automatic")
+def get_automatic_calculator_results(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    return calculate_staffing_automatic(
+        db,
+        user,
+        _user_calculator_profile(db, user),
+        year=year,
+        week=week,
+        weekday=weekday,
+    )
+
+
+@router.get("/activity-capacity")
+def get_activity_capacity(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    return schedule_activity_capacity(
+        db,
+        user,
+        year=year,
+        week=week,
+        weekday=weekday,
+    )
+
+
+@router.get("/productivity-summary")
+def get_schedule_productivity_summary(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+    _productivity_user: User = Depends(require_view_access("productivity", "view")),
+) -> dict:
+    return schedule_productivity_summary(
+        db,
+        user,
+        year=year,
+        week=week,
+        weekday=weekday,
+    )
 
 
 @router.get("/revision")
@@ -766,6 +1052,7 @@ def split_cell(
 ):
     if payload.hour not in HOURS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Timme måste vara {HOURS[0]}-{HOURS[-1]}")
+    split_ranges = _split_ranges_from_payload(payload)
     person = scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
 
     hour_segments = _load_hour_segments(
@@ -781,7 +1068,7 @@ def split_cell(
     if _segment_signature(hour_segments) != _expected_signature(payload.segments):
         return _conflict_response(person_id=payload.person_id, hour=payload.hour, current=hour_segments)
 
-    if len(hour_segments) == 2 and {(cell.minute_start, cell.minute_end) for cell in hour_segments} == set(HALF_SEGMENTS):
+    if len(hour_segments) >= MIN_SPLIT_PARTS and _is_split_cells(hour_segments):
         assert_can_modify_schedule_cells(hour_segments, user, owner_lock_enabled)
         preferred = next(
             (
@@ -793,27 +1080,35 @@ def split_cell(
         )
         if preferred is None:
             preferred = next((cell for cell in hour_segments if cell.activity_id is not None), None) or hour_segments[0]
-        other = next(cell for cell in hour_segments if cell.id != preferred.id)
+        other_segments = [cell for cell in hour_segments if cell.id != preferred.id]
 
         old_preferred = _cell_to_dict(preferred)
-        old_other = _cell_to_dict(other)
+        old_others = [(other, _cell_to_dict(other)) for other in other_segments]
+        merged_loan_area_id = preferred.loan_area_id
+        if preferred.activity_id is None:
+            merged_loan_area_id = preferred.loan_area_id or next(
+                (cell.loan_area_id for cell in other_segments if cell.loan_area_id is not None),
+                None,
+            )
+        merged_empty_override = any(cell.empty_override for cell in hour_segments)
 
-        audit_log(
-            db,
-            entity_type="schedule_cell",
-            entity_id=other.id,
-            action="split_merge_delete",
-            old_value=old_other,
-            new_value=None,
-            user_id=user.id,
-        )
-        db.delete(other)
+        for other, old_other in old_others:
+            audit_log(
+                db,
+                entity_type="schedule_cell",
+                entity_id=other.id,
+                action="split_merge_delete",
+                old_value=old_other,
+                new_value=None,
+                user_id=user.id,
+            )
+            db.delete(other)
         db.flush()
 
         preferred.minute_start = 0
         preferred.minute_end = 60
-        preferred.loan_area_id = None if preferred.activity_id is not None else (preferred.loan_area_id or other.loan_area_id)
-        preferred.empty_override = preferred.empty_override or other.empty_override
+        preferred.loan_area_id = None if preferred.activity_id is not None else merged_loan_area_id
+        preferred.empty_override = merged_empty_override
         preferred.version += 1
         preferred.updated_by = user.id
         db.flush()
@@ -835,7 +1130,7 @@ def split_cell(
 
     if not hour_segments:
         created: list[ScheduleCell] = []
-        for minute_start, minute_end in HALF_SEGMENTS:
+        for minute_start, minute_end in split_ranges:
             cell = ScheduleCell(
                 year=payload.year,
                 week=payload.week,
@@ -871,7 +1166,12 @@ def split_cell(
 
     assert_can_modify_schedule_cells([source], user, owner_lock_enabled)
     old = _cell_to_dict(source)
-    source.minute_end = 30
+    original_activity_id = source.activity_id
+    original_loan_area_id = source.loan_area_id
+    original_empty_override = source.empty_override
+    first_start, first_end = split_ranges[0]
+    source.minute_start = first_start
+    source.minute_end = first_end
     source.version += 1
     source.updated_by = user.id
     db.flush()
@@ -885,34 +1185,37 @@ def split_cell(
         user_id=user.id,
     )
 
-    second = ScheduleCell(
-        year=source.year,
-        week=source.week,
-        weekday=source.weekday,
-        hour=source.hour,
-        minute_start=30,
-        minute_end=60,
-        person_id=source.person_id,
-        activity_id=source.activity_id,
-        loan_area_id=source.loan_area_id,
-        empty_override=source.empty_override,
-        version=1,
-        updated_by=user.id,
-    )
-    db.add(second)
-    db.flush()
-    audit_log(
-        db,
-        entity_type="schedule_cell",
-        entity_id=second.id,
-        action="split_create",
-        old_value=None,
-        new_value=_cell_to_dict(second),
-        user_id=user.id,
-    )
+    created_segments = [source]
+    for minute_start, minute_end in split_ranges[1:]:
+        segment = ScheduleCell(
+            year=source.year,
+            week=source.week,
+            weekday=source.weekday,
+            hour=source.hour,
+            minute_start=minute_start,
+            minute_end=minute_end,
+            person_id=source.person_id,
+            activity_id=original_activity_id,
+            loan_area_id=original_loan_area_id,
+            empty_override=original_empty_override,
+            version=1,
+            updated_by=user.id,
+        )
+        db.add(segment)
+        db.flush()
+        audit_log(
+            db,
+            entity_type="schedule_cell",
+            entity_id=segment.id,
+            action="split_create",
+            old_value=None,
+            new_value=_cell_to_dict(segment),
+            user_id=user.id,
+        )
+        created_segments.append(segment)
 
     db.commit()
-    return {"segments": _serialize_segments([source, second])}
+    return {"segments": _serialize_segments(created_segments)}
 
 
 @router.post("/cells")
@@ -1036,12 +1339,10 @@ def bulk_update_cells(
                 for item in group_items
             }
             version_checked_ranges: set[tuple[int, int]] = set()
-            wants_half_segments = any(
-                (item.minute_start, item.minute_end) in HALF_SEGMENTS
-                for item in group_items
-            )
+            split_ranges = _split_ranges_for_items(group_items)
+            wants_split_segments = split_ranges is not None
 
-            if wants_half_segments:
+            if wants_split_segments:
                 full_segment = (
                     hour_segments[0]
                     if len(hour_segments) == 1
@@ -1065,26 +1366,30 @@ def bulk_update_cells(
                     original_activity_id = full_segment.activity_id
                     original_loan_area_id = full_segment.loan_area_id
                     original_empty_override = full_segment.empty_override
-                    full_segment.minute_start = 0
-                    full_segment.minute_end = 30
+                    first_start, first_end = split_ranges[0]
+                    full_segment.minute_start = first_start
+                    full_segment.minute_end = first_end
                     full_segment.version += 1
                     full_segment.updated_by = user.id
 
-                    other_half = ScheduleCell(
-                        year=year,
-                        week=week,
-                        weekday=weekday,
-                        hour=hour,
-                        minute_start=30,
-                        minute_end=60,
-                        person_id=person_id,
-                        activity_id=original_activity_id,
-                        loan_area_id=original_loan_area_id,
-                        empty_override=original_empty_override,
-                        version=1,
-                        updated_by=user.id,
-                    )
-                    db.add(other_half)
+                    created_split_segments: list[ScheduleCell] = []
+                    for minute_start, minute_end in split_ranges[1:]:
+                        segment = ScheduleCell(
+                            year=year,
+                            week=week,
+                            weekday=weekday,
+                            hour=hour,
+                            minute_start=minute_start,
+                            minute_end=minute_end,
+                            person_id=person_id,
+                            activity_id=original_activity_id,
+                            loan_area_id=original_loan_area_id,
+                            empty_override=original_empty_override,
+                            version=1,
+                            updated_by=user.id,
+                        )
+                        db.add(segment)
+                        created_split_segments.append(segment)
                     db.flush()
                     audit_log(
                         db,
@@ -1095,17 +1400,18 @@ def bulk_update_cells(
                         new_value=_cell_to_dict(full_segment),
                         user_id=user.id,
                     )
-                    audit_log(
-                        db,
-                        entity_type="schedule_cell",
-                        entity_id=other_half.id,
-                        action=f"{payload.action}_split_create",
-                        old_value=None,
-                        new_value=_cell_to_dict(other_half),
-                        user_id=user.id,
-                    )
+                    for segment in created_split_segments:
+                        audit_log(
+                            db,
+                            entity_type="schedule_cell",
+                            entity_id=segment.id,
+                            action=f"{payload.action}_split_create",
+                            old_value=None,
+                            new_value=_cell_to_dict(segment),
+                            user_id=user.id,
+                        )
                     hour_segments = sorted(
-                        [full_segment, other_half],
+                        [full_segment, *created_split_segments],
                         key=lambda cell: (cell.minute_start, cell.minute_end),
                     )
                     version_checked_ranges = set(item_by_range.keys())
@@ -1121,7 +1427,7 @@ def bulk_update_cells(
                         continue
 
                     created: list[ScheduleCell] = []
-                    for minute_start, minute_end in HALF_SEGMENTS:
+                    for minute_start, minute_end in split_ranges:
                         desired_item = item_by_range.get((minute_start, minute_end))
                         desired_activity_id = (
                             desired_item.activity_id if desired_item is not None else None

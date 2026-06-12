@@ -1,7 +1,7 @@
 ---
 title: Kallmanifest
 status: aktiv
-updated: 2026-05-22
+updated: 2026-06-10
 tags: [wiki, kallor]
 ---
 
@@ -31,7 +31,7 @@ Kort svar: wikin ar syntetiserad fran repo-filerna nedan. Raa kallor ska normalt
 - `../app/frontend/anvandare.html`, `../app/frontend/js/users.js` - Anvandare, settings och vybehorigheter.
 - `../app/frontend/verksamheter.html`, `../app/frontend/js/businesses.js` - Super User-vyn for verksamheter.
 - `../app/frontend/historik.html`, `../app/frontend/js/analytics.js` - Historik/audit.
-- `../app/frontend/produktivitet.html`, `../app/frontend/js/productivity.js`, `../app/frontend/js/productivity_uploads.js` - Produktivitet och filval.
+- `../app/frontend/produktivitet.html`, `../app/frontend/js/productivity_overview.js` - Produktivitetens trad-/periodvy.
 - `../app/frontend/uppladdningar.html`, `../app/frontend/bearbeta.html`, `../app/frontend/dela.html`, `../app/frontend/js/allocation_tools.js` - lagerverktyg.
 - `../app/frontend/js/common.js` - sidebar, tema, omradesfokus, toast, logg, gemensam filuppladdning och auth-guard.
 - `../app/frontend/js/api.js` - fetch-wrapper, auth-redirects och nedladdningar.
@@ -44,10 +44,11 @@ Kort svar: wikin ar syntetiserad fran repo-filerna nedan. Raa kallor ska normalt
 - `../app/backend/deps.py`, `../app/backend/user_access.py` - auth, roller och vyatkomst.
 - `../app/backend/business_scope.py`, `../app/backend/routers/businesses.py`, `../app/alembic/versions/0018_businesses.py` - verksamheter, isolering och backfill.
 - `../app/backend/settings_service.py`, `../app/backend/routers/settings.py` - verksamhetsspecifika settings.
-- `../app/backend/routers/schedule.py`, `../app/backend/routers/bulk.py`, `../app/backend/routers/overview.py` - schema och oversikt.
+- `../app/backend/routers/schedule.py`, `../app/backend/staffing_calculator_service.py`, `../app/backend/person_productivity_cache.py`, `../app/backend/routers/bulk.py`, `../app/backend/routers/overview.py` - schema, bemanningskalkyl, produktivitetscache och oversikt.
 - `../app/backend/routers/persons.py`, `../app/backend/routers/person_schedules.py`, `../app/backend/routers/activities.py`, `../app/backend/routers/areas.py`, `../app/backend/routers/users.py` - register.
 - `../app/backend/routers/audit_logs.py`, `../app/backend/audit.py` - auditlogg.
-- `../app/backend/productivity_service.py`, `../app/backend/routers/productivity.py`, `../app/backend/routers/public.py` - produktivitet och publika CSV/API-varden.
+- `../app/backend/productivity_service.py`, `../app/backend/productivity_kpi_rules.py`, `../app/backend/productivity_sync.py`, `../app/backend/routers/productivity.py`, `../app/backend/routers/public.py` - produktivitet, KPI-mal och publika CSV/API-varden.
+- `../referens/kpi.sql` - lokal historisk SQL-referens som kodens interna KPI-logik bygger pa.
 - `../app/backend/allocation_bridge.py`, `../app/backend/routers/allocation.py` - lagerverktygens API-brygga.
 
 ## Desktop- och verktygskallor

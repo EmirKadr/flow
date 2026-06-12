@@ -15,8 +15,9 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.backend import allocation_bridge as bridge
 from app.backend.database import Base
-from app.backend.models import AllocationUserFilterProfile, Business, User
+from app.backend.models import AllocationUserFilterProfile, Area, Business, User
 from app.backend.routers import allocation as allocation_router
+from app.backend.settings_service import get_json_setting, set_json_setting
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -508,6 +509,120 @@ def test_process_matrix_public_payload_exposes_editable_rules():
     }
 
 
+def test_process_matrix_public_payload_uses_dynamic_area_options():
+    flows = [{"id": "allocate", "label": "Allokering", "category": "Allokering"}]
+    areas = [
+        {"code": "PACK", "label": "Pack"},
+        {"code": "SHIP", "label": "Utlast"},
+    ]
+    matrix = bridge.normalize_process_matrix(
+        {
+            "PACK": {"visibleFlowIds": ["allocate", "hidden"]},
+            "GG": {"visibleFlowIds": []},
+        },
+        flows=flows,
+    )
+
+    payload = bridge.process_matrix_public_payload(matrix, flows=flows, area_options=areas)
+
+    assert [area["code"] for area in payload["areas"]] == ["PACK", "SHIP", "ALLT"]
+    assert payload["matrix"]["PACK"] == {"visibleFlowIds": ["allocate"]}
+    assert payload["matrix"]["SHIP"] == {"visibleFlowIds": None}
+    assert payload["matrix"]["ALLT"] == {"visibleFlowIds": None}
+    assert "GG" not in payload["matrix"]
+
+
+def test_process_matrix_response_uses_active_business_areas(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    monkeypatch.setattr(
+        allocation_router,
+        "_allocation_process_matrix_flows",
+        lambda: [{"id": "allocate", "label": "Allokering", "category": "Allokering"}],
+    )
+    try:
+        t3 = Business(id=10, code="T3", name="T3", sort_order=1)
+        other = Business(id=20, code="OTHER", name="Other", sort_order=2)
+        user = User(id=1, username="t3-admin", role="admin", roles=["admin"], business_id=t3.id, is_active=True)
+        session.add_all(
+            [
+                t3,
+                other,
+                user,
+                Area(id=101, business_id=t3.id, code="PACK", name="Pack", sort_order=1, is_active=True),
+                Area(id=102, business_id=t3.id, code="SHIP", name="Utlast", sort_order=2, is_active=True),
+                Area(id=103, business_id=t3.id, code="OLD", name="Old", sort_order=3, is_active=False),
+                Area(id=201, business_id=other.id, code="AS", name="Autostore", sort_order=1, is_active=True),
+            ]
+        )
+        session.commit()
+
+        response = allocation_router._process_matrix_response(session, user)
+
+        assert [area["code"] for area in response["areas"]] == ["PACK", "SHIP", "ALLT"]
+        assert "AS" not in response["matrix"]
+        assert response["matrix"]["PACK"] == {"visibleFlowIds": None}
+        assert response["matrix"]["SHIP"] == {"visibleFlowIds": None}
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_update_process_matrix_preserves_rules_outside_visible_areas(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    flows = [
+        {"id": "allocate", "label": "Allokering", "category": "Allokering"},
+        {"id": "ordersaldo", "label": "Ordersaldo", "category": "Saldo"},
+    ]
+    monkeypatch.setattr(allocation_router, "_allocation_process_matrix_flows", lambda: flows)
+    monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: None)
+    try:
+        t3 = Business(id=10, code="T3", name="T3", sort_order=1)
+        other = Business(id=20, code="OTHER", name="Other", sort_order=2)
+        user = User(id=1, username="t3-admin", role="admin", roles=["admin"], business_id=t3.id, is_active=True)
+        session.add_all(
+            [
+                t3,
+                other,
+                user,
+                Area(id=101, business_id=t3.id, code="PACK", name="Pack", sort_order=1, is_active=True),
+                Area(id=201, business_id=other.id, code="AS", name="Autostore", sort_order=1, is_active=True),
+            ]
+        )
+        session.commit()
+        set_json_setting(
+            session,
+            allocation_router.ALLOCATION_PROCESS_MATRIX_KEY,
+            {
+                "PACK": {"visibleFlowIds": ["allocate"]},
+                "AS": {"visibleFlowIds": ["ordersaldo"]},
+            },
+        )
+        session.commit()
+
+        allocation_router.update_process_matrix(
+            allocation_router.AllocationProcessMatrixUpdate(
+                matrix={"PACK": {"visibleFlowIds": []}, "AS": {"visibleFlowIds": []}},
+            ),
+            db=session,
+            admin=user,
+        )
+
+        stored = get_json_setting(session, allocation_router.ALLOCATION_PROCESS_MATRIX_KEY, default={})
+        assert stored["PACK"] == {"visibleFlowIds": []}
+        assert stored["AS"] == {"visibleFlowIds": ["ordersaldo"]}
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_ytgenerering_user_profile_controls_utl_range_and_carrier_clusters():
     profile = bridge.normalize_user_filter_profile(
         {
@@ -543,6 +658,15 @@ def test_ytgenerering_user_profile_controls_utl_range_and_carrier_clusters():
     assert params[bridge.YTGENERERING_UTL_MAX_PARAM] == "310"
     assert '"Freja"' in params["__carrier_clusters_json"]
     assert bridge.process_matrix_storage_payload({"AS": {"ytgenereringUtlMin": "310"}})["AS"] == {"visibleFlowIds": None}
+
+
+def test_ytgenerering_default_utl_range_is_not_area_hardcoded():
+    settings = bridge.apply_ytgenerering_user_settings({}, {}, area_focus="MG")
+
+    assert settings["utlRange"] == (
+        bridge.YTGENERERING_UTL_DEFAULT_MIN,
+        bridge.YTGENERERING_UTL_DEFAULT_MAX,
+    )
 
 
 def test_process_matrix_empty_visible_flow_list_hides_all_flows():

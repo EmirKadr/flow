@@ -50,6 +50,15 @@ function formatDuration(seconds) {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} kB`;
+  return `${Math.round(value)} B`;
+}
+
 function shortHash(value) {
   return String(value || "").slice(0, 10);
 }
@@ -136,7 +145,11 @@ function renderSummary() {
   const total = metaItems.length;
   const videos = metaItems.filter((item) => item.media_type === "video").length;
   const images = metaItems.filter((item) => item.media_type === "image").length;
-  document.getElementById("metaSummary").textContent = `${total} filer - ${videos} videor - ${images} bilder`;
+  const videoBytes = metaItems
+    .filter((item) => item.media_type === "video")
+    .reduce((sum, item) => sum + (Number(item.size_bytes) || 0), 0);
+  const videoSize = videos ? ` (${formatBytes(videoBytes)})` : "";
+  document.getElementById("metaSummary").textContent = `${total} filer - ${videos} videor${videoSize} - ${images} bilder`;
 }
 
 function statusLabel(status) {
@@ -167,6 +180,8 @@ function shipmentSearchText(item) {
     statusLabel(item.analysis_status),
     item.video_filename,
     item.video_original_filename,
+    item.video_size_label,
+    item.video_size_bytes,
     item.video_hash,
     item.record_hash,
   ]);
@@ -182,6 +197,10 @@ function sortValue(item, key) {
   }
   if (key === "video_duration_seconds") {
     const value = Number(item.video_duration_seconds);
+    return Number.isFinite(value) ? value : -1;
+  }
+  if (key === "video_size_bytes") {
+    const value = Number(item.video_size_bytes);
     return Number.isFinite(value) ? value : -1;
   }
   return item[key] ?? "";
@@ -244,11 +263,11 @@ function renderShipmentRows() {
     ? `${visibleItems.length} av ${shipmentItems.length} sändningsrader`
     : `${shipmentItems.length} sändningsrader`;
   if (!shipmentItems.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
     return;
   }
   if (!visibleItems.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
     return;
   }
 
@@ -260,6 +279,7 @@ function renderShipmentRows() {
     const hashTitle = `Video: ${item.video_hash || "-"}\nRad: ${item.record_hash || "-"}`;
     const videoTitle = item.video_filename || `Video ${item.media_upload_id || ""}`.trim();
     const videoHash = shortHash(item.video_hash);
+    const videoSize = item.video_size_label || formatBytes(item.video_size_bytes);
     const videoDownloadLabel = `Ladda ner ${videoTitle || "video"}`;
     const labelDownloadLabel = `Ladda ner stillbild för ${videoTitle || "video"}`;
     const timestamp = formatTimestamp(item.updated_at || item.created_at);
@@ -282,6 +302,7 @@ function renderShipmentRows() {
           <div class="meta-admin-subtle" title="${escapeHtml(item.video_hash || "-")}">#${escapeHtml(videoHash || "-")}</div>
         </td>
         <td data-duration-for="${escapeHtml(item.media_upload_id || "")}">${escapeHtml(formatDuration(item.video_duration_seconds))}</td>
+        <td>${escapeHtml(videoSize)}</td>
         <td>${item.label_still_url ? "Finns" : "-"}</td>
         <td class="meta-admin-hash" title="${escapeHtml(hashTitle)}">${escapeHtml(shortHash(item.record_hash) || "-")}</td>
         <td>

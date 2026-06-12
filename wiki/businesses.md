@@ -1,7 +1,7 @@
 ---
 title: Verksamheter och isolering
 status: aktiv
-updated: 2026-06-01
+updated: 2026-06-09
 tags: [verksamheter, behorighet, isolering, super-user]
 ---
 
@@ -57,7 +57,7 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 
 - Lagerverktygens buffertpall-observations och framraknade `artikel_max.csv` ar verksamhetsseparerade pa persistent disk via `PRODUCTIVITY_DATA_DIR` eller `MEDIA_STORE_ROOT/flow-data`, normalt `flow-data/buffertpall/<verksamhetskod>/`. `artikel_max.csv` behandlas som sammanstalld data, inte som en vanlig coredata-karnfil. Gamla filer under `warehouse_tools/vendor/lowfreqdata/buffertpall/` ar bara legacy-seed tills datan migrerats. Ordersaldo, LYX och Pafyllnadsprio anvander verksamhetens sammanstallda data nar anvandaren inte laddar upp en egen `artikel_max.csv`; om observationshistorik saknas ska anvandaren ladda upp buffertpall for verksamheten forst. For Super User styr sidebarens omradestoggle vilken verksamhet lagerverktygen skriver/laster: R3-toggle ger R3, Stigamo-omraden ger Stigamo och `∞` faller tillbaka till kontots egen verksamhet.
 - Gemensamma coredata-karnfiler ar verksamhetsseparerade i Postgres-tabellen `coredata_files`. Varje verksamhet har en egen rad per filtyp, identifierad med `business_code + file_type`. En ny uppladdning ersatter bara gamla DB-raden med samma prefix i anvandarens egen verksamhet. Gamla filer under `data/coredata/<verksamhetskod>/` kan fortfarande lasas som fallback tills de laddas upp igen, men verksamhetsscopeade floden laser inte langre Stigamos gamla root-KPI som specialfall.
-- De kanda karnfilsprefixen i Uppladdningar ar `custom`, `dimension`, `dispatch_template`, `item`, `item_alias`, `item_attribute`, `item_option`, `item_security_info`, `kpi_target_rule`, `location`, `location_cost`, `pallet_type`, `trans_agency` och produktivitetens `v_ask_kpi_target`. `artikel_max` och produktivitetens `productivity_pick_observations`, `productivity_trans_observations`, `productivity_pallet_observations` ar sammanstalld data i samma verksamhetsscope. Samma filtyper far finnas i alla verksamheter, men datan far aldrig blandas mellan katalogerna.
+- De kanda karnfilsprefixen i Uppladdningar ar `custom`, `dimension`, `dispatch_template`, `item`, `item_alias`, `item_attribute`, `item_option`, `item_security_info`, `location`, `location_cost`, `pallet_type` och `trans_agency`. `artikel_max` ar sammanstalld data i samma verksamhetsscope. Samma filtyper far finnas i alla verksamheter, men datan far aldrig blandas mellan katalogerna. KPI-mal hanteras separat via `v_ask_kpi_target`/`kpi`.
 
 ## Testkontrakt
 

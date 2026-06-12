@@ -14,7 +14,6 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urljoin
@@ -23,19 +22,11 @@ import requests
 
 from app.backend import allocation_bridge as allocation
 from app.backend import workflow_data
-from app.backend.productivity_service import (
-    ProductivitySourceError,
-    build_productivity_report_from_files,
-    build_productivity_session_file_status,
-    classify_productivity_file,
-    read_productivity_targets,
-    read_productivity_targets_from_file,
-)
+from app.backend.productivity_service import ProductivitySourceError
 from app.backend.coredata_service import find_coredata_file
 
 
 LOCAL_REF_PREFIX = "__flow_local_ref:"
-PRODUCTIVITY_KEYS = {"pick", "trans", "pallet", "kpi"}
 ARTICLE_MAX_KEY = "article_max"
 BUSINESS_ARTICLE_MAX_FLOW_IDS = {"ordersaldo", "lyx", "pafyllnadsprio"}
 FORECAST_COREDATA_DEFAULTS = {
@@ -131,7 +122,6 @@ class DesktopLocalRuntime:
         self.cache_dir = self.data_dir / "cache"
         self.upload_dir = self.data_dir / "uploads"
         self._files: dict[str, LocalFileEntry] = {}
-        self._productivity_refs: dict[str, str] = {}
         self._jobs: dict[str, dict[str, Any]] = {}
         self._work_queue: queue.Queue[Callable[[], None]] = queue.Queue()
         self._work_thread_started = False
@@ -424,83 +414,6 @@ class DesktopLocalRuntime:
             for temp_path in locals().get("user_filter_temp_paths", []):
                 temp_path.unlink(missing_ok=True)
 
-    def register_productivity_refs(self, mapping: dict[str, str]) -> dict[str, Any]:
-        saved = []
-        with self._lock:
-            for key, ref in mapping.items():
-                if key not in PRODUCTIVITY_KEYS:
-                    continue
-                entry = self.file_for_ref(ref)
-                self._productivity_refs[key] = entry.ref
-                saved.append({"key": key, "name": entry.name, "size": entry.size})
-        return {"saved": saved, "status": self.productivity_status()}
-
-    def productivity_files(self) -> dict[str, Path]:
-        files: dict[str, Path] = {}
-        with self._lock:
-            refs = dict(self._productivity_refs)
-        for key, ref in refs.items():
-            if key in PRODUCTIVITY_KEYS:
-                files[key] = self.file_for_ref(ref).path
-        return files
-
-    def _kpi_path(self) -> Path | None:
-        with self._lock:
-            kpi_ref = self._productivity_refs.get("kpi")
-        if kpi_ref:
-            return self.file_for_ref(kpi_ref).path
-        matches = sorted(self.cache_dir.glob("v_ask_kpi_target*.csv"), key=lambda p: p.stat().st_mtime_ns if p.is_file() else 0)
-        return matches[-1] if matches else None
-
-    def productivity_status(self) -> dict[str, Any]:
-        files = {key: path for key, path in self.productivity_files().items() if key in {"pick", "trans", "pallet"}}
-        status = build_productivity_session_file_status(files, reference_dir=self.cache_dir)
-        if self._kpi_path() is not None:
-            status["kpi_loaded"] = True
-            status["ready"] = not status.get("missing")
-        return status
-
-    def productivity_targets(self) -> dict[str, Any]:
-        kpi_path = self._kpi_path()
-        if kpi_path is not None:
-            return read_productivity_targets_from_file(kpi_path)
-        return read_productivity_targets(reference_dir=self.cache_dir)
-
-    def productivity_report(
-        self,
-        report_date: date | None = None,
-        *,
-        upstream_root: str = "",
-        headers: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
-        files = self.productivity_files()
-        kpi_path = self._kpi_path()
-        if kpi_path is not None:
-            files["kpi"] = kpi_path
-        source_resolution: workflow_data.WorkflowResolution | None = None
-        try:
-            source_map = workflow_data.productivity_api_source_map()
-            source_resolution = self._resolve_api_first_sources(
-                feature="productivity",
-                flow_id="productivity",
-                source_map=source_map,
-                files=files,
-                required_keys=set(source_map),
-                local_ref_keys=set(files),
-                upstream_root=upstream_root,
-                headers=headers or {},
-            )
-            files = source_resolution.files
-            if "kpi" not in files:
-                raise ProductivitySourceError("Saknar KPI-mål i lokal cache.")
-            report = build_productivity_report_from_files(files, report_date=report_date)
-            report["source_status"] = source_resolution.audit_entries
-            report["log"] = source_resolution.log_lines + list(report.get("log") or [])
-            return report
-        finally:
-            for temp_path in (source_resolution.temp_paths if source_resolution is not None else []):
-                temp_path.unlink(missing_ok=True)
-
     def enqueue_upload(
         self,
         *,
@@ -786,34 +699,18 @@ def local_response_for_request(
                 label="Kärnfil",
             )
             return 202, "application/json; charset=utf-8", _json_bytes({"job": job})
-        if path == "/api/desktop/sync/productivity" and method == "POST":
-            body = _read_json_body(handler)
-            job = runtime.enqueue_upload(
-                ref=body.get("localRef") or "",
-                upstream_root=upstream_root,
-                upstream_path="/api/productivity/files/raw",
-                filename=body.get("filename") or "",
-                headers=headers,
-                label="Sammanställd data",
-            )
-            return 202, "application/json; charset=utf-8", _json_bytes({"job": job})
-        if path == "/api/desktop/productivity/files/register" and method == "POST":
-            return 200, "application/json; charset=utf-8", _json_bytes(runtime.register_productivity_refs(_read_json_body(handler).get("files") or {}))
-        if path == "/api/productivity/files" and method == "GET":
-            upstream_status = _upstream_json(upstream_root, "/api/productivity/files", headers)
-            if upstream_status and upstream_status.get("api_first"):
-                return 200, "application/json; charset=utf-8", _json_bytes(upstream_status)
-            return 200, "application/json; charset=utf-8", _json_bytes(runtime.productivity_status())
-        if path == "/api/productivity/targets" and method == "GET":
-            return 200, "application/json; charset=utf-8", _json_bytes(runtime.productivity_targets())
-        if path == "/api/productivity" and method == "GET":
-            query = parse_qs(parsed.query or "")
-            date_text = (query.get("date") or [""])[0]
-            report_date = date.fromisoformat(date_text) if date_text else None
+        if (
+            path == "/api/productivity"
+            or path.startswith("/api/productivity/persons/")
+            or path == "/api/schedule/productivity-summary"
+        ) and method == "GET":
             started = time.perf_counter()
-            file_types = list(runtime.productivity_files().keys())
-            try:
-                report = runtime.productivity_report(report_date, upstream_root=upstream_root, headers=headers)
+            file_types: list[str] = []
+            upstream_path = path
+            if parsed.query:
+                upstream_path = f"{upstream_path}?{parsed.query}"
+            report = _upstream_json(upstream_root, upstream_path, headers)
+            if report is not None:
                 runtime.enqueue_local_audit(
                     upstream_root=upstream_root,
                     headers=headers,
@@ -825,19 +722,19 @@ def local_response_for_request(
                     ),
                 )
                 return 200, "application/json; charset=utf-8", _json_bytes(report)
-            except Exception as exc:
-                runtime.enqueue_local_audit(
-                    upstream_root=upstream_root,
-                    headers=headers,
-                    payload=_productivity_audit_payload(
-                        None,
-                        status="error",
-                        duration_ms=int((time.perf_counter() - started) * 1000),
-                        file_types=file_types,
-                        error=exc,
-                    ),
-                )
-                raise
+            error = ProductivitySourceError("Produktivitetsrapporten kräver central serverdata för schema och KPI-snapshot.")
+            runtime.enqueue_local_audit(
+                upstream_root=upstream_root,
+                headers=headers,
+                payload=_productivity_audit_payload(
+                    None,
+                    status="error",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    file_types=file_types,
+                    error=error,
+                ),
+            )
+            return 503, "application/json; charset=utf-8", _json_bytes({"detail": str(error)})
         if path.startswith("/api/allokering/flow/") and method == "POST":
             flow_id = path.rsplit("/", 1)[-1]
             fields, uploads, temp_paths = parse_multipart(handler)

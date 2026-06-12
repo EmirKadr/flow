@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from app.backend.deps import (
     require_allocation_process_user,
     require_allocation_tools_user,
+    require_any_view_access,
     require_planning_editor,
     require_planning_viewer,
 )
@@ -129,6 +130,26 @@ def test_bearbeta_matrix_has_separate_view_and_edit_permission():
     assert can_access_view(make_user("admin"), {}, "allocationProcessMatrix", "edit")
 
 
+def test_process_matrix_read_dependency_allows_matrix_without_bearbeta(monkeypatch):
+    user = make_user("warehouse_clerk", roles=["warehouse_clerk"])
+    dependency = require_any_view_access(("allocationProcess", "allocationProcessMatrix"), "view")
+    monkeypatch.setattr(
+        "app.backend.deps.get_role_view_access",
+        lambda _db, business_id=None: {"warehouse_clerk": {"allocationProcessMatrix": "view"}},
+    )
+
+    assert dependency(user, object()) is user
+
+
+def test_staffing_settings_has_separate_view_and_edit_permission():
+    user = make_user("staffing_manager")
+    access = {"staffing_manager": {"staffingSettings": "view"}}
+
+    assert can_access_view(user, access, "staffingSettings", "view")
+    assert not can_access_view(user, access, "staffingSettings", "edit")
+    assert can_access_view(make_user("admin"), {}, "staffingSettings", "edit")
+
+
 def test_role_view_access_levels_match_view_and_edit_contract():
     viewer = make_user("viewer")
 
@@ -168,3 +189,12 @@ def test_demo_user_gets_demo_role_access_in_addition_to_admin_role():
 
     assert role_view_access_level(user, access, "productivity") == "view"
     assert can_access_view(user, access, "productivity", "view")
+
+
+def test_productivity_view_no_longer_has_separate_overview_alias():
+    user = make_user("leader")
+
+    assert role_view_access_level(user, {"leader": {"productivity": "view"}}, "productivity") == "view"
+    assert can_access_view(user, {"leader": {"productivity": "view"}}, "productivity", "view")
+    assert role_view_access_level(user, {"leader": {"productivity": "view"}}, "productivityOverview") == "none"
+    assert not can_access_view(user, {"leader": {"productivity": "view"}}, "productivityOverview", "view")

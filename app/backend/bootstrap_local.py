@@ -55,6 +55,10 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if activity_columns and "kpi_process_name" not in activity_columns:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN kpi_process_name VARCHAR(255)")
+        if activity_columns and "work_type" not in activity_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE activities ADD COLUMN work_type VARCHAR(20) NOT NULL DEFAULT 'normal'"
+            )
         if schedule_columns and "loan_area_id" not in schedule_columns:
             connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN loan_area_id INTEGER REFERENCES areas(id)")
         if audit_columns and "business_id" not in audit_columns:
@@ -187,6 +191,7 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
                     summary_activity_id INTEGER REFERENCES activities(id),
                     color VARCHAR(20) NOT NULL,
                     category VARCHAR(20) NOT NULL,
+                    work_type VARCHAR(20) NOT NULL DEFAULT 'normal',
                     sort_order INTEGER NOT NULL,
                     is_active BOOLEAN NOT NULL,
                     required_competency VARCHAR(40),
@@ -204,6 +209,7 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
                     "summary_activity_id",
                     "color",
                     "category",
+                    "work_type",
                     "sort_order",
                     "is_active",
                     "required_competency",

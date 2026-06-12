@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandbok
 status: aktiv
-updated: 2026-05-25
+updated: 2026-06-11
 tags: [handbok, anvandare, support, chat]
 ---
 
@@ -29,19 +29,30 @@ Kort svar: denna sida beskriver hur en vanlig anvandare faktiskt anvander flow. 
 4. Kontrollera omradesfokus nere i sidomenyn. Det styr vilka omraden som visas i vyer med omradesdata; `∞` visar alla.
 5. Anvand sidomenyn for att ga till ratt vy.
 
+## Min produktivitet
+
+1. Ga till `Min produktivitet`.
+2. Valj datum. Personrollen ser sin egen person; Super User kan valja person i rullistan.
+3. Las `Idag`, `Poang/tim` och `Veckosnitt` for faktisk KPI-produktivitet fran den globala produktivitetshistoriken.
+4. Granska `Dagens produktivitet` och `Veckans produktivitet` for snitt per aktivitet.
+5. Om statusen sager att snapshots saknas fylls datumen av den globala historik-backfillen nar den hinner dit.
+
 ## Bemanning: planera en dag
 
 1. Ga till `Bemanning`.
 2. Valj ar, vecka och dag eller klicka datumet och valj datum direkt.
 3. Vaxla omradesfokus i sidebar om du vill byta omrade eller visa alla.
 4. Hitta personen med personfiltret i rubriken.
-5. Klicka i cellens dropdown och valj aktivitet.
-6. Hogerklicka eller dubbelklicka pa en timme om den ska delas i tva halvtimmar.
-7. Dra fran en cell for att fylla flera celler med samma aktivitet.
-8. Anvand `Ctrl+C`, `Ctrl+X`, `Ctrl+V` nar en cell/halva ar fokuserad.
-9. Anvand `Kopiera dag...` for att kopiera fran en dag till en annan.
-10. Anvand `Rensa dag` bara nar hela valt datum/omrade ska tommas.
-11. Titta pa `Summering per aktivitet` och `Bemanningskalkyl` efter planeringen.
+5. Las `Produktivitet`-kolumnen for en snabb procent fram till senaste avslutade KPI-timme. Tom cell betyder oftast att personen bara haft STOD/absence hittills eller saknar avslutad KPI-tid.
+6. Klicka i cellens dropdown och valj aktivitet.
+7. Klicka `V+H` om cellerna ska visa personens historiska snitt for valda V+H-aktiviteter, till exempel `GG Plock(70)`. Vilka aktiviteter som far visa parentesvarde styrs i `Installningar > Bemanning`. Klicka `V+H` igen for att dolja.
+8. Hogerklicka eller dubbelklicka pa en timme om den ska delas i tva halvtimmar.
+9. Dra fran en cell for att fylla flera celler med samma aktivitet.
+10. Anvand `Ctrl+C`, `Ctrl+X`, `Ctrl+V` nar en cell/halva ar fokuserad.
+11. Anvand `Kopiera dag...` for att kopiera fran en dag till en annan.
+12. Anvand `Rensa dag` bara nar hela valt datum/omrade ska tommas.
+13. Titta pa `Summering per aktivitet` och `Bemanningskalkyl` efter planeringen.
+14. I `Bemanningskalkyl` finns alltid `Manuell`. Klicka plus for en automatisk kalkyl, eller sok/hamta fran annan anvandare om du vill kopiera sparade automatiska kalkyler.
 
 Viktigt: celler sparas automatiskt. Det finns ingen separat Spara-knapp.
 
@@ -77,8 +88,9 @@ Inline-redigering: klicka direkt pa namn, hemomrade, huvudaktivitet eller sorter
 2. Klicka `Ny aktivitet`.
 3. Fyll etikett, omrade, farg, kategori och sortering.
 4. Valj `Summeras som` om aktiviteten ska raknas ihop med en annan aktivitet i summeringar.
-5. Super User kan hantera aktivitetskoder; andra ser normalt kod som read-only eller inte alls.
-6. For flera aktiviteter: klicka `Flera nya aktiviteter` och fyll tabellen direkt, eller anvand importmall pa samma satt som Personer.
+5. Satt `Arbetstyp` till `VAS` for Value Added Services. Lat `Kategori` vara arbete om personen jobbar; VAS ar inte en franvarokategori.
+6. Super User kan hantera aktivitetskoder; andra ser normalt kod som read-only eller inte alls.
+7. For flera aktiviteter: klicka `Flera nya aktiviteter` och fyll tabellen direkt, eller anvand importmall pa samma satt som Personer.
 
 Tips: om en aktivitet inte dyker upp dar anvandaren forvantar sig, kontrollera omrade, aktiv-status och vy/omradesfokus.
 
@@ -120,16 +132,42 @@ MiniMax far bara vy-/kolumnstruktur och exempel pa fragor. API-lank och nycklar 
 
 ## Produktivitet
 
-Behorighet till vyn styrs via `Vybehorigheter` for `Produktivitet`. Visa racker for att oppna rapporten; Redigera kravs for serverhanterade KPI-/produktivitetsfiler.
+Behorighet till vyn styrs via `Vybehorigheter` for `Produktivitet`. Visa racker for att oppna rapporten; Redigera anvands bara for manuell drift/test-sync av global snapshot.
 
 1. Ga till `Produktivitet`.
-2. Lagg in Plocklogg Full, Translogg och Pallastningslogg via dropzoner eller filval.
-3. Kontrollera att KPI-mal finns. KPI ar permanent serverdata.
-4. Valj datum.
-5. Filtrera omrade med togglen i sidebar och text med `Sok`.
-6. Byt datum med pilarna om datasetet har narliggande datum.
+2. Valj `Dag`, `Vecka`, `Manad` eller `Ar`.
+3. Valj datumankare.
+4. Las snittet pa verksamhet och omraden.
+5. Klicka omrade, aktivitet eller person for att ga djupare.
+6. Klicka `Exportera flowchart`, valj nivaer och exportera om aktuell vy ska sparas som SVG.
+7. Klicka `Helbild` eller breadcrumbs for att backa upp i tradet.
 
-Stora loggfiler ar lokala per dator/browserprofil. Tva anvandare kan darfor ha olika produktivitetsunderlag men samma KPI-mal.
+Nar central server ar nabar anvander webb och Windows samma personrapport fran `/api/productivity`. Produktivitet bygger pa sparade globala API-snapshots och har ingen manuell produktivitetsfiluppladdning.
+
+I `Personer` kan en anvandare med produktivitetsatkomst dubbelklicka en personrad
+for att se personens aktivitetssnitt. Dialogen startar pa aktuell vecka och kan
+byta till manad, ar eller egen datumperiod.
+
+## Produktivitet
+
+`Produktivitet` visar ett utzoomat hierarkitrad med samma globala snapshotdata
+som personrapporten. Valj `Dag`, `Vecka`, `Manad` eller `Ar`; datumet ar
+ankaret for perioden. Dagens poang raknas bara till och med senaste avslutade
+heltimme, samma avgransning som Produktivitet-kolumnen i Bemanning.
+
+1. Ga till `Produktivitet`.
+2. Valj period och datum.
+3. Las `totalpoang / KPI-timmar = snitt` pa verksamhet och omraden.
+4. Las fargerna i oversikten: rod under 70, orange 70-79,9 och gron fran 80.
+5. Klicka ett omrade for att se aktiviteter.
+6. Klicka en aktivitet for att se personer som bidragit.
+7. Klicka en person for att se timme for timme vilka processer som gav poang.
+8. Klicka `Exportera flowchart`, valj nivaer och exportera for att ladda ner aktuell vy som SVG.
+9. Klicka `Helbild` eller breadcrumbs for att backa upp i tradet.
+
+Periodbyte laser sparade snapshots. Om du vaxlar tillbaka till en nyligen
+hamtad period visas den fran kort cache i samma flik; saknade dagar fylls av
+global backfill eller manuell sync, inte av varje knapptryck.
 
 ## Lagerverktyg
 
@@ -163,5 +201,5 @@ Om webben fungerar men Windows inte gor det, felsok desktopprofil, lokal appserv
 - `../app/frontend/js/activities.js`
 - `../app/frontend/js/users.js`
 - `../app/frontend/js/data_fetch.js`
-- `../app/frontend/js/productivity.js`
+- `../app/frontend/js/productivity_overview.js`
 - `../app/frontend/js/allocation_tools.js`

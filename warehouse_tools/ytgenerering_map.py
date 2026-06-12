@@ -250,6 +250,26 @@ def _forecast_order_numbers(forecast_df: pd.DataFrame) -> dict[str, list[str]]:
     return orders
 
 
+def _forecast_order_companies(forecast_df: pd.DataFrame) -> dict[str, dict[str, str]]:
+    if forecast_df.empty:
+        return {}
+    shipment_col = _find_col(forecast_df, ("Sandningsnr", "Grupp", "Shipment"), required=False)
+    order_col = _find_col(forecast_df, ("Ordernummer", "Ordernr", "Order num", "order_num"), required=False)
+    company_col = _find_col(forecast_df, ("Bolag", "Company", "company"), required=False)
+    if not shipment_col or not order_col or not company_col:
+        return {}
+    companies: dict[str, dict[str, str]] = {}
+    for _, row in forecast_df.iterrows():
+        shipment = _text(row.get(shipment_col))
+        company = _text(row.get(company_col)).upper()
+        if not shipment or not company:
+            continue
+        values = companies.setdefault(shipment, {})
+        for order_number in _split_order_numbers(row.get(order_col)):
+            values.setdefault(order_number, company)
+    return companies
+
+
 def _forecast_customers(forecast_df: pd.DataFrame) -> dict[str, dict[str, str]]:
     """Mappa Sandningsnr -> {customer, customerNum} ur forecast-tabellen."""
     if forecast_df.empty:
@@ -333,6 +353,7 @@ def build_ytgenerering_map_payload(
     unused_col = _find_col(assignments_df, ("Outnyttjad kapacitet", "Unused capacity"), required=False)
     placement_col = _find_col(assignments_df, ("Placering nr", "Placement"), required=False)
     order_numbers = _forecast_order_numbers(forecast_df)
+    order_companies = _forecast_order_companies(forecast_df)
     customers = _forecast_customers(forecast_df)
 
     assignments: list[dict[str, object]] = []
@@ -362,6 +383,7 @@ def build_ytgenerering_map_payload(
                     else round(max_pall - placed, 2),
                     "placementNo": int(_number(row.get(placement_col))) if placement_col else index + 1,
                     "orderNumbers": order_numbers.get(shipment, []),
+                    "orderCompanies": order_companies.get(shipment, {}),
                 }
             )
 

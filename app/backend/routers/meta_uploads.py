@@ -326,6 +326,7 @@ def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
         "video_original_filename": video.original_filename if video else None,
         "video_duration_seconds": video.duration_seconds if video else None,
         "video_duration_label": _format_duration(video.duration_seconds) if video else None,
+        "video_size_bytes": video.size_bytes if video else None,
         "video_size_label": _format_size(video.size_bytes) if video else None,
         "video_url": f"/api/meta/uploads/{video_id}/content" if video_id else None,
         "label_still_url": f"/api/meta/uploads/{label_id}/content" if label_id else None,
@@ -346,6 +347,7 @@ META_SHIPMENT_EXPORT_HEADERS = [
     "Uppdaterad",
     "Video",
     "Längd",
+    "Storlek",
     "Etikett",
     "Rad-ID",
 ]
@@ -378,6 +380,7 @@ def _shipment_export_row(row: MetaShipmentObservation) -> list[Any]:
         row.updated_at.isoformat(sep=" ", timespec="seconds") if row.updated_at else "",
         (video.stored_filename or video.original_filename) if video else "",
         _format_duration(video.duration_seconds) if video else "",
+        _format_size(video.size_bytes) if video else "",
         "Finns" if row.label_image_upload_id else "",
         row.record_hash,
     ]

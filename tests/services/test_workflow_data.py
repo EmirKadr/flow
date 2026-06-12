@@ -12,9 +12,11 @@ class FakeExternalClient:
         self.rows = rows or []
         self.error = error
         self.views: list[str] = []
+        self.filters: list[object] = []
 
-    def fetch_data(self, view_id: str):
+    def fetch_data(self, view_id: str, filters=None):
         self.views.append(view_id)
+        self.filters.append(filters)
         if self.error is not None:
             raise self.error
         return list(self.rows)
@@ -45,6 +47,19 @@ def test_allocation_api_source_maps_cover_api_first_order_and_saldo_flows():
         "orders": "orders",
         "saldo": "saldo",
         "overview": "overview",
+    }
+
+
+def test_productivity_api_source_map_includes_snapshot_sources():
+    assert workflow_data.productivity_api_source_map() == {
+        "pick": "pick",
+        "trans": "trans",
+        "pallet": "pallet",
+        "receive": "receive",
+        "order_log": "order_log",
+        "sort": "sort",
+        "base_pallet": "base_pallet",
+        "kpi": "kpi",
     }
 
 
@@ -188,6 +203,34 @@ def test_fetch_source_materializes_item_option_forecast_legacy_headers(monkeypat
             "Helpalls avvikelse %",
         ]
         assert rows[1][-2:] == ["Y", "12"]
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def test_fetch_source_passes_filters_to_external_client(monkeypatch):
+    client = FakeExternalClient(
+        [
+            {
+                "article": "A100",
+                "robot_ind": "Y",
+                "automation_pick_qty": 1,
+                "pick_qty": 1,
+                "pick_loc": "P1",
+            }
+        ]
+    )
+    filters = [{"field": "timestamp", "operator": "between", "value": ["2026-06-08", "2026-06-09"]}]
+    monkeypatch.setattr(
+        workflow_data,
+        "load_catalog",
+        lambda: _catalog_for("v_ask_item_summary_stock_automation"),
+    )
+    monkeypatch.setattr(workflow_data, "_api_client", lambda: client)
+
+    path, _entry = workflow_data.fetch_source_to_temp("saldo", filters=filters)
+
+    try:
+        assert client.filters == [filters]
     finally:
         path.unlink(missing_ok=True)
 

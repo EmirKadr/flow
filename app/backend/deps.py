@@ -116,3 +116,17 @@ def require_view_access(view_id: str, min_level: str = "view"):
         return user
 
     return dependency
+
+
+def require_any_view_access(view_ids: tuple[str, ...], min_level: str = "view"):
+    def dependency(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        access = get_role_view_access(db, business_id=user.business_id)
+        if any(can_access_view(user, access, view_id, min_level) for view_id in view_ids):
+            return user
+        label = "redigeringsbehÃ¶righet" if min_level == "edit" else "behÃ¶righet"
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sidan krÃ¤ver {label}")
+
+    return dependency

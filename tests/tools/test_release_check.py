@@ -57,7 +57,7 @@ def test_release_check_requires_every_frontend_file():
 def test_release_check_reports_missing_frontend_in_zip(tmp_path):
     release_dir = make_release(
         tmp_path,
-        missing_zip_entry="_internal/app/frontend/js/productivity.js",
+        missing_zip_entry="_internal/app/frontend/js/productivity_overview.js",
     )
 
     errors = check_release_artifacts(
@@ -67,4 +67,4 @@ def test_release_check_reports_missing_frontend_in_zip(tmp_path):
         smoke=False,
     )
 
-    assert "Saknar fil i zip: _internal/app/frontend/js/productivity.js" in errors
+    assert "Saknar fil i zip: _internal/app/frontend/js/productivity_overview.js" in errors

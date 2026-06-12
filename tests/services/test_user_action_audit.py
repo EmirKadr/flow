@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
 from app.backend.models import AuditLog, Business, User, UserInteractionEvent
-from app.backend.routers import allocation, audit_logs, productivity
+from app.backend.routers import allocation, audit_logs
 from app.backend.schemas import AuditClientErrorIn, AuditClientEventIn, InteractionChatRequest, InteractionEventBatchIn, InteractionEventIn
 
 
@@ -59,96 +59,6 @@ def add_audit_user(session):
     session.commit()
     session.refresh(user)
     return business, user
-
-
-def test_productivity_upload_audit_omits_file_names():
-    db = FakeAuditDb()
-    user = SimpleNamespace(id=42)
-
-    productivity._audit_productivity_files(
-        db,
-        user,
-        action="upload",
-        attempted_count=1,
-        saved=[{"key": "kpi", "name": "kund-hemlig.csv"}],
-        unknown=["privat-underlag.csv"],
-    )
-
-    assert db.committed is True
-    entry = db.items[0]
-    assert isinstance(entry, AuditLog)
-    assert entry.entity_type == "productivity_file"
-    assert entry.action == "upload"
-    assert entry.user_id == 42
-    assert entry.new_value == {
-        "saved_types": ["kpi"],
-        "saved_count": 1,
-        "unknown_count": 1,
-        "attempted_count": 1,
-    }
-    payload = json.dumps(entry.new_value, ensure_ascii=False)
-    assert "kund-hemlig" not in payload
-    assert "privat-underlag" not in payload
-
-
-def test_productivity_failed_upload_audit_omits_file_names():
-    db = FakeAuditDb()
-    user = SimpleNamespace(id=42)
-
-    productivity._audit_productivity_files(
-        db,
-        user,
-        action="upload_failed",
-        attempted_count=2,
-        saved=[{"key": "pick", "name": "kund-plock.csv"}],
-        unknown=["privat-underlag.csv"],
-        error_type="OSError",
-    )
-
-    entry = db.items[0]
-    assert entry.entity_type == "productivity_file"
-    assert entry.action == "upload_failed"
-    assert entry.new_value == {
-        "saved_types": ["pick"],
-        "saved_count": 1,
-        "unknown_count": 1,
-        "attempted_count": 2,
-        "error_type": "OSError",
-    }
-    payload = json.dumps(entry.new_value, ensure_ascii=False)
-    assert "kund-plock" not in payload
-    assert "privat-underlag" not in payload
-
-
-def test_productivity_endpoint_logs_failed_upload(monkeypatch):
-    db = FakeAuditDb()
-    user = SimpleNamespace(id=42)
-
-    async def fail_save_upload(_upload):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(productivity, "_save_upload_temp", fail_save_upload)
-
-    with pytest.raises(OSError):
-        asyncio.run(
-            productivity.upload_productivity_files(
-                SimpleNamespace(session={}),
-                [SimpleNamespace(filename="privat.csv")],
-                user,
-                db,
-            )
-        )
-
-    entry = db.items[0]
-    assert entry.entity_type == "productivity_file"
-    assert entry.action == "upload_failed"
-    assert entry.new_value == {
-        "saved_types": [],
-        "saved_count": 0,
-        "unknown_count": 0,
-        "attempted_count": 1,
-        "error_type": "OSError",
-    }
 
 
 def test_allocation_flow_audit_payload_omits_file_and_param_values():

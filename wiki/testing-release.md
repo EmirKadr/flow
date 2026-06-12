@@ -1,7 +1,7 @@
 ---
 title: Test och release
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-10
 tags: [test, release, agent]
 ---
 
@@ -36,13 +36,14 @@ python -m tools.desktop_app_probe
 | Andring | Minsta rimliga verifiering |
 | --- | --- |
 | Backendregel/API | Relevant `pytest` + `flow_cli routes` om API-vag andras |
+| Databas/Alembic/Render | `tests/tools/test_alembic_migrations.py` for revisionslangd, unikhet, down_revision-kedja och head; `tests/tools/test_ci_workflows.py` for Render-build, Postgres-simulering och secret-backed env. Vid ny migration ska ett test laggas for den felklass som annars skulle kunna stoppa `alembic upgrade head`. |
 | Frontend-JS | `node --check`, visuell smoke eller interaktiv E2E beroende pa risk |
 | Laddning/cache/UX-hastighet | `tools.performance_benchmark` for kall/varm navigation, bakgrundsladdning, toggle, import, drag och copy |
 | Anvandarsynlig loggning | `tests/tools/test_sidebar_user_browser.py` for dokumentlogg i browser + `tests/tools/test_visual_tools.py` for global logg-/API-wiring |
 | Halsa/vantetid/drift | `tools.healthcheck report --local --no-render` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar auth och Render-secrets finns. Kontrollera `Serverminne` efter cache-, Bearbeta-, Meta- eller Forecast-andringar. |
 | flow/Oversikt | Interaktiv E2E for celler, drag, undo/redo och roller |
 | Sidebar/roller | Rolltester + visual smoke for flera roller |
-| Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots. Forecast-regler for orderoversikt, till exempel att status `11` filtrerar bort samma ordernummer ur detaljkundorder, ska ha riktat handler-/domantest. Ytgenereringens enknappsflode ska testas for bade komplett ytdel nar `location` finns och Forecast-only nar `location` saknas. Ytgenereringens ytkartsinstallningar ska testas bade som handlerkapacitet/koordinater och som API-parametrar i `tests/services/test_allocation_bridge.py`. |
+| Produktivitet/lager | `tests/services/test_warehouse_tools_local_data.py` och relevanta UI-screenshots. Forecast-regler for orderoversikt, till exempel att status `11` filtrerar bort samma ordernummer ur detaljkundorder, ska ha riktat handler-/domantest. Ytgenereringens enknappsflode ska testas for bade komplett ytdel nar `location` finns och Forecast-only nar `location` saknas. ASK-import for order/yta ska verifiera att `company` kommer fran forecastens `Bolag`, att `pick_zone` ar `A`, och att kartans lokala justerade ASK-export foljer samma kontrakt. Ytgenereringens ytkartsinstallningar ska testas bade som handlerkapacitet/koordinater och som API-parametrar i `tests/services/test_allocation_bridge.py`. |
 | Uppladdningar/filpreview | `tests/services/test_coredata_service.py` for serverlagrad karn-/sammanstalld preview, `tests/tools/test_visual_tools.py` for UI-kontrakt och `node --check app/frontend/js/allocation_tools.js` for modal-JS |
 | Nytt Bearbeta-flode | Register-/handler-test i `tests/services/test_warehouse_tools_local_data.py`, API/sessiontest i `tests/services/test_allocation_bridge.py`, statiskt UI-kontrakt i `tests/tools/test_visual_tools.py` och Playwright-test i `tests/tools/test_allocation_split_browser.py` om knappar eller readiness andras |
 | Nytt Bearbeta-flode med karnfil | Testa bade flodesdefault i `tests/services/test_allocation_bridge.py`, att uppladdning av karnfilen ersatter tidigare fil for samma verksamhet i `tests/services/test_coredata_service.py`, och att frontend laser karnfilstatus utan GET-cache |

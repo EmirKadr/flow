@@ -599,8 +599,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
-    productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
-    productivity_uploads = (frontend / "js" / "productivity_uploads.js").read_text(encoding="utf-8")
+    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
     allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
@@ -613,6 +612,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "flow-role-view-access" in common
     assert "ROLE_VIEW_DEFAULT_ACCESS" in common
     assert "ROLE_VIEW_IDS" in common
+    assert '"staffingSettings"' in common
+    assert '{ id: "staffingSettings", label: "Bemanningsinställningar" }' in users
     assert "new Set(ROLE_VIEW_IDS)" in common
     assert "roleViewAccessLevel" in common
     assert "refreshRoleViewAccess" in common
@@ -706,62 +707,127 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert re.search(r"\.app > main\s*\{[^}]*grid-column:\s*2;", styles, re.S)
     assert "body.demo-mode .sidebar" in styles
     assert "postFile" in api_js
-    assert "/api/productivity/files/raw" in productivity_uploads
-    assert "productivityLocalFiles" in productivity
-    assert "syncProductivityLocalFilesFromStore" in productivity
-    assert "serverStatus?.api_first" in productivity
-    assert "productivityFileStatus?.api_first" in productivity
-    assert "renderProductivityFileRequirements" in productivity
-    assert 'id="productivityFileRequirements"' in productivity_html
-    assert "window.productivityUploads.loadFiles()" in productivity
-    assert "productivityUploads?.setupPanel" not in allocation_tools
+    assert "/api/productivity/files" not in api_js
+    assert not (frontend / "js" / "productivity.js").exists()
+    assert not (frontend / "js" / "productivity_uploads.js").exists()
+    assert 'id="productivityFileRequirements"' not in productivity_html
+    assert "/js/productivity_overview.js" in productivity_html
+    assert "/js/productivity.js" not in productivity_html
+    assert "/js/productivity_uploads.js" not in productivity_html
+    assert "/js/productivity_uploads.js" not in uploads_html
+    assert "productivityUploads" not in allocation_tools
     assert "data-productivity-upload-panel" not in allocation_tools
-    assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation_tools
-    assert "productivity_pallet" in allocation_tools
-    assert "Pallastningslogg" in allocation_tools
-    assert "PRODUCTIVITY_SHARED_UPLOAD_WORDS" in allocation_tools
+    assert "PRODUCTIVITY_UPLOAD_SLOTS" not in allocation_tools
+    assert "productivity_pallet" not in allocation_tools
+    assert "PRODUCTIVITY_SHARED_UPLOAD_WORDS" not in allocation_tools
     assert "v_ask_booking_putaway" in allocation_tools
     assert "ALLOCATION_SLOT_MIRRORS" in allocation_tools
     assert 'wms_booking: ["not_putaway"]' in allocation_tools
     assert "v_ask_receive_log" not in allocation_tools
-    assert "v_ask_palletloading_log" in allocation_tools
-    assert "routeProductivityFilesFromSharedUpload" in allocation_tools
+    assert "v_ask_palletloading_log" not in allocation_tools
+    assert "routeProductivityFilesFromSharedUpload" not in allocation_tools
     assert "input.apiPreferred" in allocation_tools
     assert "Prognosfil eller Kampanjfil" in allocation_tools
-    assert "reportUnknown: false" in allocation_tools
-    assert "statusItems" in productivity_uploads
-    assert "clearFiles" in productivity_uploads
-    assert "deleteFile" in productivity_uploads
-    assert "saveFiles" in productivity_uploads
-    assert "recognized" in productivity_uploads
-    assert "refreshPanels" in productivity_uploads
-    assert "setupDropTarget" in productivity_uploads
-    assert "productivity-file-slot[data-file-key]" in productivity_uploads
-    assert "Permanent målfil inlagd" in productivity_uploads
-    assert "allocation-file-tag" in productivity_uploads
-    assert "allocation-file-tag" in productivity
-    assert "setupProductivityPageDrop" in productivity
-    assert "handleProductivityDroppedFiles" in productivity
-    assert "handleProductivityUploadsCleared" in productivity
-    assert "data-productivity-file-key" in productivity
-    assert ".productivity-page.is-file-dragging" in styles
-    assert ".productivity-requirement-file.drag-over" in styles
-    assert "/js/productivity_uploads.js" in productivity_html
-    assert "/js/productivity_uploads.js" in uploads_html
+    assert "reportUnknown: false" not in allocation_tools
     assert 'id="productivityUploadBtn"' not in productivity_html
     assert 'id="productivityUploadPanel"' not in productivity_html
-    assert "buildProductivityReportFromLocalDataset" in productivity
-    assert "prefetchAdjacentReports" in productivity
-    assert 'id="productivityPrevDate"' in productivity_html
-    assert 'id="productivityNextDate"' in productivity_html
-    assert 'id="productivityDateDisplayText"' in productivity_html
+    assert ".productivity-matrix-wrap" in styles
+    assert "table.productivity-matrix" in styles
+    assert ".productivity-hour-cell" in styles
+    assert ".productivity-cell-diff-button" in styles
+    assert ".productivity-points-menu" not in styles
+    assert ".productivity-hour-cell.kpi.score-low" in styles
+    assert ".productivity-hour-cell.kpi.score-warn" in styles
+    assert ".productivity-hour-cell.kpi.score-good" in styles
+    assert ".productivity-diff-pill" in styles
+    assert 'id="productivityPrevDate"' not in productivity_html
+    assert 'id="productivityNextDate"' not in productivity_html
+    assert 'id="productivityDateDisplayText"' not in productivity_html
+    assert 'id="productivityOverviewPrevDate"' in productivity_html
+    assert 'id="productivityOverviewNextDate"' in productivity_html
+    assert 'id="productivityOverviewDateDisplayText"' in productivity_html
     assert 'class="date-display-overlay"' in productivity_html
-    assert "shiftProductivityDate(-1)" in productivity
-    assert "shiftProductivityDate(1)" in productivity
-    assert "updateProductivityDateDisplay" in productivity
-    assert "availableProductivityDates" in productivity
     assert ".date-display-wrap" in styles
+    assert ".productivity-date-field .date-display-wrap" in styles
     assert "refreshProductivityBtn" not in productivity_html
+    assert "productivityOverview" not in common
+    assert "productivityOverview" not in users
+    assert "/oversikt-produktivitet.html" not in common
+    assert not (frontend / "oversikt-produktivitet.html").exists()
+    assert 'data-period="day"' in productivity_html
+    assert 'data-period="week"' in productivity_html
+    assert 'data-period="month"' in productivity_html
+    assert 'data-period="year"' in productivity_html
+    assert 'id="productivityOverviewExportFlowchart"' in productivity_html
+    assert 'id="productivityOverviewTree"' in productivity_html
+    assert 'initPage("productivity")' in productivity_overview
+    assert "`/api/productivity/overview${query}`" in productivity_overview
+    assert "PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS" in productivity_overview
+    assert "productivityOverviewReportCache" in productivity_overview
+    assert "cacheTtlMs: PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS" in productivity_overview
+    assert "skipCache: true" not in productivity_overview
+    assert "productivityOverviewPeriodValue" in productivity_overview
+    assert "productivityOverviewPeriodDisplayLabel" in productivity_overview
+    assert "productivityOverviewIsoWeekParts" in productivity_overview
+    assert "`Vecka ${parts.week}`" in productivity_overview
+    assert 'toLocaleDateString("sv-SE", { month: "long" })' in productivity_overview
+    assert "toLocaleUpperCase(\"sv-SE\")" in productivity_overview
+    assert "return String(year);" in productivity_overview
+    assert "addProductivityOverviewMonths" in productivity_overview
+    assert "addProductivityOverviewYears" in productivity_overview
+    assert "productivityOverviewReports" in productivity_overview
+    assert "exportProductivityOverviewFlowchart" in productivity_overview
+    assert "openProductivityOverviewExportDialog" in productivity_overview
+    assert "performProductivityOverviewFlowchartExport" in productivity_overview
+    assert "PRODUCTIVITY_OVERVIEW_EXPORT_LEVELS" in productivity_overview
+    assert "flow-productivity-overview-export-levels" in productivity_overview
+    assert 'name="export-level"' in productivity_overview
+    assert "data-productivity-export-form" in productivity_overview
+    assert "buildProductivityOverviewFlowchartSvg" in productivity_overview
+    assert "downloadProductivityOverviewText" in productivity_overview
+    assert "function productivityOverviewAreaLabelForCell" in productivity_overview
+    assert "productivityOverviewAreaKeyForCell(cell)" in productivity_overview
+    assert 'person.home_area || "Utan avdelning"' not in productivity_overview
+    assert "image/svg+xml" in productivity_overview
+    assert "productivity-overview-export-flowchart" in productivity_overview
+    assert "completedProductivityOverviewCutoffMinute" in productivity_overview
+    assert "new Date().getHours() * 60" in productivity_overview
+    assert "Number(cell?.end_minute || 0) <= cutoffMinute" in productivity_overview
+    assert "productivityOverviewCellWorkMinutes" in productivity_overview
+    assert "productivityOverviewCellKpiMinutes" in productivity_overview
+    assert "addProductivityOverviewKpiMinutes" in productivity_overview
+    assert "kpiMinutes: 0" in productivity_overview
+    assert "Number(node?.kpiMinutes || 0) <= 0" in productivity_overview
+    assert "productivityOverviewSourceWarnings" in productivity_overview
+    assert "fallback_reason" in productivity_overview
+    assert 'cell?.kind === "support"' in productivity_overview
+    assert "productivityOverviewPointsPerHour" in productivity_overview
+    assert "productivityOverviewScoreClass" in productivity_overview
+    assert 'if (Number(value) >= 80) return "good";' in productivity_overview
+    assert 'if (Number(value) >= 70) return "warn";' in productivity_overview
+    assert "formatProductivityOverviewNumber(value, 1)" in productivity_overview
+    assert "p/tim" not in productivity_overview
+    assert 'cell?.kind === "kpi"' in productivity_overview
+    assert "Poäng / timmar" in productivity_overview
+    assert "hourNode.startMinute" in productivity_overview
+    assert "formatProductivityOverviewHours" in productivity_overview
+    assert "process_points" in productivity_overview
+    assert "buildProductivityOverviewTree" in productivity_overview
+    assert "focusProductivityOverviewNode" in productivity_overview
+    assert "productivity-overview-branch" in productivity_overview
+    assert "productivity-overview-tree-wrap" in styles
+    assert ".productivity-overview-export-modal" in styles
+    assert ".productivity-overview-export-levels" in styles
+    assert ".productivity-overview-period-toggle" in styles
+    assert "grid-auto-flow: column" in styles
+    assert ".productivity-overview-branch::before" in styles
+    assert ".productivity-overview-branch::after" in styles
+    assert ".productivity-overview-node" in styles
+    assert ".productivity-overview-node-rate.good" in styles
+    assert ".productivity-overview-node-rate.warn" in styles
+    assert ".productivity-overview-node-rate.low" in styles
+    assert ".productivity-overview-summary-rate.good" in styles
+    assert ".productivity-overview-process-row" in styles
 
     public_standalone_pages = {"meta-upload.html"}
     for html_path in frontend.glob("*.html"):
@@ -769,7 +835,7 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
-        assert 'src="/js/common.js?v=20260601-coredata-types"' in html
+        assert 'src="/js/common.js?v=20260609-productivity-overview"' in html
 
 
 def test_uploads_file_actions_are_explicit_download_or_open():
@@ -822,7 +888,7 @@ def test_area_focus_toggle_is_wired_to_views():
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
     overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
-    productivity = (frontend / "js" / "productivity.js").read_text(encoding="utf-8")
+    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
     persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
@@ -833,7 +899,10 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "flow-area-focus" in common
     assert '<button class="area-focus-toggle" id="area-focus-toggle"' in common
     assert '<select class="area-focus-toggle"' not in common
-    assert "AREA_FOCUS_OPTIONS" in common
+    assert "AREA_FOCUS_OPTIONS" not in common
+    assert "AREA_FOCUS_FALLBACK_NAMES" not in common
+    assert 'const AREA_FOCUS_ALL_OPTION = { value: "ALLT"' in common
+    assert 'const preferredOrder = ["MG", "GG", "AS", "EH", "R3"]' not in common
     assert 'label: "∞"' in common
     assert "function nextAreaFocus" in common
     assert 'toggle.addEventListener("click", () => writeAreaFocus(nextAreaFocus()))' in common
@@ -847,7 +916,8 @@ def test_area_focus_toggle_is_wired_to_views():
     assert 'loadAreaFocusAreas(user)' in common
     assert "preferredAreaIdFromFocus" in common
     assert "function areaFocusValueForArea" in common
-    assert 'writeAreaFocus("ALLT")' in common
+    assert 'writeAreaFocus("ALLT")' not in common
+    assert 'writeAreaFocus(normalizeAreaFocus(""))' in common
     assert "visibleAreas.some((area) => Number(area?.id) === areaId)" in common
     assert "buildAreaFocusOptions" in common
     assert "function isAllAreasMarker" in common
@@ -856,18 +926,45 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "hasAllAreasMarker(activeAreas)" in common
     assert 'code: null, areaId: null' in common
     assert 'value: "ALLT"' in common
+    assert 'areaFocusLoadState = "error"' in common
+    assert "dynamicAreaFocusOptions = []" in common
+    assert "toggle.disabled = disabled" in common
     assert 'window.areaFocusAreaId = areaFocusAreaId' in common
     assert "preferredActivityAreaId" in common
     assert "return preferredAreaIdFromFocus(areas);" in common
     assert "compareActivitiesForAreaFocus" in common
     assert "comparePersonsForAreaFocus" in common
     assert ".area-focus-toggle" in styles
+    assert ".area-focus-toggle:disabled" in styles
+    assert ".area-focus-toggle.is-error" in styles
     assert ".area-focus-menu" in styles
     assert "overscroll-behavior: contain" in styles
     assert ".area-focus-menu button[aria-checked=\"true\"]" in styles
 
-    assert 'const CALC_AREA_FALLBACK_KEYS = ["GG", "MG", "AS", "EH"]' in schedule
-    assert "function calcAreaKeys" in schedule
+    assert "CALC_AREA_FALLBACK_KEYS" not in schedule
+    assert "function calcAreaKeys" not in schedule
+    assert "calc-panel-manual" in schedule
+    assert "Manuell</div>" in schedule
+    assert "function openCalculatorModal" in schedule
+    calculator_modal = schedule.split("function openCalculatorModal", 1)[1].split("async function deleteAutomaticCalculator", 1)[0]
+    assert 'backdrop.querySelector("#calcCancel").addEventListener("click", close);' in calculator_modal
+    assert "event.target === backdrop" not in calculator_modal
+    assert "function setupCalculatorToolbar" in schedule
+    assert 'id="calcAddAutomaticBtn"' in schedule_html
+    assert 'id="calcImportUser"' in schedule_html
+    assert 'id="capacityToggleBtn"' in schedule_html
+    assert '"/api/schedule/calculator-profile"' in schedule
+    assert "`/api/schedule/calculator/automatic" in schedule
+    assert "`/api/schedule/activity-capacity" in schedule
+    assert "function loadScheduleActivityCapacity" in schedule
+    assert "function activityLabelWithCapacity" in schedule
+    assert "function activityCapacityActivityIsVisible" in schedule
+    assert "activityCapacityActivityIds" in schedule
+    assert "visible_activity_ids" in schedule
+    assert "SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY" in schedule
+    assert "setupActivityCapacityToggle" in schedule
+    assert "V+H" in schedule_html
+    assert "button.capacity-toggle.active" in styles
     assert 'preferredAreaIdFromFocus(state.areas) : null' in schedule
     assert 'preferredAreaIdFromFocus(state.areas) : null' in overview
     assert "setAreaFocusAreas(areas, state.currentUser)" in schedule
@@ -881,6 +978,14 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "setScheduleAllCache(baseKey, allData)" in schedule
     assert "setScheduleAreaCache(scheduleAreaCacheKey(requestedAreaId, baseKey), cachedData)" in schedule
     assert "applyScheduleData(cachedData)" in schedule
+    assert 'class="productivity-col"' in schedule_html
+    assert "function loadScheduleProductivity" in schedule
+    assert "`/api/schedule/productivity-summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}`" in schedule
+    assert "function buildScheduleProductivityMapFromSummary" in schedule
+    assert "scheduleProductivityStatusClass(percent)" in schedule
+    assert ".schedule-productivity-value.low" in styles
+    assert ".schedule-productivity-value.warn" in styles
+    assert ".schedule-productivity-value.good" in styles
     assert "function openScheduleLoanMenu" in schedule
     assert "function scheduleLoanTargetOptions" in schedule
     assert "function scheduleLoanStartHour" in schedule
@@ -915,7 +1020,6 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "applyOverviewData(cachedData)" in overview
     assert '"flow:areaFocusChanged"' in schedule
     assert '"flow:areaFocusChanged"' in overview
-    assert '"flow:areaFocusChanged"' in productivity
     assert '"flow:areaFocusChanged"' in persons
     assert '"flow:areaFocusChanged"' in activities
     assert '"flow:areaFocusChanged"' in users
@@ -925,12 +1029,13 @@ def test_area_focus_toggle_is_wired_to_views():
     assert 'params.set("area_id", String(areaId))' in persons
     assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in persons
     assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons
-    assert '{ id: "eh", title: "E-Handel" }' in productivity
+    assert "PRODUCTIVITY_GROUPS" not in productivity_overview
+    assert "productivity-matrix" not in productivity_overview
     assert 'id="areaSelect"' not in schedule_html
     assert 'id="areaSelect"' not in overview_html
     assert 'id="productivityGroupFilter"' not in productivity_html
     assert 'id="calcAreaSelect"' not in schedule_html
-    assert "productivityGroupFilter" not in productivity
+    assert "productivityGroupFilter" not in productivity_overview
 
 
 def test_plain_view_tables_get_clickable_sort_headers():
@@ -965,17 +1070,26 @@ def test_plain_view_tables_get_clickable_sort_headers():
 
 def test_bearbeta_area_focus_filter_contract():
     allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
     styles = (ROOT / "app" / "frontend" / "css" / "styles.css").read_text(encoding="utf-8")
     settings_html = (ROOT / "app" / "frontend" / "installningar.html").read_text(encoding="utf-8")
+    terminology_wiki = (ROOT / "wiki" / "terminology.md").read_text(encoding="utf-8")
+    warehouse_wiki = (ROOT / "wiki" / "warehouse-tools.md").read_text(encoding="utf-8")
+    staffing_wiki = (ROOT / "wiki" / "bemanning-schedule.md").read_text(encoding="utf-8")
 
     assert "ALLOCATION_PROCESS_MATRIX" in allocation
-    assert 'GG: {' in allocation
+    assert 'const ALLOCATION_PROCESS_AREA_OPTIONS = [\n  { code: "ALLT", label: "Alla" },\n];' in allocation
+    assert 'GG: {' not in allocation
     assert "Filter: Bolag GG, exkl. kundnr 6005" not in allocation
     assert "Filter: Bolag MG, exkl. kundnr 40002 och 90002" not in allocation
     assert "data-matrix-company" not in allocation
     assert "data-matrix-exclude" not in allocation
     assert 'const ALLOCATION_PROCESS_AREA_PARAM = "__process_area_focus"' in allocation
     assert 'const ALLOCATION_USER_FILTERS_PARAM = "__allocation_user_filters_json"' in allocation
+    assert 'areaCode === "MG" ? 205' not in allocation
+    assert 'MG: allocationDefaultYtgenereringAreaRule("MG")' not in allocation
+    assert 'rows.push([areas, "MG", orderNumber, "A"])' not in allocation
+    assert "orderCompanies" in allocation
     assert "formData.append(ALLOCATION_PROCESS_AREA_PARAM, focusCode)" in allocation
     assert "appendAllocationFilterProfile(fd)" in allocation
     assert "appendAllocationAreaFocus(fd)" in allocation
@@ -985,7 +1099,12 @@ def test_bearbeta_area_focus_filter_contract():
     assert 'allocationJson(`${ALLOCATION_API}/filter-profile/import`, {' in allocation
     assert 'canViewPage?.(allocationState.user, "allocationProcessMatrix")' in allocation
     assert 'canEditPage?.(allocationState.user, "allocationProcessMatrix")' in allocation
-    assert 'id="allocation-process-matrix">Matris</button>' in allocation
+    assert 'id="allocation-process-matrix">Matris</button>' not in allocation
+    assert '{ id: "process-matrix", label: "Bearbeta" }' in allocation
+    assert "renderAllocationProcessMatrixSettingsPanel" in allocation
+    assert 'id="allocation-process-matrix-settings-editor"' in allocation
+    assert 'id="allocation-process-matrix-settings-save">Spara</button>' in allocation
+    assert 'visible: canViewPage(user, "allocationSettings") || canViewPage(user, "staffingSettings") || canViewPage(user, "allocationProcessMatrix")' in common
     assert 'data-flow-filter="${allocationEscape(flow.id)}"' in allocation
     assert "allocation-flow-filter" in allocation
     assert "allocation-filter-modal" in styles
@@ -996,17 +1115,40 @@ def test_bearbeta_area_focus_filter_contract():
     assert "input:checked + .allocation-source-switch-track" in styles
     assert "data-filter-source-mode-toggle" in allocation
     assert "normalizeAllocationSourceModes" in allocation
+    assert "function allocationProcessToggleCode" in allocation
+    assert "function allocationYtgenereringEditableAreasForCurrentToggle" in allocation
     assert "allocationSourceModeForFile" in allocation
+    assert "allocationSourceUsesUpload" in allocation
+    assert "allocationVisibleFlowsNeedCoreDataStatus" in allocation
+    assert "allocationVisibleFlowsNeedStoredFiles" in allocation
     assert 'draft.flows[flowId].sources[source.key] = "upload"' in allocation
-    assert 'input.apiPreferred && allocationSourceModeForFile(flow.id, fileKey, input) !== "upload"' in allocation
+    assert 'const entry = apiReady ? null : allocationState.files[key]' in allocation
+    assert 'const entry = apiReady ? null : allocationPersistentStatusFile(input.key)' in allocation
     assert "width: min(1480px, calc(100vw - 96px));" in styles
     assert "grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);" in styles
     assert "title=\"${allocationEscape(columnType)}\"" in allocation
     assert "${allocationEscape(columnLabel)} ${column.type" not in allocation
-    assert "openAllocationProcessMatrixModal" in allocation
     assert "openAllocationFlowFilterModal" in allocation
     assert '"settings") return "allocationSettings"' in allocation
     assert "renderAllocationMapSettingsView" in allocation
+    assert 'const STAFFING_SETTINGS_API = "/api/settings/staffing"' in allocation
+    assert "Avancerad filfiltrering" in terminology_wiki
+    assert "openAllocationFlowFilterModal" in terminology_wiki
+    assert "__allocation_user_filters_json" in terminology_wiki
+    assert "/api/allokering/filter-profile/import" in terminology_wiki
+    assert "allocation_bridge.apply_user_flow_filters" in terminology_wiki
+    assert "Avancerad filfiltrering" in warehouse_wiki
+    assert "Avancerad filfiltrering" in staffing_wiki
+    assert "API/Uppladdning-val" in staffing_wiki
+    assert 'data-settings-tab="${allocationEscape(tab.id)}"' in allocation
+    assert 'data-staffing-history-hours' in allocation
+    assert "activity_capacity_activity_ids" in allocation
+    assert "loadStaffingActivities" in allocation
+    assert "data-staffing-capacity-all" in allocation
+    assert "data-staffing-capacity-activity" in allocation
+    assert "staffing-capacity-activity-grid" in styles
+    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix"]' in allocation
+    assert "canEditStaffingSettings" in allocation
     assert "ytgenerering-map-layout" in allocation
     assert "availableLocations" in allocation
     assert "allocationMapLayoutSaveSignature" in allocation
@@ -1022,6 +1164,9 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-map-fit" in allocation
     assert "data-map-settings-fullscreen" in allocation
     assert "data-map-snap-guides" in allocation
+    assert "function clampMapSettingsViewBox" in allocation
+    assert "Math.min(bounds.width, current.width * factor)" in allocation
+    assert "viewBox = clampMapSettingsViewBox(viewBox)" in allocation
     assert "function snapTargetsForDrag" in allocation
     assert "function applySnapToDrag" in allocation
     assert "function mapSettingRowAtClientPoint" in allocation
@@ -1033,6 +1178,8 @@ def test_bearbeta_area_focus_filter_contract():
     assert "selectedLocations" in allocation
     assert "allocation-map-settings-svg" in allocation
     assert ".allocation-map-settings-page-panel" in styles
+    assert ".allocation-settings-tabs" in styles
+    assert ".allocation-staffing-settings-panel" in styles
     assert ".allocation-map-settings-fullscreen-button" in styles
     assert ".allocation-map-settings-canvas.is-drop-target" in styles
     assert ".allocation-map-settings-guide-line" in styles
@@ -1062,7 +1209,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert 'menu.style.position = "absolute"' in allocation
     assert "workspace.appendChild(menu)" in allocation
     assert "document.body.appendChild(menu)" not in allocation
-    assert "allocation_tools.js?v=20260602-map-snap-guides" in settings_html
+    assert "allocation_tools.js?v=20260611-map-settings-zoom-limit" in settings_html
     assert 'svg?.addEventListener("contextmenu"' in allocation
     assert "allocationNextMapLoadDirection(row.loadDirection, row)" in allocation
     assert "allocationMapLoadOriginSide(loc.loadDirection, loc)" in allocation
@@ -1079,12 +1226,18 @@ def test_bearbeta_area_focus_filter_contract():
     assert "ALLOCATION_YTGENERERING_SETTINGS_SOURCE" in allocation
     assert "data-ytgenerering-utl-min" in allocation
     assert "data-ytgenerering-carrier-add" in allocation
+    assert "host.__allocationYtgenereringBaseAreas = areas" in allocation
     assert "editableCarrier: true" in allocation
     assert ".allocation-ytgenerering-utl-grid" in styles
     assert "allocationResultMaps" in allocation
     assert "setupAllocationWarehouseMap" in allocation
     assert "data-map-export-ask" in allocation
     assert "requestFullscreen" in allocation
+    assert "minScale: 0.05" in allocation
+    assert "function fittedMapScale" in allocation
+    assert "function clampTransform" in allocation
+    assert "state.transform.scale = allocationMapClamp(state.transform.scale || state.minScale, state.minScale, 5)" in allocation
+    assert "const nextScale = allocationMapClamp(state.transform.scale * factor, state.minScale, 5)" in allocation
     assert "minmax(340px, 440px)" in styles
     assert "max-width: 260px" in styles
     assert "allocation-map-fullscreen-button" in allocation
@@ -1432,16 +1585,24 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="import-activities"' in activities_html
     assert 'id="activity-import-help"' in activities_html
     assert "<th>KPI Mål</th>" in activities_html
+    assert "<th>Arbetstyp</th>" in activities_html
+    assert '/js/activities.js?v=20260610-work-type' in activities_html
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js
     assert "openBulkActivitiesModal" in activities_js
     assert re.search(r'key:\s*"label",\s*label:\s*"Etikett",\s*required:\s*true', activities_js)
     assert re.search(r'key:\s*"area",\s*label:\s*"[^"]+",\s*required:\s*false', activities_js)
     assert re.search(r'key:\s*"kpi_process_name",\s*label:\s*"KPI Mål",\s*required:\s*false', activities_js)
+    assert re.search(r'key:\s*"work_type",\s*label:\s*"Arbetstyp",\s*required:\s*false', activities_js)
     assert 'id="m-kpi-process-name"' in activities_js
+    assert 'id="m-work-type"' in activities_js
     assert 'maxlength="255"' in activities_js
     assert 'placeholder="dekant, plock"' in activities_js
     assert "kpi_process_name" in activities_js
+    assert "activityWorkTypeLabel" in activities_js
+    assert "syncWorkTypeState" in activities_js
+    assert "workTypeSelect.disabled = isAbsence" in activities_js
+    assert "work_type: category === \"absence\" ? \"normal\"" in activities_js
     assert "KPI Mål ska bara vara processnamn, utan bolag" in activities_js
     assert 'api.download("/api/activities/import-template", "aktiviteter-importmall.xlsx")' in activities_js
     assert 'window.location.href = "/api/activities/import-template"' not in activities_js
@@ -1585,8 +1746,10 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert 'id="metaExportAll"' in html
     assert 'data-sort-key="shipment_number"' in html
     assert 'data-sort-key="updated_at"' in html
+    assert 'data-sort-key="video_size_bytes"' in html
     assert 'data-sort-key="label_status"' in html
     assert "Längd" in html
+    assert "Storlek" in html
     assert "Uppdaterad" in html
     assert "Rad-ID" in html
     assert 'id="metaShipmentRows"' in html
@@ -1603,6 +1766,9 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "function exportShipmentRows" in js
     assert "/api/meta/shipment-observations/export" in js
     assert "metaSortState" in js
+    assert "function formatBytes" in js
+    assert 'key === "video_size_bytes"' in js
+    assert "item.video_size_label" in js
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
     assert "appendQuery" in js
     assert 'download: "1"' in js
@@ -1627,7 +1793,6 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "mediaUrl" not in js
     assert "downloadMetaItem" not in js
     assert "deleteMetaItem" not in js
-    assert "formatBytes" not in js
     assert "data-open-media" not in js
     assert "data-delete-media" not in js
     assert "Öppna" not in js
@@ -1666,7 +1831,6 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     frontend = ROOT / "app" / "frontend"
     common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
     allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
-    productivity_uploads = (frontend / "js" / "productivity_uploads.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     catalog = (ROOT / "warehouse_tools" / "catalog.py").read_text(encoding="utf-8")
     flows = (ROOT / "warehouse_tools" / "flows.py").read_text(encoding="utf-8")
@@ -1694,10 +1858,10 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "window.clearAllUploadedFiles" in allocation
     assert 'window.addEventListener("flow:uploadsCleared"' in allocation
     assert 'window.addEventListener("flow:allocationFilesChanged"' in allocation
-    assert "productivityUploads?.syncAllocationUploads" in allocation
-    assert "Kunde inte synka produktivitetsfiler till Uppladdningar." in allocation
-    assert "PRODUCTIVITY_UPLOAD_SLOTS" in allocation
-    assert "Pallastningslogg" in allocation
+    assert "productivityUploads?.syncAllocationUploads" not in allocation
+    assert "Kunde inte synka produktivitetsfiler till Uppladdningar." not in allocation
+    assert "PRODUCTIVITY_UPLOAD_SLOTS" not in allocation
+    assert "Pallastningslogg" not in allocation
     assert "data-productivity-upload-panel" not in allocation
     assert "allocationDropSlotsForTarget" in allocation
     assert "data-drop-slot" in allocation
@@ -1715,10 +1879,10 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "Ej Inlagrade Artiklar" in allocation
     assert "Ej Inlagrade Artiklar" in catalog
     assert "Ej Inlagrade Artiklar" in flows
-    assert "Pallastningslogg" in allocation
+    assert "Pallastningslogg" not in allocation
     assert "Palllastningslogg" not in allocation
-    assert '"pallastningslogg"' in allocation
-    assert '"pallastningslogg"' in common
+    assert '"pallastningslogg"' not in allocation
+    assert '"pallastningslogg"' not in common
     assert "Plocklogg Full" in allocation
     assert "ALLOCATION_SLOT_LABEL_ALIASES" in allocation
     assert "function allocationUploadSlotLabel(slot)" in allocation
@@ -1755,9 +1919,9 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "flow_forecast" in flows
     assert "flow_ytgenerering" in flows
     assert "Sammanställd data" in allocation
-    assert "productivity_pick_observations" in allocation
-    assert "productivity_trans_observations" in allocation
-    assert "productivity_pallet_observations" in allocation
+    assert "productivity_pick_observations" not in allocation
+    assert "productivity_trans_observations" not in allocation
+    assert "productivity_pallet_observations" not in allocation
     assert "allocationDataSuffixLabel" in allocation
     assert '"kärnfil"' in allocation
     assert "artikel_max.csv (sammanställd data)" in catalog
@@ -1772,7 +1936,7 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "transportorer" in allocation
     assert '{ key: "location", prefix: "lagerplats" }' in allocation
     assert '{ key: "location", prefix: "lagerplatser" }' in allocation
-    assert "const skipCache = options.skipCache !== false" in allocation
+    assert "const skipCache = options.skipCache === true" in allocation
     assert 'loadAllocationCoreDataStatus({ skipCache: true })' in allocation
     assert 'window.api?.clearGetCache?.((key) => String(key || "").includes("/api/coredata/files"))' in allocation
     assert "Alternativ Leveransadress" in allocation
@@ -1788,7 +1952,7 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "ALLOCATION_PROTECTED_UPLOAD_KEYS" in common
     assert "SHARED_ALLOCATION_FILE_TYPE_KEYS" in common
     assert "SHARED_ALLOCATION_SLOT_MIRRORS" in common
-    assert "productivity_pallet" in common
+    assert "productivity_pallet" not in common
     assert "saveSharedAllocationFiles" in common
     assert "storeSharedAllocationFile" in common
     assert "protectedKeys" in common
@@ -1808,20 +1972,9 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert "allocationTrace" not in common
     assert "harleda.html" not in common
     assert "eftersok" not in allocation
-    assert "trackUploadActivity" in productivity_uploads
-    assert "syncAllocationUploads" in productivity_uploads
-    assert "syncAllocationUploadsFromStore" in productivity_uploads
-    assert "lastAllocationSyncSignature" in productivity_uploads
     assert "clearGeneration" in common
-    assert "stale: true" in productivity_uploads
-    assert "window.sharedAllocationUploads?.saveFiles" in productivity_uploads
-    assert "window.allocationUploadActivity?.start()" in productivity_uploads
-    assert "window.allocationUploadActivity?.finish(activityCount)" in productivity_uploads
-    assert "uploadProductivityRawFile" in productivity_uploads
-    assert "compiledUpdated" in productivity_uploads
-    assert "Sammanställd data uppdaterad" in productivity_uploads
-    assert "Sammanställd data kunde inte uppdateras" in productivity_uploads
-    assert "syncAllocationUploads: false" in allocation
+    assert not (frontend / "js" / "productivity_uploads.js").exists()
+    assert "syncAllocationUploads: false" not in allocation
     assert "allocationResultSummaryEntries" in allocation
     assert "data.display_summary" in allocation
     assert 'entry.key !== "result"' not in allocation
@@ -1856,6 +2009,11 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     assert ".sidebar-upload-link" not in styles
     assert ".allocation-file-slot.drag-over" in styles
     assert ".allocation-flow-chip.drag-over .allocation-flow-chip-row" in styles
+    assert "flex-wrap: nowrap;\n  gap: 20px 24px;\n  overflow-x: auto;" in styles
+    assert ".allocation-flow-chip {\n  position: relative;\n  width: 260px;" in styles
+    assert ".allocation-flow-chip-row {\n  display: flex;\n  align-items: stretch;\n  min-height: 40px;" in styles
+    assert "overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;" in styles
+    assert "flex: 0 0 38px;\n  min-width: 38px;" in styles
     assert ".allocation-column-head" in styles
     assert ".allocation-text-result-wrap" in styles
     assert ".allocation-copy-text" in styles

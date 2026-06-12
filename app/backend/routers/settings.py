@@ -12,17 +12,25 @@ from ..schemas import (
     RoleViewAccessUpdate,
     SidebarLayoutOut,
     SidebarLayoutUpdate,
+    StaffingSettingsOut,
+    StaffingSettingsUpdate,
 )
 from ..settings_service import (
     LOCK_FOREIGN_SCHEDULE_CELLS_KEY,
     ROLE_VIEW_ACCESS_KEY,
     SIDEBAR_LAYOUT_KEY,
+    STAFFING_HISTORY_HOURS_MAX,
+    STAFFING_HISTORY_HOURS_MIN,
     get_lock_foreign_schedule_cells,
     get_role_view_access,
     get_sidebar_layout,
+    get_staffing_activity_capacity_activity_ids,
+    get_staffing_history_hours,
     set_role_view_access,
     set_lock_foreign_schedule_cells,
     set_sidebar_layout,
+    set_staffing_activity_capacity_activity_ids,
+    set_staffing_history_hours,
 )
 from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, normalize_role_view_id
 
@@ -45,6 +53,15 @@ def _sidebar_layout_out(db: Session, business_id: int | None) -> SidebarLayoutOu
 
 def _role_view_access_out(db: Session, business_id: int | None) -> RoleViewAccessOut:
     return RoleViewAccessOut(access=get_role_view_access(db))
+
+
+def _staffing_settings_out(db: Session, business_id: int | None) -> StaffingSettingsOut:
+    return StaffingSettingsOut(
+        history_hours=get_staffing_history_hours(db, business_id=business_id),
+        min_history_hours=STAFFING_HISTORY_HOURS_MIN,
+        max_history_hours=STAFFING_HISTORY_HOURS_MAX,
+        activity_capacity_activity_ids=get_staffing_activity_capacity_activity_ids(db, business_id=business_id),
+    )
 
 
 def _audit_setting_change(
@@ -158,6 +175,52 @@ def update_app_settings(
     )
     db.commit()
     return _settings_out(db, scoped_business_id)
+
+
+@router.get("/staffing", response_model=StaffingSettingsOut)
+def get_staffing_settings(
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("staffingSettings", "view")),
+) -> StaffingSettingsOut:
+    scoped_business_id = visible_business_id(db, user, business_id)
+    return _staffing_settings_out(db, scoped_business_id)
+
+
+@router.put("/staffing", response_model=StaffingSettingsOut)
+def update_staffing_settings(
+    payload: StaffingSettingsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_view_access("staffingSettings", "edit")),
+    business_id: int | None = Query(None),
+) -> StaffingSettingsOut:
+    scoped_business_id = visible_business_id(db, admin, business_id)
+    before = _staffing_settings_out(db, scoped_business_id).model_dump()
+    set_staffing_history_hours(
+        db,
+        float(payload.history_hours),
+        user_id=admin.id,
+        business_id=scoped_business_id,
+    )
+    if "activity_capacity_activity_ids" in payload.model_fields_set:
+        set_staffing_activity_capacity_activity_ids(
+            db,
+            payload.activity_capacity_activity_ids,
+            user_id=admin.id,
+            business_id=scoped_business_id,
+        )
+    after = _staffing_settings_out(db, scoped_business_id).model_dump()
+    _audit_setting_change(
+        db,
+        key="staffing_settings",
+        action="update_staffing_settings",
+        old_value=before,
+        new_value=after,
+        user_id=admin.id,
+        business_id=scoped_business_id,
+    )
+    db.commit()
+    return _staffing_settings_out(db, scoped_business_id)
 
 
 @router.get("/sidebar", response_model=SidebarLayoutOut)

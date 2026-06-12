@@ -1,6 +1,8 @@
 # Lokala exempeldata
 demo/
-referens/
+referens/*
+!referens/
+!referens/kpi.sql
 testdata/
 private-data/
 local_media/
@@ -35,6 +37,7 @@ venv/
 env/
 .env
 .env.local
+.flow-cli-cookies.txt
 .pytest_cache/
 .coverage
 

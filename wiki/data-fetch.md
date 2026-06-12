@@ -64,7 +64,7 @@ miljövariabler och skickas aldrig till modellen.
 - `app/backend/routers/data_fetch.py` kör planering, datahämtning och Excel-export.
 - `max_rows` i `/api/query-data/run` är valfritt. `null` eller utelämnat värde betyder att backend inte beskär raderna efter fetch; ett ifyllt tal begränsas fortfarande av serverns maxinställning.
 - Resultatens export-rader skrivs till temporara serverfiler per `session_id` med TTL, maxantal och byte-budget. Sessionens RAM-del haller bara anvandarkoppling, plan, kolumner, radantal och filreferens; Excel-exporten laser filen vid behov.
-- `app/backend/workflow_data.py` ateranvander `ExternalDataClient` for Bearbeta och Produktivitet, men utan MiniMax-plan, utan prompt och utan radbegransning. Den hamtar en bestamd katalogvy, materialiserar raderna till temporar tabbseparerad CSV och later workflowt avgora behorighet/fallback. Det ar inte samma anvandarflode som Hamta data och kraver inte `dataFetch`.
+- `app/backend/workflow_data.py` ateranvander `ExternalDataClient` for Bearbeta och Produktivitet, men utan MiniMax-plan, utan prompt och utan radbegransning. Bearbeta hamtar valda kallor vid korning; Produktivitet anvander samma materialisering for sin schemalagda API-snapshot med pick/trans/pallet/receive/sort/kpi. Det ar inte samma anvandarflode som Hamta data och kraver inte `dataFetch`.
 
 - Vid API-first/workflow-materialisering ar tekniskt kolumn-id i katalogen primar kontraktssanning. Svenska och engelska labels ar presentation eller CSV-rubrik. Om en gammal motor kraver svensk rubrik ska `workflow_data.py` mappa fran tekniskt id till legacy-rubrik med explicita alias; om svensk rubrik inte hittas far agenten inte anta att kolumnen saknas innan tekniskt id och engelsk label har kontrollerats.
 

@@ -68,6 +68,29 @@
     return `${value.toLocaleString("sv-SE", { maximumFractionDigits: 1 })} h`;
   }
 
+  function formatNumber(value, decimals = 0) {
+    if (value == null || Number.isNaN(Number(value))) return "-";
+    return Number(value).toLocaleString("sv-SE", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  function formatPercent(value) {
+    if (value == null || Number.isNaN(Number(value))) return "-";
+    return `${(Number(value) * 100).toLocaleString("sv-SE", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })} %`;
+  }
+
+  function productivityScoreClass(value) {
+    if (value == null || Number.isNaN(Number(value))) return "";
+    if (Number(value) >= 1) return " good";
+    if (Number(value) >= 0.85) return " warn";
+    return " low";
+  }
+
   function weekdayShort(label) {
     return String(label || "").slice(0, 3);
   }
@@ -106,11 +129,11 @@
     `;
   }
 
-  function summaryCard(label, value, detail = "") {
+  function summaryCard(label, value, detail = "", valueClass = "") {
     return `
       <div class="personal-stat">
         <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(value)}</strong>
+        <strong class="${escapeHtml(valueClass)}">${escapeHtml(value)}</strong>
         ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
       </div>
     `;
@@ -143,6 +166,66 @@
         `).join("")}
       </div>
     `;
+  }
+
+  function productivityStatusNote(stats) {
+    if (!stats) return `<p class="personal-muted">Produktivitetsdata saknas.</p>`;
+    if (stats.status === "unavailable") {
+      return `<p class="personal-muted">Global produktivitetsdata ar inte aktiv.</p>`;
+    }
+    const missing = stats.missing_dates?.length || 0;
+    if (missing > 0) {
+      return `<p class="personal-muted">${missing} dagar saknar snapshot och fylls av historiken.</p>`;
+    }
+    if (stats.status === "missing") {
+      return `<p class="personal-muted">Ingen produktivitetsdata finns for perioden.</p>`;
+    }
+    return "";
+  }
+
+  function productivityActivityTable(stats) {
+    const rows = stats?.activities || [];
+    if (!rows.length) {
+      return productivityStatusNote(stats) || `<p class="personal-muted">Inga KPI-aktiviteter registrerade.</p>`;
+    }
+    return `
+      ${productivityStatusNote(stats)}
+      <div class="personal-productivity-table-wrap">
+        <table class="personal-productivity-table">
+          <thead>
+            <tr>
+              <th>Aktivitet</th>
+              <th>Snitt</th>
+              <th>Poang/tim</th>
+              <th>KPI-tid</th>
+              <th>Poang</th>
+              <th>Diff</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.activity || "-")}</td>
+                <td class="personal-productivity-score${productivityScoreClass(row.productivity_pct)}">${escapeHtml(formatPercent(row.productivity_pct))}</td>
+                <td>${escapeHtml(formatNumber(row.points_per_hour, 1))}</td>
+                <td>${escapeHtml(formatNumber(row.kpi_hours, 1))} h</td>
+                <td>${escapeHtml(formatNumber(row.kpi_points, 1))} / ${escapeHtml(formatNumber(row.planned_kpi_points, 1))}</td>
+                <td>${escapeHtml(formatNumber(row.diff_count, 0))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function productivityPeriodDetail(stats) {
+    const period = stats?.period || {};
+    const daysWithData = Number(stats?.summary?.days_with_data || 0);
+    const range = period.start_date && period.end_date && period.start_date !== period.end_date
+      ? `${period.start_date} - ${period.end_date}`
+      : period.start_date || "";
+    return [range, daysWithData ? `${daysWithData} dagar med data` : ""].filter(Boolean).join(" - ");
   }
 
   function currentSegment(schedule) {
@@ -249,6 +332,10 @@
   function renderProductivity(payload) {
     const app = document.getElementById("personalApp");
     const day = payload.day;
+    const dayStats = payload.productivity?.day || null;
+    const weekStats = payload.productivity?.week || null;
+    const daySummary = dayStats?.summary || {};
+    const weekSummary = weekStats?.summary || {};
     app.innerHTML = `
       <section class="personal-header">
         <div>
@@ -260,16 +347,17 @@
       </section>
 
       <section class="personal-summary">
+        ${summaryCard("Idag", formatPercent(daySummary.productivity_pct), `${formatNumber(daySummary.kpi_points, 1)} / ${formatNumber(daySummary.planned_kpi_points, 1)} KPI-poang`, productivityScoreClass(daySummary.productivity_pct))}
+        ${summaryCard("Poang/tim", formatNumber(daySummary.points_per_hour, 1), `${formatNumber(daySummary.kpi_hours, 1)} KPI-timmar`)}
+        ${summaryCard("Veckosnitt", formatPercent(weekSummary.productivity_pct), `${formatNumber(weekSummary.kpi_points, 1)} / ${formatNumber(weekSummary.planned_kpi_points, 1)} KPI-poang`, productivityScoreClass(weekSummary.productivity_pct))}
         ${summaryCard("Planerad tid", hoursText(day.total_minutes), day.status)}
-        ${summaryCard("Arbete", hoursText(day.work_minutes))}
-        ${summaryCard("Frånvaro", hoursText(day.absence_minutes))}
-        ${summaryCard("Veckan", hoursText(payload.summary.total_minutes), `${payload.summary.scheduled_days} planerade dagar`)}
       </section>
 
       <section class="personal-productivity-grid">
         <article class="personal-panel">
-          <h2>Dagens aktiviteter</h2>
-          ${activitiesHtml(day.activities)}
+          <h2>Dagens produktivitet</h2>
+          <p class="personal-panel-meta">${escapeHtml(productivityPeriodDetail(dayStats))}</p>
+          ${productivityActivityTable(dayStats)}
         </article>
         <article class="personal-panel">
           <h2>Dagens pass</h2>
@@ -278,8 +366,9 @@
           </div>
         </article>
         <article class="personal-panel">
-          <h2>Veckans aktiviteter</h2>
-          ${activitiesHtml(payload.summary.activities)}
+          <h2>Veckans produktivitet</h2>
+          <p class="personal-panel-meta">${escapeHtml(productivityPeriodDetail(weekStats))}</p>
+          ${productivityActivityTable(weekStats)}
         </article>
       </section>
     `;

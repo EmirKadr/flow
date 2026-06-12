@@ -13,6 +13,7 @@ from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
 from .database import SessionLocal
 from .models import Business
+from .productivity_sync import start_productivity_sync_scheduler
 from .routers import (
     activities,
     allocation,
@@ -162,6 +163,11 @@ def sync_allocation_observations_on_startup() -> None:
         name="AllocationObservationsSync",
         daemon=True,
     ).start()
+
+
+@app.on_event("startup")
+def sync_productivity_snapshots_on_startup() -> None:
+    start_productivity_sync_scheduler()
 
 
 @app.on_event("startup")

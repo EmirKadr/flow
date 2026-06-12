@@ -38,7 +38,7 @@ def chromium_browser():
 
 
 def login_admin(page, base_url: str) -> None:
-    page.goto(f"{base_url}/login.html", wait_until="networkidle")
+    page.goto(f"{base_url}/login.html", wait_until="domcontentloaded")
     page.fill("#username", "admin")
     page.fill("#password", "admin123")
     page.click("button.primary")
@@ -209,80 +209,31 @@ def test_clear_all_uploads_keeps_core_file_entries(local_allocation_server, chro
             [
                 {"key": "orders", "name": "orders.csv"},
                 {"key": "buffer", "name": "buffer.csv"},
-                {"key": "productivity_pallet", "name": "v_ask_palletloading_log.csv"},
                 {"key": "max_csv", "name": "artikel_max.csv"},
                 {"key": "item_option", "name": "item_option.csv"},
-            ],
-        )
-        seed_upload_store(
-            page,
-            "flow-productivity-files",
-            [
-                {"key": "pick", "name": "v_ask_pick_log_full.csv"},
-                {"key": "pallet", "name": "v_ask_palletloading_log.csv"},
-                {"key": "kpi", "name": "v_ask_kpi_target.csv"},
             ],
         )
 
         assert page.evaluate("window.clearAllUploadedFiles({ confirmUser: false })") is True
 
         assert upload_store_keys(page, "flow-allokering-files") == ["item_option", "max_csv"]
-        assert upload_store_keys(page, "flow-productivity-files") == ["kpi"]
+        assert page.evaluate("window.productivityUploads === undefined") is True
         expect(page.locator(".toast.success").last).to_contain_text("Kärnfiler och sammanställd data ligger kvar")
     finally:
         context.close()
 
 
-def test_clear_all_uploads_blocks_stale_productivity_sync(local_allocation_server, chromium_browser):
+def test_uploads_page_does_not_load_productivity_upload_sync(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()
     try:
         login_admin(page, local_allocation_server)
-        page.goto(f"{local_allocation_server}/uppladdningar.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/uppladdningar.html", wait_until="domcontentloaded")
         page.wait_for_selector("#allocation-clear-all-files", timeout=15000)
-        seed_upload_store(
-            page,
-            "flow-productivity-files",
-            [{"key": "pallet", "name": "v_ask_palletloading_log-race.csv"}],
-        )
 
-        result = page.evaluate(
-            """async () => {
-              const originalSaveFiles = window.sharedAllocationUploads.saveFiles;
-              let releaseSync;
-              let saveEntered;
-              const releasePromise = new Promise((resolve) => { releaseSync = resolve; });
-              const saveEnteredPromise = new Promise((resolve) => { saveEntered = resolve; });
-              window.sharedAllocationUploads.saveFiles = async (files, options = {}) => {
-                saveEntered({
-                  fileCount: Array.from(files || []).length,
-                  clearGeneration: options.clearGeneration,
-                });
-                await releasePromise;
-                return originalSaveFiles(files, options);
-              };
-
-              try {
-                const syncPromise = window.productivityUploads.syncAllocationUploads();
-                const entered = await Promise.race([
-                  saveEnteredPromise,
-                  new Promise((_, reject) => setTimeout(() => reject(new Error("Synk startade inte.")), 2000)),
-                ]);
-                const clearResult = await window.clearAllUploadedFiles({ confirmUser: false });
-                releaseSync();
-                const syncResult = await syncPromise;
-                return { entered, clearResult, syncResult };
-              } finally {
-                releaseSync?.();
-                window.sharedAllocationUploads.saveFiles = originalSaveFiles;
-              }
-            }"""
-        )
-
-        assert result["clearResult"] is True
-        assert result["syncResult"].get("stale") is True
+        assert page.evaluate("window.productivityUploads === undefined") is True
+        assert page.evaluate("typeof window.sharedAllocationUploads?.saveFiles === 'function'") is True
         assert upload_store_keys(page, "flow-allokering-files") == []
-        assert upload_store_keys(page, "flow-productivity-files") == []
     finally:
         context.close()
 
@@ -293,7 +244,7 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
     page = context.new_page()
     try:
         login_admin(page, local_allocation_server)
-        page.goto(f"{local_allocation_server}/dela.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/dela.html", wait_until="domcontentloaded")
         page.wait_for_selector('[data-flow-field="values"]', timeout=15000)
         page.fill('[data-flow-field="values"]', "A\nB\nC\nD\nE")
         page.fill('[data-flow-field="chunk_size"]', "2")
@@ -344,9 +295,9 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
         copied_text = page.evaluate("navigator.clipboard.readText()")
         assert copied_text.replace("\r\n", "\n") == "C\nD"
 
-        page.goto(f"{local_allocation_server}/index.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/index.html", wait_until="domcontentloaded")
         page.wait_for_selector("#scheduleTable", timeout=15000)
-        page.goto(f"{local_allocation_server}/dela.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/dela.html", wait_until="domcontentloaded")
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
 
         expect(page.locator('[data-flow-field="values"]')).to_have_value("A\nB\nC\nD\nE")
@@ -392,7 +343,7 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
             ),
         )
 
-        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
         page.wait_for_selector('button[data-run-flow="allocate"]:not([disabled])', timeout=15000)
         page.click('button[data-run-flow="allocate"]')
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
@@ -400,7 +351,7 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
 
         page.goto(f"{local_allocation_server}/historik.html", wait_until="domcontentloaded")
         page.wait_for_selector("#auditBody", timeout=15000)
-        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
         page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
 
         expect(page.locator(".allocation-result h2")).to_have_text("Resultat - Allokering")
@@ -410,8 +361,273 @@ def test_process_result_survives_view_switch(local_allocation_server, chromium_b
         context.close()
 
 
-def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_allocation_server, chromium_browser):
+def test_bearbeta_matrix_is_managed_from_settings(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    captured = {}
+    matrix_payload = {
+        "areas": [
+            {"code": "ALLT", "label": "Alla"},
+            {"code": "AS", "label": "Autostore"},
+        ],
+        "flows": [
+            {"id": "allocate", "label": "Allokering", "category": "Allokering"},
+            {"id": "ordersaldo", "label": "Ordersaldo", "category": "Kontroll"},
+        ],
+        "matrix": {
+            "ALLT": {"visibleFlowIds": None},
+            "AS": {"visibleFlowIds": ["allocate"]},
+        },
+    }
+    try:
+        page.route(
+            "**/api/allokering/ytgenerering-map-layout**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"version": 1, "can_edit": True, "locations": [], "defaults": [], "available_locations": []}),
+            ),
+        )
+
+        def handle_process_matrix(route):
+            if route.request.method == "PUT":
+                captured["payload"] = json.loads(route.request.post_data or "{}")
+                matrix_payload["matrix"] = captured["payload"].get("matrix") or {}
+            route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(matrix_payload, ensure_ascii=False),
+            )
+
+        page.route("**/api/allokering/process-matrix", handle_process_matrix)
+        login_admin(page, local_allocation_server)
+
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
+        page.wait_for_selector(".allocation-board", timeout=15000)
+        expect(page.locator("#allocation-process-matrix")).to_have_count(0)
+
+        page.goto(f"{local_allocation_server}/installningar.html", wait_until="domcontentloaded")
+        page.wait_for_selector('[data-settings-tab="process-matrix"]', timeout=15000)
+        page.click('[data-settings-tab="process-matrix"]')
+        page.wait_for_selector(".allocation-process-matrix-table", timeout=15000)
+        expect(page.locator(".allocation-process-matrix-table")).to_contain_text("Autostore")
+        expect(page.locator("#allocation-process-matrix-settings-save")).to_be_visible()
+
+        page.click("#allocation-process-matrix-settings-save")
+        expect(page.locator(".toast.success").last).to_contain_text("Bearbeta-matris sparades", timeout=15000)
+        assert captured["payload"]["matrix"]["ALLT"]["visibleFlowIds"] is None
+        assert captured["payload"]["matrix"]["AS"]["visibleFlowIds"] == ["allocate"]
+    finally:
+        context.close()
+
+
+def test_ytgenerering_settings_editor_is_scoped_to_area_toggle(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    captured = {}
+    areas = [
+        {"id": 101, "code": "AS", "name": "Autostore", "sort_order": 1, "is_active": True},
+        {"id": 102, "code": "MG", "name": "Manuell grupp", "sort_order": 2, "is_active": True},
+    ]
+    profile = {
+        "version": 1,
+        "flows": {
+            "ytgenerering": {
+                "settings": {
+                    "ytgenerering": {
+                        "areas": {
+                            "ALLT": {"utlMin": 1, "utlMax": 652},
+                            "AS": {"utlMin": 205, "utlMax": 356},
+                            "MG": {"utlMin": 300, "utlMax": 330},
+                        }
+                    }
+                }
+            }
+        },
+    }
+    process_matrix = {
+        "areas": [
+            {"code": "ALLT", "label": "Alla"},
+            {"code": "AS", "label": "AS"},
+            {"code": "MG", "label": "MG"},
+        ],
+        "flows": [
+            {"id": "ytgenerering", "label": "Ytgenerering", "category": "Forecast & yta"},
+        ],
+        "matrix": {
+            "ALLT": {"visibleFlowIds": ["ytgenerering"]},
+            "AS": {"visibleFlowIds": ["ytgenerering"]},
+            "MG": {"visibleFlowIds": ["ytgenerering"]},
+        },
+    }
+    try:
+        page.route(
+            "**/api/areas",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(areas, ensure_ascii=False),
+            ),
+        )
+        page.route(
+            "**/api/coredata/files",
+            lambda route: route.fulfill(status=200, headers={"content-type": "application/json"}, body='{"files":{}}'),
+        )
+        page.route(
+            "**/api/allokering/flows",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(
+                    {
+                        "flows": [
+                            {
+                                "id": "ytgenerering",
+                                "label": "Ytgenerering",
+                                "category": "Forecast & yta",
+                                "view": "combined",
+                                "description": "Ytgenerering",
+                                "inputs": [],
+                                "coredata": [],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
+        page.route(
+            "**/api/allokering/process-matrix",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(process_matrix, ensure_ascii=False),
+            ),
+        )
+
+        def handle_filter_profile(route):
+            nonlocal profile
+            if route.request.method == "PUT":
+                captured["payload"] = json.loads(route.request.post_data or "{}")
+                profile = captured["payload"].get("profile") or {}
+            route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"profile": profile, "users": []}, ensure_ascii=False),
+            )
+
+        page.route("**/api/allokering/filter-profile", handle_filter_profile)
+
+        login_admin(page, local_allocation_server)
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
+        page.wait_for_selector(".allocation-board", timeout=15000)
+        page.evaluate(
+            """(areas) => {
+              window.setAreaFocusAreas(areas, { is_super_user: true });
+              window.writeAreaFocus("AREA:101");
+            }""",
+            areas,
+        )
+        page.wait_for_selector('button[data-flow-filter="ytgenerering"]', timeout=15000)
+        page.click('button[data-flow-filter="ytgenerering"]')
+
+        rows = page.locator("[data-ytgenerering-utl-area]")
+        expect(rows).to_have_count(1)
+        expect(page.locator('[data-ytgenerering-utl-area="AS"]')).to_be_visible()
+        expect(page.locator(".allocation-ytgenerering-utl-grid")).not_to_contain_text("MG")
+        expect(page.locator(".allocation-ytgenerering-utl-grid")).not_to_contain_text("Alla")
+
+        page.fill('[data-ytgenerering-utl-min="AS"]', "220")
+        page.fill('[data-ytgenerering-utl-max="AS"]', "240")
+        page.click("#allocation-filter-save")
+        expect(page.locator(".toast.success").last).to_contain_text("Filtrering sparades", timeout=15000)
+
+        saved_areas = captured["payload"]["profile"]["flows"]["ytgenerering"]["settings"]["ytgenerering"]["areas"]
+        assert saved_areas["AS"] == {"utlMin": 220, "utlMax": 240}
+        assert saved_areas["MG"] == {"utlMin": 300, "utlMax": 330}
+    finally:
+        context.close()
+
+
+def test_staffing_settings_selects_vh_capacity_activities(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    captured = {}
+    try:
+        page.route(
+            "**/api/allokering/ytgenerering-map-layout**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"version": 1, "can_edit": True, "locations": [], "defaults": [], "available_locations": []}),
+            ),
+        )
+        page.route(
+            "**/api/allokering/process-matrix",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"areas": [], "flows": [], "matrix": {}}),
+            ),
+        )
+
+        activities = [
+            {"id": 101, "label": "GG Plock", "category": "work", "kpi_process_name": "Manual_Pick", "sort_order": 1, "is_active": True},
+            {"id": 102, "label": "Pack", "category": "work", "kpi_process_name": "Pack", "sort_order": 2, "is_active": True},
+            {"id": 103, "label": "Frånvaro", "category": "absence", "kpi_process_name": "Absence", "sort_order": 3, "is_active": True},
+            {"id": 104, "label": "Stöd", "category": "work", "kpi_process_name": "", "sort_order": 4, "is_active": True},
+        ]
+        page.route(
+            "**/api/activities**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps(activities, ensure_ascii=False),
+            ),
+        )
+
+        def handle_staffing_settings(route):
+            if route.request.method == "PUT":
+                captured["payload"] = json.loads(route.request.post_data or "{}")
+                body = {
+                    "history_hours": captured["payload"]["history_hours"],
+                    "min_history_hours": 1,
+                    "max_history_hours": 240,
+                    "activity_capacity_activity_ids": captured["payload"].get("activity_capacity_activity_ids"),
+                }
+            else:
+                body = {
+                    "history_hours": 40,
+                    "min_history_hours": 1,
+                    "max_history_hours": 240,
+                    "activity_capacity_activity_ids": None,
+                }
+            route.fulfill(status=200, headers={"content-type": "application/json"}, body=json.dumps(body))
+
+        page.route("**/api/settings/staffing", handle_staffing_settings)
+        login_admin(page, local_allocation_server)
+
+        page.goto(f"{local_allocation_server}/installningar.html", wait_until="domcontentloaded")
+        page.wait_for_selector('[data-settings-tab="staffing"]', timeout=15000)
+        page.click('[data-settings-tab="staffing"]')
+        page.wait_for_selector("[data-staffing-capacity-all]", timeout=15000)
+        panel = page.locator(".allocation-staffing-settings-panel")
+        expect(page.locator("[data-staffing-capacity-activity]")).to_have_count(2)
+        expect(panel.locator("text=Frånvaro")).to_have_count(0)
+        expect(panel.locator("text=Stöd")).to_have_count(0)
+
+        page.uncheck("[data-staffing-capacity-all]")
+        page.uncheck('[data-staffing-capacity-activity][value="102"]')
+        page.click(".allocation-staffing-settings-panel button.primary")
+
+        expect(page.locator(".toast.success").last).to_contain_text("Bemanningsinställningen sparades", timeout=15000)
+        assert captured["payload"] == {"history_hours": 40, "activity_capacity_activity_ids": [101]}
+    finally:
+        context.close()
+
+
+def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE", accept_downloads=True)
     page = context.new_page()
     captured = {}
     try:
@@ -475,6 +691,7 @@ def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_al
                                         "unusedCapacity": 0,
                                         "placementNo": 1,
                                         "orderNumbers": ["O-1"],
+                                        "orderCompanies": {"O-1": "T3"},
                                     }
                                 ],
                                 "unplaced": [],
@@ -500,11 +717,11 @@ def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_al
                     "content-type": "text/csv",
                     "content-disposition": 'attachment; filename="v_ask_order_overview_order_set_area_execute_command.csv"',
                 },
-                body="area_num\tcompany\torder_num\tpick_zone\nUTL100\tMG\tO-1\tA\n",
+                body="area_num\tcompany\torder_num\tpick_zone\nUTL100\tT3\tO-1\tA\n",
             ),
         )
 
-        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
         ytgenerering_button = page.locator('button[data-run-flow="ytgenerering"]')
         expect(page.locator('button[data-run-flow="forecast"]')).to_have_count(0)
         expect(ytgenerering_button).to_be_enabled(timeout=15000)
@@ -521,6 +738,52 @@ def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_al
         expect(page.locator("[data-map-metrics]")).to_contain_text("5")
         expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga ytor")
         expect(page.locator("[data-map-metrics]")).to_contain_text("2")
+        page.wait_for_function(
+            """() => document.querySelector("[data-map-canvas]")?.getAttribute("transform")?.includes("scale")"""
+        )
+        initial_scale = page.locator("[data-map-canvas]").evaluate(
+            """(node) => Number((node.getAttribute("transform") || "").match(/scale\\(([^)]+)\\)/)?.[1] || 0)"""
+        )
+        page.evaluate(
+            """() => {
+              const svg = document.querySelector("[data-map-svg]");
+              const rect = svg.getBoundingClientRect();
+              svg.dispatchEvent(new WheelEvent("wheel", {
+                deltaY: 1200,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+                bubbles: true,
+                cancelable: true,
+              }));
+            }"""
+        )
+        zoomed_out_scale = page.locator("[data-map-canvas]").evaluate(
+            """(node) => Number((node.getAttribute("transform") || "").match(/scale\\(([^)]+)\\)/)?.[1] || 0)"""
+        )
+        assert zoomed_out_scale == pytest.approx(initial_scale)
+        page.evaluate(
+            """() => {
+              const svg = document.querySelector("[data-map-svg]");
+              const rect = svg.getBoundingClientRect();
+              svg.dispatchEvent(new WheelEvent("wheel", {
+                deltaY: -1200,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+                bubbles: true,
+                cancelable: true,
+              }));
+            }"""
+        )
+        zoomed_in_scale = page.locator("[data-map-canvas]").evaluate(
+            """(node) => Number((node.getAttribute("transform") || "").match(/scale\\(([^)]+)\\)/)?.[1] || 0)"""
+        )
+        assert zoomed_in_scale > initial_scale
+        with page.expect_download() as adjusted_ask_download:
+            page.locator("[data-map-export-ask]").click()
+        adjusted_ask = adjusted_ask_download.value
+        assert adjusted_ask.suggested_filename == "v_ask_order_overview_order_set_area_execute_command_justerad.csv"
+        adjusted_ask_content = adjusted_ask.path().read_text(encoding="utf-8")
+        assert adjusted_ask_content == "area_num\tcompany\torder_num\tpick_zone\nUTL100\tT3\tO-1\tA\n"
         assert download_response.value.status == 200
         assert 'name="forecast_session_id"' not in captured["post_data"]
         assert 'name="carrier_clusters_json"' not in captured["post_data"]
@@ -571,7 +834,7 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
             )
 
         page.route("**/api/allokering/ytgenerering-map-layout**", handle_map_layout)
-        page.goto(f"{local_allocation_server}/installningar.html", wait_until="networkidle")
+        page.goto(f"{local_allocation_server}/installningar.html", wait_until="domcontentloaded")
         page.wait_for_selector(".allocation-map-settings-page-panel", timeout=15000)
 
         expect(page.locator(".allocation-map-settings-list")).to_contain_text("UTL206")
@@ -588,8 +851,51 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         assert abs(menu_box["y"] - target_center_y) < 24
         page.get_by_role("button", name="Byt riktning").click()
         expect(page.locator(".allocation-map-settings-page-panel")).to_contain_text("riktning vänster")
-        page.click("[data-map-zoom-in]")
+        initial_viewbox = page.locator("[data-map-settings-svg]").evaluate(
+            """(node) => {
+                const box = node.viewBox.baseVal;
+                return { x: box.x, y: box.y, width: box.width, height: box.height };
+            }"""
+        )
         page.click("[data-map-zoom-out]")
+        zoomed_out_viewbox = page.locator("[data-map-settings-svg]").evaluate(
+            """(node) => {
+                const box = node.viewBox.baseVal;
+                return { x: box.x, y: box.y, width: box.width, height: box.height };
+            }"""
+        )
+        assert zoomed_out_viewbox == pytest.approx(initial_viewbox)
+        page.click("[data-map-zoom-in]")
+        zoomed_in_viewbox = page.locator("[data-map-settings-svg]").evaluate(
+            """(node) => {
+                const box = node.viewBox.baseVal;
+                return { x: box.x, y: box.y, width: box.width, height: box.height };
+            }"""
+        )
+        assert zoomed_in_viewbox["width"] < initial_viewbox["width"]
+        assert zoomed_in_viewbox["height"] < initial_viewbox["height"]
+        page.evaluate(
+            """() => {
+                const svg = document.querySelector("[data-map-settings-svg]");
+                const rect = svg.getBoundingClientRect();
+                for (let index = 0; index < 20; index += 1) {
+                    svg.dispatchEvent(new WheelEvent("wheel", {
+                        deltaY: 1200,
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                        bubbles: true,
+                        cancelable: true,
+                    }));
+                }
+            }"""
+        )
+        wheel_zoomed_out_viewbox = page.locator("[data-map-settings-svg]").evaluate(
+            """(node) => {
+                const box = node.viewBox.baseVal;
+                return { x: box.x, y: box.y, width: box.width, height: box.height };
+            }"""
+        )
+        assert wheel_zoomed_out_viewbox == pytest.approx(initial_viewbox)
         page.fill("[data-map-series-start]", "206")
         page.fill("[data-map-series-end]", "207")
         page.fill("[data-map-series-max]", "3")

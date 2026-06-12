@@ -14,7 +14,7 @@ from .. import audit
 from .. import allocation_bridge as bridge
 from ..business_scope import DEFAULT_BUSINESS_CODE, assert_user_can_access_business, get_business_by_code, normalize_business_code, user_business_id
 from ..coredata_service import CoreDataError, find_coredata_file
-from ..deps import get_db, require_allocation_tools_user, require_view_access
+from ..deps import get_db, require_allocation_tools_user, require_any_view_access, require_view_access
 from ..models import AllocationUserFilterProfile, Area, Business, User
 from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
 from ..user_access import can_access_view, can_use_allocation_process, is_super_user
@@ -300,19 +300,56 @@ def _stored_process_matrix(db: Session | object, *, flows: list[dict] | None = N
     return bridge.normalize_process_matrix(stored, flows=flows)
 
 
-def _active_area_codes_for_user(db: Session, user: User) -> set[str]:
-    query = db.query(func.upper(Area.code)).filter(Area.is_active.is_(True))
+def _process_matrix_area_options_for_user(db: Session, user: User) -> list[dict[str, object]]:
+    query = db.query(Area).filter(Area.is_active.is_(True))
     if not is_super_user(user):
         business_id = user_business_id(db, user)
         if business_id is not None:
             query = query.filter(Area.business_id == business_id)
-    return {code for (code,) in query.all() if code}
+    areas = (
+        query.outerjoin(Business, Area.business_id == Business.id)
+        .order_by(Business.sort_order.asc(), Area.sort_order.asc(), Area.name.asc(), Area.id.asc())
+        .all()
+    )
+    return [
+        {
+            "code": bridge.normalize_process_area_focus(area.code),
+            "label": bridge.normalize_process_area_focus(area.code) or area.name,
+            "title": area.name,
+            "areaId": area.id,
+            "businessId": area.business_id,
+        }
+        for area in areas
+        if bridge.normalize_process_area_focus(area.code)
+    ]
+
+
+def _merge_process_matrix_update(
+    current_matrix: dict[str, dict],
+    incoming_matrix: dict[str, dict],
+    *,
+    flows: list[dict],
+    area_options: list[dict[str, object]],
+) -> dict[str, dict]:
+    current = bridge.normalize_process_matrix(current_matrix, flows=flows)
+    incoming = bridge.normalize_process_matrix({"matrix": incoming_matrix}, flows=flows, area_options=area_options)
+    editable_codes = {
+        bridge.normalize_process_area_focus(area.get("code"))
+        for area in bridge.normalize_process_area_options(area_options)
+    }
+    merged = dict(current)
+    for raw_code in incoming_matrix:
+        code = bridge.normalize_process_area_focus(raw_code)
+        if code in editable_codes and code in incoming:
+            merged[code] = incoming[code]
+    return bridge.normalize_process_matrix(merged, flows=flows)
 
 
 def _process_matrix_response(db: Session, user: User) -> dict:
     flows = _allocation_process_matrix_flows()
     matrix = _stored_process_matrix(db, flows=flows)
-    return bridge.process_matrix_public_payload(matrix, flows=flows, area_codes=_active_area_codes_for_user(db, user))
+    area_options = _process_matrix_area_options_for_user(db, user)
+    return bridge.process_matrix_public_payload(matrix, flows=flows, area_options=area_options)
 
 
 def _allocation_settings_business_id(db: Session, user: User, area_focus: str | None = None) -> int | None:
@@ -625,7 +662,7 @@ def list_pool(
 @router.get("/process-matrix")
 def get_process_matrix(
     db: Session = Depends(get_db),
-    user: User = Depends(require_view_access("allocationProcess", "view")),
+    user: User = Depends(require_any_view_access(("allocationProcess", "allocationProcessMatrix"), "view")),
 ) -> dict:
     return _process_matrix_response(db, user)
 
@@ -637,9 +674,16 @@ def update_process_matrix(
     admin: User = Depends(require_view_access("allocationProcessMatrix", "edit")),
 ) -> dict:
     flows = _allocation_process_matrix_flows()
-    before = bridge.process_matrix_public_payload(_stored_process_matrix(db, flows=flows), flows=flows)
-    next_matrix = bridge.normalize_process_matrix({"matrix": payload.matrix}, flows=flows)
-    after = bridge.process_matrix_public_payload(next_matrix, flows=flows)
+    area_options = _process_matrix_area_options_for_user(db, admin)
+    current_matrix = _stored_process_matrix(db, flows=flows)
+    before = bridge.process_matrix_public_payload(current_matrix, flows=flows, area_options=area_options)
+    next_matrix = _merge_process_matrix_update(
+        current_matrix,
+        payload.matrix,
+        flows=flows,
+        area_options=area_options,
+    )
+    after = bridge.process_matrix_public_payload(next_matrix, flows=flows, area_options=area_options)
     set_json_setting(
         db,
         ALLOCATION_PROCESS_MATRIX_KEY,

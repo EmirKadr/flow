@@ -1,7 +1,7 @@
 ---
 title: Apphjalp och LLM-chatt
 status: aktiv
-updated: 2026-05-22
+updated: 2026-06-11
 tags: [chat, llm, minimax, support, sidebar]
 ---
 
@@ -81,7 +81,7 @@ Backend lagger dessutom till sidrelevant dokument, till exempel:
 - `/personer.html` -> `persons.md`
 - `/anvandare.html` -> `users-settings.md`
 - `/produktivitet.html` -> `productivity.md`
-- `/uppladdningar.html`, `/bearbeta.html`, `/dela.html` -> `warehouse-tools.md`
+- `/uppladdningar.html`, `/bearbeta.html`, `/installningar.html`, `/dela.html` -> `warehouse-tools.md`
 
 Darefter rankas fler wiki-filer efter ord i anvandarens senaste fraga. Modellen far alltsa inte direkt kora egen reposokning, men den far en kuraterad wiki-kontext byggd fran repot. Det ar avsiktligt for att inte skicka hemligheter eller hela kodbasen till modellen.
 

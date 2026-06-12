@@ -482,6 +482,7 @@ def build_training_data() -> pd.DataFrame:
     # Aggregera features per grupp (Kund+Orderdatum)
     feats = orders.groupby("grupp").agg(
         kund=("Kund", "first"),
+        bolag=("Bolag", "first"),
         orderdatum=("Orderdatum", "first"),
         n_rader=("Ordernr", "size"),
         n_ordrar=("Ordernr", "nunique"),

@@ -79,7 +79,7 @@ PAGES: tuple[VisualPage, ...] = (
     VisualPage("min-produktivitet", "/min-produktivitet.html", "#personalApp .personal-header", ("admin", "person")),
     VisualPage("flow", "/index.html", "#scheduleTable", ("admin", "leader", "staffing", "viewer", "r3")),
     VisualPage("oversikt", "/overblick.html", "#overviewTable", ("admin", "leader", "staffing", "viewer")),
-    VisualPage("produktivitet", "/produktivitet.html", "#productivityStatus", ("admin",)),
+    VisualPage("produktivitet", "/produktivitet.html", "#productivityOverviewStatus", ("admin",)),
     VisualPage("personer", "/personer.html", "#persons-table", ("admin", "leader", "staffing")),
     VisualPage("aktiviteter", "/aktiviteter.html", "#acts-body", ("admin", "leader", "staffing")),
     VisualPage("historik", "/historik.html", "#auditBody", ("admin",)),

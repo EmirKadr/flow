@@ -31,6 +31,10 @@ function activityLabel(id) {
   return a ? a.label : "";
 }
 
+function activityWorkTypeLabel(value) {
+  return String(value || "normal").toLowerCase() === "vas" ? "VAS" : "Normal";
+}
+
 function canSeeCodes() {
   return !!currentUser?.is_super_user;
 }
@@ -96,6 +100,7 @@ async function load() {
       <td>${escapeHtml(activityLabel(a.summary_activity_id) || "–")}</td>
       <td>${escapeHtml(a.kpi_process_name || "–")}</td>
       <td>${escapeHtml(a.category)}</td>
+      <td>${escapeHtml(activityWorkTypeLabel(a.work_type))}</td>
       <td>${a.sort_order}</td>
       <td>
         ${canEditActivities ? `
@@ -158,6 +163,11 @@ function openModal(act) {
         <option value="work" ${act?.category !== 'absence' ? 'selected' : ''}>Arbete</option>
         <option value="absence" ${act?.category === 'absence' ? 'selected' : ''}>Frånvaro</option>
       </select>
+      <label>Arbetstyp</label>
+      <select id="m-work-type">
+        <option value="normal" ${act?.work_type !== 'vas' ? 'selected' : ''}>Normal</option>
+        <option value="vas" ${act?.work_type === 'vas' ? 'selected' : ''}>VAS</option>
+      </select>
       <label>Sortering</label>
       <input id="m-sort" type="number" value="${act?.sort_order ?? 0}" />
       <div class="actions">
@@ -167,15 +177,27 @@ function openModal(act) {
     </div>`;
   document.body.appendChild(backdrop);
 
+  const categorySelect = document.getElementById("m-cat");
+  const workTypeSelect = document.getElementById("m-work-type");
+  const syncWorkTypeState = () => {
+    const isAbsence = categorySelect.value === "absence";
+    if (isAbsence) workTypeSelect.value = "normal";
+    workTypeSelect.disabled = isAbsence;
+  };
+  categorySelect.addEventListener("change", syncWorkTypeState);
+  syncWorkTypeState();
+
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
+    const category = categorySelect.value;
     const payload = {
       label: document.getElementById("m-label").value.trim(),
       area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       summary_activity_id: document.getElementById("m-summary").value ? Number(document.getElementById("m-summary").value) : null,
       kpi_process_name: document.getElementById("m-kpi-process-name").value.trim() || null,
       color: document.getElementById("m-color").value,
-      category: document.getElementById("m-cat").value,
+      category,
+      work_type: category === "absence" ? "normal" : workTypeSelect.value,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
     };
     if (currentUser?.is_super_user && !isEdit) {
@@ -280,6 +302,7 @@ function openBulkActivitiesModal() {
       { key: "area", label: "Område", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
       { key: "summary_activity", label: "Summeras som", required: false, type: "select", options: activities.map((activity) => ({ value: activity.label, label: activity.label })) },
       { key: "kpi_process_name", label: "KPI Mål", required: false },
+      { key: "work_type", label: "Arbetstyp", required: false, type: "select", options: [{ value: "normal", label: "Normal" }, { value: "vas", label: "VAS" }] },
       { key: "sort_order", label: "Sortering", required: false, type: "number" },
     ],
     onSubmit: async (rows) => {

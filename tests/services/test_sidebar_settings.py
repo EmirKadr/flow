@@ -3,10 +3,20 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.models import AppSetting, AuditLog, User
 from app.backend.routers import settings as settings_router
-from app.backend.schemas import AppSettingsUpdate, RoleViewAccessUpdate, SidebarLayoutItem, SidebarLayoutUpdate
+from app.backend.schemas import (
+    AppSettingsUpdate,
+    RoleViewAccessUpdate,
+    SidebarLayoutItem,
+    SidebarLayoutUpdate,
+    StaffingSettingsUpdate,
+)
 from app.backend.settings_service import (
     ROLE_VIEW_ACCESS_KEY,
     SIDEBAR_LAYOUT_KEY,
+    STAFFING_ACTIVITY_CAPACITY_ACTIVITY_IDS_KEY,
+    STAFFING_HISTORY_HOURS_KEY,
+    get_staffing_activity_capacity_activity_ids,
+    get_staffing_history_hours,
     get_role_view_access,
     get_sidebar_layout,
     set_role_view_access,
@@ -183,6 +193,69 @@ def test_app_settings_update_writes_audit_log():
             "key": "lock_foreign_schedule_cells",
             "value": {"lock_foreign_schedule_cells": True},
         }
+    finally:
+        session.close()
+        drop_session_tables(engine)
+        engine.dispose()
+
+
+def test_staffing_history_hours_defaults_to_40_and_updates_with_audit_log():
+    engine, session = make_session()
+    try:
+        admin = User(id=7, username="root", role="admin", roles=["super_user"], is_active=True)
+
+        assert get_staffing_history_hours(session) == 40.0
+        assert get_staffing_activity_capacity_activity_ids(session) is None
+
+        result = settings_router.update_staffing_settings(
+            StaffingSettingsUpdate(history_hours=32, activity_capacity_activity_ids=[2, 1, 2]),
+            session,
+            admin,
+        )
+
+        assert result.history_hours == 32.0
+        assert result.min_history_hours == 1.0
+        assert result.max_history_hours == 240.0
+        assert result.activity_capacity_activity_ids == [2, 1]
+        row = session.get(AppSetting, {"business_id": 1, "key": STAFFING_HISTORY_HOURS_KEY})
+        assert row is not None
+        assert row.value == "32"
+        activity_row = session.get(AppSetting, {"business_id": 1, "key": STAFFING_ACTIVITY_CAPACITY_ACTIVITY_IDS_KEY})
+        assert activity_row is not None
+        assert activity_row.value == "[2,1]"
+        assert get_staffing_activity_capacity_activity_ids(session) == [2, 1]
+        entry = session.query(AuditLog).filter_by(
+            entity_type="app_setting",
+            action="update_staffing_settings",
+        ).one()
+        assert entry.old_value == {
+            "key": "staffing_settings",
+            "value": {
+                "history_hours": 40.0,
+                "min_history_hours": 1.0,
+                "max_history_hours": 240.0,
+                "activity_capacity_activity_ids": None,
+            },
+        }
+        assert entry.new_value == {
+            "key": "staffing_settings",
+            "value": {
+                "history_hours": 32.0,
+                "min_history_hours": 1.0,
+                "max_history_hours": 240.0,
+                "activity_capacity_activity_ids": [2, 1],
+            },
+        }
+
+        reset = settings_router.update_staffing_settings(
+            StaffingSettingsUpdate(history_hours=32, activity_capacity_activity_ids=None),
+            session,
+            admin,
+        )
+
+        assert reset.activity_capacity_activity_ids is None
+        assert get_staffing_activity_capacity_activity_ids(session) is None
+        assert session.get(AppSetting, {"business_id": 1, "key": STAFFING_ACTIVITY_CAPACITY_ACTIVITY_IDS_KEY}).value == "null"
     finally:
         session.close()
         drop_session_tables(engine)
