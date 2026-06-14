@@ -4,7 +4,7 @@ from datetime import datetime, time as datetime_time, timezone
 import unicodedata
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -129,6 +129,18 @@ def _person_for_tag(db: Session, tag_code: str, tag_dec: str | None, activity: A
     return None
 
 
+def _is_consecutive_duplicate_scan(db: Session, *, person: Person | None, activity: Activity | None) -> bool:
+    if person is None or activity is None:
+        return False
+    latest = (
+        db.query(RfidScanEvent)
+        .filter(RfidScanEvent.person_id == person.id, RfidScanEvent.activity_id.isnot(None))
+        .order_by(RfidScanEvent.scan_time.desc(), RfidScanEvent.id.desc())
+        .first()
+    )
+    return latest is not None and latest.activity_id == activity.id
+
+
 def _event_status_for(db: Session, *, person: Person | None, activity: Activity | None) -> tuple[str, str | None]:
     if person is None:
         return STATUS_UNKNOWN_PERSON, "RFID-brickan ar inte kopplad till en person."
@@ -181,6 +193,7 @@ def _serialize_event(event: RfidScanEvent, *, person: Person | None = None, acti
 def receive_rfid_scan(
     payload: RfidScanIn,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> dict:
     _assert_device_token(request)
@@ -202,6 +215,16 @@ def receive_rfid_scan(
         seen_at=seen_at,
     )
     person = _person_for_tag(db, tag_code, payload.tag_dec, activity)
+    if _is_consecutive_duplicate_scan(db, person=person, activity=activity):
+        db.commit()
+        response.status_code = status.HTTP_200_OK
+        return {
+            "event": None,
+            "registered": False,
+            "duplicate": True,
+            "status": "duplicate_dropped",
+            "status_reason": "Samma person stamplade samma aktivitet tva ganger i rad.",
+        }
     event_status, status_reason = _event_status_for(db, person=person, activity=activity)
     schedule_year, schedule_week, schedule_weekday, schedule_hour, schedule_minute = _schedule_parts(seen_at)
     business_id = (

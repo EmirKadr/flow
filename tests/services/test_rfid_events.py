@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import Activity, Area, Business, Person, RfidScanEvent, ScheduleCell, User
+from app.backend.models import Activity, Area, AuditLog, Business, Person, RfidScanEvent, ScheduleCell, User
 from app.backend.routers import rfid
 from app.backend.routers.rfid import (
     RfidScanIn,
@@ -76,7 +76,7 @@ def seed_rfid_data(session):
     }
 
 
-def test_rfid_scan_is_persistent_when_ignored_and_duplicate_is_auto_ignored(monkeypatch):
+def test_rfid_duplicate_scan_is_dropped_without_event_or_audit(monkeypatch):
     engine, session = make_session()
     try:
         data = seed_rfid_data(session)
@@ -91,17 +91,29 @@ def test_rfid_scan_is_persistent_when_ignored_and_duplicate_is_auto_ignored(monk
             scan_count=1,
         )
 
-        first = receive_rfid_scan(payload, request=request, db=session)["event"]
-        second = receive_rfid_scan(payload.model_copy(update={"scan_count": 2}), request=request, db=session)["event"]
+        first = receive_rfid_scan(payload, request=request, response=Response(), db=session)["event"]
+        audit_count_after_first = session.query(AuditLog).filter(AuditLog.entity_type == "rfid_scan_event").count()
+        second_response = Response()
+        second = receive_rfid_scan(
+            payload.model_copy(update={"scan_count": 2}),
+            request=request,
+            response=second_response,
+            db=session,
+        )
 
         assert first["status"] == "pending"
-        assert second["status"] == "duplicate_ignored"
+        assert second_response.status_code == 200
+        assert second["event"] is None
+        assert second["registered"] is False
+        assert second["duplicate"] is True
+        assert session.query(RfidScanEvent).count() == 1
+        assert session.query(AuditLog).filter(AuditLog.entity_type == "rfid_scan_event").count() == audit_count_after_first
 
         ignored = ignore_rfid_event(first["id"], db=session, user=data["user"])["event"]
         assert ignored["status"] == "ignored"
 
         listed = list_rfid_events(2026, 24, 7, area_id=data["area"].id, db=session, user=data["user"])
-        assert [event["status"] for event in listed["events"]] == ["ignored", "duplicate_ignored"]
+        assert [event["status"] for event in listed["events"]] == ["ignored"]
     finally:
         session.close()
         Base.metadata.drop_all(engine)
@@ -116,13 +128,14 @@ def test_rfid_scan_requires_device_token_when_configured(monkeypatch):
         payload = RfidScanIn(device_id="esp32-mg-plock-01", module_name="MG Plock", tag_hex="00A1B2C3")
 
         with pytest.raises(HTTPException) as exc:
-            receive_rfid_scan(payload, request=SimpleNamespace(headers={}), db=session)
+            receive_rfid_scan(payload, request=SimpleNamespace(headers={}), response=Response(), db=session)
 
         assert exc.value.status_code == 401
 
         accepted = receive_rfid_scan(
             payload,
             request=SimpleNamespace(headers={"x-flow-rfid-token": "expected-token"}),
+            response=Response(),
             db=session,
         )["event"]
         assert accepted["status"] == "pending"
@@ -158,6 +171,7 @@ def test_apply_rfid_event_splits_schedule_cell_from_scan_minute(monkeypatch):
         event = receive_rfid_scan(
             RfidScanIn(device_id="esp32-mg-plock-01", module_name="MG Plock", tag_hex="00A1B2C3"),
             request=SimpleNamespace(headers={}),
+            response=Response(),
             db=session,
         )["event"]
 

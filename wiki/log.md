@@ -1549,3 +1549,7 @@ Agentreglerna sager nu uttryckligt att nya floden som skapar, andrar, synkar ell
 ## [2026-06-14] fix | RFID-brygga forklarar last COM-port
 
 USB-bryggan for RFID visar nu ett begripligt fel om COM-porten ar last av Arduino Serial Monitor eller annat program. RFID-wikin och firmware-README beskriver att serialfonstret maste stangas innan bryggan startas.
+
+## [2026-06-14] change | RFID-dubbletter droppas
+
+RFID-scans for samma person och samma aktivitet tva ganger i rad sparas inte langre som `duplicate_ignored`. Backend uppdaterar device-senast-sedd men returnerar `registered=false` utan ny `rfid_scan_events`-rad, Bemanningsmarkering eller Historik-rad.

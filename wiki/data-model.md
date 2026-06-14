@@ -42,8 +42,8 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - `Business.company_codes` ar en JSON-lista med bolagskoder som hor till verksamheten. Klienten visar dem som kommaseparerad text i Verksamheter-vyn.
 - Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
 - `Person.rfid_code` ar valfri brickkod. Backend normaliserar den till versaler och stoppar dubbletter inom samma verksamhet.
-- `RfidDevice.module_name` ar modulens aktivitetsnamn, till exempel `MG Plock`. Vid scan matchas det mot aktiv aktivitets `label` eller `code`; `RfidScanEvent` sparar resultatet som pending, ignored, applied, duplicate_ignored eller konfliktstatus.
-- En RFID-stampling blir inte en schemacell forran en anvandare med `schedule=edit` applicerar den i Bemanning. Ignorerade och automatiskt dubblettignorerade händelser sparas kvar for spårbarhet.
+- `RfidDevice.module_name` ar modulens aktivitetsnamn, till exempel `MG Plock`. Vid scan matchas det mot aktiv aktivitets `label` eller `code`; `RfidScanEvent` sparar resultatet som pending, ignored, applied eller konfliktstatus. Gamla `duplicate_ignored`-rader kan finnas kvar som legacy.
+- En RFID-stampling blir inte en schemacell forran en anvandare med `schedule=edit` applicerar den i Bemanning. Ignorerade handelser sparas kvar for sparbarhet, men direkta dubbletter for samma person och aktivitet droppas innan ny `RfidScanEvent` skapas.
 - Personkonton kan ha `person_id` till `persons`. Auto-skapade `person`-anvandare far `person_id`, `business_id` och `area_id` fran matchande `Person.noman`.
 - Schemaceller pekar fortfarande pa person och aktivitet, men writes validerar att person och aktivitet tillhor samma verksamhet.
 

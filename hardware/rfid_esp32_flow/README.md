@@ -43,6 +43,10 @@ ingen ny firmware-uppladdning for den har vagen.
 Om bryggan sager att porten ar upptagen eller blockerad, stang Arduino Serial
 Monitor/Serial Plotter och starta bryggan igen.
 
+Nar bryggan postar till Flow betyder `HTTP 201` att en ny stampel registrerades.
+`HTTP 200` kan vara en direkt dubblett for samma person och aktivitet; den
+droppas utan ny Bemanning-/Historik-rad.
+
 ## Koppling
 
 | RDM6300 | ESP32 |

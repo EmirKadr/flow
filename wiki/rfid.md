@@ -22,7 +22,7 @@ Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representer
 
 - Modulnamn matchas mot aktivitetens `label` eller `code`. Testmodulen ar satt till `MG Plock`.
 - Person matchas med `Person.rfid_code`; hex/dec-koder normaliseras innan jamforelse.
-- Om samma person scannar samma aktivitet tva ganger i rad sparas den andra som `duplicate_ignored` och kan inte appliceras.
+- Om samma person scannar samma aktivitet tva ganger i rad droppas den andra innan `rfid_scan_events`; den skapar ingen markering och ingen Historik-rad.
 - Okand bricka blir `unknown_person`; okand modul/aktivitet blir `unknown_activity`.
 - Om stampeln ligger utanfor Bemanningens timmar 06-23 blir applicering konflikt.
 - Device-endpointen kan skyddas med `RFID_DEVICE_TOKEN`. Om den ar satt maste ESP32 skicka samma varde i headern `X-Flow-RFID-Token`.
@@ -59,11 +59,11 @@ Aktuell testkonfiguration:
 | Fraga | Svar |
 | --- | --- |
 | "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
-| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. Nar bryggan visar `HTTP 201` har backend tagit emot scannen. |
+| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. `HTTP 201` betyder ny registrerad stampel; `HTTP 200` kan betyda att en direkt dubblett droppades utan ny rad. |
 | "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan anda vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret och starta bryggan igen. |
 | "Maste jag ladda upp firmware igen for USB-bryggan?" | Nej, inte om Arduino redan skriver serialrader med `RFID HEX=... DEC=... count=...`. USB-bryggan ateranvander den signalen och postar lokalt fran datorn. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
-| "Varfor blev andra scannen dubblett?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend sparar da andra stampeln som `duplicate_ignored`. |
+| "Varfor syns inte andra scannen?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend droppar da andra scannen utan att skapa ny markering eller Historik-rad. |
 | "Varfor andrades bara sista delen av timmen?" | RFID-OK galler fran scannad minut till timslut. Tidigare minuter i samma timme bevaras. |
 | "Ska modulen ha riktiga WiFi-varden i git?" | Nej. `rfid_esp32_flow.ino` ar lokal och git-ignorerad, sa riktiga WiFi/server/token-varden ska bara finnas dar lokalt. |
 

@@ -43,7 +43,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `POST /api/schedule/copy` - kopiera dag/vecka.
 - `POST /api/schedule/clear` - rensa schema.
 - `POST /api/schedule/fill-from-left` - fyll tomma celler fran vanster.
-- `POST /api/rfid/scans` - tar emot scan fran en fysisk RFID-modul. Payloaden innehaller `module_name`, brickkod och valfritt device-id; backend matchar modulnamnet mot aktivitet och brickkoden mot `Person.rfid_code`. Om `RFID_DEVICE_TOKEN` ar satt maste modulen skicka samma varde i `X-Flow-RFID-Token`.
+- `POST /api/rfid/scans` - tar emot scan fran en fysisk RFID-modul. Payloaden innehaller `module_name`, brickkod och valfritt device-id; backend matchar modulnamnet mot aktivitet och brickkoden mot `Person.rfid_code`. Ny registrerad stampling ger `HTTP 201`; direkt dubblett for samma person och aktivitet ger `HTTP 200` med `registered=false` och skapar ingen `rfid_scan_events`-rad. Om `RFID_DEVICE_TOKEN` ar satt maste modulen skicka samma varde i `X-Flow-RFID-Token`.
 - `GET /api/rfid/events` - listar RFID-stamplingar for vald ISO-dag i Bemanning, filtrerat pa anvandarens verksamhet och valfritt `area_id`.
 - `POST /api/rfid/events/{event_id}/apply` - applicerar en pending RFID-stampling i Bemanning fran scannad minut till timslut och returnerar de nya schemasegmenten.
 - `POST /api/rfid/events/{event_id}/ignore` - satter RFID-stamplingen som ignorerad utan att radera den fran historik eller Bemanningsmarkeringar.
