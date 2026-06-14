@@ -40,6 +40,14 @@ Bemanning pollar `GET /api/rfid/events` var 7:e sekund nar fliken ar synlig.
 Om en scan nar backend syns den forst som `POST /api/rfid/scans` i
 `start_local.bat`-fonstret och sedan som markering i ratt person/timme.
 
+Om datorn saknar adminrattigheter och Windows-brandvaggen stoppar ESP32 fran
+att posta over WiFi kan man kora `tools.rfid_serial_bridge` i stallet. Da ar
+ESP32 ansluten med USB, bryggan laser serialraden som Arduino Serial Monitor
+annars visar och postar scannen till `http://127.0.0.1:8000/api/rfid/scans`.
+Det kraver ingen inbound firewall-regel. Arduino Serial Monitor maste vara
+stangd medan bryggan kor, eftersom serieporten bara kan lasas av ett program i
+taget.
+
 Aktuell testkonfiguration:
 
 - `MODULE_NAME`: `MG Plock`
@@ -51,6 +59,8 @@ Aktuell testkonfiguration:
 | Fraga | Svar |
 | --- | --- |
 | "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
+| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. Nar bryggan visar `HTTP 201` har backend tagit emot scannen. |
+| "Maste jag ladda upp firmware igen for USB-bryggan?" | Nej, inte om Arduino redan skriver serialrader med `RFID HEX=... DEC=... count=...`. USB-bryggan ateranvander den signalen och postar lokalt fran datorn. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
 | "Varfor blev andra scannen dubblett?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend sparar da andra stampeln som `duplicate_ignored`. |
 | "Varfor andrades bara sista delen av timmen?" | RFID-OK galler fran scannad minut till timslut. Tidigare minuter i samma timme bevaras. |
@@ -60,6 +70,7 @@ Aktuell testkonfiguration:
 
 - `../hardware/rfid_esp32_flow/rfid_esp32_flow.ino`
 - `../hardware/rfid_esp32_flow/README.md`
+- `../tools/rfid_serial_bridge.py`
 - `../app/backend/routers/rfid.py`
 - `../app/backend/models.py`
 - `../app/frontend/js/schedule/rfid.js`

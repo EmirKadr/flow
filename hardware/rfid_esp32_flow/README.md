@@ -24,6 +24,22 @@ sketch:
 ESP32 kan inte posta till `localhost` pa din dator. Anvand datorns IP-adress pa
 samma WiFi.
 
+## Utan admin eller brandvaggsregel
+
+Om ESP32 visar scanningen i Arduino Serial Monitor men posten blir `HTTP -1`
+kan Windows blockera inkommande trafik fran WiFi. Da kan du kora via USB i
+stallet, utan admin:
+
+```powershell
+python -m pip install --user pyserial
+python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"
+```
+
+Byt `COM5` mot porten som Arduino IDE visar. Stang Arduino Serial Monitor medan
+bryggan kor, eftersom bara ett program kan lasa serieporten samtidigt. Om
+serialraden redan ser ut som `[MG Plock] RFID HEX=... DEC=... count=...` kravs
+ingen ny firmware-uppladdning for den har vagen.
+
 ## Koppling
 
 | RDM6300 | ESP32 |

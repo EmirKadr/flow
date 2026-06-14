@@ -163,7 +163,10 @@ manuell testning far inte vara enda beviset.
 | `tests/tools/test_persons_view.py` | Personvyns frontendkontrakt: delete-knapp, Ctrl+Z och ingen aktiv/inaktiv-toggle. | `personer.html` eller `persons.js`. |
 | `tests/tools/test_performance_benchmark.py` | Kontrakt for prestandaverktyget som mater kall/varm sidvaxling, bakgrundsladdning, toggle, import, drag och copy. | Bakgrundscache, UX-hastighet, navigation, importfloden eller interaktionsprestanda. |
 | `tests/tools/test_release_check.py` | Release-zippen innehaller nodvandiga filer och frontend. | `tools/release_check.py`, packaging eller release-artefakter. |
+| `tests/tools/test_rfid_firmware_contracts.py` | Kontrakt for att ESP32-sketch ar lokal, ignorerad och dokumenterad utan local-header-omvag. | `hardware/rfid_esp32_flow`, `.gitignore` eller firmwarekonfiguration. |
+| `tests/tools/test_rfid_serial_bridge.py` | USB-bryggans parser och POST-kontrakt for RFID-scans nar LAN/brandvagg blockerar ESP32. | `tools/rfid_serial_bridge.py`, RFID-felsokning eller lokal hardvaruintegration. |
 | `tests/tools/test_sidebar_user_browser.py` | Sidebarens footer visar namn/roll/logout och dokumentloggen sparas over sidbyte i browser. | Sidebar footer, anvandarvisning, logoutknapp eller anvandarsynlig loggning. |
+| `tests/tools/test_start_local_contracts.py` | Lokal start lyssnar pa LAN for hardvara men oppnar browsern mot localhost. | `start_local.bat` eller lokal hardvaruanslutning. |
 | `tests/tools/test_visual_tools.py` | Kontrakt for visual smoke, interaktiv E2E, desktop probes, frontend assets, global UI-wiring och kritiska vyer. | Sidebar/global frontend, visuella verktyg, assets, imports, allokerings-UI eller testprotokoll. |
 
 Om en ny testfil laggs till ska den in i tabellen ovan. Om en testfil byter
