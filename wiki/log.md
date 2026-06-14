@@ -1541,3 +1541,7 @@ Flow har nu ett RFID-flode for ESP32/RDM6300-moduler: `POST /api/rfid/scans` tar
 ## [2026-06-14] fix | RFID far USB-brygga utan admin
 
 RFID-felsokningen har nu ett no-admin-lage for datorer dar Windows-brandvaggen blockerar ESP32 over WiFi. `python -m tools.rfid_serial_bridge` laser ESP32 serial output via USB och postar scannen lokalt till `127.0.0.1`, sa Bemanning och Historik kan testas utan inbound firewall-regel. Parsern och POST-kontraktet har eget teststod och testprotokollet pekar ut bryggan.
+
+## [2026-06-14] process | Audit och Historik-label blir obligatoriskt
+
+Agentreglerna sager nu uttryckligt att nya floden som skapar, andrar, synkar eller tar emot data ska leverera sparad audit-rad och begriplig Historik/Analys-label som acceptanskriterium. Read-only-undantag maste vara dokumenterade och testade. Kontraktstestet for agentregler skyddar formuleringen.

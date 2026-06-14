@@ -117,6 +117,13 @@ observability-kedjan: API/domantest for handelsen, audit-rad med ratt
 fel-, okant- eller konfliktlage. Hardvara och externa system far simuleras, men
 manuell testning far inte vara enda beviset.
 
+For allt nytt som skapar, andrar, synkar eller tar emot data ar audit och
+Historik/Analys-labels en obligatorisk del av acceptanskriteriet. Testet ska
+inte bara bevisa att funktionen fungerar; det ska ocksa bevisa att auditposten
+sparas med ratt scope och att handelsen far en begriplig label/summary i
+Historik/Analys. Om ett nytt flode ar read-only och medvetet saknar audit ska
+testet och dokumentationen visa det undantaget.
+
 | Testfil | Syfte | Kor nar du andrar |
 | --- | --- | --- |
 | `tests/conftest.py` | Delad testinfrastruktur, Qt-appfixture och testmiljo. | Testfixtures, Qt/desktop-teststod eller global testkonfiguration. |

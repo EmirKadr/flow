@@ -1,7 +1,7 @@
 ---
 title: Wiki-agentregler
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-14
 tags: [wiki, agent, arbetsflode]
 ---
 
@@ -104,3 +104,10 @@ vilken `audit_log.entity_type` och `action` som skrivs, vilken anvandarlabel den
 far, vilka detaljer som ar sanerade och vilka tester som bevisar att raden syns
 begripligt. Om en handelse kan fastna fore backend ska felsokningssvaret
 beskriva den observerbara signal som skiljer hardvara/natverk fran appfel.
+
+Nar ett nytt flode skapar, andrar, synkar eller tar emot data ska audit och
+Historik/Analys-labels beskrivas som obligatoriska delar av beteendet, inte som
+extra dokumentation. Wikin ska namna vilken sparad auditrad som skapas, hur
+labeln/summaryn ser ut for anvandaren och vilket test som skyddar kedjan. Om
+flodet ar read-only och medvetet saknar audit ska den avvikelsen namnas
+uttryckligt.

@@ -164,6 +164,15 @@ anvandarlabel i frontend och vid behov backend-summary. Det galler aven
 hardvara och externa system: om requesten aldrig nar backend ska agenten bygga
 eller dokumentera en synlig diagnostik som visar var kedjan brister.
 
+Nar en agent skapar ett nytt flode, en API-mutation, import/export, integration,
+bakgrundsjobb eller hardvaruhandelse som skapar, andrar, synkar eller tar emot
+data ar sparad audit-rad och begriplig Historik/Analys-label obligatoriska
+leverabler. Det racker inte att funktionen fungerar i UI:t. Det ska finnas en
+sparad auditrad med ratt scope och sanerad payload, plus en label/summary som
+gor raden begriplig for anvandaren i Historik/Analys. Om ett nytt flode ar
+medvetet read-only eller inte ska auditloggas ska undantaget dokumenteras och
+testas, sa det inte kan vara en tyst miss.
+
 Vantetidsmatningar ar ett tredje spar: tyst prestandatelemetri for hur lange
 anvandaren faktiskt vantar pa vyer, API:er, nedladdningar och bakgrundsladdning.
 Den ska vara sanerad, kortfattad och synas i Historik/Halsa-analys, inte i
@@ -251,6 +260,12 @@ minst ett relevant fel- eller okant-lage. Fysisk hardvara eller externa system
 far mockas, men testet ska bevisa att systemet hade visat det for anvandaren
 nar backend tar emot handelsen. Manuell scanning eller klickning far bara vara
 komplement, inte enda verifieringen.
+
+Tester for nya dataandrande floden ska ocksa bevisa att audit och
+Historik/Analys-labels faktiskt finns. Minimikravet ar ett doman-/API-test som
+visar auditposten eller ett kontraktstest som binder `entity_type`/`action` till
+frontend-/backend-labeln. Om flodet saknar audit pa grund av ett avsiktligt
+read-only-undantag ska testet bevisa just det undantaget.
 
 Nar en andring ror databas, Alembic, Render-build, CI-workflows, secret/env-
 konfiguration eller deploy ska agenten ocksa lagga eller uppdatera kontraktstester
