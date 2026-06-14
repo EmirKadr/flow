@@ -11,14 +11,9 @@ namn i flow. Andra fysiska moduler kan flashas med samma kod men unikt
 
 ## Konfiguration
 
-Hemligheter och lokal serveradress ska inte skrivas i `rfid_esp32_flow.ino`.
-Kopiera i stallet:
-
-```text
-rfid_esp32_flow.local.example.h -> rfid_esp32_flow.local.h
-```
-
-Fyll sedan i `rfid_esp32_flow.local.h`:
+`rfid_esp32_flow.ino` ar lokal och git-ignorerad eftersom den innehaller
+WiFi, serveradress och eventuell device-token. Fyll i direkt i din lokala
+sketch:
 
 - `WIFI_SSID`
 - `WIFI_PASSWORD`
@@ -28,9 +23,6 @@ Fyll sedan i `rfid_esp32_flow.local.h`:
 
 ESP32 kan inte posta till `localhost` pa din dator. Anvand datorns IP-adress pa
 samma WiFi.
-
-`rfid_esp32_flow.local.h` ar git-ignorerad. Den committade `.ino` har bara
-generiska fallback-varden.
 
 ## Koppling
 

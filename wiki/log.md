@@ -7,6 +7,12 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] change | RFID-sketch ar lokal och ignorerad
+
+ESP32/RDM6300-sketchfilen `rfid_esp32_flow.ino` trackas inte langre i git.
+Den ar git-ignorerad som lokal hardware-konfig eftersom den innehaller WiFi,
+serveradress och eventuell RFID-token direkt i Arduino-filen.
+
 ## [2026-06-14] fix | Lokal server lyssnar pa LAN for RFID
 
 `start_local.bat` startar nu uvicorn med `--host 0.0.0.0` sa ESP32-moduler pa

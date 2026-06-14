@@ -29,10 +29,8 @@ Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representer
 
 ## Hårdvara
 
-Flow har en firmware-mapp for ESP32/RDM6300. Den committade `.ino`-filen
-innehaller bara generiska placeholders for WiFi, serveradress och token. Lokala
-varden ligger i `rfid_esp32_flow.local.h`, skapad fran
-`rfid_esp32_flow.local.example.h`, och filen ar git-ignorerad.
+Flow har en firmware-mapp for ESP32/RDM6300. `rfid_esp32_flow.ino` ar lokal och
+git-ignorerad eftersom den innehaller WiFi, serveradress och eventuell token.
 `FLOW_BASE_URL` ska vara datorns LAN-adress, inte `localhost`, eftersom ESP32
 inte ligger pa samma process som browsern. Lokal server maste lyssna pa LAN;
 `start_local.bat` startar darfor uvicorn med `--host 0.0.0.0` men oppnar
@@ -56,7 +54,7 @@ Aktuell testkonfiguration:
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
 | "Varfor blev andra scannen dubblett?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend sparar da andra stampeln som `duplicate_ignored`. |
 | "Varfor andrades bara sista delen av timmen?" | RFID-OK galler fran scannad minut till timslut. Tidigare minuter i samma timme bevaras. |
-| "Ska modulen ha riktiga WiFi-varden i git?" | Nej. Firmwarefilen i repo:t ska bara ha placeholders. Riktiga varden ligger lokalt i `rfid_esp32_flow.local.h`, som ignoreras av git. |
+| "Ska modulen ha riktiga WiFi-varden i git?" | Nej. `rfid_esp32_flow.ino` ar lokal och git-ignorerad, sa riktiga WiFi/server/token-varden ska bara finnas dar lokalt. |
 
 ## Kallor
 
