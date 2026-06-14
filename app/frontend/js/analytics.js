@@ -18,10 +18,13 @@ const ENTITY_LABELS = {
   user: "Användare",
   app_setting: "Inställning",
   client_error: "Felkod",
+  coredata_file: "Kärnfil",
   data_fetch: "Hämta data",
+  meta_media_upload: "Meta-uppladdning",
   productivity_file: "Produktivitetsfil",
   allocation_flow: "Lagerverktyg",
   rfid_scan_event: "RFID-stämpel",
+  workflow_source: "Workflow-underlag",
 };
 
 const SETTING_LABELS = {
@@ -136,8 +139,17 @@ function objectSummary(entry) {
   if (entry.entity_type === "data_fetch") {
     return snapshot.view_label || snapshot.view || "Hämta data";
   }
+  if (entry.entity_type === "workflow_source") {
+    return snapshot.flow_id || snapshot.source_key || "Workflow-underlag";
+  }
   if (entry.entity_type === "client_error") {
     return snapshot.path || snapshot.page_path || "Felkod";
+  }
+  if (entry.entity_type === "coredata_file") {
+    return snapshot.file_type || "Kärnfil";
+  }
+  if (entry.entity_type === "meta_media_upload") {
+    return snapshot.batch_id || snapshot.path || "Meta-uppladdning";
   }
   if (entry.entity_type === "productivity_file") {
     return snapshot.file_type || (snapshot.saved_types || []).join(", ") || "Produktivitetsfil";
@@ -175,6 +187,16 @@ function detailSummary(entry) {
     if (snapshot.total_rows != null) parts.push(`${snapshot.total_rows} rader`);
     return parts.join(" | ") || "Hämta data";
   }
+  if (entry.entity_type === "workflow_source") {
+    const parts = [];
+    if (snapshot.source_key) parts.push(`Källa: ${snapshot.source_key}`);
+    if (snapshot.view) parts.push(`Vy: ${snapshot.view}`);
+    if (snapshot.row_count != null) parts.push(`${snapshot.row_count} rader`);
+    if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    if (snapshot.message) parts.push(String(snapshot.message));
+    return parts.join(" | ") || "Workflow-underlag";
+  }
   if (entry.entity_type === "client_error") {
     const parts = [];
     if (snapshot.error_code) parts.push(String(snapshot.error_code));
@@ -199,6 +221,27 @@ function detailSummary(entry) {
     if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
     if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
     return parts.join(" | ") || "Produktivitetsfil";
+  }
+  if (entry.entity_type === "coredata_file") {
+    const parts = [];
+    if (snapshot.file_type) parts.push(`Typ: ${snapshot.file_type}`);
+    if (snapshot.saved_count != null) parts.push(`${snapshot.saved_count} sparade`);
+    if (snapshot.skipped_count != null) parts.push(`${snapshot.skipped_count} överhoppade`);
+    if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    return parts.join(" | ") || "Kärnfil";
+  }
+  if (entry.entity_type === "meta_media_upload") {
+    const parts = [];
+    if (snapshot.saved_count != null) parts.push(`${snapshot.saved_count} sparade`);
+    if (snapshot.skipped_count != null) parts.push(`${snapshot.skipped_count} överhoppade`);
+    if (snapshot.shipment_count != null) parts.push(`${snapshot.shipment_count} sändningsrader`);
+    if (snapshot.uploaded_size_label) parts.push(String(snapshot.uploaded_size_label));
+    if (snapshot.analysis_status) parts.push(`Analys: ${snapshot.analysis_status}`);
+    if (snapshot.status_code) parts.push(`HTTP ${snapshot.status_code}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    if (snapshot.message) parts.push(String(snapshot.message));
+    return parts.join(" | ") || "Meta-uppladdning";
   }
   if (entry.entity_type === "allocation_flow") {
     const parts = [];

@@ -1,10 +1,18 @@
 import csv
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.backend import workflow_data
 from app.backend.data_fetch_service import DataCatalog, DataColumn, DataView
+from app.backend.database import Base
 from app.backend.external_data_client import ExternalDataClientError
+from app.backend.models import AuditLog, Business, User
+from app.backend.routers import workflow_data as workflow_data_router
 
 
 class FakeExternalClient:
@@ -20,6 +28,22 @@ class FakeExternalClient:
         if self.error is not None:
             raise self.error
         return list(self.rows)
+
+
+class FakeAuditDb:
+    def __init__(self):
+        self.items = []
+        self.committed = False
+        self.rolled_back = False
+
+    def add(self, item):
+        self.items.append(item)
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
 
 
 def _catalog_for(*view_ids: str, columns: tuple[str, ...] = ("article", "robot_ind", "automation_pick_qty", "pick_qty", "pick_loc")):
@@ -313,3 +337,133 @@ def test_resolve_sources_marks_required_source_missing(monkeypatch):
             "rows": 0,
         }
     ]
+
+
+def test_workflow_source_payload_sanitizes_paths():
+    payload = workflow_data_router._workflow_source_payload(
+        workflow_data_router.WorkflowSourceRequest(feature="allocation", flow_id="lyx", source_key="saldo"),
+        status_text="error",
+        message=r"C:\Users\someone\secret\orders.csv kunde inte hamtas",
+    )
+
+    assert payload["message"].startswith("[path]")
+    assert "C:\\Users" not in payload["message"]
+    assert "orders.csv" not in payload["message"]
+
+
+def test_workflow_source_endpoint_audits_success(monkeypatch, tmp_path):
+    db = FakeAuditDb()
+    user = SimpleNamespace(id=7, business_id=3)
+    source_path = tmp_path / "saldo.csv"
+    source_path.write_text("Artikel\tSaldo\nA100\t1\n", encoding="utf-8")
+    entry = workflow_data.WorkflowSourceEntry(
+        key="saldo",
+        label="Saldo",
+        view="v_stock",
+        status="api",
+        row_count=1,
+    )
+    monkeypatch.setattr(workflow_data_router, "_assert_workflow_source_allowed", lambda payload, user, db: None)
+    monkeypatch.setattr(workflow_data_router, "fetch_source_to_temp", lambda source_key: (source_path, entry))
+
+    response = workflow_data_router.workflow_source(
+        workflow_data_router.WorkflowSourceRequest(feature="allocation", flow_id="lyx", source_key="saldo"),
+        user=user,
+        db=db,
+    )
+
+    assert response.headers["x-flow-source-rows"] == "1"
+    audit = db.items[0]
+    assert db.committed is True
+    assert audit.entity_type == "workflow_source"
+    assert audit.action == "source_fetch"
+    assert audit.business_id == 3
+    assert audit.user_id == 7
+    assert audit.new_value == {
+        "feature": "allocation",
+        "flow_id": "lyx",
+        "source_key": "saldo",
+        "status": "ok",
+        "view": "v_stock",
+        "row_count": 1,
+    }
+
+
+def test_workflow_source_endpoint_audits_fetch_failure(monkeypatch):
+    db = FakeAuditDb()
+    user = SimpleNamespace(id=8, business_id=4)
+    monkeypatch.setattr(workflow_data_router, "_assert_workflow_source_allowed", lambda payload, user, db: None)
+
+    def fail_fetch(source_key):
+        raise workflow_data.WorkflowDataError(
+            r"C:\secret\provider\orders.csv kunde inte hamtas",
+            status_code=502,
+        )
+
+    monkeypatch.setattr(workflow_data_router, "fetch_source_to_temp", fail_fetch)
+
+    with pytest.raises(HTTPException) as excinfo:
+        workflow_data_router.workflow_source(
+            workflow_data_router.WorkflowSourceRequest(feature="allocation", flow_id="lyx", source_key="saldo"),
+            user=user,
+            db=db,
+        )
+
+    assert excinfo.value.status_code == 502
+    audit = db.items[0]
+    assert audit.entity_type == "workflow_source"
+    assert audit.action == "source_fetch_failed"
+    assert audit.business_id == 4
+    assert audit.user_id == 8
+    assert audit.new_value["status"] == "error"
+    assert audit.new_value["status_code"] == 502
+    assert audit.new_value["message"].startswith("[path]")
+    assert "secret" not in audit.new_value["message"]
+    assert "orders.csv" not in audit.new_value["message"]
+
+
+def test_workflow_source_audit_writes_sanitized_history_event():
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = SessionLocal()
+    try:
+        business = Business(code="STIGAMO", name="Stigamo", sort_order=1, is_active=True)
+        session.add(business)
+        session.flush()
+        user = User(
+            username="admin",
+            role="admin",
+            roles=["admin"],
+            business_id=business.id,
+            is_active=True,
+        )
+        session.add(user)
+        session.commit()
+
+        workflow_data_router._audit_workflow_source(
+            session,
+            user,
+            action="source_fetch",
+            payload={
+                "feature": "allocation",
+                "flow_id": "lyx",
+                "source_key": "saldo",
+                "status": "ok",
+                "row_count": 12,
+            },
+        )
+
+        audit = session.query(AuditLog).filter_by(entity_type="workflow_source", action="source_fetch").one()
+        assert audit.business_id == business.id
+        assert audit.user_id == user.id
+        assert audit.new_value["source_key"] == "saldo"
+        assert audit.new_value["row_count"] == 12
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()

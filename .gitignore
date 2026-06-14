@@ -46,7 +46,9 @@ hardware/rfid_esp32_flow/rfid_esp32_flow.ino
 
 # Lokala databasfiler
 *.db
+*.db-journal
 *.sqlite
+*.sqlite-journal
 
 # Editor / OS
 .idea/

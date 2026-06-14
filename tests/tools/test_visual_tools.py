@@ -169,8 +169,14 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
+    assert 'coredata_file: "Kärnfil"' in analytics
+    assert 'meta_media_upload: "Meta-uppladdning"' in analytics
     assert 'rfid_scan_event: "RFID-stämpel"' in analytics
+    assert 'workflow_source: "Workflow-underlag"' in analytics
+    assert 'entry.entity_type === "coredata_file"' in analytics
+    assert 'entry.entity_type === "meta_media_upload"' in analytics
     assert 'entry.entity_type === "rfid_scan_event"' in analytics
+    assert 'entry.entity_type === "workflow_source"' in analytics
     assert "Tagg:" in analytics
     assert "TRACKING_HISTORY_MODES" in analytics
     assert "function interactionParams" in analytics

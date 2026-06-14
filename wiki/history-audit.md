@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-06-09
+updated: 2026-06-14
 tags: [historik, audit, ui]
 ---
 
@@ -41,7 +41,10 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, produktivitetens snapshot-/rapportstatus och korda lagerverktygsfloden.
 - Misslyckade filuppladdningar som hinner na backend loggas som `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
-- Misslyckade publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar dem som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
+- Publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_success` eller `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar misslyckade forsok som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
+- Workflow-kallor som hamtas via `/api/workflow-data/source` loggas som `workflow_source/source_fetch` eller `workflow_source/source_fetch_failed` med feature, flow-id, kallnyckel, status, radantal och sanerat felmeddelande.
+- Coredata-handelser visas som `Karnfil` i Historik/Analys via `coredata_file`, sa permanenta karnfilsuppladdningar inte faller tillbaka till tekniskt entity-namn.
+- Runtime-OTel kompletterar audit med tekniska spans for `workflow_data.source`, `data_fetch.plan`, `data_fetch.external_fetch`, `data_fetch.export`, `meta.shipment_observations.export` och `meta.upload.analyze`. Span-attribut ska bara vara status, vy/kalla, radantal, feltyp och durationsignal; prompts, filnamn, sokvagar, URL:er och request bodies filtreras bort.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
 - Windows-lokala Bearbeta-/Produktivitet-korningar loggas som `desktop_local_run` via `/api/audit/local-run`. Payloaden innehaller feature, flode, status, feltyp, varaktighet, filslotar och rad-/resultatraknare, men aldrig lokal sokvag, localRef, filnamn eller filinnehall.
 - API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Om server/proxy skickar en HTML-felsida sanerar `api.js` detaljen till kort status, t.ex. `HTML-felsida fran servern: HTTP 502 (Bad Gateway)`, i stallet for att spara HTML. Det galler aven Bearbetas egna fetch-wrapper. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.

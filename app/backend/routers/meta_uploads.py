@@ -36,6 +36,7 @@ from ..meta_analysis_service import (
     run_meta_analysis_background,
 )
 from ..models import MetaMediaUpload, MetaShipmentObservation, User
+from ..observability import add_span_attributes, start_span
 
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
@@ -222,6 +223,47 @@ def _write_public_upload_failure_audit(
         business_id=None,
         logger=logger,
         context="public meta upload failure audit event",
+    )
+
+
+def _write_public_upload_success_audit(
+    db: Session,
+    *,
+    batch_id: str,
+    attempted_count: int,
+    saved_count: int,
+    skipped_count: int,
+    shipment_count: int,
+    uploaded_bytes: int,
+    media_types: list[str],
+    analysis_status: str | None,
+) -> None:
+    payload: dict[str, Any] = {
+        "path": "/api/meta/uploads",
+        "method": "POST",
+        "status_code": status.HTTP_201_CREATED,
+        "batch_id": batch_id,
+        "attempted_count": max(0, int(attempted_count or 0)),
+        "saved_count": max(0, int(saved_count or 0)),
+        "skipped_count": max(0, int(skipped_count or 0)),
+        "shipment_count": max(0, int(shipment_count or 0)),
+        "uploaded_bytes": max(0, int(uploaded_bytes or 0)),
+        "uploaded_size_label": _format_size(max(0, int(uploaded_bytes or 0))),
+        "media_types": sorted({str(item) for item in media_types if item}),
+        "analysis_status": analysis_status,
+        "source": "public_upload",
+    }
+    audit_log_and_commit(
+        db,
+        entity_type="meta_media_upload",
+        entity_id=0,
+        action="upload_success",
+        old_value=None,
+        new_value={key: value for key, value in payload.items() if value not in (None, [], "")},
+        user_id=None,
+        business_id=None,
+        logger=logger,
+        context="public meta upload success audit event",
     )
 
 
@@ -477,8 +519,13 @@ async def upload_meta_media(
     saved: list[dict] = []
     skipped: list[dict] = []
     pending_hashes: dict[str, str] = {}
+    analysis_status: str | None = None
 
     try:
+        add_span_attributes({
+            "meta.attempted_count": attempted_count,
+            "meta.max_files": max_files,
+        })
         if not files:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades.")
         if len(files) > max_files:
@@ -571,8 +618,29 @@ async def upload_meta_media(
                 background_tasks.add_task(run_meta_analysis_background, [row.media_upload_id for row in shipment_rows])
         else:
             shipment_rows = []
+        analysis_status = "queued" if shipment_rows and meta_analysis_configured() else "needs_configuration" if shipment_rows else None
+        add_span_attributes({
+            "meta.status": "ok",
+            "meta.saved_count": len(saved),
+            "meta.skipped_count": len(skipped),
+            "meta.shipment_count": len(shipment_rows),
+            "meta.uploaded_bytes": batch_total,
+            "meta.analysis_status": analysis_status or "",
+        })
+        _write_public_upload_success_audit(
+            db,
+            batch_id=batch_id,
+            attempted_count=attempted_count,
+            saved_count=len(saved),
+            skipped_count=len(skipped),
+            shipment_count=len(shipment_rows),
+            uploaded_bytes=batch_total,
+            media_types=[str(item.get("media_type") or "") for item in saved + skipped],
+            analysis_status=analysis_status,
+        )
     except HTTPException as exc:
         status_code = int(exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR)
+        add_span_attributes({"meta.status": "error", "meta.error_type": "HTTPException", "meta.status_code": status_code})
         _write_public_upload_failure_audit(
             db,
             status_code=status_code,
@@ -585,6 +653,7 @@ async def upload_meta_media(
         )
         raise
     except IntegrityError as exc:
+        add_span_attributes({"meta.status": "error", "meta.error_type": exc.__class__.__name__, "meta.status_code": status.HTTP_409_CONFLICT})
         _write_public_upload_failure_audit(
             db,
             status_code=status.HTTP_409_CONFLICT,
@@ -600,6 +669,7 @@ async def upload_meta_media(
             detail="En eller flera filer fanns redan och sparades inte dubbelt. Försök ladda upp igen om andra filer saknas.",
         ) from exc
     except Exception as exc:
+        add_span_attributes({"meta.status": "error", "meta.error_type": exc.__class__.__name__, "meta.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR})
         _write_public_upload_failure_audit(
             db,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -618,7 +688,7 @@ async def upload_meta_media(
         "saved_count": len(saved),
         "skipped_count": len(skipped),
         "shipment_count": len(shipment_rows),
-        "analysis_status": "queued" if shipment_rows and meta_analysis_configured() else "needs_configuration" if shipment_rows else None,
+        "analysis_status": analysis_status,
         "saved": saved,
         "skipped": skipped,
         "status": "pending_analysis",
@@ -674,21 +744,23 @@ def export_meta_shipment_observations(
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> FileResponse:
-    export_ids = _parse_export_ids(ids)
-    query = db.query(MetaShipmentObservation).options(joinedload(MetaShipmentObservation.media_upload))
-    if export_ids:
-        rows = query.filter(MetaShipmentObservation.id.in_(export_ids)).all()
-        by_id = {int(row.id): row for row in rows}
-        rows = [by_id[row_id] for row_id in export_ids if row_id in by_id]
-        filename = "meta-sandningsanalys-filtrerad.xlsx"
-    else:
-        rows = (
-            query.order_by(MetaShipmentObservation.updated_at.desc(), MetaShipmentObservation.id.desc())
-            .limit(limit)
-            .all()
-        )
-        filename = "meta-sandningsanalys.xlsx"
-    output_path = _write_shipment_observations_excel(rows)
+    with start_span("meta.shipment_observations.export", {"meta.filtered": bool(ids)}):
+        export_ids = _parse_export_ids(ids)
+        query = db.query(MetaShipmentObservation).options(joinedload(MetaShipmentObservation.media_upload))
+        if export_ids:
+            rows = query.filter(MetaShipmentObservation.id.in_(export_ids)).all()
+            by_id = {int(row.id): row for row in rows}
+            rows = [by_id[row_id] for row_id in export_ids if row_id in by_id]
+            filename = "meta-sandningsanalys-filtrerad.xlsx"
+        else:
+            rows = (
+                query.order_by(MetaShipmentObservation.updated_at.desc(), MetaShipmentObservation.id.desc())
+                .limit(limit)
+                .all()
+            )
+            filename = "meta-sandningsanalys.xlsx"
+        add_span_attributes({"meta.row_count": len(rows)})
+        output_path = _write_shipment_observations_excel(rows)
     return FileResponse(
         output_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -708,7 +780,9 @@ def analyze_meta_media_upload(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
     if upload.media_type != "video":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bara videor kan analyseras.")
-    row = analyze_meta_upload(db, upload_id)
+    with start_span("meta.upload.analyze", {"meta.upload_id": upload_id, "meta.media_type": upload.media_type}):
+        row = analyze_meta_upload(db, upload_id)
+        add_span_attributes({"meta.analysis_status": row.analysis_status or ""})
     return {
         "item": _shipment_observation_out(row),
         "status": row.analysis_status,

@@ -704,7 +704,16 @@ def test_audit_endpoints_can_filter_by_business(audit_db_session):
     assert errors.recent[0].path == "/api/r3"
 
 
-def test_audit_summary_labels_rfid_scan_events(audit_db_session):
+@pytest.mark.parametrize(
+    ("entity_type", "label"),
+    [
+        ("coredata_file", "Karnfil"),
+        ("meta_media_upload", "Meta-uppladdning"),
+        ("rfid_scan_event", "RFID-stämpel"),
+        ("workflow_source", "Workflow-underlag"),
+    ],
+)
+def test_audit_summary_labels_known_event_entities(audit_db_session, entity_type, label):
     business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
     audit_db_session.add(business)
     audit_db_session.flush()
@@ -721,7 +730,7 @@ def test_audit_summary_labels_rfid_scan_events(audit_db_session):
     audit_db_session.add(
         AuditLog(
             business_id=business.id,
-            entity_type="rfid_scan_event",
+            entity_type=entity_type,
             entity_id=1,
             action="receive",
             old_value=None,
@@ -749,5 +758,5 @@ def test_audit_summary_labels_rfid_scan_events(audit_db_session):
     )
 
     assert summary.total_events == 1
-    assert summary.top_entities[0].key == "rfid_scan_event"
-    assert summary.top_entities[0].label == "RFID-stämpel"
+    assert summary.top_entities[0].key == entity_type
+    assert summary.top_entities[0].label == label

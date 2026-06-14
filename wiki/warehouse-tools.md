@@ -48,7 +48,7 @@ Nar en slot redan har verksamhetens karnfil eller sammanstallda data, till exemp
 
 ## API-first for Bearbeta
 
-Bearbeta hamtar nu flera vanliga underlag direkt fran extern datakalla nar anvandaren klickar pa flodesknappen. Det galler bade webb och Windows, men Windows gar via den centrala serverns `/api/workflow-data/source` sa den lokala appen inte behover privata API-detaljer. Endpointen anvander flodets behorighet (`allocationProcess`) och inte `dataFetch`.
+Bearbeta hamtar nu flera vanliga underlag direkt fran extern datakalla nar anvandaren klickar pa flodesknappen. Det galler bade webb och Windows, men Windows gar via den centrala serverns `/api/workflow-data/source` sa den lokala appen inte behover privata API-detaljer. Endpointen anvander flodets behorighet (`allocationProcess`) och inte `dataFetch`, audit-loggar `workflow_source/source_fetch|source_fetch_failed` och satter OTel-spanen `workflow_data.source`.
 
 API-kallan vinner alltid for API-preferred slots. Om extern datakalla inte kan nas, katalogen saknas eller API-svaret ar ogiltigt anvands befintlig uppladdad fil eller Windows `localRef` som fallback. Om varken API eller fallback finns stoppas flodet med en begriplig text, till exempel `Extern datakalla kunde inte nas... Ladda upp Saldo Inkl. Automation och kor igen.` Resultatloggen och Historik/audit markerar varje kallstatus som `api`, `upload_fallback`, `local_ref_fallback`, `missing` eller `optional_skipped`, men sparar inte URL:er, headers, nycklar, request bodies, filnamn, lokala sokvagar eller raddata.
 

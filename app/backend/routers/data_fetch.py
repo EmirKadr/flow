@@ -34,6 +34,7 @@ from ..data_fetch_service import (
 from ..deps import get_db, require_view_access
 from ..models import User
 from ..external_data_client import ExternalDataClient, ExternalDataClientError
+from ..observability import add_span_attributes, start_span
 from .assistant import _call_minimax
 
 
@@ -363,9 +364,15 @@ def data_fetch_health(
 def reload_data_fetch_catalog(
     _: User = Depends(require_view_access("dataFetch", "edit")),
 ) -> dict:
-    clear_catalog_cache()
-    catalog = _catalog_or_503()
-    return {"ok": True, "catalog": catalog_summary(catalog)}
+    with start_span("data_fetch.catalog_reload"):
+        clear_catalog_cache()
+        catalog = _catalog_or_503()
+        summary = catalog_summary(catalog)
+        add_span_attributes({
+            "data_fetch.views": summary.get("views", 0),
+            "data_fetch.columns": summary.get("columns", 0),
+        })
+        return {"ok": True, "catalog": summary}
 
 
 @router.post("/plan")
@@ -373,8 +380,13 @@ async def plan_data_fetch(
     payload: DataFetchPromptRequest,
     _: User = Depends(require_view_access("dataFetch", "view")),
 ) -> dict:
-    plan = await _plan_from_prompt(payload.prompt)
-    return {"plan": plan}
+    with start_span("data_fetch.plan", {"data_fetch.input_chars": len(payload.prompt or "")}):
+        plan = await _plan_from_prompt(payload.prompt)
+        add_span_attributes({
+            "data_fetch.view": plan.get("view", ""),
+            "data_fetch.status": plan.get("status", "ok"),
+        })
+        return {"plan": plan}
 
 
 @router.post("/run")
@@ -383,6 +395,10 @@ async def run_data_fetch(
     current_user: User = Depends(require_view_access("dataFetch", "view")),
     db: Session = Depends(get_db),
 ) -> dict:
+    add_span_attributes({
+        "data_fetch.has_plan": bool(payload.plan),
+        "data_fetch.has_input": bool(payload.prompt and payload.prompt.strip()),
+    })
     if payload.plan:
         plan = _validate_submitted_plan(payload.plan)
     elif payload.prompt and payload.prompt.strip():
@@ -390,13 +406,20 @@ async def run_data_fetch(
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Skicka antingen prompt eller plan.")
 
+    add_span_attributes({
+        "data_fetch.view": plan.get("view", ""),
+        "data_fetch.status": plan.get("status", "ok"),
+    })
     if plan.get("status") == "needs_clarification":
+        add_span_attributes({"data_fetch.result": "needs_clarification"})
         return {"plan": plan, "columns": [], "rows": [], "total_rows": 0, "session_id": None}
 
     error_id = uuid4().hex[:10]
     try:
-        rows = await run_in_threadpool(_fetch_rows, plan, error_id)
+        with start_span("data_fetch.external_fetch", {"data_fetch.view": plan.get("view", "")}):
+            rows = await run_in_threadpool(_fetch_rows, plan, error_id)
     except HTTPException as exc:
+        add_span_attributes({"data_fetch.result": "error", "data_fetch.status_code": exc.status_code})
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
         _audit_data_fetch(
             db,
@@ -411,6 +434,7 @@ async def run_data_fetch(
         )
         raise
     except Exception as exc:
+        add_span_attributes({"data_fetch.result": "error", "data_fetch.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR})
         logger.exception("Data fetch failed unexpectedly error_id=%s view=%s", error_id, plan.get("view"))
         _audit_data_fetch(
             db,
@@ -458,6 +482,12 @@ async def run_data_fetch(
             "truncated": len(rows) > len(projected_rows),
         },
     )
+    add_span_attributes({
+        "data_fetch.result": "ok",
+        "data_fetch.total_rows": len(rows),
+        "data_fetch.shown_rows": len(projected_rows),
+        "data_fetch.truncated": len(rows) > len(projected_rows),
+    })
     return {
         "plan": plan,
         "columns": columns,
@@ -477,7 +507,15 @@ def export_data_fetch_excel(
     session = DATA_FETCH_SESSIONS.get(session_id)
     if not session or session.get("user_key") != _user_session_key(current_user):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resultatet hittades inte. Kör hämtningen igen.")
-    path = _write_excel(session)
+    with start_span(
+        "data_fetch.export",
+        {
+            "data_fetch.view": session["plan"].get("view", ""),
+            "data_fetch.total_rows": session.get("total_rows", 0),
+            "data_fetch.shown_rows": session.get("shown_rows", 0),
+        },
+    ):
+        path = _write_excel(session)
     return FileResponse(
         path,
         filename=f"hamta-data-{session['plan'].get('view', 'export')}.xlsx",

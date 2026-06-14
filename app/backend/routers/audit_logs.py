@@ -122,7 +122,10 @@ KNOWN_INTERACTION_CONTROLS = [
 ]
 
 AUDIT_ENTITY_LABELS = {
+    "coredata_file": "Karnfil",
+    "meta_media_upload": "Meta-uppladdning",
     "rfid_scan_event": "RFID-stämpel",
+    "workflow_source": "Workflow-underlag",
 }
 
 

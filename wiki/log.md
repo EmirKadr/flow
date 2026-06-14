@@ -1553,3 +1553,7 @@ USB-bryggan for RFID visar nu ett begripligt fel om COM-porten ar last av Arduin
 ## [2026-06-14] change | RFID-dubbletter droppas
 
 RFID-scans for samma person och samma aktivitet tva ganger i rad sparas inte langre som `duplicate_ignored`. Backend uppdaterar device-senast-sedd men returnerar `registered=false` utan ny `rfid_scan_events`-rad, Bemanningsmarkering eller Historik-rad.
+
+## [2026-06-14] observability | Workflow, Meta och Data-fetch far bredare signal
+
+Workflow-kallor audit-loggas nu som `workflow_source/source_fetch` eller `source_fetch_failed` med sanerad payload, och publika Meta-uppladdningar loggar aven lyckade forsok som `meta_media_upload/upload_success`. Historik/Analys har labels for `workflow_source`, `meta_media_upload` och `coredata_file`. OTel har nya spans/attribut for workflow-kallor, Data-fetch plan/run/export samt Meta-export/manuell analys utan prompts, filnamn, sokvagar eller raddata. Tester skyddar auditkedjan och Historik-labels.

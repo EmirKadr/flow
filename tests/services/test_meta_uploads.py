@@ -461,6 +461,18 @@ def test_public_meta_upload_route_accepts_multiple_media_without_login(monkeypat
         assert shipment.video_hash == rows[1].content_hash
         assert re.fullmatch(r"[0-9a-f]{64}", shipment.record_hash)
         assert shipment.analysis_status == "needs_configuration"
+        audit = session.query(AuditLog).filter_by(entity_type="meta_media_upload", action="upload_success").one()
+        assert audit.user_id is None
+        assert audit.new_value["status_code"] == 201
+        assert audit.new_value["attempted_count"] == 2
+        assert audit.new_value["saved_count"] == 2
+        assert audit.new_value["skipped_count"] == 0
+        assert audit.new_value["shipment_count"] == 1
+        assert audit.new_value["uploaded_bytes"] == len(b"image-bytes") + len(b"video-bytes")
+        assert audit.new_value["media_types"] == ["image", "video"]
+        assert audit.new_value["analysis_status"] == "needs_configuration"
+        assert "bild.jpg" not in str(audit.new_value)
+        assert "film.mov" not in str(audit.new_value)
     finally:
         app.dependency_overrides.pop(get_db, None)
         session.close()

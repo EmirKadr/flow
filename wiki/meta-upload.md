@@ -1,7 +1,7 @@
 ---
 title: Meta-uppladdning
 status: aktiv
-updated: 2026-06-08
+updated: 2026-06-14
 tags: [meta, media, publik, uppladdning]
 ---
 
@@ -19,7 +19,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 4. Valda filer listas med namn, storlek och videolangd nar browsern kan lasa metadata.
 5. Uppladdningen startar automatiskt direkt efter filval eller drag/drop. Anvandaren kan valja hela kon pa en gang utan Flow-satt klientgrans, men klienten skickar filerna sekventiellt till `/api/meta/uploads` i sma requestar for att undvika tunga multipart-batchar.
 6. Under uppladdningen visas total progress, aktuell fil, filnummer i kon, kvarvarande mangd, estimerad tid och status per fil.
-7. Vid lyckad uppladdning visas hur manga filer som sparades och hur manga dubbletter som hoppades over. Vid fel visas ett kort felmeddelande pa sidan. Fel som hinner na backend audit-loggas som `meta_media_upload/upload_failed`, aven nar anvandaren inte ar inloggad.
+7. Vid lyckad uppladdning visas hur manga filer som sparades och hur manga dubbletter som hoppades over. Lyckade backendforsok audit-loggas som `meta_media_upload/upload_success`. Vid fel visas ett kort felmeddelande pa sidan och fel som hinner na backend audit-loggas som `meta_media_upload/upload_failed`, aven nar anvandaren inte ar inloggad.
 8. For varje ny video skapas en sändningsrad med video-hash och radhash.
 9. Om `GEMINI_API_KEY` finns koas videon for analys. Standard i drift ar att analysen inte autostartar i webprocessen (`META_ANALYSIS_AUTO_START=false`); Super User kan starta analysen manuellt eller en separat worker kan plocka koade jobb. Backend extraherar en temporar ljudfil och skickar bara rosten till Gemini. Analysen fyller ett tydligast hort pall-id och avvikelser, och gor sedan ASK-uppslag i Dispatchpallar for ordernummer, sandningsnummer, anvandarnamn och kund.
 10. Super User kan oppna `Meta` i sidebaren, folja sandningsanalysen med uppdaterad timestamp, soka, sortera, exportera Excel och klicka ikonknappar i tabellen for att ladda ner video, ladda ner etikettstillbild eller starta `Analysera`.
@@ -46,7 +46,8 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 - Backend tillater bild- och videofiler via MIME-typ eller kand filandelse.
 - Om en klient skickar en `.mp4`/videoandelse med ljud-MIME, till exempel `audio/mp4`, normaliserar backend raden och content-endpointen till video-MIME sa nedladdningen fortfarande blir en videofil. Videopilen i analystabellen anvander dessutom `variant=playable`, som transkodar temporart till H.264/AAC for Windows-/browser-spelbar MP4.
 - Meta-vyn laddar ner video och etikettstillbild fran sandningsanalysens ikonknappar via en enkel nedladdningsko (`META_DOWNLOAD_CONCURRENCY=1`). Lankarna kommer fran sandningsanalysens content-URL:er med `download=1`. Playable-video (`variant=playable`) transkodas en i taget pa servern via en backend-semafor.
-- Publika uppladdningsfel loggas server-side som `meta_media_upload/upload_failed` med sanerad payload: metod, path, HTTP-status, feltyp, antal valda/accepterade/overhoppade filer och total uppladdad storlek. Filnamn, filinnehall, request body och privata anvandaruppgifter sparas inte. Raden syns i Historik > Felkoder som systemhandelse eftersom den publika sidan saknar login.
+- Publika uppladdningar loggas server-side som `meta_media_upload/upload_success` eller `meta_media_upload/upload_failed` med sanerad payload: metod, path, HTTP-status, feltyp vid fel, antal valda/sparade/overhoppade filer, sandningsrader, total uppladdad storlek, mediatyper och analysstatus. Filnamn, filinnehall, request body och privata anvandaruppgifter sparas inte. Felraden syns i Historik > Felkoder som systemhandelse eftersom den publika sidan saknar login.
+- Backend satter OTel-attribut pa publika upload-requesten for status, antal, uppladdad storlek och analysstatus. Super User-floden har egna spans for `meta.shipment_observations.export` och `meta.upload.analyze`, sa tunga Excel-exporter och manuella analyser gar att felsoka i traces utan filnamn eller mediainnehall.
 - `meta_upload.js` skickar dessutom allowlistade public interaction-events till `POST /api/audit/interactions/public`: filval, upload-start, batchprogress, success och error. Dessa events sparar bara antal, total bytes, bild-/videorakning, batchindex, sparade/overhoppade/misslyckade antal och feltyp/meddelandelangd. Filnamn, filvagar, request body och media-innehall skickas inte.
 - `meta_upload.js` anvander `XMLHttpRequest` i stallet for `fetch` for att kunna visa upload-progress. Anvandaren kan valja manga filer samtidigt, men `META_UPLOAD_FILES_PER_REQUEST` ar `1`, sa klienten skickar en fil per request och fortsatter sekventiellt. Totalraden visar filnummer, kvarvarande bytes och ETA beraknad fran hittills uppladdade bytes. Filraderna far individuella progressbarer beraknade fran filernas storlek och total `loaded`; for valda videor forsoker browsern ocksa lasa videolangd fran metadata sekventiellt sa mobilen inte skapar manga video-prober samtidigt. Det finns ingen separat uppladdningsknapp: `setFiles` startar `startUpload` direkt nar minst en fil valts.
 - Standard `META_UPLOAD_RATE_LIMIT_PER_MINUTE` ar `0` sa en legitim lang ko inte stoppas efter ett visst antal filer per minut. Om drift vill lagga pa publik throttling kan miljovariabeln sattas, men klienten fortsatter alltid att bara skicka en fil i taget.
