@@ -1493,3 +1493,7 @@ Bearbeta-vyn visar inte langre en egen Matris-knapp. Bearbeta-matrisen ligger nu
 ## [2026-06-14] change | Installningar verksamhetsseparerade
 
 Installningar skickar nu vald verksamhet fran omradesfokus till Ytkarta, Bearbeta-matris och Bemanning. `allocation_process_matrix`, `ytgenerering_map_layout`, `staffing_history_hours` och hover-aktiviteternas settings sparas/lases per verksamhet, medan Vybehorigheter fortsatt ar global rollatkomst. Frontendens bootcache scopeas sa matris/coredata inte ateranvands mellan verksamheter.
+
+## [2026-06-14] feature | RFID-stamplingar till Bemanning
+
+Flow har nu ett RFID-flode for ESP32/RDM6300-moduler: `POST /api/rfid/scans` tar emot fysisk stampel, Bemanning visar markeringar per person/timme och `OK` applicerar aktiviteten fran scannad minut medan `Ignorera` sparar status utan att radera markeringen. Samma person och aktivitet tva ganger i rad sparas som dubblett och kan inte appliceras. Firmwaremappen i Flow ar satt for testmodulen `MG Plock` med generiska WiFi/server/token-placeholders.

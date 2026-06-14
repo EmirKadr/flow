@@ -19,6 +19,8 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `noman`, `rfid_code`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
 | `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `work_type`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
+| `rfid_devices` | `RfidDevice` | Fysiska RFID-moduler kopplade till aktivitet | `business_id`, `device_id`, `module_name`, `activity_id`, `is_active`, `last_seen_at` |
+| `rfid_scan_events` | `RfidScanEvent` | Sparade RFID-stamplingar innan/efter Bemanning applicerar dem | `business_id`, `device_identifier`, `module_name`, `tag_code`, `person_id`, `activity_id`, `scan_time`, `status`, `schedule_year/week/weekday/hour/minute`, `applied_by`, `ignored_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
 | `person_productivity_daily` | `PersonProductivityDaily` | Materialiserad personproduktivitet per dag for Bemanning, cell-hover-snitt och framtida personnara snitt | `business_id`, `snapshot_date`, `person_id`, `row_type`, `item_key`, `metric`, `activity_id`, `process_key`, `kpi_points`, `planned_kpi_points`, `kpi_minutes`, `units`, `source_snapshot_at`, `schedule_signature` |
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
@@ -40,6 +42,8 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - `Business.company_codes` ar en JSON-lista med bolagskoder som hor till verksamheten. Klienten visar dem som kommaseparerad text i Verksamheter-vyn.
 - Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
 - `Person.rfid_code` ar valfri brickkod. Backend normaliserar den till versaler och stoppar dubbletter inom samma verksamhet.
+- `RfidDevice.module_name` ar modulens aktivitetsnamn, till exempel `MG Plock`. Vid scan matchas det mot aktiv aktivitets `label` eller `code`; `RfidScanEvent` sparar resultatet som pending, ignored, applied, duplicate_ignored eller konfliktstatus.
+- En RFID-stampling blir inte en schemacell forran en anvandare med `schedule=edit` applicerar den i Bemanning. Ignorerade och automatiskt dubblettignorerade händelser sparas kvar for spårbarhet.
 - Personkonton kan ha `person_id` till `persons`. Auto-skapade `person`-anvandare far `person_id`, `business_id` och `area_id` fran matchande `Person.noman`.
 - Schemaceller pekar fortfarande pa person och aktivitet, men writes validerar att person och aktivitet tillhor samma verksamhet.
 
@@ -116,3 +120,4 @@ Viktiga settings:
 - `../app/alembic/versions/0034_allocation_user_filter_profiles.py`
 - `../app/alembic/versions/0037_staffing_calculator_profiles.py`
 - `../app/alembic/versions/0041_company_rfid.py`
+- `../app/alembic/versions/0042_rfid_scan_events.py`

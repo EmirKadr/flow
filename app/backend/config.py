@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     RENDER_DATABASE_ID: str = ""
     HEALTHCHECK_PUBLIC_URL: str = ""
     TRACKING_ALLOW_VALUE_SAMPLES: bool = False
+    RFID_DEVICE_TOKEN: str = ""
     OTEL_ENABLED: bool = False
     OTEL_SERVICE_NAME: str = "flow-web"
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""

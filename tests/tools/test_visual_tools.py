@@ -53,6 +53,7 @@ SCHEDULE_SCRIPT_FILES = [
     "summary.js",
     "editing.js",
     "data.js",
+    "rfid.js",
     "copy_modal.js",
     "boot.js",
 ]
@@ -1492,6 +1493,7 @@ def test_presence_print_is_wired_to_both_planning_views():
         "/js/schedule/summary.js",
         "/js/schedule/editing.js",
         "/js/schedule/data.js",
+        "/js/schedule/rfid.js",
         "/js/schedule/copy_modal.js",
         "/js/schedule/boot.js",
         "/js/schedule.js",

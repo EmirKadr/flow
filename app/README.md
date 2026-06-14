@@ -94,6 +94,13 @@ python tools/build_external_data_catalog.py --views <views.xlsx> --columns <colu
 
 Den skriver `data/external_data_catalog.json`, som commitas så Render får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/Render secrets.
 
+## RFID-moduler
+
+Fysiska ESP32/RDM6300-moduler skickar stämplingar till `POST /api/rfid/scans`.
+Sätt `RFID_DEVICE_TOKEN` i driftmiljön om modulerna ska behöva skicka
+`X-Flow-RFID-Token`. Firmware i repo:t ska bara innehålla placeholders för WiFi,
+serveradress och token; riktiga värden fylls lokalt före uppladdning till ESP32.
+
 ## Halsa
 
 Historik-fliken Halsa kan kora server-, databas- och Render-kontroller. Lokalt

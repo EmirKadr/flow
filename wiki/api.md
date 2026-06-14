@@ -43,6 +43,10 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `POST /api/schedule/copy` - kopiera dag/vecka.
 - `POST /api/schedule/clear` - rensa schema.
 - `POST /api/schedule/fill-from-left` - fyll tomma celler fran vanster.
+- `POST /api/rfid/scans` - tar emot scan fran en fysisk RFID-modul. Payloaden innehaller `module_name`, brickkod och valfritt device-id; backend matchar modulnamnet mot aktivitet och brickkoden mot `Person.rfid_code`. Om `RFID_DEVICE_TOKEN` ar satt maste modulen skicka samma varde i `X-Flow-RFID-Token`.
+- `GET /api/rfid/events` - listar RFID-stamplingar for vald ISO-dag i Bemanning, filtrerat pa anvandarens verksamhet och valfritt `area_id`.
+- `POST /api/rfid/events/{event_id}/apply` - applicerar en pending RFID-stampling i Bemanning fran scannad minut till timslut och returnerar de nya schemasegmenten.
+- `POST /api/rfid/events/{event_id}/ignore` - satter RFID-stamplingen som ignorerad utan att radera den fran historik eller Bemanningsmarkeringar.
 - `GET /api/overview` - veckoversikt, scopead per verksamhet.
 - `GET /api/overview/month` - manadsoversikt, scopead per verksamhet.
 - `GET /api/overview/revision`, `/api/overview/revision/month` - latta revisionsnycklar for tyst bakgrundsrefresh.
@@ -89,6 +93,7 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/productivity/overview` - periodpayload for Produktivitet med dag/vecka/manad/ar/custom, underliggande dagsrapporter, periodsummary, saknade datum och global backfillstatus.
 - `POST /api/productivity/sync` - manuell sync av Produktivitetens API-snapshot for valt datum eller dagens datum, kraver `productivity=edit`.
 - Produktivitetsfilroutes ar borttagna: `/api/productivity/files`, `/api/productivity/files/raw`, `/api/productivity/files/{file_type}` och `/api/productivity/targets` finns inte langre.
+- `POST /api/rfid/scans`, `GET /api/rfid/events`, `POST /api/rfid/events/{id}/apply|ignore` - RFID-flodet for Bemanning. Device-endpointen ar avsiktligt separat fran inloggad UI, men kan skyddas med `RFID_DEVICE_TOKEN`; inloggade apply/ignore kraver `schedule=edit`.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler fran Postgres-tabellen `coredata_files` med filbaserad fallback, samt sammanstalld data som `artikel_max.csv`. Bearbeta anropar den bara for Uppladdningar eller synliga floden dar kallvalet kraver `Uppladdning`; API-installda kallor behover inte uppladdningsstatus.
 - `GET /api/coredata/files/{file_key}/preview` - forhandsvisar en serverlagrad coredata-karnfil eller sammanstalld datafil for anvandarens verksamhet. Svaret innehaller begransad textpreview, filnamn, storlek och metadata men ska inte anvandas for full nedladdning.
 - `GET /api/coredata/files/{file_key}/download` - laddar ner serverlagrad coredata-karnfil eller sammanstalld data forst nar anvandaren klickar explicit nedladdning.
@@ -118,5 +123,6 @@ python -m tools.flow_cli api GET /api/health
 - `../app/backend/routers/productivity.py`
 - `../app/backend/productivity_sync.py`
 - `../app/backend/routers/workflow_data.py`
+- `../app/backend/routers/rfid.py`
 - `../app/backend/workflow_data.py`
 - `../tests/tools/test_flow_cli.py`

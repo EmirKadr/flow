@@ -544,12 +544,14 @@ function renderHourCell(td) {
   if (isSplitHour(segments) || segments.some((segment) => isPartialRange(segment))) {
     renderSplitHourCell(td, segments, isScheduled);
     if (td.classList.contains("pending-save")) setHourPending(td, true);
+    if (typeof decorateRfidHourCell === "function") decorateRfidHourCell(td);
     return;
   }
 
   const segment = segments.length === 1 ? segments[0] : null;
   renderFullHourCell(td, segment, isScheduled);
   if (td.classList.contains("pending-save")) setHourPending(td, true);
+  if (typeof decorateRfidHourCell === "function") decorateRfidHourCell(td);
 }
 
 function applySelectedPersonRow() {

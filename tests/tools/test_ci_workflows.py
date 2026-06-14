@@ -40,6 +40,7 @@ def test_render_sensitive_env_vars_are_secret_backed():
         "RENDER_POSTGRES_ID",
         "HEALTHCHECK_PUBLIC_URL",
         "EXCEL_API_TOKEN",
+        "RFID_DEVICE_TOKEN",
         "MINIMAX_API_KEY",
         "GEMINI_API_KEY",
         "DATA_SOURCE_API_BASE_URL",

@@ -82,6 +82,18 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 404 | "Aktivitet hittades inte" | Aktiviteten saknas/inaktuell i state | Ladda om aktiviteter/sidan. |
 | 409 | Conflict med aktuell cell | Version eller segmentsignatur matchar inte | Servern vann; ladda om och gor om. |
 
+## RFID i Bemanning
+
+| Status | Text | Orsak | Atgard |
+| --- | --- | --- | --- |
+| 400 | "module_name kravs" | ESP32 skickade tomt modulnamn | Satt `MODULE_NAME` i firmware, till exempel `MG Plock`. |
+| 400 | "tag_hex eller tag_dec kravs" | ESP32 skickade ingen brickkod | Kontrollera RDM6300-koppling och seriell lasning. |
+| 401 | "RFID-token saknas eller stammer inte" | Backend har `RFID_DEVICE_TOKEN`, men modulen skickar fel eller saknar header | Satt samma token lokalt i firmware som i servermiljon. |
+| 404 | "RFID-handelse hittades inte" | UI forsoker applicera/ignorera en handelse som inte finns eller inte ar synlig i anvandarens verksamhet | Ladda om Bemanning och kontrollera verksamhet/omrade. |
+| 409 | "RFID-handelsen ar redan applicerad" | Anvandaren forsoker applicera/ignorera en redan applicerad stampel | Ladda om Bemanning; schemaandringen ar redan gjord. |
+| 409 | "Dubblettscanningar appliceras inte" | Samma person stampade samma aktivitet tva ganger i rad | Ingen atgard behovs om forsta stampeln ar ratt; annars kontrollera senaste stampel for personen. |
+| 409 | "RFID-scanningen ligger utanfor Bemanningens timmar." | Stampeln ar fore 06 eller efter 23 | Justera arbetstid eller hantera manuellt. |
+
 ## Oversikt
 
 | Status | Text | Orsak | Atgard |
@@ -197,6 +209,7 @@ Be anvandaren skicka:
 - `../app/frontend/js/api.js`
 - `../app/backend/deps.py`
 - `../app/backend/routers/*.py`
+- `../app/backend/routers/rfid.py`
 - `../app/backend/routers/data_fetch.py`
 - `../app/backend/productivity_service.py`
 - `../app/backend/productivity_sync.py`

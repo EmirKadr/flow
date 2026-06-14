@@ -18,7 +18,7 @@ from . import models  # noqa: F401  -- register models on Base.metadata
 from .business_scope import DEFAULT_BUSINESS_CODE, DEFAULT_BUSINESS_NAME, R3_BUSINESS_CODE, R3_BUSINESS_NAME
 from .config import settings
 from .database import Base, _normalize_url
-from .models import Activity, AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, ScheduleCell, User
+from .models import Activity, AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, RfidDevice, RfidScanEvent, ScheduleCell, User
 
 
 SOURCE_ENV_NAMES = ("LIVE_DATABASE_URL", "FLOW_LIVE_DATABASE_URL")
@@ -28,6 +28,8 @@ TABLE_COPY_ORDER = (
     User,
     Activity,
     Person,
+    RfidDevice,
+    RfidScanEvent,
     ScheduleCell,
     PersonScheduleTemplate,
     AuditLog,

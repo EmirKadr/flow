@@ -158,6 +158,10 @@ verksamheter.
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |
 | `schedule.fill_from_left` | `POST` | `/api/schedule/fill-from-left` | Fyll från vänster |
+| `rfid.scans` | `POST` | `/api/rfid/scans` | Ta emot RFID-scan fran fysisk modul |
+| `rfid.events` | `GET` | `/api/rfid/events` | Lista RFID-stamplingar for Bemanning |
+| `rfid.ignore` | `POST` | `/api/rfid/events/{event_id}/ignore` | Ignorera RFID-stampling |
+| `rfid.apply` | `POST` | `/api/rfid/events/{event_id}/apply` | Applicera RFID-stampling i Bemanning |
 
 Schema-celler i svar fran `schedule.get`, `schedule.bulk_cells`,
 `schedule.set_cell` och `schedule.restore_hours` kan ha `loan_area_id`.

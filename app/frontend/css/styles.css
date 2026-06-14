@@ -3320,6 +3320,86 @@ table.overview td.day.pending-save::after {
   );
 }
 
+.schedule-rfid-markers {
+  position: absolute;
+  inset: auto 3px 3px 3px;
+  height: 13px;
+  pointer-events: none;
+  z-index: 8;
+}
+.schedule-rfid-marker {
+  position: absolute;
+  bottom: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: #f59e0b;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, .25);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  padding: 0;
+}
+.schedule-rfid-marker.applied { background: #16a34a; }
+.schedule-rfid-marker.ignored,
+.schedule-rfid-marker.duplicate_ignored { background: #94a3b8; }
+.schedule-rfid-marker.unknown_person,
+.schedule-rfid-marker.unknown_activity,
+.schedule-rfid-marker.conflict { background: #dc2626; }
+.schedule-rfid-popover {
+  position: fixed;
+  z-index: 2000;
+  width: min(280px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+.schedule-rfid-popover-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.schedule-rfid-popover-meta,
+.schedule-rfid-popover-reason {
+  color: var(--muted);
+  font-size: 13px;
+}
+.schedule-rfid-popover-status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 800;
+}
+.schedule-rfid-popover-status.applied {
+  background: #dcfce7;
+  color: #166534;
+}
+.schedule-rfid-popover-status.ignored,
+.schedule-rfid-popover-status.duplicate_ignored {
+  background: #e2e8f0;
+  color: #475569;
+}
+.schedule-rfid-popover-status.unknown_person,
+.schedule-rfid-popover-status.unknown_activity,
+.schedule-rfid-popover-status.conflict {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.schedule-rfid-popover-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 body.dragging { user-select: none; cursor: crosshair; }
 body.dragging select { pointer-events: none; }
 

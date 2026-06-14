@@ -34,6 +34,7 @@ from .routers import (
     personal,
     productivity,
     public,
+    rfid,
     schedule,
     settings as app_settings,
     users,
@@ -236,6 +237,7 @@ app.include_router(app_settings.router)
 app.include_router(users.router)
 app.include_router(workflow_data.router)
 app.include_router(public.router)
+app.include_router(rfid.router)
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"

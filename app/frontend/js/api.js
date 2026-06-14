@@ -460,6 +460,8 @@ function apiActionLabel(path, method = "GET") {
   if (safePath.startsWith("/api/schedule/copy")) return "Bemanning: kopiera dag";
   if (safePath.startsWith("/api/schedule/clear")) return "Bemanning: rensa dag";
   if (safePath.startsWith("/api/schedule/hours/restore")) return "Bemanning: ångra/gör om";
+  if (safePath.startsWith("/api/rfid/events")) return "RFID-stämpel";
+  if (safePath.startsWith("/api/rfid/scans")) return "RFID-scan";
   if (safePath.startsWith("/api/overview/days")) return "Översikt: flera dagar";
   if (safePath.startsWith("/api/overview/day")) return "Översikt: dag";
   if (safePath.startsWith("/api/persons/import-template")) return "Personimportmall";

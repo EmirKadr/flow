@@ -43,6 +43,9 @@ const state = {
   productivityReport: null,
   productivityByPersonId: new Map(),
   productivityKey: "",
+  rfidEvents: [],
+  rfidEventsByHour: new Map(),
+  rfidKey: "",
   lockForeignScheduleCells: false,
   calcInputs: { manual: { rows: "", time: "", goal: "" } },
   calculatorProfile: { version: 1, calculators: [] },
@@ -120,6 +123,11 @@ const scheduleAllFetchState = {
 const scheduleProductivityLoadState = {
   controller: null,
   key: "",
+};
+const scheduleRfidLoadState = {
+  controller: null,
+  key: "",
+  timer: null,
 };
 const SCHEDULE_ALL_CACHE_LIMIT = 4;
 const SCHEDULE_AREA_CACHE_LIMIT = 24;

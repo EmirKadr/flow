@@ -24,6 +24,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 ## Funktionssidor
 
 - [Bemanning](bemanning-schedule.md) - matrisen, celler, split, drag, kopiera, rensa, undo/redo och kalkyl.
+- [RFID-stamplingar](rfid.md) - fysisk ESP32/RDM6300-scan till Bemanning, OK/Ignorera och dubblettregler.
 - [Oversikt](overview-page.md) - vecka/manad, heldagsbemanning, drag och undo/redo.
 - [Personer](persons.md) - personregister, inline-edit, import och veckomall.
 - [Aktiviteter och omraden](activities-areas.md) - aktivitetsregister, kod, summering och legacy-stalle.

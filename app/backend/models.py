@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -157,6 +157,67 @@ class ScheduleCell(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class RfidDevice(Base):
+    __tablename__ = "rfid_devices"
+    __table_args__ = (
+        Index("ix_rfid_devices_business_activity", "business_id", "activity_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    device_id: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    module_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    business: Mapped[Business | None] = relationship()
+    activity: Mapped[Activity | None] = relationship()
+
+
+class RfidScanEvent(Base):
+    __tablename__ = "rfid_scan_events"
+    __table_args__ = (
+        Index("ix_rfid_scan_events_scan_time", "scan_time"),
+        Index("ix_rfid_scan_events_business_scan_time", "business_id", "scan_time"),
+        Index("ix_rfid_scan_events_person_scan_time", "person_id", "scan_time"),
+        Index("ix_rfid_scan_events_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("rfid_devices.id"))
+    device_identifier: Mapped[str] = mapped_column(String(120), nullable=False)
+    module_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    tag_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    tag_dec: Mapped[str | None] = mapped_column(String(120))
+    scan_count: Mapped[int | None] = mapped_column(Integer)
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
+    activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
+    scan_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    ignored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ignored_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    schedule_year: Mapped[int | None] = mapped_column(SmallInteger)
+    schedule_week: Mapped[int | None] = mapped_column(SmallInteger)
+    schedule_weekday: Mapped[int | None] = mapped_column(SmallInteger)
+    schedule_hour: Mapped[int | None] = mapped_column(SmallInteger)
+    schedule_minute: Mapped[int | None] = mapped_column(SmallInteger)
+
+    business: Mapped[Business | None] = relationship()
+    device: Mapped[RfidDevice | None] = relationship()
+    person: Mapped[Person | None] = relationship()
+    activity: Mapped[Activity | None] = relationship()
 
 
 class PersonScheduleTemplate(Base):

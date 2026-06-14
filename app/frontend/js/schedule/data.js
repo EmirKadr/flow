@@ -108,6 +108,9 @@ function applyScheduleData(data) {
   buildRows();
   setupScheduleHorizontalScroll();
   refreshCurrentHourHighlight();
+  if (typeof loadScheduleRfidEvents === "function") {
+    void loadScheduleRfidEvents({ silent: true });
+  }
   void loadScheduleProductivity();
   scheduleSummaryRefresh(0);
   scheduleAutomaticCalculatorRefresh(800);

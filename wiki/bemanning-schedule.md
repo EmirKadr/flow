@@ -38,6 +38,7 @@ Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr o
 | Hover pa bemanningscell | Visar historiskt snitt for cellens person och aktivitet | Vantar kort sa snabba musrorelser inte skickar anrop, hamtar sedan bara aktuell person+aktivitet fran materialiserad personproduktivitet och visar till exempel `70 rader/timme` i en tooltip | `GET /api/schedule/activity-capacity/cell`, `scheduleActivityCapacityHover` | Om aktiviteten inte ar vald i Installningar, saknar KPI-process eller personen saknar historik visas en kort orsak i tooltipen. |
 | Personfilter | Skriver i Person-huvud | Filtrerar synliga rader klient-side | `refreshPersons` | Shift-klick pa header sorterar i stallet. |
 | Produktivitet-kolumn | Laser procenten bredvid hemomradet | Hamtar en liten sammanfattning fran `/api/schedule/productivity-summary` for valt datum och raknar bara avslutade KPI-timmar. For idag exkluderas pagaende timme; STOD/absence ger tom cell om ingen avslutad KPI-tid finns. Procenten visas som heltal och fargas rod under 80, orange 80-99 och gron fran 100. | `loadScheduleProductivity`, `buildScheduleProductivityMapFromSummary` | Tom cell betyder att produktivitetsrapport saknas eller att personen inte har avslutad KPI-tid i perioden. |
+| RFID-markering i cell | Klickar pa RFID-pricken i personens timcell | Visar person, tid, aktivitet och status for stampling. `OK` applicerar aktiviteten fran scannad minut till timslut; `Ignorera` byter status men tar inte bort markeringen. | `GET /api/rfid/events`, `POST /api/rfid/events/{id}/apply`, `POST /api/rfid/events/{id}/ignore`, `schedule/rfid.js` | Samma person + samma aktivitet tva ganger i rad blir `Dubblett` och far ingen OK-knapp. Okand bricka/modul maste kopplas i Personer/Aktiviteter eller modulnamn. |
 | Klick pa personrad | Klickar pa namn, hemomrade eller en timcell | Markerar hela personraden diskret i aktuell vy | `selectPersonRow`, `person-row-selected` | Markeringen ar bara visuell och sparas inte i databasen. |
 | Sortera Person/Hemomrade | Klick pa header | Sorterar rader | `th[data-sort]` | Personheadern har filterinput; klick i input sorterar inte. |
 | Dra personnamn | Drar ett namn upp eller ned | Sparar ny personsortering direkt pa personernas `sort_order` | `PUT /api/persons/sort-order` | Kraver `personSortOrder=edit`. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. Rensa personfilter innan sortering. |
@@ -73,6 +74,9 @@ Falt:
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
+- RFID-stamplingar sparas separat fran schemaceller i `rfid_scan_events`. Bemanning hamtar dem med en kort bakgrundspoll och ritar markorer ovanpa timcellerna. `Ignorera` ar en sparad status, inte borttagning, sa markeringen ligger kvar for sparbarhet.
+- Nar en RFID-stampling appliceras skapar backend schemasegment fran scannad minut till timslut. Tidigare minuter i samma timme bevaras som befintlig aktivitet eller tomt implicit segment. Klienten ogiltigforklarar schema-cache och lagger en undo-snapshot efter lyckad applicering.
+- Dubblettregeln ligger pa backend: om samma person senast stampade samma aktivitet sparas nasta scan som `duplicate_ignored`. Den visas fortsatt som markering men kan inte appliceras.
 - Om en person med hemomrade GG/AS/EH tilldelas en MG-aktivitet syns personen bade i sitt hemomrade och i MG-vyn for den dagen. Samma regel galler tomma lanemarkeringar: `loan_area_id` gor personen synlig i mottagande omrade utan att skapa aktivitetstimmar.
 - Produktivitetskolumnen anvander `/api/schedule/productivity-summary` i stallet
   for hela Produktivitetens dagrapport. Backend laser materialiserade
@@ -112,6 +116,9 @@ Falt:
 | "Varfor sag Bemanning tom ut efter att ett omrade togs bort?" | Browsern kan ha haft ett gammalt omradesfokus sparat. Nu faller sidan tillbaka till Alla nar det sparade omradet inte langre finns. Kontrollera Historik efter 404 `Omrade hittades inte` om felet hande innan fixen. |
 | "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet eller tom lanemarkering som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker eller ska planeras och dar personen hor hemma. |
 | "Varfor ar Produktivitet tom i Bemanning?" | Personen har ingen avslutad KPI-timme i vald period, har bara STOD/absence hittills, saknar materialiserad produktivitetscache for dagen eller sa kunde `/api/schedule/productivity-summary` inte hamtas. |
+| "Varfor ligger RFID-markeringen kvar efter Ignorera?" | Ignorera sparar status pa stamplingen men raderar den inte. Det ar avsiktligt sa stampeln gar att se och felsoka i efterhand. |
+| "Varfor fick jag ingen OK-knapp pa RFID-stamplingen?" | Statusen ar inte `pending`: brickan kan vara okand, modulnamnet matchar ingen aktivitet, tiden ligger utanfor Bemanningens timmar, eller samma person stampade samma aktivitet tva ganger i rad och handelsen blev `Dubblett`. |
+| "Varfor blev cellen delad pa minuten?" | RFID-OK satter aktiviteten fran scannad minut till timslut. Minuten fore stampeln bevaras, sa en stampel 09:37 ger segment 09:00-09:37 och 09:37-10:00. |
 | "Hur ser jag vad Erik brukar hinna pa aktiviteten?" | Hall musen over cellen. Efter en kort fordröjning visar tooltipen historiskt snitt, till exempel `70 rader/timme`, om aktiviteten ar vald i `Installningar > Bemanning` och personen har historik. |
 | "Varfor far vissa celler inget historiskt snitt?" | Aktiviteten kan vara bortvald i `Installningar > Bemanning`, personen saknar positivt historiskt snitt for den aktivitetens KPI-process, aktiviteten saknar KPI-process, eller produktivitetssnapshots/KPI-mal saknas for historiken. |
 
@@ -119,8 +126,10 @@ Falt:
 
 - `../app/frontend/index.html`
 - `../app/frontend/js/schedule.js`
+- `../app/frontend/js/schedule/rfid.js`
 - `../app/frontend/js/presence_print.js`
 - `../app/backend/routers/schedule.py`
+- `../app/backend/routers/rfid.py`
 - `../app/backend/person_productivity_cache.py`
 - `../app/backend/routers/bulk.py`
 - `../app/backend/schedule_locks.py`
