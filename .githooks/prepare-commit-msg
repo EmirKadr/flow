@@ -1,0 +1,2 @@
+#!/bin/sh
+python -m tools.agent_audit hook prepare-commit-msg "$1" "$2" "$3" >/dev/null 2>&1 || true

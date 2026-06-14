@@ -28,6 +28,23 @@ overdrivet och skulle gora skyddet svagare. Skriv reglerna generiskt; lagg aldri
 riktiga nycklar, privata URL:er, headernamn, endpointmallar, kataloginnehall eller
 kund-/lagerdata i `AGENTS.md`.
 
+## Lokal agent-observability
+
+Kodande agenter ska anvanda `tools.agent_audit` nar de gor kodandringar i repot.
+Detta ar ett lokalt komplement till runtime-OTel: det sparar vilken agent/run som
+gjorde en commit, vilka filer som andrades, vilka testkommandon som kordes och en
+lokal span-liknande tidslinje under `artifacts/agent_runs/`.
+
+- Kor `python -m tools.agent_audit install-hooks --agent codex --auto` om hooks
+  inte redan ar installerade.
+- For langre arbeten: starta med `python -m tools.agent_audit start --goal "..."`
+  och avsluta med `python -m tools.agent_audit finish --summary "..."`.
+- Kor testkommandon via `python -m tools.agent_audit exec -- <kommando>` nar det
+  ar rimligt, sa testresultat hamnar i agenthistoriken.
+- Spara aldrig prompts, svarstext, kunddata, tokens, privata URL:er, filinnehall
+  eller request bodies i manuella agent-audit-event.
+- `artifacts/agent_runs/` ar lokal historik och ska inte commitas.
+
 Fore varje commit och push ska agenten kontrollera att inga hemligheter eller
 privata data foljer med:
 
