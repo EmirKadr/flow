@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [databas, modeller]
 ---
 
@@ -20,7 +20,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `work_type`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
-| `person_productivity_daily` | `PersonProductivityDaily` | Materialiserad personproduktivitet per dag for Bemanning, V+H och framtida personnara snitt | `business_id`, `snapshot_date`, `person_id`, `row_type`, `item_key`, `metric`, `activity_id`, `process_key`, `kpi_points`, `planned_kpi_points`, `kpi_minutes`, `units`, `source_snapshot_at`, `schedule_signature` |
+| `person_productivity_daily` | `PersonProductivityDaily` | Materialiserad personproduktivitet per dag for Bemanning, cell-hover-snitt och framtida personnara snitt | `business_id`, `snapshot_date`, `person_id`, `row_type`, `item_key`, `metric`, `activity_id`, `process_key`, `kpi_points`, `planned_kpi_points`, `kpi_minutes`, `units`, `source_snapshot_at`, `schedule_signature` |
 | `audit_log` | `AuditLog` | Historik over muterande handelser | `business_id`, `entity_type`, `entity_id`, `action`, `old_value`, `new_value`, `user_id`, `created_at` |
 | `user_wait_metrics` | `UserWaitMetric` | Tyst vantetids- och klientprestanda for Historik/Halsa | `business_id`, `user_id`, `event_type`, `view_id`, `target`, `duration_ms`, `status`, `detail`, `created_at` |
 | `user_interaction_events` | `UserInteractionEvent` | Tyst interaction-tracking for Historik > Funktioner/Knappar/Kolumner/Floden/AI-analys | `business_id`, `user_id`, `event_type`, `view_id`, `control_id`, `feature`, `flow_id`, `table_key`, `column_label`, `client_surface`, `detail`, `created_at` |
@@ -61,7 +61,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 
 - `person_productivity_daily` ar beraknad data, inte masterdata pa personen.
 - Raderna materialiseras fran global Produktivitet-snapshot, schema och KPI-regler.
-- `row_type=person` summerar personen for dagen, `cell` lagrar KPI-/stod-/franvaroceller med minutintervall, `activity` summerar aktivitet och `process` lagrar historiska enheter per KPI-process/metrik for V+H och automatisk bemanningskalkyl.
+- `row_type=person` summerar personen for dagen, `cell` lagrar KPI-/stod-/franvaroceller med minutintervall, `activity` summerar aktivitet och `process` lagrar historiska enheter per KPI-process/metrik for cell-hover-snitt och automatisk bemanningskalkyl.
 - `source_snapshot_at` och `schedule_signature` gor att backend kan bygga om en dags cache nar snapshoten eller schemat for dagen andras.
 
 ## Borttagning och aktivflaggor
@@ -75,8 +75,8 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 Viktiga settings:
 
 - `lock_foreign_schedule_cells`: ledare far inte andra celler som annan anvandare fyllt, admin/super user kan passera.
-- `staffing_history_hours`: historikfonster i timmar for V+H-kapacitet och automatisk bemanningskalkyl, default 40.
-- `staffing_activity_capacity_activity_ids`: V+H-aktiviteter som far visa parentesvarde. `null` betyder alla KPI-aktiviteter och `[]` betyder inga.
+- `staffing_history_hours`: historikfonster i timmar for cell-hover-snitt och automatisk bemanningskalkyl, default 40.
+- `staffing_activity_capacity_activity_ids`: aktiviteter som far visa historiskt snitt vid cell-hover. `null` betyder alla KPI-aktiviteter och `[]` betyder inga.
 - sidebar-layout: menyordning/rubrik/undervyer per verksamhet.
 - role-view-access: matris per verksamhet for rollernas vyatkomst (`none`, `view`, `edit`).
 

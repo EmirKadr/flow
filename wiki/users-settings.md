@@ -1,13 +1,13 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [anvandare, settings, roller, ui]
 ---
 
 # Anvandare och installningar
 
-Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager- och bemanningsinstallningar: Ytkarta, Bearbeta-matris och Bemanningens V+H-val. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
+Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager- och bemanningsinstallningar: Ytkarta, Bearbeta-matris och Bemanningens historiska snitt. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
 
 Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `∞` visar alla omraden i den verksamheten nar verksamheten har aktivt `ANNAT`; for Super User betyder `∞` globalt allt. Nar en ny anvandare skapas forvalt valt omradesfokus som anvandarens omrade, men omradet kan fortfarande andras i modalen eller lamnas tomt.
 
@@ -22,7 +22,7 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Vybehorigheter | Oppnar rollmatris | Sparar global vyatkomst for roller | `GET/PUT /api/settings/role-access` | Fel matris kan dolja vyer for rollen i alla verksamheter. |
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
-| Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa V+H-parentesvarde per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
+| Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
 | Bearbeta-matris | Flik under `installningar.html` | Styr vilka Bearbeta-funktioner som visas per toggle | `GET/PUT /api/allokering/process-matrix` | Kraver `allocationProcessMatrix`; `view` kan lasa och `edit` kan spara. |
 | Tabellrubriker | Klickar pa t.ex. Anvandarnamn, Verksamhet, Roll, Omrade eller Skapad | Sorterar synliga anvandarrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus, roller eller serverdata. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas. |
@@ -69,7 +69,7 @@ Rollmatrisen visar vyer som rader och roller som kolumner. Matrisen ar global, s
 
 Raden `Personsortering` (`personSortOrder`) styr om Bemanningsansvarig/admin kan dra personnamn i Bemanning och Oversikt for att uppdatera sorteringsnumret i Personer. Super User har alltid edit via backendens Super User-regel, men sorteringen kraver fortfarande att anvandaren har ett omrade och att personen har samma hemomrade.
 
-Raden `Bemanningsinställningar` (`staffingSettings`) styr fliken Bemanning pa `installningar.html`. `view` far lasa historikfonstret for V+H/automatisk bemanningskalkyl och vilka KPI-aktiviteter som far visa V+H-parentesvarde. `edit` far andra bada. Admin och demo har `edit` som standard, Super User har alltid full atkomst.
+Raden `Bemanningsinställningar` (`staffingSettings`) styr fliken Bemanning pa `installningar.html`. `view` far lasa historikfonstret for historiskt snitt/automatisk bemanningskalkyl och vilka KPI-aktiviteter som far visa hover-snitt. `edit` far andra bada. Admin och demo har `edit` som standard, Super User har alltid full atkomst.
 
 Raden `Bearbeta-matris` (`allocationProcessMatrix`) styr fliken Bearbeta pa `installningar.html`. `view` far oppna matrisen lasande och `edit` far spara vilka Bearbeta-funktioner som ska synas per toggle. Admin och demo har `edit` som standard, Super User har alltid full atkomst. Bearbeta-vyn anvander fortsatt matrisen nar floden visas, men sjalva redigeringen ligger i Installningar.
 

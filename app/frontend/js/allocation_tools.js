@@ -4484,7 +4484,7 @@ function renderStaffingActivityCapacityControls(settings, disabled) {
   if (!options.length) {
     return `
       <div class="staffing-settings-subsection">
-        <h3>V+H-aktiviteter</h3>
+        <h3>Historiskt snitt</h3>
         <p class="allocation-muted">Det finns inga aktiva aktiviteter med KPI-process att välja.</p>
       </div>
     `;
@@ -4496,8 +4496,8 @@ function renderStaffingActivityCapacityControls(settings, disabled) {
   const activityDisabledAttr = disabled || allSelected ? "disabled" : "";
   return `
     <div class="staffing-settings-subsection">
-      <h3>V+H-aktiviteter</h3>
-      <p class="allocation-muted">Välj vilka aktiviteter som får visa historiskt snitt i parentes när V+H är på.</p>
+      <h3>Historiskt snitt</h3>
+      <p class="allocation-muted">Välj vilka aktiviteter som får visa historiskt snitt när användaren håller musen över en bemanningscell.</p>
       <label class="modal-checkbox">
         <input type="checkbox" data-staffing-capacity-all ${allSelected ? "checked" : ""} ${disabledAttr}>
         <span>Visa för alla KPI-aktiviteter</span>
@@ -4831,7 +4831,7 @@ function renderStaffingSettingsPanel(panel = document.getElementById("allocation
     <section class="allocation-staffing-settings-panel">
       <div class="allocation-settings-heading">
         <h2>Bemanningskalkyl</h2>
-        <p class="allocation-muted">Historiktimmar används av V+H-värden i bemanningsceller och automatiska bemanningskalkyler.</p>
+        <p class="allocation-muted">Historiktimmar används av cellernas historiska snitt och automatiska bemanningskalkyler.</p>
       </div>
       ${allocationState.staffingSettingsError ? `<p class="allocation-status error">${allocationEscape(allocationState.staffingSettingsError)}</p>` : ""}
       <form class="staffing-settings-form" data-staffing-settings-form>

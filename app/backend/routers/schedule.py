@@ -18,6 +18,7 @@ from ..staffing_calculator_service import (
     empty_staffing_calculator_profile,
     normalize_staffing_calculator_profile,
     schedule_activity_capacity,
+    schedule_activity_capacity_cell,
     schedule_productivity_summary,
     staffing_calculator_profile_count,
     staffing_process_options,
@@ -678,6 +679,27 @@ def get_activity_capacity(
         year=year,
         week=week,
         weekday=weekday,
+    )
+
+
+@router.get("/activity-capacity/cell")
+def get_activity_capacity_cell(
+    year: int = Query(..., ge=2000, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    weekday: int = Query(..., ge=1, le=7),
+    person_id: int = Query(..., ge=1),
+    activity_id: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "view")),
+) -> dict:
+    return schedule_activity_capacity_cell(
+        db,
+        user,
+        year=year,
+        week=week,
+        weekday=weekday,
+        person_id=person_id,
+        activity_id=activity_id,
     )
 
 

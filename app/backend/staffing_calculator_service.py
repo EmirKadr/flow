@@ -623,6 +623,94 @@ def schedule_activity_capacity(
     }
 
 
+def schedule_activity_capacity_cell(
+    db: Session,
+    user: User,
+    *,
+    year: int,
+    week: int,
+    weekday: int,
+    person_id: int,
+    activity_id: int,
+) -> dict[str, Any]:
+    selected = _selected_date(year, week, weekday)
+    business_id = visible_business_id(db, user, None)
+    rule_business_id = _staffing_rule_business_id(db, user, business_id)
+
+    person_query = select(Person).where(Person.id == person_id, Person.is_active.is_(True))
+    activity_query = select(Activity).where(Activity.id == activity_id, Activity.is_active.is_(True))
+    if business_id is not None:
+        person_query = person_query.where(Person.business_id == business_id)
+        activity_query = activity_query.where(Activity.business_id == business_id)
+    person = db.execute(person_query).scalar_one_or_none()
+    activity = db.execute(activity_query).scalar_one_or_none()
+
+    base_payload: dict[str, Any] = {
+        "date": selected.isoformat(),
+        "generated_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
+        "person_id": person_id,
+        "activity_id": activity_id,
+        "activity_label": getattr(activity, "label", "") if activity else "",
+        "history_hours": get_staffing_history_hours(db, business_id=rule_business_id),
+        "capacity": None,
+    }
+    if person is None or not normalize_name(person.noman):
+        return {**base_payload, "reason": "person_missing"}
+    if activity is None:
+        return {**base_payload, "reason": "activity_missing"}
+    if str(activity.category or "") == "absence":
+        return {**base_payload, "reason": "activity_without_kpi"}
+
+    visible_activity_ids = get_staffing_activity_capacity_activity_ids(db, business_id=rule_business_id)
+    if visible_activity_ids is not None and int(activity.id) not in set(visible_activity_ids):
+        return {**base_payload, "reason": "activity_hidden"}
+
+    process_labels: dict[str, str] = {}
+    process_keys: list[str] = []
+    for process in split_process_names(activity.kpi_process_name):
+        key = normalize_process(process)
+        if not key:
+            continue
+        process_keys.append(key)
+        process_labels.setdefault(key, process)
+    if not process_keys:
+        return {**base_payload, "reason": "activity_without_kpi"}
+
+    rules, _rule_source = load_kpi_rules(db, business_id=rule_business_id)
+    primary_metrics = _latest_primary_metrics_for_processes(set(process_keys), selected, rules=rules)
+    rates = historical_output_per_hour_by_person_process(
+        db,
+        selected_date=selected,
+        process_keys=set(process_keys),
+        person_ids={int(person.id)},
+        business_id=rule_business_id,
+        primary_metrics_by_process=primary_metrics,
+    )
+    person_rates = rates.get(int(person.id), {})
+    for process_key in process_keys:
+        rate = person_rates.get(process_key)
+        if not rate or float(rate.get("units_per_hour") or 0) <= 0:
+            continue
+        metric = str(rate.get("metric") or primary_metrics.get(process_key, "rows"))
+        return {
+            **base_payload,
+            "reason": "",
+            "capacity": {
+                "activity_id": int(activity.id),
+                "activity_label": activity.label,
+                "process_key": process_key,
+                "process": process_labels.get(process_key, process_key),
+                "metric": metric,
+                "unit": rate.get("unit") or staffing_output_metric_label(metric),
+                "value_per_hour": round(float(rate.get("units_per_hour") or 0.0), 1),
+                "hours": round(float(rate.get("hours") or 0.0), 2),
+                "units": round(float(rate.get("units") or 0.0), 1),
+            },
+        }
+
+    return {**base_payload, "reason": "no_history"}
+
+
 def _completed_productivity_cutoff_minute(selected_date: date, now: datetime | None = None) -> int:
     current = now.astimezone(LOCAL_TZ) if now else datetime.now(LOCAL_TZ)
     if selected_date != current.date():

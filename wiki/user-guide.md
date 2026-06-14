@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandbok
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [handbok, anvandare, support, chat]
 ---
 
@@ -45,7 +45,7 @@ Kort svar: denna sida beskriver hur en vanlig anvandare faktiskt anvander flow. 
 4. Hitta personen med personfiltret i rubriken.
 5. Las `Produktivitet`-kolumnen for en snabb procent fram till senaste avslutade KPI-timme. Tom cell betyder oftast att personen bara haft STOD/absence hittills eller saknar avslutad KPI-tid.
 6. Klicka i cellens dropdown och valj aktivitet.
-7. Klicka `V+H` om cellerna ska visa personens historiska snitt for valda V+H-aktiviteter, till exempel `GG Plock(70)`. Vilka aktiviteter som far visa parentesvarde styrs i `Installningar > Bemanning`. Klicka `V+H` igen for att dolja.
+7. Hall musen over cellen om du vill se personens historiska snitt for aktiviteten, till exempel `70 rader/timme`. Vilka aktiviteter som far visa snitt styrs i `Installningar > Bemanning`.
 8. Hogerklicka eller dubbelklicka pa en timme om den ska delas i tva halvtimmar.
 9. Dra fran en cell for att fylla flera celler med samma aktivitet.
 10. Anvand `Ctrl+C`, `Ctrl+X`, `Ctrl+V` nar en cell/halva ar fokuserad.

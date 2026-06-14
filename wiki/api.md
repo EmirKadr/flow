@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [api, backend]
 ---
 
@@ -37,7 +37,8 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET/PUT /api/schedule/calculator-profile` - hamta/spara anvandarens automatiska bemanningskalkyler och tillgangliga processval.
 - `POST /api/schedule/calculator-profile/import` - kopiera automatiska bemanningskalkyler fran annan atkomlig anvandare.
 - `GET /api/schedule/calculator/automatic` - beraknar automatiska bemanningskalkyler for vald ISO-dag med orderrader, kvarvarande schematid och historiskt processnitt.
-- `GET /api/schedule/activity-capacity` - returnerar historiskt snitt per person och vald bemanningsaktivitet for V+H-visningen i Bemanning. Svaret grupperas per `person_id` och `activity_id`, bygger pa aktivitetens KPI-process, KPI-malens matetal och historikgransen i `staffing_history_hours` (default 40 timmar), och respekterar `staffing_activity_capacity_activity_ids`.
+- `GET /api/schedule/activity-capacity` - returnerar historiskt snitt per person och vald bemanningsaktivitet. Svaret grupperas per `person_id` och `activity_id`, bygger pa aktivitetens KPI-process, KPI-malens matetal och historikgransen i `staffing_history_hours` (default 40 timmar), och respekterar `staffing_activity_capacity_activity_ids`.
+- `GET /api/schedule/activity-capacity/cell` - returnerar historiskt snitt for en person och en aktivitet vid hover i Bemanning. Klienten skickar `year`, `week`, `weekday`, `person_id` och `activity_id`; svaret innehaller antingen `capacity` med enheter per timme eller en kort `reason`.
 - `GET /api/schedule/productivity-summary` - returnerar en latt personprocentkarta for Bemannings produktivitetskolumn. Den laser materialiserade `person_productivity_daily`-cellrader och skickar bara `people.{person_id}` med procent, poang, planpoang och KPI-minuter.
 - `POST /api/schedule/copy` - kopiera dag/vecka.
 - `POST /api/schedule/clear` - rensa schema.
@@ -59,7 +60,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET/POST/PUT/DELETE /api/activities...`, `POST /api/activities/import-rows` - aktivitetsregister med valfria kommaseparerade `kpi_process_name`/KPI Mal-processnamn, `work_type` (`normal` eller `vas`), Excelimport och direktimport fran tabellrader.
 - `GET/POST/PUT/DELETE /api/areas...` - omraden. Delete tar bort tomma omraden men inaktiverar omradet om personer, aktiviteter eller anvandare redan pekar pa det.
 - `GET/POST/PUT/DELETE /api/users...`, `POST /api/users/import-rows` - anvandare, Excelimport, direktimport fran tabellrader och permanent borttagning.
-- `GET/PUT /api/settings/staffing` - hamta/spara `staffing_history_hours`, historiktimmarna for V+H och automatisk bemanningskalkyl, samt `activity_capacity_activity_ids` for vilka aktiviteter som far visa V+H-parentesvarde. `null` betyder alla KPI-aktiviteter och `[]` betyder inga. Lasning kraver `staffingSettings=view`, sparning kraver `staffingSettings=edit`.
+- `GET/PUT /api/settings/staffing` - hamta/spara `staffing_history_hours`, historiktimmarna for historiskt snitt och automatisk bemanningskalkyl, samt `activity_capacity_activity_ids` for vilka aktiviteter som far visa hover-snitt. `null` betyder alla KPI-aktiviteter och `[]` betyder inga. Lasning kraver `staffingSettings=view`, sparning kraver `staffingSettings=edit`.
 - `GET/POST/PUT /api/businesses...` - Super User-vy for verksamheter.
 - `GET/PUT /api/settings` - appsettings per verksamhet.
 - `GET/PUT /api/settings/sidebar` - sidebar per verksamhet.

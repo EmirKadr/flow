@@ -53,12 +53,6 @@ const state = {
   automaticCalculatorLoading: false,
   automaticCalculatorError: "",
   scheduleRevisionKey: "",
-  activityCapacityVisible: false,
-  activityCapacityLoading: false,
-  activityCapacityError: "",
-  activityCapacityKey: "",
-  activityCapacity: { people: {}, activities: {} },
-  activityCapacityActivityIds: null,
 };
 
 const drag = {
@@ -104,9 +98,12 @@ const automaticCalculatorState = {
 };
 const activityCapacityState = {
   controller: null,
+  timer: null,
   requestSeq: 0,
-  pressedKeys: new Set(),
-  toggledWhilePressed: false,
+  target: null,
+  cacheKey: "",
+  cache: new Map(),
+  tooltip: null,
 };
 
 const scheduleLoadState = {
@@ -130,7 +127,8 @@ const SCHEDULE_REVALIDATE_ACTIVE_MS = 10000;
 const SCHEDULE_REVALIDATE_IDLE_MS = 30000;
 const SCHEDULE_REVALIDATE_SOON_MS = 1500;
 const SCHEDULE_REVALIDATE_ACTIVE_WINDOW_MS = 60000;
-const SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY = "flow-schedule-activity-capacity-visible";
+const SCHEDULE_ACTIVITY_CAPACITY_HOVER_DELAY_MS = 250;
+const SCHEDULE_ACTIVITY_CAPACITY_CACHE_LIMIT = 240;
 const scheduleRevalidateState = {
   timer: null,
   controller: null,
@@ -619,52 +617,6 @@ function activityLabel(activityId) {
   return a ? a.label : "";
 }
 
-function readActivityCapacityVisible() {
-  try {
-    return localStorage.getItem(SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY) === "1";
-  } catch (e) {
-    return false;
-  }
-}
-
-function writeActivityCapacityVisible(visible) {
-  try {
-    localStorage.setItem(SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY, visible ? "1" : "0");
-  } catch (e) {}
-}
-
-function activityCapacityRequestKey() {
-  return `${scheduleScopeKey()}|${state.year}|${state.week}|${state.weekday}`;
-}
-
-function normalizeActivityCapacityActivityIds(value) {
-  if (value == null) return null;
-  if (!Array.isArray(value)) return null;
-  const ids = [];
-  value.forEach((item) => {
-    const id = Number(item);
-    if (Number.isInteger(id) && id > 0 && !ids.includes(id)) ids.push(id);
-  });
-  return ids;
-}
-
-function activityCapacityActivityIsVisible(activityId) {
-  if (state.activityCapacityActivityIds == null) return true;
-  const id = Number(activityId);
-  return Number.isInteger(id) && state.activityCapacityActivityIds.includes(id);
-}
-
-function updateActivityCapacityToggleButton() {
-  const button = document.getElementById("capacityToggleBtn");
-  if (!button) return;
-  const active = !!state.activityCapacityVisible;
-  button.classList.toggle("active", active);
-  button.setAttribute("aria-pressed", active ? "true" : "false");
-  button.setAttribute("aria-busy", state.activityCapacityLoading ? "true" : "false");
-  button.textContent = state.activityCapacityLoading ? "V+H..." : "V+H";
-  button.title = active ? "Dölj historiskt snitt (V+H)" : "Visa historiskt snitt (V+H)";
-}
-
 function formatActivityCapacityValue(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return "";
@@ -672,37 +624,225 @@ function formatActivityCapacityValue(value) {
   return number.toFixed(1).replace(".", ",").replace(",0", "");
 }
 
-function activityCapacityFor(personId, activityId) {
-  if (!state.activityCapacityVisible || personId == null || activityId == null) return null;
-  if (!activityCapacityActivityIsVisible(activityId)) return null;
-  const personPayload = state.activityCapacity?.people?.[String(personId)];
-  const capacity = personPayload?.[String(activityId)] || null;
-  const value = Number(capacity?.value_per_hour);
-  return Number.isFinite(value) && value > 0 ? capacity : null;
+function formatActivityCapacityHours(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  if (number >= 10) return String(Math.round(number));
+  return number.toFixed(1).replace(".", ",").replace(",0", "");
 }
 
-function activityLabelWithCapacity(activityId, personId) {
-  const label = activityLabel(activityId);
-  const capacity = activityCapacityFor(personId, activityId);
-  const value = formatActivityCapacityValue(capacity?.value_per_hour);
-  return label && value ? `${label}(${value})` : label;
+function activitySupportsCapacity(activityId) {
+  const activity = activityById(activityId);
+  if (!activity || String(activity.category || "") === "absence") return false;
+  return String(activity.kpi_process_name || "").trim().length > 0;
 }
 
-function applyActivityCapacityToSelect(select, personId, activityId) {
-  if (!select || activityId == null) return;
-  const option = Array.from(select.options).find((item) => item.value === String(activityId));
-  if (!option) return;
-  option.textContent = activityLabelWithCapacity(activityId, personId);
-  const capacity = activityCapacityFor(personId, activityId);
-  if (capacity) {
-    option.title = `${formatActivityCapacityValue(capacity.value_per_hour)} ${capacity.unit || "enheter"}/timme`;
+function activityCapacityHoverKey(personId, activityId) {
+  return `${scheduleScopeKey()}|${state.year}|${state.week}|${state.weekday}|${personId}|${activityId}`;
+}
+
+function activityCapacityCellUrl(personId, activityId) {
+  const params = new URLSearchParams({
+    year: String(state.year),
+    week: String(state.week),
+    weekday: String(state.weekday),
+    person_id: String(personId),
+    activity_id: String(activityId),
+  });
+  return `/api/schedule/activity-capacity/cell?${params.toString()}`;
+}
+
+function setActivityCapacityCache(key, payload) {
+  activityCapacityState.cache.set(key, payload);
+  while (activityCapacityState.cache.size > SCHEDULE_ACTIVITY_CAPACITY_CACHE_LIMIT) {
+    const firstKey = activityCapacityState.cache.keys().next().value;
+    activityCapacityState.cache.delete(firstKey);
   }
 }
 
-function rerenderScheduleCellsForCapacity() {
-  document.querySelectorAll("#scheduleBody td[data-hour]").forEach((td) => renderHourCell(td));
-  applySelectedPersonRow();
-  refreshCurrentHourHighlight();
+function ensureActivityCapacityTooltip() {
+  if (activityCapacityState.tooltip) return activityCapacityState.tooltip;
+  const tooltip = document.createElement("div");
+  tooltip.className = "schedule-capacity-tooltip";
+  tooltip.setAttribute("role", "status");
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  activityCapacityState.tooltip = tooltip;
+  return tooltip;
+}
+
+function activityCapacityEmptyText(reason) {
+  if (reason === "activity_hidden") return "Aktiviteten är inte vald för historiskt snitt.";
+  if (reason === "activity_without_kpi") return "Aktiviteten saknar KPI-process.";
+  if (reason === "person_missing") return "Personen saknar historikunderlag.";
+  return "Inget historiskt snitt hittades.";
+}
+
+function positionActivityCapacityTooltip(target) {
+  const tooltip = ensureActivityCapacityTooltip();
+  if (!target || tooltip.hidden) return;
+  const rect = target.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+  const left = Math.min(
+    viewportWidth - 12 - tooltipRect.width / 2,
+    Math.max(12 + tooltipRect.width / 2, rect.left + rect.width / 2),
+  );
+  const preferTop = rect.bottom + 10 + tooltipRect.height > viewportHeight && rect.top - tooltipRect.height - 10 > 0;
+  const top = preferTop ? rect.top - tooltipRect.height - 10 : rect.bottom + 10;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${Math.max(8, top)}px`;
+}
+
+function renderActivityCapacityTooltip(target, payload) {
+  const tooltip = ensureActivityCapacityTooltip();
+  tooltip.replaceChildren();
+  tooltip.classList.toggle("is-error", payload.status === "error");
+  tooltip.classList.toggle("is-empty", payload.status === "empty");
+
+  const title = document.createElement("div");
+  title.className = "schedule-capacity-tooltip-title";
+  title.textContent = payload.title || "Historiskt snitt";
+  tooltip.appendChild(title);
+
+  const value = document.createElement("div");
+  value.className = "schedule-capacity-tooltip-value";
+  value.textContent = payload.value || "";
+  tooltip.appendChild(value);
+
+  if (payload.meta) {
+    const meta = document.createElement("div");
+    meta.className = "schedule-capacity-tooltip-meta";
+    meta.textContent = payload.meta;
+    tooltip.appendChild(meta);
+  }
+
+  tooltip.hidden = false;
+  positionActivityCapacityTooltip(target);
+}
+
+function activityCapacityTooltipPayload(result, personId, activityId) {
+  const person = personById(personId);
+  const activity = activityById(activityId);
+  const title = `${person?.name || "Person"} · ${activity?.label || result?.activity_label || "Aktivitet"}`;
+  const capacity = result?.capacity || null;
+  const value = formatActivityCapacityValue(capacity?.value_per_hour);
+  if (!capacity || !value) {
+    return {
+      status: "empty",
+      title,
+      value: activityCapacityEmptyText(result?.reason),
+      meta: "",
+    };
+  }
+  const unit = capacity.unit || "enheter";
+  const hours = formatActivityCapacityHours(capacity.hours);
+  return {
+    status: "ok",
+    title,
+    value: `${value} ${unit}/timme`,
+    meta: hours ? `Baserat på ${hours} h historik` : "",
+  };
+}
+
+function hideActivityCapacityTooltip({ abort = true } = {}) {
+  if (activityCapacityState.timer) {
+    clearTimeout(activityCapacityState.timer);
+    activityCapacityState.timer = null;
+  }
+  activityCapacityState.target = null;
+  activityCapacityState.cacheKey = "";
+  if (abort) {
+    activityCapacityState.controller?.abort();
+    activityCapacityState.controller = null;
+  }
+  if (activityCapacityState.tooltip) {
+    activityCapacityState.tooltip.hidden = true;
+  }
+}
+
+async function loadActivityCapacityTooltip(target, personId, activityId, cacheKey) {
+  const cached = activityCapacityState.cache.get(cacheKey);
+  if (cached) {
+    renderActivityCapacityTooltip(target, cached);
+    return;
+  }
+
+  renderActivityCapacityTooltip(target, {
+    status: "loading",
+    title: `${personById(personId)?.name || "Person"} · ${activityLabel(activityId) || "Aktivitet"}`,
+    value: "Hämtar historiskt snitt...",
+    meta: "",
+  });
+
+  const requestSeq = ++activityCapacityState.requestSeq;
+  activityCapacityState.controller?.abort();
+  const controller = new AbortController();
+  activityCapacityState.controller = controller;
+
+  try {
+    const result = await api.get(activityCapacityCellUrl(personId, activityId), {
+      signal: controller.signal,
+      skipCache: true,
+    });
+    const payload = activityCapacityTooltipPayload(result, personId, activityId);
+    setActivityCapacityCache(cacheKey, payload);
+    if (
+      controller.signal.aborted
+      || requestSeq !== activityCapacityState.requestSeq
+      || activityCapacityState.cacheKey !== cacheKey
+    ) return;
+    renderActivityCapacityTooltip(target, payload);
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    if (requestSeq !== activityCapacityState.requestSeq || activityCapacityState.cacheKey !== cacheKey) return;
+    renderActivityCapacityTooltip(target, {
+      status: "error",
+      title: `${personById(personId)?.name || "Person"} · ${activityLabel(activityId) || "Aktivitet"}`,
+      value: error.message || "Kunde inte hämta historiskt snitt.",
+      meta: "",
+    });
+  } finally {
+    if (activityCapacityState.controller === controller) {
+      activityCapacityState.controller = null;
+    }
+  }
+}
+
+function scheduleActivityCapacityHover(target, personId, activityId, delayMs = SCHEDULE_ACTIVITY_CAPACITY_HOVER_DELAY_MS) {
+  if (!target || personId == null || activityId == null || !activitySupportsCapacity(activityId)) {
+    hideActivityCapacityTooltip();
+    return;
+  }
+  const cacheKey = activityCapacityHoverKey(personId, activityId);
+  if (activityCapacityState.timer) clearTimeout(activityCapacityState.timer);
+  activityCapacityState.target = target;
+  activityCapacityState.cacheKey = cacheKey;
+  activityCapacityState.timer = setTimeout(() => {
+    activityCapacityState.timer = null;
+    if (activityCapacityState.target !== target || activityCapacityState.cacheKey !== cacheKey) return;
+    void loadActivityCapacityTooltip(target, personId, activityId, cacheKey);
+  }, Math.max(0, delayMs));
+}
+
+function attachActivityCapacityHover(target, personId, activityId) {
+  if (!target || personId == null || activityId == null || !activitySupportsCapacity(activityId)) return;
+  const show = () => scheduleActivityCapacityHover(target, personId, activityId);
+  const showNow = () => scheduleActivityCapacityHover(target, personId, activityId, 0);
+  const hide = () => {
+    if (activityCapacityState.target === target) hideActivityCapacityTooltip();
+  };
+  target.addEventListener("pointerenter", show);
+  target.addEventListener("pointerleave", hide);
+  target.addEventListener("pointercancel", hide);
+  target.addEventListener("focusin", showNow);
+  target.addEventListener("focusout", hide);
+}
+
+function setupActivityCapacityHover() {
+  window.addEventListener("resize", () => hideActivityCapacityTooltip({ abort: false }));
+  document.addEventListener("scroll", () => hideActivityCapacityTooltip({ abort: false }), true);
 }
 
 function defaultHomeActivityId(person) {
@@ -2697,7 +2837,6 @@ function renderFullHourCell(td, segment, isScheduled) {
     ? explicitActivityId
     : (showScheduledDefault ? scheduledActivityId : null);
   setSelectActivityValue(select, selectedActivityId);
-  applyActivityCapacityToSelect(select, personId, selectedActivityId);
   select.dataset.minuteStart = "0";
   select.dataset.minuteEnd = "60";
   select.dataset.version = String(segment?.version || 0);
@@ -2723,8 +2862,9 @@ function renderFullHourCell(td, segment, isScheduled) {
   td.appendChild(select);
   if (showScheduledDefault && scheduledActivityId != null) {
     td.classList.add("with-display-label");
-    td.appendChild(buildDisplayLabel(activityLabelWithCapacity(scheduledActivityId, personId), "cell-display-label"));
+    td.appendChild(buildDisplayLabel(activityLabel(scheduledActivityId), "cell-display-label"));
   }
+  attachActivityCapacityHover(td, personId, selectedActivityId);
 }
 
 function renderSplitHourCell(td, segments, isScheduled) {
@@ -2789,7 +2929,6 @@ function renderSplitHourCell(td, segments, isScheduled) {
       ? segment.activity_id
       : (!segment.empty_override && scheduledActivityId != null ? scheduledActivityId : null);
     setSelectActivityValue(select, selectedActivityId);
-    applyActivityCapacityToSelect(select, personId, selectedActivityId);
     select.dataset.minuteStart = String(minute_start);
     select.dataset.minuteEnd = String(minute_end);
     select.dataset.version = String(segment.version || 0);
@@ -2824,8 +2963,9 @@ function renderSplitHourCell(td, segments, isScheduled) {
     part.appendChild(select);
     if (segment.activity_id == null && !segment.empty_override && scheduledActivityId != null) {
       part.classList.add("with-display-label");
-      part.appendChild(buildDisplayLabel(activityLabelWithCapacity(scheduledActivityId, personId), "hour-segment-label"));
+      part.appendChild(buildDisplayLabel(activityLabel(scheduledActivityId), "hour-segment-label"));
     }
+    attachActivityCapacityHover(part, personId, selectedActivityId);
     wrapper.appendChild(part);
   });
 
@@ -3765,120 +3905,6 @@ async function loadScheduleProductivity() {
   }
 }
 
-async function loadScheduleActivityCapacity({ force = false } = {}) {
-  updateActivityCapacityToggleButton();
-  if (!state.activityCapacityVisible) {
-    activityCapacityState.controller?.abort();
-    state.activityCapacityLoading = false;
-    state.activityCapacityError = "";
-    state.activityCapacityActivityIds = null;
-    updateActivityCapacityToggleButton();
-    rerenderScheduleCellsForCapacity();
-    return;
-  }
-
-  const requestKey = activityCapacityRequestKey();
-  if (!force && state.activityCapacityKey === requestKey && !state.activityCapacityError) {
-    updateActivityCapacityToggleButton();
-    rerenderScheduleCellsForCapacity();
-    return;
-  }
-
-  const requestSeq = ++activityCapacityState.requestSeq;
-  activityCapacityState.controller?.abort();
-  const controller = new AbortController();
-  activityCapacityState.controller = controller;
-  state.activityCapacityLoading = true;
-  state.activityCapacityError = "";
-  state.activityCapacity = { people: {}, activities: {} };
-  state.activityCapacityActivityIds = null;
-  state.activityCapacityKey = requestKey;
-  updateActivityCapacityToggleButton();
-  rerenderScheduleCellsForCapacity();
-
-  try {
-    const result = await api.get(
-      `/api/schedule/activity-capacity?year=${state.year}&week=${state.week}&weekday=${state.weekday}`,
-      { signal: controller.signal, skipCache: true },
-    );
-    if (controller.signal.aborted || requestSeq !== activityCapacityState.requestSeq || requestKey !== activityCapacityRequestKey()) return;
-    state.activityCapacity = {
-      people: result?.people || {},
-      activities: result?.activities || {},
-    };
-    state.activityCapacityActivityIds = normalizeActivityCapacityActivityIds(result?.visible_activity_ids);
-    state.activityCapacityKey = requestKey;
-    state.activityCapacityError = "";
-    rerenderScheduleCellsForCapacity();
-  } catch (error) {
-    if (error?.name === "AbortError") return;
-    if (requestSeq !== activityCapacityState.requestSeq) return;
-    state.activityCapacity = { people: {}, activities: {} };
-    state.activityCapacityActivityIds = null;
-    state.activityCapacityError = error.message || "Kunde inte hämta historiskt snitt.";
-    showToast(state.activityCapacityError, "warn");
-    rerenderScheduleCellsForCapacity();
-  } finally {
-    if (activityCapacityState.controller === controller) {
-      activityCapacityState.controller = null;
-    }
-    if (requestSeq === activityCapacityState.requestSeq) {
-      state.activityCapacityLoading = false;
-      updateActivityCapacityToggleButton();
-    }
-  }
-}
-
-function toggleScheduleActivityCapacity() {
-  state.activityCapacityVisible = !state.activityCapacityVisible;
-  writeActivityCapacityVisible(state.activityCapacityVisible);
-  updateActivityCapacityToggleButton();
-  if (state.activityCapacityVisible) {
-    void loadScheduleActivityCapacity({ force: false });
-  } else {
-    activityCapacityState.controller?.abort();
-    state.activityCapacityError = "";
-    rerenderScheduleCellsForCapacity();
-  }
-}
-
-function isActivityCapacityHotkeyEditableTarget(target) {
-  if (!target) return false;
-  const element = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
-  if (!element) return false;
-  return Boolean(element.closest("input, textarea, select, [contenteditable='true']"));
-}
-
-function setupActivityCapacityToggle() {
-  state.activityCapacityVisible = readActivityCapacityVisible();
-  updateActivityCapacityToggleButton();
-  document.getElementById("capacityToggleBtn")?.addEventListener("click", () => toggleScheduleActivityCapacity());
-
-  document.addEventListener("keydown", (event) => {
-    if (event.repeat || isActivityCapacityHotkeyEditableTarget(event.target)) return;
-    const key = String(event.key || "").toLowerCase();
-    if (key !== "v" && key !== "h") return;
-    activityCapacityState.pressedKeys.add(key);
-    if (
-      activityCapacityState.pressedKeys.has("v")
-      && activityCapacityState.pressedKeys.has("h")
-      && !activityCapacityState.toggledWhilePressed
-    ) {
-      event.preventDefault();
-      activityCapacityState.toggledWhilePressed = true;
-      toggleScheduleActivityCapacity();
-    }
-  }, true);
-  document.addEventListener("keyup", (event) => {
-    const key = String(event.key || "").toLowerCase();
-    if (key !== "v" && key !== "h") return;
-    activityCapacityState.pressedKeys.delete(key);
-    if (!activityCapacityState.pressedKeys.has("v") && !activityCapacityState.pressedKeys.has("h")) {
-      activityCapacityState.toggledWhilePressed = false;
-    }
-  }, true);
-}
-
 function applyScheduleData(data) {
   state.allPersons = data.persons || [];
   state.lockForeignScheduleCells = !!data.lock_foreign_schedule_cells;
@@ -3906,8 +3932,7 @@ function applyScheduleData(data) {
   void loadScheduleProductivity();
   scheduleSummaryRefresh(0);
   scheduleAutomaticCalculatorRefresh(800);
-  if (state.activityCapacityVisible) void loadScheduleActivityCapacity({ force: false });
-  else updateActivityCapacityToggleButton();
+  hideActivityCapacityTooltip({ abort: true });
   scheduleNextScheduleRevalidate();
 }
 
@@ -4045,7 +4070,7 @@ async function loadSchedule() {
   applyScheduleReadOnlyMode();
   await loadAreasAndActivities();
   setupCalculatorToolbar();
-  setupActivityCapacityToggle();
+  setupActivityCapacityHover();
 
   const stored = readSelectedDate();
   if (stored) {

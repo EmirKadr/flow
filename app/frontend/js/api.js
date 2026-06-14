@@ -403,6 +403,7 @@ function apiActionLabel(path, method = "GET") {
   }
   if (safePath.startsWith("/api/productivity")) return "Produktivitet";
   if (safePath.startsWith("/api/schedule/productivity-summary")) return "Bemanning: produktivitet";
+  if (safePath.startsWith("/api/schedule/activity-capacity")) return "Bemanning: historiskt snitt";
   if (safePath === "/api/meta/uploads") return verb === "POST" ? "Meta-uppladdning" : "Meta";
   if (safePath.startsWith("/api/meta/shipment-observations")) return "Meta-sändningsanalys";
   if (/^\/api\/meta\/uploads\/\d+\/analyze$/.test(safePath)) return "Meta-analys";

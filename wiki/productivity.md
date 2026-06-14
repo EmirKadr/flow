@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-10
+updated: 2026-06-14
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -65,7 +65,7 @@ har kommit.
 
 Nar en vy behover snabba person-/dagssvar kan backend materialisera snapshoten
 till `person_productivity_daily`. Det ar beraknad cache, inte masterdata pa
-personen. Bemanningens V+H och produktivitetskolumn laser denna cache och bygger
+personen. Bemanningens cell-hover-snitt och produktivitetskolumn laser denna cache och bygger
 om en dag nar snapshot- eller schemasignaturen andras.
 
 Snapshoten innehaller kallorna:

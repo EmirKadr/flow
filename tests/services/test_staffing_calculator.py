@@ -15,6 +15,7 @@ from app.backend.staffing_calculator_service import (
     historical_output_per_hour_by_person_process,
     primary_metric_for_process,
     schedule_activity_capacity,
+    schedule_activity_capacity_cell,
     schedule_productivity_summary,
 )
 from app.backend.productivity_kpi_rules import parse_kpi_rule_rows
@@ -249,6 +250,59 @@ def test_schedule_activity_capacity_returns_person_activity_average(db_session, 
     assert payload["value_per_hour"] == 70.0
 
 
+def test_schedule_activity_capacity_cell_returns_single_person_activity_average(db_session, monkeypatch):
+    _business, _area, activity, person, user = seed_staffing_data(db_session)
+    rules = parse_kpi_rule_rows([{"process": "Manual_Pick", "source": "pick", "metric": "rows"}])
+    captured = {}
+
+    def fake_history(_db, *, selected_date, process_keys, person_ids, business_id, primary_metrics_by_process):
+        captured["selected_date"] = selected_date.isoformat()
+        captured["process_keys"] = process_keys
+        captured["person_ids"] = person_ids
+        captured["primary_metrics_by_process"] = primary_metrics_by_process
+        return {
+            person.id: {
+                "MANUAL_PICK": {
+                    "units": 1400.0,
+                    "hours": 20.0,
+                    "units_per_hour": 70.0,
+                    "metric": "rows",
+                    "unit": "rader",
+                }
+            }
+        }
+
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.historical_output_per_hour_by_person_process",
+        fake_history,
+    )
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.load_kpi_rules",
+        lambda *_args, **_kwargs: (rules, {"key": "kpi_sql"}),
+    )
+
+    result = schedule_activity_capacity_cell(
+        db_session,
+        user,
+        year=2026,
+        week=24,
+        weekday=2,
+        person_id=person.id,
+        activity_id=activity.id,
+    )
+
+    assert captured == {
+        "selected_date": "2026-06-09",
+        "process_keys": {"MANUAL_PICK"},
+        "person_ids": {person.id},
+        "primary_metrics_by_process": {"MANUAL_PICK": "rows"},
+    }
+    assert result["capacity"]["activity_label"] == "GG Plock"
+    assert result["capacity"]["process_key"] == "MANUAL_PICK"
+    assert result["capacity"]["unit"] == "rader"
+    assert result["capacity"]["value_per_hour"] == 70.0
+
+
 def test_schedule_activity_capacity_filters_configured_activities(db_session, monkeypatch):
     business, _area, activity, person, user = seed_staffing_data(db_session)
     set_staffing_activity_capacity_activity_ids(db_session, [], business_id=business.id)
@@ -284,6 +338,25 @@ def test_schedule_activity_capacity_filters_configured_activities(db_session, mo
         "primary_metrics_by_process": {},
     }
     assert str(activity.id) not in result["activities"]
+
+
+def test_schedule_activity_capacity_cell_respects_configured_activities(db_session, monkeypatch):
+    business, _area, activity, person, user = seed_staffing_data(db_session)
+    set_staffing_activity_capacity_activity_ids(db_session, [], business_id=business.id)
+    db_session.commit()
+
+    result = schedule_activity_capacity_cell(
+        db_session,
+        user,
+        year=2026,
+        week=24,
+        weekday=2,
+        person_id=person.id,
+        activity_id=activity.id,
+    )
+
+    assert result["capacity"] is None
+    assert result["reason"] == "activity_hidden"
 
 
 def test_historical_output_reads_materialized_person_productivity_cache(db_session, monkeypatch):

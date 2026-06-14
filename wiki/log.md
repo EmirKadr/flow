@@ -1,11 +1,20 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-14] change | Bemanning visar historiskt snitt vid hover
+
+Bemanning har inte langre en `V+H`-knapp som laddar hela dagens kapacitetskarta
+och skriver snitt i alla cellnamn. I stallet visar cell-hover ett debouncat
+tooltip-anrop till `GET /api/schedule/activity-capacity/cell` for aktuell
+person och aktivitet. Tooltipen cachar svaret per dag/person/aktivitet och
+anvander fortsatt `staffing_history_hours` och
+`staffing_activity_capacity_activity_ids` fran `Installningar > Bemanning`.
 
 ## [2026-06-11] fix | Installningars ytkarta stoppar max-utzoomning
 

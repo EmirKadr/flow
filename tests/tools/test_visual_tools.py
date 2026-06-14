@@ -952,19 +952,18 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "function setupCalculatorToolbar" in schedule
     assert 'id="calcAddAutomaticBtn"' in schedule_html
     assert 'id="calcImportUser"' in schedule_html
-    assert 'id="capacityToggleBtn"' in schedule_html
     assert '"/api/schedule/calculator-profile"' in schedule
     assert "`/api/schedule/calculator/automatic" in schedule
-    assert "`/api/schedule/activity-capacity" in schedule
-    assert "function loadScheduleActivityCapacity" in schedule
-    assert "function activityLabelWithCapacity" in schedule
-    assert "function activityCapacityActivityIsVisible" in schedule
-    assert "activityCapacityActivityIds" in schedule
-    assert "visible_activity_ids" in schedule
-    assert "SCHEDULE_ACTIVITY_CAPACITY_VISIBLE_KEY" in schedule
-    assert "setupActivityCapacityToggle" in schedule
-    assert "V+H" in schedule_html
-    assert "button.capacity-toggle.active" in styles
+    assert "`/api/schedule/activity-capacity/cell?${params.toString()}`" in schedule
+    assert "SCHEDULE_ACTIVITY_CAPACITY_HOVER_DELAY_MS = 250" in schedule
+    assert "function attachActivityCapacityHover" in schedule
+    assert "function scheduleActivityCapacityHover" in schedule
+    assert "function loadActivityCapacityTooltip" in schedule
+    assert "function setupActivityCapacityHover" in schedule
+    assert 'id="capacityToggleBtn"' not in schedule_html
+    assert "V+H" not in schedule_html
+    assert "button.capacity-toggle.active" not in styles
+    assert ".schedule-capacity-tooltip" in styles
     assert 'preferredAreaIdFromFocus(state.areas) : null' in schedule
     assert 'preferredAreaIdFromFocus(state.areas) : null' in overview
     assert "setAreaFocusAreas(areas, state.currentUser)" in schedule

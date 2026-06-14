@@ -2421,14 +2421,6 @@ button.primary {
   border-color: var(--accent);
 }
 button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-button.capacity-toggle.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-button.capacity-toggle[aria-busy="true"] {
-  opacity: 0.78;
-}
 button.import-help-btn {
   width: 34px;
   height: 34px;
@@ -3232,6 +3224,44 @@ table.matrix td.cell:hover, table.matrix td[data-hour]:hover {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
   z-index: 1;
+}
+.schedule-capacity-tooltip {
+  position: fixed;
+  z-index: 3000;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .16);
+  color: var(--text);
+  pointer-events: none;
+}
+.schedule-capacity-tooltip-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.schedule-capacity-tooltip-value {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.schedule-capacity-tooltip-meta {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.schedule-capacity-tooltip.is-empty .schedule-capacity-tooltip-value,
+.schedule-capacity-tooltip.is-error .schedule-capacity-tooltip-value {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.schedule-capacity-tooltip.is-error {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
 }
 table.matrix td.drag-target {
   outline: 2px solid var(--accent);

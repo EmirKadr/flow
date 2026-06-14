@@ -108,8 +108,8 @@ verksamheter.
 | `activities.delete` | `DELETE` | `/api/activities/{activity_id}` | Ta bort aktivitet |
 | `settings.get` | `GET` | `/api/settings` | Hämta verksamhetens inställningar |
 | `settings.update` | `PUT` | `/api/settings` | Uppdatera verksamhetens inställningar |
-| `settings.staffing_get` | `GET` | `/api/settings/staffing` | Hämta bemanningens historiktimmar och V+H-aktivitetsval |
-| `settings.staffing_update` | `PUT` | `/api/settings/staffing` | Uppdatera bemanningens historiktimmar och V+H-aktivitetsval |
+| `settings.staffing_get` | `GET` | `/api/settings/staffing` | Hämta bemanningens historiktimmar och val för historiskt snitt |
+| `settings.staffing_update` | `PUT` | `/api/settings/staffing` | Uppdatera bemanningens historiktimmar och val för historiskt snitt |
 | `settings.sidebar_get` | `GET` | `/api/settings/sidebar` | Hämta verksamhetens sidomeny |
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera verksamhetens sidomeny |
 | `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta verksamhetens roll-vyåtkomst |
@@ -150,7 +150,8 @@ verksamheter.
 | `schedule.calculator_profile_update` | `PUT` | `/api/schedule/calculator-profile` | Spara personliga automatiska bemanningskalkyler |
 | `schedule.calculator_profile_import` | `POST` | `/api/schedule/calculator-profile/import` | Kopiera bemanningskalkyler fran anvandare |
 | `schedule.calculator_automatic` | `GET` | `/api/schedule/calculator/automatic` | Berakna automatiska bemanningskalkyler |
-| `schedule.activity_capacity` | `GET` | `/api/schedule/activity-capacity` | Historiskt snitt per person och vald V+H-bemanningsaktivitet |
+| `schedule.activity_capacity` | `GET` | `/api/schedule/activity-capacity` | Historiskt snitt per person och vald bemanningsaktivitet |
+| `schedule.activity_capacity_cell` | `GET` | `/api/schedule/activity-capacity/cell` | Historiskt snitt för en person och aktivitet vid cell-hover |
 | `schedule.productivity_summary` | `GET` | `/api/schedule/productivity-summary` | Latt produktivitetsprocent per person for Bemanning |
 | `schedule.copy` | `POST` | `/api/schedule/copy` | Kopiera dag/vecka |
 | `schedule.clear` | `POST` | `/api/schedule/clear` | Rensa schema |

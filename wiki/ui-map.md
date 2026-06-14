@@ -1,7 +1,7 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-06-11
+updated: 2026-06-14
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
@@ -38,7 +38,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Skapa losenord | `set-password.html` | Nytt losenord, Bekrafta, Spara losenord | [Roller och behorighet](auth-roles-access.md) |
 | Mitt schema | `mitt-schema.html` | Veckonavigering, personval for Super User, dagens status, just nu, veckans dagar och aktiviteter | [Roller och behorighet](auth-roles-access.md) |
 | Min produktivitet | `min-produktivitet.html` | Datumnavigering, personval for Super User, dagens produktivitetssnitt, pass och veckans produktivitet per aktivitet | [Roller och behorighet](auth-roles-access.md) |
-| Bemanning | `index.html` | Ar, vecka, dag, datum, Produktivitet-kolumn, V+H-kapacitet i celler, Kopiera dag, Rensa dag, undo/redo, celler, tips, manuell/automatisk kalkyl och kalkylimport | [Bemanning](bemanning-schedule.md) |
+| Bemanning | `index.html` | Ar, vecka, dag, datum, Produktivitet-kolumn, historiskt snitt vid cell-hover, Kopiera dag, Rensa dag, undo/redo, celler, tips, manuell/automatisk kalkyl och kalkylimport | [Bemanning](bemanning-schedule.md) |
 | Oversikt | `overblick.html` | Vy vecka/manad, prev/next, ar, vecka/manad, undo/redo, dagceller | [Oversikt](overview-page.md) |
 | Personer | `personer.html` | Ny person, Flera nya personer, importmall, importera Excel, hjalp, filter/sortering, Schema, Ta bort | [Personer](persons.md) |
 | Aktiviteter | `aktiviteter.html` | Ny aktivitet, Flera nya aktiviteter, importmall, importera Excel, hjalp, Redigera, Ta bort | [Aktiviteter och omraden](activities-areas.md) |
@@ -49,7 +49,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Produktivitet | `produktivitet.html` | Periodval Dag/Vecka/Manad/Ar, datumankare, prev/next, Helbild, Exportera flowchart med nivaval, hierarkitrad for verksamhet, omrade, aktivitet, person, timme och processpoang | [Produktivitet](productivity.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
-| Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till V+H/automatisk kalkyl och val av V+H-aktiviteter | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |
+| Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |
 | Dela | `dela.html` | Textfil/textarea, antal per kolumn, Dela varden | [Lagerverktyg](warehouse-tools.md) |
 | Meta | `meta.html` | Sok, Uppdatera, export, Sandningsanalys med ordernummer, sandningsnummer, Video-ID/langd/storlek, Analysera och nedladdning av video/stillbild | [Meta-uppladdning](meta-upload.md) |
 | Meta-uppladdning | `meta-upload.html` | Valj flera bilder/videor, visa vald videolangd nar metadata finns, automatisk uppladdning | [Meta-uppladdning](meta-upload.md) |
