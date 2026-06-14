@@ -702,3 +702,52 @@ def test_audit_endpoints_can_filter_by_business(audit_db_session):
     assert summary.top_users[0].label == "R3 Admin"
     assert errors.total_errors == 1
     assert errors.recent[0].path == "/api/r3"
+
+
+def test_audit_summary_labels_rfid_scan_events(audit_db_session):
+    business = Business(code="STIGAMO", name="Stigamo", sort_order=1)
+    audit_db_session.add(business)
+    audit_db_session.flush()
+    user = User(
+        username="root",
+        display_name="Root",
+        role="super_user",
+        roles=["super_user"],
+        business_id=business.id,
+        is_active=True,
+    )
+    audit_db_session.add(user)
+    audit_db_session.flush()
+    audit_db_session.add(
+        AuditLog(
+            business_id=business.id,
+            entity_type="rfid_scan_event",
+            entity_id=1,
+            action="receive",
+            old_value=None,
+            new_value={
+                "module_name": "MG Plock",
+                "tag_code": "TAG123",
+                "status": "pending",
+            },
+            user_id=None,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    audit_db_session.commit()
+
+    summary = audit_logs.audit_summary(
+        business_id=business.id,
+        user_id=None,
+        entity_type=None,
+        action=None,
+        entity_id=None,
+        from_at=None,
+        to_at=None,
+        db=audit_db_session,
+        _=user,
+    )
+
+    assert summary.total_events == 1
+    assert summary.top_entities[0].key == "rfid_scan_event"
+    assert summary.top_entities[0].label == "RFID-stämpel"

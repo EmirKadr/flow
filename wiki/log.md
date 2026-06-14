@@ -7,6 +7,12 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] change | Historik visar RFID-stamplingar tydligare
+
+RFID-auditposter etiketteras nu som `RFID-stämpel` i Historik/Analys i stallet
+for tekniska `rfid_scan_event`. Radvis Historik visar modul, tagg, tid, status
+och scanraknare nar backend har tagit emot en scan.
+
 ## [2026-06-14] change | RFID-sketch ar lokal och ignorerad
 
 ESP32/RDM6300-sketchfilen `rfid_esp32_flow.ino` trackas inte langre i git.

@@ -169,6 +169,9 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
+    assert 'rfid_scan_event: "RFID-stämpel"' in analytics
+    assert 'entry.entity_type === "rfid_scan_event"' in analytics
+    assert "Tagg:" in analytics
     assert "TRACKING_HISTORY_MODES" in analytics
     assert "function interactionParams" in analytics
     assert 'api.get(`/api/audit/interactions/summary?${trackingParams.toString()}`)' in analytics

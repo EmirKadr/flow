@@ -57,6 +57,10 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 
 - `GET /api/audit` listar radvis auditlogg for anvandarhistorik.
 - `GET /api/audit/summary` summerar auditlogg for analyslagen.
+- RFID-scans syns i audit som typen `rfid_scan_event` och visas i Historik som
+  `RFID-stämpel`. `receive` skrivs nar backend tar emot en tagg, `ignore` nar
+  en stampling ignoreras och `apply` nar den appliceras i Bemanning. Vid
+  applicering skapas dessutom `schedule_cell`-rader med `rfid_apply_*`.
 - `GET /api/audit/errors` filtrerar auditlogg till felhandelser: `client_error` samt actions som innehaller `failed`, `error` eller `exception`.
 - Audit-endpoints accepterar `business_id` for Super User. Frontend hamtar verksamheter fran `/api/businesses?include_inactive=true` och skickar samma filter till anvandarhistorik, analys och felkoder.
 - `POST /api/audit/client-error` tar emot klientrapporter fran `api.js`. Endpointen kraver inloggad anvandare men inte Super User, sa vanliga anvandares fel kan felsokas i efterhand.

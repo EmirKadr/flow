@@ -121,6 +121,10 @@ KNOWN_INTERACTION_CONTROLS = [
     {"view_id": "analytics", "control_id": "historyTrackingChatForm", "label": "Historik-AI"},
 ]
 
+AUDIT_ENTITY_LABELS = {
+    "rfid_scan_event": "RFID-stämpel",
+}
+
 
 def _apply_filters(query, *, business_id: int | None, user_id: int | None, entity_type: str | None, action: str | None,
                    entity_id: int | None, from_at: datetime | None, to_at: datetime | None):
@@ -147,6 +151,12 @@ def _bucket(key: str | None, label: str | None, count: int) -> AuditSummaryBucke
     normalized_key = key or "system"
     normalized_label = label or ("System" if normalized_key == "system" else normalized_key)
     return AuditSummaryBucket(key=normalized_key, label=normalized_label, count=int(count))
+
+
+def _entity_label(entity_type: str | None) -> str | None:
+    if not entity_type:
+        return None
+    return AUDIT_ENTITY_LABELS.get(entity_type, entity_type)
 
 
 def _error_filter():
@@ -699,7 +709,7 @@ def audit_summary(
         .order_by(func.count().desc(), AuditLog.entity_type.asc())
         .limit(8)
     )
-    top_entities = [_bucket(row.entity_type, row.entity_type, row.count) for row in db.execute(entities_query)]
+    top_entities = [_bucket(row.entity_type, _entity_label(row.entity_type), row.count) for row in db.execute(entities_query)]
 
     return AuditSummaryOut(
         total_events=total_events,

@@ -21,6 +21,7 @@ const ENTITY_LABELS = {
   data_fetch: "Hämta data",
   productivity_file: "Produktivitetsfil",
   allocation_flow: "Lagerverktyg",
+  rfid_scan_event: "RFID-stämpel",
 };
 
 const SETTING_LABELS = {
@@ -144,6 +145,12 @@ function objectSummary(entry) {
   if (entry.entity_type === "allocation_flow") {
     return snapshot.flow_id || "Lagerverktyg";
   }
+  if (entry.entity_type === "rfid_scan_event") {
+    const person = snapshot.person_name || (snapshot.person_id ? personName(snapshot.person_id) : "Okänd person");
+    const activity = snapshot.activity_label || snapshot.module_name || "Okänd aktivitet";
+    const time = snapshot.local_time ? ` ${snapshot.local_time}` : "";
+    return `${person} · ${activity}${time}`;
+  }
   return `${entityLabel(entry.entity_type)} #${entry.entity_id}`;
 }
 
@@ -208,6 +215,18 @@ function detailSummary(entry) {
     if (snapshot.technical_message) parts.push(`Tekniskt: ${snapshot.technical_message}`);
     if (snapshot.filter_log?.length) parts.push(snapshot.filter_log.join(" | "));
     return parts.join(" | ") || "Lagerverktyg";
+  }
+  if (entry.entity_type === "rfid_scan_event") {
+    const parts = [];
+    if (snapshot.module_name) parts.push(`Modul: ${snapshot.module_name}`);
+    if (snapshot.tag_code) parts.push(`Tagg: ${snapshot.tag_code}`);
+    if (snapshot.local_date || snapshot.local_time) {
+      parts.push(`Tid: ${[snapshot.local_date, snapshot.local_time].filter(Boolean).join(" ")}`);
+    }
+    if (snapshot.status) parts.push(`Status: ${snapshot.status}`);
+    if (snapshot.status_reason) parts.push(String(snapshot.status_reason));
+    if (snapshot.scan_count != null) parts.push(`Scan #${snapshot.scan_count}`);
+    return parts.join(" | ") || "RFID-stämpel";
   }
   return summarizeChanges(entry.old_value, entry.new_value);
 }
