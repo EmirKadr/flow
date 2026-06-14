@@ -39,7 +39,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET /api/schedule/calculator/automatic` - beraknar automatiska bemanningskalkyler for vald ISO-dag med orderrader, kvarvarande schematid och historiskt processnitt.
 - `GET /api/schedule/activity-capacity` - returnerar historiskt snitt per person och vald bemanningsaktivitet. Svaret grupperas per `person_id` och `activity_id`, bygger pa aktivitetens KPI-process, KPI-malens matetal och historikgransen i `staffing_history_hours` (default 40 timmar), och respekterar `staffing_activity_capacity_activity_ids`.
 - `GET /api/schedule/activity-capacity/cell` - returnerar historiskt snitt for en person och en aktivitet vid hover i Bemanning. Klienten skickar `year`, `week`, `weekday`, `person_id` och `activity_id`; svaret innehaller antingen `capacity` med enheter per timme eller en kort `reason`.
-- `GET /api/schedule/productivity-summary` - returnerar en latt personprocentkarta for Bemannings produktivitetskolumn. Den laser materialiserade `person_productivity_daily`-cellrader och skickar bara `people.{person_id}` med procent, poang, planpoang och KPI-minuter.
+- `GET /api/schedule/productivity-summary` - returnerar en latt personprocentkarta for Bemannings produktivitetskolumn. Den laser materialiserade `person_productivity_daily`-cellrader och skickar bara `people.{person_id}` med procent, poang, planpoang och KPI-minuter. Om extern snapshot-sync misslyckas returnerar endpointen fortfarande 200 med `cache.status=source_unavailable` och eventuell befintlig cache i stallet for att stoppa Bemanning med 502.
 - `POST /api/schedule/copy` - kopiera dag/vecka.
 - `POST /api/schedule/clear` - rensa schema.
 - `POST /api/schedule/fill-from-left` - fyll tomma celler fran vanster.

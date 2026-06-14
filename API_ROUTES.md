@@ -199,6 +199,9 @@ produktivitetsdata.
 
 `GET /api/schedule/productivity-summary` returnerar en mindre Bemanning-specifik
 personkarta byggd fran materialiserade `person_productivity_daily`-cellrader.
+Om extern snapshot-sync misslyckas returnerar endpointen fortsatt 200 med
+`cache.status=source_unavailable` och laser eventuell befintlig cache, sa
+Bemanning inte stoppas av Produktivitetens externa kallfel.
 
 `GET /api/productivity` returnerar personrader med `time_cells[]`. Cellerna har
 `points`, `expected_points`, `score_status`, `process_points[]`, `diff_count`

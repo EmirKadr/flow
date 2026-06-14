@@ -30,6 +30,7 @@ from .productivity_kpi_rules import (
 from .productivity_service import _read_csv_rows_with_headers
 from .productivity_sync import (
     LOCAL_TZ,
+    ProductivitySyncError,
     ensure_productivity_snapshot,
     productivity_snapshot_files,
     productivity_snapshot_root,
@@ -730,20 +731,29 @@ def schedule_productivity_summary(
     selected = _selected_date(year, week, weekday)
     business_id = visible_business_id(db, user, None)
     rule_business_id = _staffing_rule_business_id(db, user, business_id)
-    sync_status = ensure_productivity_snapshot(
-        selected,
-        business_code=_productivity_business_code(db, user),
-        db=db,
-        user_id=getattr(user, "id", None),
-        wait_seconds=10,
-    )
-    cache_status = ensure_person_productivity_daily_cache(
-        db,
-        productivity_snapshot_files(selected),
-        report_date=selected,
-        business_id=rule_business_id,
-        sync=sync_status,
-    )
+    try:
+        sync_status = ensure_productivity_snapshot(
+            selected,
+            business_code=_productivity_business_code(db, user),
+            db=db,
+            user_id=getattr(user, "id", None),
+            wait_seconds=10,
+        )
+        cache_status = ensure_person_productivity_daily_cache(
+            db,
+            productivity_snapshot_files(selected),
+            report_date=selected,
+            business_id=rule_business_id,
+            sync=sync_status,
+        )
+    except ProductivitySyncError as exc:
+        sync_status = productivity_snapshot_status(selected)
+        cache_status = {
+            "status": "source_unavailable",
+            "ready": False,
+            "message": str(exc),
+            "sync": sync_status,
+        }
     cutoff = _completed_productivity_cutoff_minute(selected, now=now)
     query = select(PersonProductivityDaily).where(
         PersonProductivityDaily.snapshot_date == selected,

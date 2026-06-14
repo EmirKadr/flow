@@ -142,6 +142,7 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 404 | "Saknar referensfil med prefix..." | KPI eller referensfil saknas | Ladda upp KPI eller kontrollera data-dir. |
 | 404 | "Saknar produktivitetsunderlag: ..." | Kravda loggar saknas | Lagg in saknade loggar. |
 | 200 med `source_status.kpi.status=coredata_fallback` | `fallback_reason` kan visa t.ex. "Extern datakalla svarade med HTTP 403" | API-klienten nekas `v_ask_kpi_target`, sa snapshoten anvander lokal KPI-coredata | Ge API-klienten behorighet till KPI-vyn eller uppdatera lokal KPI-coredata. |
+| 200 med `cache.status=source_unavailable` | Bemanningens produktivitetskolumn blir tom eller visar senast materialiserad cache | `/api/schedule/productivity-summary` kunde inte uppdatera extern snapshot men ska inte stoppa Bemanning | Kontrollera extern datakalla och `DATA_SOURCE_*`; Bemanning kan fortsatta utan produktivitetsprocent tills snapshot fungerar igen. |
 | 502 | "Extern datakalla kunde inte synkas." | API-snapshot for Produktivitet kunde inte uppdateras | Kontrollera extern datakalla och `DATA_SOURCE_*`; senaste lyckade snapshot ska ligga kvar om den finns. |
 | 503 | "Produktivitetsrapporten kraver central serverdata..." | Windows desktop ar offline fran central server | Oppna central server/webben eller kontrollera natverk; lokal desktop bygger inte langre personrapporten. |
 | 404 | "Produktivitetsunderlagen saknar datum" | Datum kunde inte tolkas | Kontrollera CSV/header. |

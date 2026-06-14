@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] fix | Bemanning tolererar produktivitetssync-fel
+
+`GET /api/schedule/productivity-summary` returnerar nu samma svarshape med
+`cache.status=source_unavailable` nar extern Produktivitet-snapshot inte kan
+synkas. Bemanning kan da fortsatta visa schema och eventuell redan
+materialiserad produktivitetscache i stallet for att fa 502.
+
 ## [2026-06-14] change | Verksamheter far bolag och personer far RFID
 
 Verksamheter har nu `company_codes` for bolagskoder per verksamhet. Super User

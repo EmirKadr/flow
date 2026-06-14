@@ -19,6 +19,7 @@ from app.backend.staffing_calculator_service import (
     schedule_productivity_summary,
 )
 from app.backend.productivity_kpi_rules import parse_kpi_rule_rows
+from app.backend.productivity_sync import ProductivitySyncError
 from app.backend.settings_service import set_staffing_activity_capacity_activity_ids
 from app.backend.workflow_data import WorkflowSourceEntry
 
@@ -553,6 +554,63 @@ def test_schedule_productivity_summary_reads_materialized_cell_cache(db_session,
     assert result["cutoff_minute"] == 11 * 60
     assert result["people"][str(person.id)]["percent"] == 80
     assert result["people"][str(person.id)]["kpi_minutes"] == 60
+
+
+def test_schedule_productivity_summary_keeps_cached_rows_when_snapshot_sync_fails(db_session, monkeypatch):
+    business, _area, _activity, person, user = seed_staffing_data(db_session)
+    db_session.add(
+        PersonProductivityDaily(
+            business_id=business.id,
+            snapshot_date=date(2026, 6, 9),
+            person_id=person.id,
+            row_type="cell",
+            item_key="cell:600:660:1",
+            metric="points",
+            unit="poang",
+            kind="kpi",
+            start_minute=600,
+            end_minute=660,
+            kpi_points=80.0,
+            planned_kpi_points=100.0,
+            kpi_minutes=60,
+            units=80.0,
+            source_snapshot_at="2026-06-09T11:30:00",
+            schedule_signature="test",
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.ensure_productivity_snapshot",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ProductivitySyncError("Extern datakälla kunde inte nås.")),
+    )
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.productivity_snapshot_status",
+        lambda day: {
+            "source": "api_snapshot",
+            "date": day.isoformat(),
+            "status": "error",
+            "ready": False,
+            "last_error": "Connection reset",
+        },
+    )
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.ensure_person_productivity_daily_cache",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("cache refresh should be skipped")),
+    )
+
+    result = schedule_productivity_summary(
+        db_session,
+        user,
+        year=2026,
+        week=24,
+        weekday=2,
+        now=datetime(2026, 6, 9, 11, 17, tzinfo=LOCAL_TZ),
+    )
+
+    assert result["cache"]["status"] == "source_unavailable"
+    assert result["cache"]["message"] == "Extern datakälla kunde inte nås."
+    assert result["cache"]["sync"]["last_error"] == "Connection reset"
+    assert result["people"][str(person.id)]["percent"] == 80
 
 
 def test_schedule_activity_capacity_uses_default_business_rules_for_super_user_all_scope(db_session, monkeypatch):
