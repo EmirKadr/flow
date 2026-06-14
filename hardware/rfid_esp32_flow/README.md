@@ -40,6 +40,9 @@ bryggan kor, eftersom bara ett program kan lasa serieporten samtidigt. Om
 serialraden redan ser ut som `[MG Plock] RFID HEX=... DEC=... count=...` kravs
 ingen ny firmware-uppladdning for den har vagen.
 
+Om bryggan sager att porten ar upptagen eller blockerad, stang Arduino Serial
+Monitor/Serial Plotter och starta bryggan igen.
+
 ## Koppling
 
 | RDM6300 | ESP32 |

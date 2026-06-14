@@ -2,7 +2,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from tools.rfid_serial_bridge import RfidScan, parse_scan_line, post_scan, scan_payload
+from tools.rfid_serial_bridge import RfidScan, parse_scan_line, post_scan, scan_payload, serial_open_error_message
 
 
 def test_parse_scan_line_with_module_from_esp32_output():
@@ -47,6 +47,14 @@ def test_scan_payload_matches_rfid_api_contract():
         "tag_dec": "10597059",
         "scan_count": 7,
     }
+
+
+def test_serial_open_error_explains_locked_port():
+    message = serial_open_error_message("COM9", "PermissionError(13, 'Åtkomst nekad.', None, 5)")
+
+    assert "COM9" in message
+    assert "Arduino Serial Monitor" in message
+    assert "starta sedan bryggan igen" in message
 
 
 def test_post_scan_posts_json_and_optional_token_to_local_backend():

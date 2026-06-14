@@ -60,6 +60,7 @@ Aktuell testkonfiguration:
 | --- | --- |
 | "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
 | "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. Nar bryggan visar `HTTP 201` har backend tagit emot scannen. |
+| "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan anda vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret och starta bryggan igen. |
 | "Maste jag ladda upp firmware igen for USB-bryggan?" | Nej, inte om Arduino redan skriver serialrader med `RFID HEX=... DEC=... count=...`. USB-bryggan ateranvander den signalen och postar lokalt fran datorn. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
 | "Varfor blev andra scannen dubblett?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend sparar da andra stampeln som `duplicate_ignored`. |

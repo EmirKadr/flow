@@ -80,7 +80,20 @@ def _open_serial(port: str, baud: int):
         raise SystemExit(
             "pyserial saknas. Installera utan admin med: python -m pip install --user pyserial"
         ) from exc
-    return serial.Serial(port, baudrate=baud, timeout=1)
+    try:
+        return serial.Serial(port, baudrate=baud, timeout=1)
+    except serial.SerialException as exc:
+        raise SystemExit(serial_open_error_message(port, str(exc))) from exc
+
+
+def serial_open_error_message(port: str, error_text: str) -> str:
+    if "Access is denied" in error_text or "Åtkomst nekad" in error_text or "PermissionError" in error_text:
+        return (
+            f"Kunde inte oppna {port}: porten ar upptagen eller blockerad. "
+            "Stang Arduino Serial Monitor/Serial Plotter och andra program som kan lasa ESP32-porten, "
+            "och starta sedan bryggan igen."
+        )
+    return f"Kunde inte oppna {port}: {error_text}"
 
 
 def _list_ports() -> int:

@@ -1545,3 +1545,7 @@ RFID-felsokningen har nu ett no-admin-lage for datorer dar Windows-brandvaggen b
 ## [2026-06-14] process | Audit och Historik-label blir obligatoriskt
 
 Agentreglerna sager nu uttryckligt att nya floden som skapar, andrar, synkar eller tar emot data ska leverera sparad audit-rad och begriplig Historik/Analys-label som acceptanskriterium. Read-only-undantag maste vara dokumenterade och testade. Kontraktstestet for agentregler skyddar formuleringen.
+
+## [2026-06-14] fix | RFID-brygga forklarar last COM-port
+
+USB-bryggan for RFID visar nu ett begripligt fel om COM-porten ar last av Arduino Serial Monitor eller annat program. RFID-wikin och firmware-README beskriver att serialfonstret maste stangas innan bryggan startas.
