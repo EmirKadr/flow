@@ -5,7 +5,7 @@ import pytest
 
 from app.backend import prepare_local_database
 from app.backend.database import Base
-from app.backend.models import Activity, Area, Person, User
+from app.backend.models import Activity, Area, Business, Person, User
 from app.backend.sync_live_to_local import sync_database, sync_from_env
 
 
@@ -128,6 +128,74 @@ def test_sync_database_accepts_legacy_source_without_businesses(tmp_path):
         assert session.query(Person).one().business_id is None
         setting_business_id = session.execute(text("SELECT business_id FROM app_settings")).scalar_one()
         assert setting_business_id == default_business
+
+
+def test_sync_database_materializes_callable_defaults_for_missing_legacy_columns(tmp_path):
+    source_path = tmp_path / "legacy-live-with-businesses.db"
+    target_path = tmp_path / "local.db"
+    source_engine = create_engine(sqlite_url(source_path))
+    with source_engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE businesses (
+                id INTEGER PRIMARY KEY,
+                code VARCHAR(20) NOT NULL UNIQUE,
+                name VARCHAR(100) NOT NULL,
+                sort_order INTEGER NOT NULL,
+                is_active BOOLEAN NOT NULL
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE areas (
+                id INTEGER PRIMARY KEY,
+                business_id INTEGER,
+                code VARCHAR(20) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                sort_order INTEGER NOT NULL,
+                is_active BOOLEAN NOT NULL
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE persons (
+                id INTEGER PRIMARY KEY,
+                business_id INTEGER,
+                name VARCHAR(120) NOT NULL,
+                home_area_id INTEGER,
+                home_activity_id INTEGER,
+                comment TEXT,
+                has_fixed_schedule BOOLEAN NOT NULL,
+                is_active BOOLEAN NOT NULL,
+                sort_order INTEGER NOT NULL
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO businesses (id, code, name, sort_order, is_active) VALUES (1, 'STIGAMO', 'Stigamo', 1, 1)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO areas (id, business_id, code, name, sort_order, is_active) VALUES (1, 1, 'GG', 'Granngarden', 1, 1)"
+        )
+        connection.exec_driver_sql(
+            """
+            INSERT INTO persons (id, business_id, name, home_area_id, has_fixed_schedule, is_active, sort_order)
+            VALUES (1, 1, 'Lokal Person', 1, 1, 1, 1)
+            """
+        )
+
+    stats = sync_database(sqlite_url(source_path), sqlite_url(target_path))
+
+    assert stats["businesses"] == 1
+    assert stats["persons"] == 1
+
+    target_engine = create_engine(sqlite_url(target_path))
+    TargetSession = sessionmaker(bind=target_engine)
+    with TargetSession() as session:
+        assert session.query(Business).one().company_codes == []
+        assert session.query(Person).one().competencies == []
 
 
 def test_sync_database_refuses_non_sqlite_target(tmp_path):

@@ -52,9 +52,14 @@ def _column_default(column) -> Any:
     default = column.default
     if default is None:
         return None
+    if getattr(default, "is_scalar", False):
+        return default.arg
     value = default.arg
     if callable(value):
-        return value()
+        try:
+            return value(None)
+        except TypeError:
+            return value()
     return value
 
 
