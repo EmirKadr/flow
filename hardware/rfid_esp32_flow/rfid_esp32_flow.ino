@@ -7,13 +7,40 @@
 #include <HTTPClient.h>
 
 // ====== KONFIGURERA ======
-const char* WIFI_SSID = "DIT_WIFI";
-const char* WIFI_PASSWORD = "DIT_WIFI_LOSENORD";
-const char* FLOW_BASE_URL = "http://FLOW_SERVER_IP:8000";
-const char* RFID_TOKEN = "";
+// Hemligheter/lokal konfig ligger i rfid_esp32_flow.local.h (git-ignorerad).
+// Fallbacks nedan ar bara exempel sa firmwarefilen kan commitas sakert.
+#if defined(__has_include)
+#if __has_include("rfid_esp32_flow.local.h")
+#include "rfid_esp32_flow.local.h"
+#endif
+#endif
 
-const char* DEVICE_ID = "esp32-mg-plock-01";
-const char* MODULE_NAME = "MG Plock";
+#ifndef FLOW_WIFI_SSID
+#define FLOW_WIFI_SSID "DIT_WIFI"
+#endif
+#ifndef FLOW_WIFI_PASSWORD
+#define FLOW_WIFI_PASSWORD "DIT_WIFI_LOSENORD"
+#endif
+#ifndef FLOW_BASE_URL
+#define FLOW_BASE_URL "http://FLOW_SERVER_IP:8000"
+#endif
+#ifndef FLOW_RFID_TOKEN
+#define FLOW_RFID_TOKEN ""
+#endif
+#ifndef FLOW_DEVICE_ID
+#define FLOW_DEVICE_ID "esp32-mg-plock-01"
+#endif
+#ifndef FLOW_MODULE_NAME
+#define FLOW_MODULE_NAME "MG Plock"
+#endif
+
+const char* WIFI_SSID = FLOW_WIFI_SSID;
+const char* WIFI_PASSWORD = FLOW_WIFI_PASSWORD;
+const char* FLOW_BASE_URL_VALUE = FLOW_BASE_URL;
+const char* RFID_TOKEN = FLOW_RFID_TOKEN;
+
+const char* DEVICE_ID = FLOW_DEVICE_ID;
+const char* MODULE_NAME = FLOW_MODULE_NAME;
 
 const int RDM_RX_PIN = 16;
 const int RDM_TX_PIN = 17;
@@ -63,7 +90,7 @@ void postScan(const String& tagHex, const String& tagDec) {
   }
 
   HTTPClient http;
-  String url = String(FLOW_BASE_URL) + "/api/rfid/scans";
+  String url = String(FLOW_BASE_URL_VALUE) + "/api/rfid/scans";
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   if (String(RFID_TOKEN).length() > 0) {
@@ -160,3 +187,4 @@ void loop() {
   }
   readRDM();
 }
+

@@ -41,6 +41,11 @@ env/
 .pytest_cache/
 .coverage
 
+# Lokala firmware-hemligheter
+hardware/rfid_esp32_flow/*.local.h
+hardware/rfid_esp32_flow/.env
+hardware/rfid_esp32_flow/.env.local
+
 # Lokala databasfiler
 *.db
 *.sqlite

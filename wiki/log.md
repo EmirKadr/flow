@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] security | RFID-firmware flyttar lokal konfig ur ino
+
+ESP32/RDM6300-firmware laser nu lokal konfig fran
+`rfid_esp32_flow.local.h`, som ignoreras av git. Den committade `.ino`-filen
+har bara generiska fallback-varden och en example-header visar vilka varden som
+ska fyllas lokalt.
+
 ## [2026-06-14] fix | Bemanning tolererar produktivitetssync-fel
 
 `GET /api/schedule/productivity-summary` returnerar nu samma svarshape med
