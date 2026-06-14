@@ -1177,8 +1177,10 @@ def test_bearbeta_area_focus_filter_contract():
     assert "formData.append(ALLOCATION_PROCESS_AREA_PARAM, focusCode)" in allocation
     assert "appendAllocationFilterProfile(fd)" in allocation
     assert "appendAllocationAreaFocus(fd)" in allocation
-    assert 'allocationJson(`${ALLOCATION_API}/process-matrix`)' in allocation
-    assert 'allocationJson(`${ALLOCATION_API}/process-matrix`, {' in allocation
+    assert 'allocationJson(`${ALLOCATION_API}/process-matrix${query}`)' in allocation
+    assert 'allocationJson(`${ALLOCATION_API}/process-matrix${query}`, {' in allocation
+    assert "function allocationScopedQuery" in allocation
+    assert "window.areaFocusBusinessId = areaFocusBusinessId" in common
     assert 'allocationJson(`${ALLOCATION_API}/filter-profile`)' in allocation
     assert 'allocationJson(`${ALLOCATION_API}/filter-profile/import`, {' in allocation
     assert 'canViewPage?.(allocationState.user, "allocationProcessMatrix")' in allocation

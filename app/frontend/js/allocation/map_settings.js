@@ -127,8 +127,7 @@ function allocationMapLayoutSaveSignature(items = []) {
 }
 
 async function loadAllocationMapLayout() {
-  const focus = allocationProcessAreaCode();
-  const query = focus ? `?area_focus=${encodeURIComponent(focus)}` : "";
+  const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
   return normalizeAllocationMapLayout(await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`));
 }
 
@@ -759,8 +758,7 @@ async function mountAllocationMapSettingsPage(editor) {
     if (!canEdit) return;
     button.disabled = true;
     try {
-      const focus = allocationProcessAreaCode();
-      const query = focus ? `?area_focus=${encodeURIComponent(focus)}` : "";
+      const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
       const requestedSignature = allocationMapLayoutSaveSignature(rows);
       const response = await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`, {
         method: "PUT",

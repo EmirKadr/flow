@@ -40,9 +40,10 @@ async function loadStaffingActivities() {
   allocationState.staffingActivitiesError = "";
   renderStaffingSettingsPanel();
   try {
+    const path = allocationScopedUrl("/api/activities", { fallbackToUser: true, includeAreaFocus: true });
     const payload = window.api?.get
-      ? await window.api.get("/api/activities", { skipCache: true })
-      : await allocationJson("/api/activities", { skipCache: true });
+      ? await window.api.get(path, { skipCache: true })
+      : await allocationJson(path, { skipCache: true });
     allocationState.staffingActivities = Array.isArray(payload) ? payload : [];
     allocationState.staffingActivitiesLoaded = true;
   } catch (error) {
@@ -60,9 +61,10 @@ async function loadStaffingSettings() {
   allocationState.staffingSettingsError = "";
   renderStaffingSettingsPanel();
   try {
+    const path = allocationScopedUrl(STAFFING_SETTINGS_API, { fallbackToUser: true, includeAreaFocus: true });
     const payload = window.api?.get
-      ? await window.api.get(STAFFING_SETTINGS_API, { skipCache: true })
-      : await allocationJson(STAFFING_SETTINGS_API, { skipCache: true });
+      ? await window.api.get(path, { skipCache: true })
+      : await allocationJson(path, { skipCache: true });
     allocationState.staffingSettings = normalizeStaffingSettings(payload);
   } catch (error) {
     allocationState.staffingSettingsError = error?.message || "Kunde inte läsa bemanningsinställningen.";
@@ -96,9 +98,10 @@ async function saveStaffingSettings(form) {
   allocationState.staffingSettingsError = "";
   renderStaffingSettingsPanel();
   try {
+    const path = allocationScopedUrl(STAFFING_SETTINGS_API, { fallbackToUser: true, includeAreaFocus: true });
     const payload = window.api?.put
-      ? await window.api.put(STAFFING_SETTINGS_API, body)
-      : await allocationJson(STAFFING_SETTINGS_API, {
+      ? await window.api.put(path, body)
+      : await allocationJson(path, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -234,7 +237,8 @@ function renderAllocationProcessMatrixSettingsPanel(panel = document.getElementB
     const button = panel.querySelector("#allocation-process-matrix-settings-save");
     button.disabled = true;
     try {
-      const response = await allocationJson(`${ALLOCATION_API}/process-matrix`, {
+      const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
+      const response = await allocationJson(`${ALLOCATION_API}/process-matrix${query}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ matrix: collectAllocationProcessMatrixDraft(editor) }),

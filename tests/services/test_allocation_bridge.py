@@ -623,6 +623,84 @@ def test_update_process_matrix_preserves_rules_outside_visible_areas(monkeypatch
         engine.dispose()
 
 
+def test_process_matrix_is_stored_per_requested_business(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    flows = [
+        {"id": "allocate", "label": "Allokering", "category": "Allokering"},
+        {"id": "ordersaldo", "label": "Ordersaldo", "category": "Saldo"},
+    ]
+    monkeypatch.setattr(allocation_router, "_allocation_process_matrix_flows", lambda: flows)
+    monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: None)
+    try:
+        stigamo = Business(id=10, code="STIGAMO", name="Stigamo", sort_order=1)
+        r3 = Business(id=20, code="R3", name="R3", sort_order=2)
+        super_user = User(id=1, username="root", role="super_user", roles=["super_user"], business_id=stigamo.id, is_active=True)
+        session.add_all(
+            [
+                stigamo,
+                r3,
+                super_user,
+                Area(id=101, business_id=stigamo.id, code="AS", name="Autostore", sort_order=1, is_active=True),
+                Area(id=201, business_id=r3.id, code="R3", name="R3", sort_order=1, is_active=True),
+            ]
+        )
+        session.commit()
+        set_json_setting(
+            session,
+            allocation_router.ALLOCATION_PROCESS_MATRIX_KEY,
+            {"AS": {"visibleFlowIds": ["allocate"]}},
+            business_id=stigamo.id,
+        )
+        set_json_setting(
+            session,
+            allocation_router.ALLOCATION_PROCESS_MATRIX_KEY,
+            {"R3": {"visibleFlowIds": []}},
+            business_id=r3.id,
+        )
+        session.commit()
+
+        response = allocation_router.get_process_matrix(
+            area_focus="AREA:201",
+            db=session,
+            user=super_user,
+        )
+
+        assert [area["code"] for area in response["areas"]] == ["R3", "ALLT"]
+        assert response["matrix"]["R3"] == {"visibleFlowIds": []}
+        assert "AS" not in response["matrix"]
+
+        allocation_router.update_process_matrix(
+            allocation_router.AllocationProcessMatrixUpdate(
+                matrix={"R3": {"visibleFlowIds": ["ordersaldo"]}},
+            ),
+            area_focus="AREA:201",
+            db=session,
+            admin=super_user,
+        )
+
+        stigamo_matrix = get_json_setting(
+            session,
+            allocation_router.ALLOCATION_PROCESS_MATRIX_KEY,
+            default={},
+            business_id=stigamo.id,
+        )
+        r3_matrix = get_json_setting(
+            session,
+            allocation_router.ALLOCATION_PROCESS_MATRIX_KEY,
+            default={},
+            business_id=r3.id,
+        )
+        assert stigamo_matrix == {"AS": {"visibleFlowIds": ["allocate"]}}
+        assert r3_matrix["R3"] == {"visibleFlowIds": ["ordersaldo"]}
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_ytgenerering_user_profile_controls_utl_range_and_carrier_clusters():
     profile = bridge.normalize_user_filter_profile(
         {
@@ -1160,6 +1238,11 @@ def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(mo
     }
 
     class FakeDb:
+        def get(self, model, object_id):
+            if model is Business and object_id in {10, 20}:
+                return SimpleNamespace(id=object_id, code="R3" if object_id == 20 else "STIGAMO")
+            return None
+
         def commit(self):
             captured["committed"] = True
 

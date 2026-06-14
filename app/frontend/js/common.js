@@ -23,6 +23,7 @@ window.readAreaFocus = readAreaFocus;
 window.writeAreaFocus = writeAreaFocus;
 window.areaFocusCode = areaFocusCode;
 window.areaFocusAreaId = areaFocusAreaId;
+window.areaFocusBusinessId = areaFocusBusinessId;
 window.areaFocusName = areaFocusName;
 window.setAreaFocusAreas = setAreaFocusAreas;
 window.preferredAreaIdFromFocus = preferredAreaIdFromFocus;

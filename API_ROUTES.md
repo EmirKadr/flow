@@ -114,6 +114,7 @@ verksamheter.
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera verksamhetens sidomeny |
 | `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta verksamhetens roll-vyåtkomst |
 | `settings.role_access_update` | `PUT` | `/api/settings/role-access` | Uppdatera verksamhetens roll-vyåtkomst |
+| `settings.feature_registry` | `GET` | `/api/settings/feature-registry` | Hämta backend-ägd produktkarta |
 | `audit.list` | `GET` | `/api/audit` | Lista auditlogg |
 | `audit.summary` | `GET` | `/api/audit/summary` | Audit-summering |
 | `audit.errors` | `GET` | `/api/audit/errors` | Felkodsdashboard |

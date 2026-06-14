@@ -399,7 +399,7 @@ def test_bearbeta_matrix_is_managed_from_settings(local_allocation_server, chrom
                 body=json.dumps(matrix_payload, ensure_ascii=False),
             )
 
-        page.route("**/api/allokering/process-matrix", handle_process_matrix)
+        page.route("**/api/allokering/process-matrix**", handle_process_matrix)
         login_admin(page, local_allocation_server)
 
         page.goto(f"{local_allocation_server}/bearbeta.html", wait_until="domcontentloaded")
@@ -497,7 +497,7 @@ def test_ytgenerering_settings_editor_is_scoped_to_area_toggle(local_allocation_
             ),
         )
         page.route(
-            "**/api/allokering/process-matrix",
+            "**/api/allokering/process-matrix**",
             lambda route: route.fulfill(
                 status=200,
                 headers={"content-type": "application/json"},
@@ -563,7 +563,7 @@ def test_staffing_settings_selects_vh_capacity_activities(local_allocation_serve
             ),
         )
         page.route(
-            "**/api/allokering/process-matrix",
+            "**/api/allokering/process-matrix**",
             lambda route: route.fulfill(
                 status=200,
                 headers={"content-type": "application/json"},
@@ -604,7 +604,7 @@ def test_staffing_settings_selects_vh_capacity_activities(local_allocation_serve
                 }
             route.fulfill(status=200, headers={"content-type": "application/json"}, body=json.dumps(body))
 
-        page.route("**/api/settings/staffing", handle_staffing_settings)
+        page.route("**/api/settings/staffing**", handle_staffing_settings)
         login_admin(page, local_allocation_server)
 
         page.goto(f"{local_allocation_server}/installningar.html", wait_until="domcontentloaded")

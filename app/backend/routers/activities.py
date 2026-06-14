@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 from ..audit import log as audit_log
 from ..business_scope import (
     assert_scoped_object,
+    business_id_from_area_focus,
     filter_query_for_business,
     get_business_by_input,
+    normalize_business_id_param,
     related_business_ids,
     resolve_write_business_id,
     scoped_get,
@@ -566,10 +568,14 @@ def _import_activity_rows(
 def list_activities(
     include_inactive: bool = False,
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Activity]:
-    q = filter_query_for_business(db.query(Activity), Activity, db, user, business_id)
+    scoped_business_id = normalize_business_id_param(business_id)
+    if scoped_business_id is None:
+        scoped_business_id = business_id_from_area_focus(db, area_focus)
+    q = filter_query_for_business(db.query(Activity), Activity, db, user, scoped_business_id)
     if not include_inactive:
         q = q.filter(Activity.is_active.is_(True))
     return q.order_by(Activity.sort_order, Activity.label).all()

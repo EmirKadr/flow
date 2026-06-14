@@ -3,6 +3,29 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SCHEDULE_SCRIPT_FILES = [
+    "state.js",
+    "ui_core.js",
+    "activity_capacity.js",
+    "loan.js",
+    "person_order.js",
+    "segments_undo.js",
+    "calculator.js",
+    "rendering.js",
+    "summary.js",
+    "editing.js",
+    "data.js",
+    "copy_modal.js",
+    "boot.js",
+]
+
+
+def read_schedule_frontend() -> str:
+    frontend = ROOT / "app" / "frontend"
+    schedule_dir = frontend / "js" / "schedule"
+    parts = [(schedule_dir / filename).read_text(encoding="utf-8") for filename in SCHEDULE_SCRIPT_FILES]
+    parts.append((frontend / "js" / "schedule.js").read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def _function_body(source: str, name: str) -> str:
@@ -119,7 +142,7 @@ def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
 
 def test_planning_views_drag_person_names_to_persist_sort_order():
     frontend = ROOT / "app" / "frontend"
-    schedule_js = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    schedule_js = read_schedule_frontend()
     overview_js = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 

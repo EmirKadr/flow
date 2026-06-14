@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
-from ..business_scope import visible_business_id
+from ..business_scope import business_id_from_area_focus, normalize_business_id_param, visible_business_id
 from ..deps import get_current_user, get_db, require_view_access
 from ..models import User
 from ..schemas import (
@@ -62,6 +62,21 @@ def _staffing_settings_out(db: Session, business_id: int | None) -> StaffingSett
         max_history_hours=STAFFING_HISTORY_HOURS_MAX,
         activity_capacity_activity_ids=get_staffing_activity_capacity_activity_ids(db, business_id=business_id),
     )
+
+
+def _scoped_settings_business_id(
+    db: Session,
+    user: User,
+    business_id: int | None,
+    area_focus: str | None,
+) -> int | None:
+    business_id = normalize_business_id_param(business_id)
+    if business_id is not None:
+        return visible_business_id(db, user, business_id)
+    focus_business_id = business_id_from_area_focus(db, area_focus)
+    if focus_business_id is not None:
+        return visible_business_id(db, user, focus_business_id)
+    return visible_business_id(db, user, business_id)
 
 
 def _audit_setting_change(
@@ -141,10 +156,11 @@ def _clean_role_view_access(payload: RoleViewAccessUpdate) -> dict[str, dict[str
 @router.get("", response_model=AppSettingsOut)
 def get_app_settings(
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("appSettings", "view")),
 ) -> AppSettingsOut:
-    scoped_business_id = visible_business_id(db, user, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, user, business_id, area_focus)
     return _settings_out(db, scoped_business_id)
 
 
@@ -154,8 +170,9 @@ def update_app_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("appSettings", "edit")),
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
 ) -> AppSettingsOut:
-    scoped_business_id = visible_business_id(db, admin, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, admin, business_id, area_focus)
     before = _settings_out(db, scoped_business_id).model_dump()
     set_lock_foreign_schedule_cells(
         db,
@@ -180,10 +197,11 @@ def update_app_settings(
 @router.get("/staffing", response_model=StaffingSettingsOut)
 def get_staffing_settings(
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("staffingSettings", "view")),
 ) -> StaffingSettingsOut:
-    scoped_business_id = visible_business_id(db, user, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, user, business_id, area_focus)
     return _staffing_settings_out(db, scoped_business_id)
 
 
@@ -193,8 +211,9 @@ def update_staffing_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("staffingSettings", "edit")),
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
 ) -> StaffingSettingsOut:
-    scoped_business_id = visible_business_id(db, admin, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, admin, business_id, area_focus)
     before = _staffing_settings_out(db, scoped_business_id).model_dump()
     set_staffing_history_hours(
         db,
@@ -226,10 +245,11 @@ def update_staffing_settings(
 @router.get("/sidebar", response_model=SidebarLayoutOut)
 def get_sidebar_settings(
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> SidebarLayoutOut:
-    scoped_business_id = visible_business_id(db, user, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, user, business_id, area_focus)
     return _sidebar_layout_out(db, scoped_business_id)
 
 
@@ -239,8 +259,9 @@ def update_sidebar_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("sidebarLayout", "edit")),
     business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
 ) -> SidebarLayoutOut:
-    scoped_business_id = visible_business_id(db, admin, business_id)
+    scoped_business_id = _scoped_settings_business_id(db, admin, business_id, area_focus)
     before = {"items": get_sidebar_layout(db, business_id=scoped_business_id)}
     set_sidebar_layout(db, _clean_sidebar_layout(payload), user_id=admin.id, business_id=scoped_business_id)
     after = {"items": get_sidebar_layout(db, business_id=scoped_business_id)}

@@ -84,7 +84,11 @@ async function loadAllocationProcessMatrix() {
   allocationState.processMatrixLoading = true;
   allocationState.processMatrixError = "";
   try {
-    const data = await allocationJson(`${ALLOCATION_API}/process-matrix`);
+    const query = allocationScopedQuery({
+      fallbackToUser: allocationState.page === "settings",
+      includeAreaFocus: true,
+    });
+    const data = await allocationJson(`${ALLOCATION_API}/process-matrix${query}`);
     allocationState.processMatrix = normalizeAllocationProcessMatrix(data);
     cacheAllocationBootData();
   } catch (error) {

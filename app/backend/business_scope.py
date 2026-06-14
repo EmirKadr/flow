@@ -52,6 +52,39 @@ def default_business(db: Session) -> Business | None:
         return None
 
 
+def business_id_from_area_focus(db: Session, area_focus: object) -> int | None:
+    focus = str(area_focus or "").strip().upper()
+    if not focus or focus == "ALLT":
+        return None
+
+    if focus.startswith("AREA:"):
+        area_id_match = focus.removeprefix("AREA:")
+        if area_id_match.isdigit():
+            area = db.get(Area, int(area_id_match))
+            if area is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Omrade hittades inte")
+            return getattr(area, "business_id", None)
+
+    try:
+        area = (
+            db.query(Area)
+            .filter(func.upper(Area.code) == focus)
+            .filter(Area.is_active.is_(True))
+            .order_by(Area.sort_order.asc(), Area.id.asc())
+            .first()
+        )
+        if area is not None:
+            return getattr(area, "business_id", None)
+    except Exception:
+        pass
+
+    try:
+        business = get_business_by_code(db, focus)
+        return getattr(business, "id", None) if business is not None else None
+    except Exception:
+        return None
+
+
 def ensure_seed_businesses(db: Session) -> dict[str, Business]:
     specs = [
         {"code": DEFAULT_BUSINESS_CODE, "name": DEFAULT_BUSINESS_NAME, "sort_order": 1},
@@ -79,6 +112,17 @@ def user_business_id(db: Session, user: User) -> int | None:
     return business.id if business is not None else None
 
 
+def normalize_business_id_param(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else None
+
+
 def visible_business_id(
     db: Session,
     user: User,
@@ -86,12 +130,13 @@ def visible_business_id(
     *,
     require_for_super_user: bool = False,
 ) -> int | None:
-    if requested_business_id is not None and not isinstance(requested_business_id, int):
-        requested_business_id = None
+    requested_business_id = normalize_business_id_param(requested_business_id)
     if not hasattr(user, "role"):
         return requested_business_id
     if is_super_user(user):
         if requested_business_id is not None:
+            if not hasattr(db, "get"):
+                return requested_business_id
             if not db.get(Business, requested_business_id):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Verksamhet hittades inte")
             return requested_business_id

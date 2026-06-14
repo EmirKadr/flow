@@ -42,16 +42,26 @@ function renderAllocationUnavailable(message) {
 function handleAllocationAreaFocusChanged() {
   const root = document.getElementById("allocationRoot");
   if (!root || !allocationState.user || allocationState.busyId) return;
+  window.api?.clearGetCache?.((key) => {
+    const text = String(key || "");
+    return text.includes("/api/allokering/process-matrix")
+      || text.includes("/api/allokering/ytgenerering-map-layout")
+      || text.includes("/api/settings/staffing")
+      || text.includes("/api/activities");
+  });
   if (allocationState.page === "settings") {
+    resetAllocationBusinessScopedState({ includeStaffing: true });
     renderAllocationPage();
     return;
   }
   if (allocationState.page !== "process") return;
+  resetAllocationBusinessScopedState();
   allocationState.values = {};
   allocationState.status = "";
   allocationState.result = null;
   restoreAllocationWorkState();
   renderAllocationPage();
+  void loadAllocationProcessMatrix().then(() => renderAllocationPage());
 }
 
 async function initAllocationPage() {

@@ -402,6 +402,7 @@ function cacheAllocationBootData() {
     localStorage.setItem(ALLOCATION_BOOT_CACHE_KEY, JSON.stringify({
       version: 1,
       at: Date.now(),
+      scopeKey: allocationBootScopeKey(),
       flows: allocationState.flows || [],
       coredata: allocationState.coredata || {},
       processMatrix: allocationState.processMatrix || null,
@@ -412,6 +413,7 @@ function cacheAllocationBootData() {
 function restoreAllocationBootData() {
   const boot = readAllocationBootCache();
   if (!boot) return false;
+  if (boot.scopeKey !== allocationBootScopeKey()) return false;
   if (Array.isArray(boot.flows)) {
     allocationState.flows = boot.flows;
     allocationState.visibleFlows = allocationState.flows.filter((flow) => !ALLOCATION_HIDDEN_FLOW_IDS.has(flow.id));
@@ -460,10 +462,72 @@ function allocationProcessAreaCode() {
   return String(window.areaFocusCode?.() || "").trim().toUpperCase();
 }
 
+function allocationRawAreaFocus() {
+  return String(window.readAreaFocus?.() || document.getElementById("area-focus-toggle")?.dataset?.value || "").trim().toUpperCase();
+}
+
+function allocationPositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function allocationFocusedBusinessId() {
+  return allocationPositiveInteger(window.areaFocusBusinessId?.());
+}
+
+function allocationUserBusinessId() {
+  return allocationPositiveInteger(allocationState.user?.business_id);
+}
+
+function allocationSettingsBusinessId() {
+  return allocationFocusedBusinessId() || allocationUserBusinessId();
+}
+
+function allocationScopedQuery(options = {}) {
+  const params = new URLSearchParams();
+  const focus = allocationRawAreaFocus();
+  const focusedBusinessId = allocationFocusedBusinessId();
+  const businessId = focusedBusinessId
+    || (options.fallbackToUser && (!focus || focus === "ALLT") ? allocationUserBusinessId() : null);
+  if (businessId) params.set("business_id", String(businessId));
+  if (options.includeAreaFocus && focus) params.set("area_focus", focus);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+function allocationScopedUrl(path, options = {}) {
+  return `${path}${allocationScopedQuery(options)}`;
+}
+
+function allocationBootScopeKey() {
+  const focus = allocationRawAreaFocus() || "ALLT";
+  const businessId = allocationFocusedBusinessId();
+  if (businessId) return `business:${businessId}`;
+  if (allocationState.page === "settings" && (!focus || focus === "ALLT")) {
+    const settingsBusinessId = allocationSettingsBusinessId();
+    if (settingsBusinessId) return `business:${settingsBusinessId}`;
+  }
+  return `focus:${focus}`;
+}
+
+function resetAllocationBusinessScopedState(options = {}) {
+  allocationState.processMatrix = null;
+  allocationState.processMatrixError = "";
+  allocationState.processMatrixLoading = false;
+  if (options.includeStaffing) {
+    allocationState.staffingSettings = null;
+    allocationState.staffingSettingsError = "";
+    allocationState.staffingSettingsLoading = false;
+    allocationState.staffingSettingsSaving = false;
+    allocationState.staffingActivities = [];
+    allocationState.staffingActivitiesLoaded = false;
+    allocationState.staffingActivitiesLoading = false;
+    allocationState.staffingActivitiesError = "";
+  }
+}
+
 function allocationProcessToggleCode() {
-  const focus = String(
-    window.readAreaFocus?.() || document.getElementById("area-focus-toggle")?.dataset?.value || "",
-  ).trim().toUpperCase();
+  const focus = allocationRawAreaFocus();
   if (focus === "ALLT") return "ALLT";
   const focusCode = allocationProcessAreaCode();
   if (focusCode) return focusCode;

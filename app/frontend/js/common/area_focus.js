@@ -32,6 +32,7 @@ function buildAreaFocusOptions(areas = [], user = null) {
     title: String(area?.name || area?.code || "").trim(),
     code: String(area?.code || "").trim().toUpperCase(),
     areaId: Number(area?.id),
+    businessId: Number.isInteger(Number(area?.business_id)) ? Number(area.business_id) : null,
   })).filter((option) => option.value && option.label);
   if (user?.is_super_user || hasAllAreasMarker(activeAreas)) {
     options.push({ ...AREA_FOCUS_ALL_OPTION });
@@ -164,6 +165,13 @@ function preferredAreaIdFromFocus(areas) {
 
 function areaFocusAreaId(areas) {
   return preferredAreaIdFromFocus(areas);
+}
+
+function areaFocusBusinessId(value = readAreaFocus()) {
+  const focus = normalizeAreaFocus(value);
+  if (!focus || focus === "ALLT") return null;
+  const businessId = Number(areaFocusOption(focus)?.businessId);
+  return Number.isInteger(businessId) && businessId > 0 ? businessId : null;
 }
 
 function areaFocusName(areas, value = readAreaFocus()) {

@@ -5,14 +5,22 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import audit
 from .. import allocation_bridge as bridge
-from ..business_scope import DEFAULT_BUSINESS_CODE, assert_user_can_access_business, get_business_by_code, normalize_business_code, user_business_id
+from ..business_scope import (
+    DEFAULT_BUSINESS_CODE,
+    assert_user_can_access_business,
+    business_id_from_area_focus,
+    normalize_business_id_param,
+    normalize_business_code,
+    user_business_id,
+    visible_business_id,
+)
 from ..coredata_service import CoreDataError, find_coredata_file
 from ..deps import get_db, require_allocation_tools_user, require_any_view_access, require_view_access
 from ..models import AllocationUserFilterProfile, Area, Business, User
@@ -293,20 +301,28 @@ def _with_api_source_metadata(flow: dict) -> dict:
     return result
 
 
-def _stored_process_matrix(db: Session | object, *, flows: list[dict] | None = None) -> dict[str, dict]:
+def _stored_process_matrix(
+    db: Session | object,
+    *,
+    flows: list[dict] | None = None,
+    business_id: int | None = None,
+) -> dict[str, dict]:
     try:
-        stored = get_json_setting(db, ALLOCATION_PROCESS_MATRIX_KEY, default={})  # type: ignore[arg-type]
+        stored = get_json_setting(db, ALLOCATION_PROCESS_MATRIX_KEY, default={}, business_id=business_id)  # type: ignore[arg-type]
     except Exception:
         stored = {}
     return bridge.normalize_process_matrix(stored, flows=flows)
 
 
-def _process_matrix_area_options_for_user(db: Session, user: User) -> list[dict[str, object]]:
+def _process_matrix_area_options_for_user(
+    db: Session,
+    user: User,
+    business_id: int | None = None,
+) -> list[dict[str, object]]:
     query = db.query(Area).filter(Area.is_active.is_(True))
-    if not is_super_user(user):
-        business_id = user_business_id(db, user)
-        if business_id is not None:
-            query = query.filter(Area.business_id == business_id)
+    scoped_business_id = visible_business_id(db, user, business_id)
+    if scoped_business_id is not None:
+        query = query.filter(Area.business_id == scoped_business_id)
     areas = (
         query.outerjoin(Business, Area.business_id == Business.id)
         .order_by(Business.sort_order.asc(), Area.sort_order.asc(), Area.name.asc(), Area.id.asc())
@@ -346,19 +362,50 @@ def _merge_process_matrix_update(
     return bridge.normalize_process_matrix(merged, flows=flows)
 
 
-def _process_matrix_response(db: Session, user: User) -> dict:
+def _process_matrix_business_id(
+    db: Session,
+    user: User,
+    *,
+    business_id: int | None = None,
+    area_focus: str | None = None,
+) -> int | None:
+    business_id = normalize_business_id_param(business_id)
+    if business_id is not None:
+        return visible_business_id(db, user, business_id)
+    focus_business_id = business_id_from_area_focus(db, area_focus)
+    if focus_business_id is not None:
+        return visible_business_id(db, user, focus_business_id)
+    return visible_business_id(db, user, business_id)
+
+
+def _process_matrix_response(
+    db: Session,
+    user: User,
+    *,
+    business_id: int | None = None,
+    area_focus: str | None = None,
+) -> dict:
     flows = _allocation_process_matrix_flows()
-    matrix = _stored_process_matrix(db, flows=flows)
-    area_options = _process_matrix_area_options_for_user(db, user)
+    scoped_business_id = _process_matrix_business_id(db, user, business_id=business_id, area_focus=area_focus)
+    matrix = _stored_process_matrix(db, flows=flows, business_id=scoped_business_id)
+    area_options = _process_matrix_area_options_for_user(db, user, business_id=scoped_business_id)
     return bridge.process_matrix_public_payload(matrix, flows=flows, area_options=area_options)
 
 
-def _allocation_settings_business_id(db: Session, user: User, area_focus: str | None = None) -> int | None:
-    business_id = _business_id_from_area_focus(db, user, area_focus)
-    if business_id is None:
-        business_id = user_business_id(db, user)
-    assert_user_can_access_business(db, user, business_id)
-    return business_id
+def _allocation_settings_business_id(
+    db: Session,
+    user: User,
+    area_focus: str | None = None,
+    business_id: int | None = None,
+) -> int | None:
+    business_id = normalize_business_id_param(business_id)
+    if business_id is not None:
+        return visible_business_id(db, user, business_id)
+    scoped_business_id = _business_id_from_area_focus(db, user, area_focus)
+    if scoped_business_id is None:
+        scoped_business_id = user_business_id(db, user)
+    assert_user_can_access_business(db, user, scoped_business_id)
+    return scoped_business_id
 
 
 def _stored_ytgenerering_map_layout(db: Session, *, business_id: int | None = None) -> dict[str, object]:
@@ -380,9 +427,22 @@ def _ytgenerering_map_layout_response(db: Session, user: User, *, business_id: i
     }
 
 
-def _ytgenerering_location_options(db: Session, user: User, *, area_focus: str | None = None) -> list[dict[str, object]]:
+def _ytgenerering_location_options(
+    db: Session,
+    user: User,
+    *,
+    area_focus: str | None = None,
+    business_id: int | None = None,
+) -> list[dict[str, object]]:
     try:
-        business_code = _allocation_business_code(db, user, area_focus=area_focus)
+        business_code = None
+        if business_id is not None:
+            try:
+                business_code = _business_code_for_id(db, user, business_id)
+            except Exception:
+                business_code = None
+        if not business_code:
+            business_code = _allocation_business_code(db, user, area_focus=area_focus)
         location_path = find_coredata_file("location", business_code=business_code, db=db)
         return bridge.ytgenerering_location_option_rows(location_path)
     except Exception:
@@ -395,11 +455,12 @@ def _ytgenerering_map_layout_with_options(
     user: User,
     *,
     area_focus: str | None = None,
+    business_id: int | None = None,
 ) -> dict[str, object]:
-    business_id = _allocation_settings_business_id(db, user, area_focus)
+    business_id = _allocation_settings_business_id(db, user, area_focus, business_id)
     return {
         **_ytgenerering_map_layout_response(db, user, business_id=business_id),
-        "available_locations": _ytgenerering_location_options(db, user, area_focus=area_focus),
+        "available_locations": _ytgenerering_location_options(db, user, area_focus=area_focus, business_id=business_id),
     }
 
 
@@ -516,37 +577,7 @@ def _business_code_for_id(db: Session, user: User, business_id: int | None) -> s
 
 
 def _business_id_from_area_focus(db: Session, user: User, area_focus: str | None) -> int | None:
-    focus = bridge.normalize_process_area_focus(area_focus)
-    if not focus or focus == "ALLT":
-        return None
-
-    area_id_match = focus.removeprefix("AREA:")
-    if area_id_match.isdigit() and focus.startswith("AREA:"):
-        area = db.get(Area, int(area_id_match))
-        if area is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Omrade hittades inte")
-        return getattr(area, "business_id", None)
-
-    try:
-        area = (
-            db.query(Area)
-            .filter(func.upper(Area.code) == focus)
-            .filter(Area.is_active.is_(True))
-            .order_by(Area.sort_order.asc(), Area.id.asc())
-            .first()
-        )
-        if area is not None:
-            return getattr(area, "business_id", None)
-    except Exception:
-        pass
-
-    try:
-        business = get_business_by_code(db, focus)
-        if business is not None:
-            return getattr(business, "id", None)
-    except Exception:
-        pass
-    return None
+    return business_id_from_area_focus(db, bridge.normalize_process_area_focus(area_focus))
 
 
 def _allocation_business_code(db: Session, user: User, area_focus: str | None = None) -> str:
@@ -662,21 +693,26 @@ def list_pool(
 
 @router.get("/process-matrix")
 def get_process_matrix(
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_any_view_access(("allocationProcess", "allocationProcessMatrix"), "view")),
 ) -> dict:
-    return _process_matrix_response(db, user)
+    return _process_matrix_response(db, user, business_id=business_id, area_focus=area_focus)
 
 
 @router.put("/process-matrix")
 def update_process_matrix(
     payload: AllocationProcessMatrixUpdate,
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("allocationProcessMatrix", "edit")),
 ) -> dict:
     flows = _allocation_process_matrix_flows()
-    area_options = _process_matrix_area_options_for_user(db, admin)
-    current_matrix = _stored_process_matrix(db, flows=flows)
+    scoped_business_id = _process_matrix_business_id(db, admin, business_id=business_id, area_focus=area_focus)
+    area_options = _process_matrix_area_options_for_user(db, admin, business_id=scoped_business_id)
+    current_matrix = _stored_process_matrix(db, flows=flows, business_id=scoped_business_id)
     before = bridge.process_matrix_public_payload(current_matrix, flows=flows, area_options=area_options)
     next_matrix = _merge_process_matrix_update(
         current_matrix,
@@ -690,6 +726,7 @@ def update_process_matrix(
         ALLOCATION_PROCESS_MATRIX_KEY,
         bridge.process_matrix_storage_payload(next_matrix),
         user_id=getattr(admin, "id", None),
+        business_id=scoped_business_id,
     )
     if before.get("matrix") != after.get("matrix"):
         audit.log(
@@ -700,10 +737,10 @@ def update_process_matrix(
             old_value={"key": ALLOCATION_PROCESS_MATRIX_KEY, "value": before.get("matrix")},
             new_value={"key": ALLOCATION_PROCESS_MATRIX_KEY, "value": after.get("matrix")},
             user_id=getattr(admin, "id", None),
-            business_id=None,
+            business_id=scoped_business_id,
         )
     db.commit()
-    return _process_matrix_response(db, admin)
+    return _process_matrix_response(db, admin, business_id=scoped_business_id)
 
 
 @router.get("/filter-profile")
@@ -769,20 +806,27 @@ def import_filter_profile(
 @router.get("/ytgenerering-map-layout")
 def get_ytgenerering_map_layout(
     area_focus: str | None = None,
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("allocationSettings", "view")),
 ) -> dict:
-    return _ytgenerering_map_layout_with_options(db, user, area_focus=bridge.normalize_process_area_focus(area_focus or ""))
+    return _ytgenerering_map_layout_with_options(
+        db,
+        user,
+        area_focus=bridge.normalize_process_area_focus(area_focus or ""),
+        business_id=business_id,
+    )
 
 
 @router.put("/ytgenerering-map-layout")
 def update_ytgenerering_map_layout(
     payload: YtgenereringMapLayoutUpdate,
     area_focus: str | None = None,
+    business_id: int | None = Query(None),
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("allocationSettings", "edit")),
 ) -> dict:
-    business_id = _allocation_settings_business_id(db, admin, area_focus)
+    business_id = _allocation_settings_business_id(db, admin, area_focus, business_id)
     before = _stored_ytgenerering_map_layout(db, business_id=business_id)
     rows = bridge.normalize_ytgenerering_map_location_rows(payload.locations)
     if not rows:
@@ -807,7 +851,12 @@ def update_ytgenerering_map_layout(
             business_id=business_id,
         )
     db.commit()
-    return _ytgenerering_map_layout_with_options(db, admin, area_focus=bridge.normalize_process_area_focus(area_focus or ""))
+    return _ytgenerering_map_layout_with_options(
+        db,
+        admin,
+        area_focus=bridge.normalize_process_area_focus(area_focus or ""),
+        business_id=business_id,
+    )
 
 
 @router.post("/detect")

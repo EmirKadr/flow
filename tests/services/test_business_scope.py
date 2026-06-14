@@ -15,10 +15,10 @@ from app.backend.routers.businesses import create_business
 from app.backend.routers.overview import get_overview_revision
 from app.backend.routers.persons import create_person, get_person, list_persons, update_person
 from app.backend.routers.schedule import bulk_update_cells, get_schedule, get_schedule_revision, get_summary, update_cell
-from app.backend.routers.settings import get_app_settings, update_app_settings
+from app.backend.routers.settings import get_app_settings, get_staffing_settings, update_app_settings, update_staffing_settings
 from app.backend.routers.users import create_user, list_users, update_user
 from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
-from app.backend.schemas import AppSettingsUpdate
+from app.backend.schemas import AppSettingsUpdate, StaffingSettingsUpdate
 
 
 def make_session():
@@ -112,6 +112,35 @@ def test_non_super_user_lists_only_own_business_persons():
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_settings_area_focus_scopes_staffing_settings_to_business(business_session):
+    session, data = business_session
+    r3_area = session.query(Area).filter_by(business_id=data["r3"].id, code="R3").one()
+
+    updated = update_staffing_settings(
+        StaffingSettingsUpdate(history_hours=18, activity_capacity_activity_ids=[data["r3_activity"].id]),
+        db=session,
+        admin=data["super_user"],
+        area_focus=f"AREA:{r3_area.id}",
+    )
+
+    assert updated.history_hours == 18.0
+    assert updated.activity_capacity_activity_ids == [data["r3_activity"].id]
+    r3_settings = get_staffing_settings(
+        business_id=data["r3"].id,
+        db=session,
+        user=data["super_user"],
+    )
+    stigamo_settings = get_staffing_settings(
+        business_id=data["stigamo"].id,
+        db=session,
+        user=data["super_user"],
+    )
+    assert r3_settings.history_hours == 18.0
+    assert r3_settings.activity_capacity_activity_ids == [data["r3_activity"].id]
+    assert stigamo_settings.history_hours == 40.0
+    assert stigamo_settings.activity_capacity_activity_ids is None
 
 
 def test_schedule_update_rejects_cross_business_activity():
