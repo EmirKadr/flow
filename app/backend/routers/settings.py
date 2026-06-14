@@ -32,7 +32,7 @@ from ..settings_service import (
     set_staffing_activity_capacity_activity_ids,
     set_staffing_history_hours,
 )
-from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, normalize_role_view_id
+from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, feature_registry_payload, normalize_role_view_id
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -264,6 +264,13 @@ def get_role_access_settings(
     user: User = Depends(get_current_user),
 ) -> RoleViewAccessOut:
     return _role_view_access_out(db, None)
+
+
+@router.get("/feature-registry")
+def get_feature_registry(
+    user: User = Depends(get_current_user),
+) -> dict:
+    return feature_registry_payload()
 
 
 @router.put("/role-access", response_model=RoleViewAccessOut)

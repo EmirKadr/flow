@@ -80,6 +80,8 @@ const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";
 const WAIT_METRIC_REPORT_PATH = "/api/healthcheck/wait-metrics";
 const INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions";
 const PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
+const TRACEPARENT_HEADER = "traceparent";
+const TRACE_RESPONSE_HEADER = "x-flow-trace-id";
 const API_PREFETCH_DEFAULT_TTL_MS = 45 * 1000;
 const API_GET_CACHE_STORAGE_PREFIX = "flow-api-get-cache-v1:";
 const API_NETWORK_ERROR_REPORT_DEDUPE_MS = 60 * 1000;
@@ -87,6 +89,47 @@ const apiGetCache = new Map();
 const apiGetInFlight = new Map();
 const apiNetworkErrorReportLastAt = new Map();
 let apiGetCacheGeneration = 0;
+
+function randomTraceHex(bytes) {
+  const array = new Uint8Array(bytes);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(array);
+  } else {
+    for (let index = 0; index < bytes; index += 1) {
+      array[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(array, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function createTraceParent() {
+  let traceId = randomTraceHex(16);
+  if (/^0+$/.test(traceId)) traceId = `1${traceId.slice(1)}`;
+  let spanId = randomTraceHex(8);
+  if (/^0+$/.test(spanId)) spanId = `1${spanId.slice(1)}`;
+  return `00-${traceId}-${spanId}-01`;
+}
+
+function traceIdFromTraceParent(value) {
+  const match = String(value || "").toLowerCase().match(/^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/);
+  return match && !/^0+$/.test(match[1]) ? match[1] : "";
+}
+
+function headerValue(headers, name) {
+  const target = String(name || "").toLowerCase();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (String(key).toLowerCase() === target) return value;
+  }
+  return "";
+}
+
+function withTraceHeaders(headers, traceparent) {
+  const next = { ...(headers || {}) };
+  if (!headerValue(next, TRACEPARENT_HEADER)) next[TRACEPARENT_HEADER] = traceparent;
+  const traceId = traceIdFromTraceParent(traceparent);
+  if (traceId && !headerValue(next, "X-Flow-Trace-Id")) next["X-Flow-Trace-Id"] = traceId;
+  return next;
+}
 
 function isAbortError(error) {
   return error?.name === "AbortError";
@@ -272,6 +315,7 @@ function reportApiWaitMetric(path, method, startedAt, status, options = {}, deta
       cache_hit: Boolean(detail.cache_hit),
       shared_in_flight: Boolean(detail.shared_in_flight),
       error_code: detail.error_code || "",
+      trace_id: detail.trace_id || "",
     },
   });
 }
@@ -288,6 +332,7 @@ function reportApiError(path, details = {}) {
     message: truncateErrorText(details.message),
     detail: errorDetailForReport(details.body, status) || truncateErrorText(details.detail),
     page_path: pathWithoutQuery(window.location?.pathname || "/"),
+    trace_id: details.trace_id || "",
   };
   if (status === 0) {
     const key = `${payload.method}|${payload.path}|${payload.error_code || "network_error"}|${payload.page_path}`;
@@ -359,6 +404,7 @@ function reportApiInteraction(path, method, status, options = {}, detail = {}) {
       cache_hit: Boolean(detail.cache_hit),
       shared_in_flight: Boolean(detail.shared_in_flight),
       source: options.telemetrySource || "foreground",
+      trace_id: detail.trace_id || "",
     },
   });
 }
@@ -509,8 +555,13 @@ async function request(path, options = {}) {
   const logOptions = { logLabel, logUserEvent, logGetUserEvent, logSuccess, logFailure };
   const telemetryOptions = { telemetryEnabled, telemetryEventType, telemetrySource };
   const interactionOptions = { ...options, logGetUserEvent, telemetryEventType, telemetrySource };
+  const requestTraceParent = options.traceparent || createTraceParent();
+  const requestTraceId = traceIdFromTraceParent(requestTraceParent);
   const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
-  const requestHeaders = isFormData ? headers : { "Content-Type": "application/json", ...headers };
+  const requestHeaders = withTraceHeaders(
+    isFormData ? headers : { "Content-Type": "application/json", ...headers },
+    requestTraceParent
+  );
   const method = String(rest.method || "GET").toUpperCase();
   const useGetCache = method === "GET" && !skipCache;
   const useSharedInFlight = useGetCache && !rest.signal;
@@ -550,22 +601,26 @@ async function request(path, options = {}) {
         status: 0,
         error_code: "network_error",
         message: err.message,
+        trace_id: requestTraceId,
       });
       reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
         status_code: 0,
         error_code: "network_error",
+        trace_id: requestTraceId,
       });
       reportApiInteraction(path, method, "error", interactionOptions, {
         status_code: 0,
         error_code: "network_error",
+        trace_id: requestTraceId,
       });
       logApiFailure(path, method, err, logOptions);
       throw err;
     }
 
+    const responseTraceId = resp.headers.get(TRACE_RESPONSE_HEADER) || requestTraceId;
     if (resp.status === 204) {
-      reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: 204 });
-      reportApiInteraction(path, method, "ok", interactionOptions, { status_code: 204 });
+      reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: 204, trace_id: responseTraceId });
+      reportApiInteraction(path, method, "ok", interactionOptions, { status_code: 204, trace_id: responseTraceId });
       logApiSuccess(path, method, null, logOptions);
       return null;
     }
@@ -574,7 +629,7 @@ async function request(path, options = {}) {
     const body = ct.includes("application/json") ? await resp.json() : await resp.text();
 
     if (resp.status === 401 && !isAuthPath(path)) {
-      reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401 });
+      reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401, trace_id: responseTraceId });
       if (!window.location.pathname.endsWith("/login.html")) {
         window.location.href = "/login.html";
       }
@@ -582,7 +637,7 @@ async function request(path, options = {}) {
     }
 
     if (resp.status === 403 && body?.detail === "password_setup_required" && !isAuthPath(path)) {
-      reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 403 });
+      reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 403, trace_id: responseTraceId });
       if (!window.location.pathname.endsWith("/set-password.html")) {
         window.location.href = "/set-password.html";
       }
@@ -598,14 +653,17 @@ async function request(path, options = {}) {
         status: resp.status,
         body,
         message: err.message,
+        trace_id: responseTraceId,
       });
       reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
         status_code: resp.status,
         error_code: errorCodeForReport(body, resp.status),
+        trace_id: responseTraceId,
       });
       reportApiInteraction(path, method, "error", interactionOptions, {
         status_code: resp.status,
         error_code: errorCodeForReport(body, resp.status),
+        trace_id: responseTraceId,
       });
       logApiFailure(path, method, err, logOptions);
       throw err;
@@ -613,8 +671,8 @@ async function request(path, options = {}) {
     if (useGetCache && cacheTtlMs && requestCacheGeneration === apiGetCacheGeneration) {
       writeApiGetCache(path, body, cacheTtlMs);
     }
-    reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
-    reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
+    reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status, trace_id: responseTraceId });
+    reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status, trace_id: responseTraceId });
     logApiSuccess(path, method, body, logOptions);
     return body;
   };
@@ -661,9 +719,11 @@ async function downloadDirect(path, fallbackFilename = "download") {
   const requestStartedAt = apiTelemetryNow();
   const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
   const interactionOptions = { logGetUserEvent: true, telemetryEventType: "download", telemetrySource: "foreground", trackGetInteraction: true };
+  const requestTraceParent = createTraceParent();
+  const requestTraceId = traceIdFromTraceParent(requestTraceParent);
   let resp;
   try {
-    resp = await fetch(path, { method: "HEAD", credentials: "include" });
+    resp = await fetch(path, { method: "HEAD", credentials: "include", headers: withTraceHeaders({}, requestTraceParent) });
   } catch (error) {
     if (isAbortError(error)) throw error;
     const err = connectionError(path, error);
@@ -672,21 +732,25 @@ async function downloadDirect(path, fallbackFilename = "download") {
       status: 0,
       error_code: "network_error",
       message: err.message,
+      trace_id: requestTraceId,
     });
     reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
       status_code: 0,
       error_code: "network_error",
+      trace_id: requestTraceId,
     });
     reportApiInteraction(path, method, "error", interactionOptions, {
       status_code: 0,
       error_code: "network_error",
+      trace_id: requestTraceId,
     });
     logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
   }
 
+  const responseTraceId = resp.headers.get(TRACE_RESPONSE_HEADER) || requestTraceId;
   if (resp.status === 401 && !isAuthPath(path)) {
-    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401 });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401, trace_id: responseTraceId });
     if (!window.location.pathname.endsWith("/login.html")) {
       window.location.href = "/login.html";
     }
@@ -702,14 +766,17 @@ async function downloadDirect(path, fallbackFilename = "download") {
       status: resp.status,
       body: isHtmlContentType(ct) ? "<html>" : null,
       message: err.message,
+      trace_id: responseTraceId,
     });
     reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
       status_code: resp.status,
       error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+      trace_id: responseTraceId,
     });
     reportApiInteraction(path, method, "error", interactionOptions, {
       status_code: resp.status,
       error_code: resp.ok ? "html_response" : `HTTP ${resp.status}`,
+      trace_id: responseTraceId,
     });
     logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
@@ -717,8 +784,8 @@ async function downloadDirect(path, fallbackFilename = "download") {
 
   const filename = filenameFromContentDisposition(resp.headers.get("content-disposition")) || fallbackFilename;
   clickDownloadLink(path, filename);
-  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
-  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
+  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status, trace_id: responseTraceId });
+  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status, trace_id: responseTraceId });
   apiUserLog(`Nedladdning startad: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
   return { filename, direct: true };
 }
@@ -729,9 +796,11 @@ async function download(path, fallbackFilename = "download", options = {}) {
   const requestStartedAt = apiTelemetryNow();
   const telemetryOptions = { telemetryEventType: "download", telemetrySource: "foreground" };
   const interactionOptions = { logGetUserEvent: true, telemetryEventType: "download", telemetrySource: "foreground", trackGetInteraction: true };
+  const requestTraceParent = createTraceParent();
+  const requestTraceId = traceIdFromTraceParent(requestTraceParent);
   let resp;
   try {
-    resp = await fetch(path, { credentials: "include" });
+    resp = await fetch(path, { credentials: "include", headers: withTraceHeaders({}, requestTraceParent) });
   } catch (error) {
     if (isAbortError(error)) throw error;
     const err = connectionError(path, error);
@@ -740,21 +809,25 @@ async function download(path, fallbackFilename = "download", options = {}) {
       status: 0,
       error_code: "network_error",
       message: err.message,
+      trace_id: requestTraceId,
     });
     reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
       status_code: 0,
       error_code: "network_error",
+      trace_id: requestTraceId,
     });
     reportApiInteraction(path, method, "error", interactionOptions, {
       status_code: 0,
       error_code: "network_error",
+      trace_id: requestTraceId,
     });
     logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
   }
 
+  const responseTraceId = resp.headers.get(TRACE_RESPONSE_HEADER) || requestTraceId;
   if (resp.status === 401 && !isAuthPath(path)) {
-    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401 });
+    reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, { status_code: 401, trace_id: responseTraceId });
     if (!window.location.pathname.endsWith("/login.html")) {
       window.location.href = "/login.html";
     }
@@ -772,14 +845,17 @@ async function download(path, fallbackFilename = "download", options = {}) {
       status: resp.status,
       body,
       message: err.message,
+      trace_id: responseTraceId,
     });
     reportApiWaitMetric(path, method, requestStartedAt, "error", telemetryOptions, {
       status_code: resp.status,
       error_code: errorCodeForReport(body, resp.status),
+      trace_id: responseTraceId,
     });
     reportApiInteraction(path, method, "error", interactionOptions, {
       status_code: resp.status,
       error_code: errorCodeForReport(body, resp.status),
+      trace_id: responseTraceId,
     });
     logApiFailure(path, method, err, { logGetUserEvent: true });
     throw err;
@@ -792,8 +868,8 @@ async function download(path, fallbackFilename = "download", options = {}) {
   setTimeout(() => {
     URL.revokeObjectURL(objectUrl);
   }, 1000);
-  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status });
-  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status });
+  reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status, trace_id: responseTraceId });
+  reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status, trace_id: responseTraceId });
   apiUserLog(`Nedladdning klar: ${apiActionLabel(path, method)} (${filename})`, "success", "Klart");
   return { filename };
 }

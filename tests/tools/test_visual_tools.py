@@ -13,6 +13,73 @@ from tools import visual_smoke
 
 
 ROOT = Path(__file__).resolve().parents[2]
+COMMON_SCRIPT_FILES = [
+    "foundation.js",
+    "theme.js",
+    "area_focus.js",
+    "runtime.js",
+    "app_log.js",
+    "telemetry.js",
+    "access.js",
+    "sidebar.js",
+    "uploads.js",
+    "demo_prefetch_init.js",
+    "import_tools.js",
+    "table_sort.js",
+    "date_state.js",
+]
+ALLOCATION_SCRIPT_FILES = [
+    "state.js",
+    "files.js",
+    "api.js",
+    "uploads_view.js",
+    "results.js",
+    "process_view.js",
+    "process_matrix.js",
+    "map_settings.js",
+    "settings_view.js",
+    "split_view.js",
+    "boot.js",
+]
+SCHEDULE_SCRIPT_FILES = [
+    "state.js",
+    "ui_core.js",
+    "activity_capacity.js",
+    "loan.js",
+    "person_order.js",
+    "segments_undo.js",
+    "calculator.js",
+    "rendering.js",
+    "summary.js",
+    "editing.js",
+    "data.js",
+    "copy_modal.js",
+    "boot.js",
+]
+
+
+def read_allocation_frontend(frontend: Path | None = None) -> str:
+    frontend = frontend or ROOT / "app" / "frontend"
+    allocation_dir = frontend / "js" / "allocation"
+    parts = [(allocation_dir / filename).read_text(encoding="utf-8") for filename in ALLOCATION_SCRIPT_FILES]
+    parts.append((frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
+def read_common_frontend(frontend: Path | None = None) -> str:
+    frontend = frontend or ROOT / "app" / "frontend"
+    common_dir = frontend / "js" / "common"
+    parts = [(common_dir / filename).read_text(encoding="utf-8") for filename in COMMON_SCRIPT_FILES]
+    parts.append((frontend / "js" / "common.js").read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
+def read_schedule_frontend(frontend: Path | None = None) -> str:
+    frontend = frontend or ROOT / "app" / "frontend"
+    schedule_dir = frontend / "js" / "schedule"
+    parts = [(schedule_dir / filename).read_text(encoding="utf-8") for filename in SCHEDULE_SCRIPT_FILES]
+    parts.append((frontend / "js" / "schedule.js").read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def test_visual_smoke_covers_expected_routes():
@@ -49,7 +116,7 @@ def test_visual_smoke_covers_expected_routes():
 
 
 def test_schedule_view_uses_bemanning_label_in_visible_navigation():
-    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend()
     users = (ROOT / "app" / "frontend" / "js" / "users.js").read_text(encoding="utf-8")
     index = (ROOT / "app" / "frontend" / "index.html").read_text(encoding="utf-8")
     assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
@@ -68,8 +135,8 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     html = (ROOT / "app" / "frontend" / "historik.html").read_text(encoding="utf-8")
     analytics = (ROOT / "app" / "frontend" / "js" / "analytics.js").read_text(encoding="utf-8")
     api = (ROOT / "app" / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
-    allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
-    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    allocation = read_allocation_frontend()
+    common = read_common_frontend()
     meta_upload = (ROOT / "app" / "frontend" / "js" / "meta_upload.js").read_text(encoding="utf-8")
     desktop_bridge = (ROOT / "app" / "frontend" / "js" / "desktop_bridge.js").read_text(encoding="utf-8")
     desktop_app = (ROOT / "desktop" / "app.py").read_text(encoding="utf-8")
@@ -596,11 +663,11 @@ def test_frontend_icon_assets_are_referenced_and_present():
 
 def test_frontend_theme_toggle_is_wired_globally():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
-    allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    allocation_tools = read_allocation_frontend(frontend)
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
     uploads_html = (frontend / "uppladdningar.html").read_text(encoding="utf-8")
@@ -835,12 +902,30 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
-        assert 'src="/js/common.js?v=20260609-productivity-overview"' in html
+        assert 'src="/js/common.js?v=20260614-common-modules"' in html
+        common_script_order = [
+            "/js/common/foundation.js",
+            "/js/common/theme.js",
+            "/js/common/area_focus.js",
+            "/js/common/runtime.js",
+            "/js/common/app_log.js",
+            "/js/common/telemetry.js",
+            "/js/common/access.js",
+            "/js/common/sidebar.js",
+            "/js/common/uploads.js",
+            "/js/common/demo_prefetch_init.js",
+            "/js/common/import_tools.js",
+            "/js/common/table_sort.js",
+            "/js/common/date_state.js",
+            "/js/common.js",
+        ]
+        positions = [html.index(script) for script in common_script_order]
+        assert positions == sorted(positions)
 
 
 def test_uploads_file_actions_are_explicit_download_or_open():
     frontend = ROOT / "app" / "frontend"
-    allocation_tools = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    allocation_tools = read_allocation_frontend(frontend)
     coredata_router = (ROOT / "app" / "backend" / "routers" / "coredata.py").read_text(encoding="utf-8")
 
     assert "data-preview-file-key" not in allocation_tools
@@ -884,9 +969,9 @@ def test_data_fetch_plan_columns_are_user_editable():
 
 def test_area_focus_toggle_is_wired_to_views():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
-    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    schedule = read_schedule_frontend(frontend)
     overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
     productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
     persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
@@ -1039,7 +1124,7 @@ def test_area_focus_toggle_is_wired_to_views():
 
 def test_plain_view_tables_get_clickable_sort_headers():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert "function setupClientSortableTable" in common
@@ -1068,8 +1153,8 @@ def test_plain_view_tables_get_clickable_sort_headers():
 
 
 def test_bearbeta_area_focus_filter_contract():
-    allocation = (ROOT / "app" / "frontend" / "js" / "allocation_tools.js").read_text(encoding="utf-8")
-    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    allocation = read_allocation_frontend()
+    common = read_common_frontend()
     styles = (ROOT / "app" / "frontend" / "css" / "styles.css").read_text(encoding="utf-8")
     settings_html = (ROOT / "app" / "frontend" / "installningar.html").read_text(encoding="utf-8")
     terminology_wiki = (ROOT / "wiki" / "terminology.md").read_text(encoding="utf-8")
@@ -1208,7 +1293,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert 'menu.style.position = "absolute"' in allocation
     assert "workspace.appendChild(menu)" in allocation
     assert "document.body.appendChild(menu)" not in allocation
-    assert "allocation_tools.js?v=20260611-map-settings-zoom-limit" in settings_html
+    assert "allocation_tools.js?v=20260614-allocation-modules" in settings_html
     assert 'svg?.addEventListener("contextmenu"' in allocation
     assert "allocationNextMapLoadDirection(row.loadDirection, row)" in allocation
     assert "allocationMapLoadOriginSide(loc.loadDirection, loc)" in allocation
@@ -1319,9 +1404,9 @@ def test_bearbeta_area_focus_filter_contract():
 
 def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
-    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    schedule = read_schedule_frontend(frontend)
     overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
@@ -1377,7 +1462,7 @@ def test_presence_print_is_wired_to_both_planning_views():
     frontend = ROOT / "app" / "frontend"
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
-    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
+    schedule = read_schedule_frontend(frontend)
     overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
     presence = (frontend / "js" / "presence_print.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
@@ -1388,6 +1473,26 @@ def test_presence_print_is_wired_to_both_planning_views():
     assert overview_html.index('id="presenceBtn"') < overview_html.index('id="undoBtn"')
     assert '<script src="/js/presence_print.js"></script>' in schedule_html
     assert '<script src="/js/presence_print.js"></script>' in overview_html
+    schedule_script_order = [
+        "/js/common.js",
+        "/js/presence_print.js",
+        "/js/schedule/state.js",
+        "/js/schedule/ui_core.js",
+        "/js/schedule/activity_capacity.js",
+        "/js/schedule/loan.js",
+        "/js/schedule/person_order.js",
+        "/js/schedule/segments_undo.js",
+        "/js/schedule/calculator.js",
+        "/js/schedule/rendering.js",
+        "/js/schedule/summary.js",
+        "/js/schedule/editing.js",
+        "/js/schedule/data.js",
+        "/js/schedule/copy_modal.js",
+        "/js/schedule/boot.js",
+        "/js/schedule.js",
+    ]
+    positions = [schedule_html.index(script) for script in schedule_script_order]
+    assert positions == sorted(positions)
     assert "setupPresencePrintButton(\"presenceBtn\"" in schedule
     assert "setupPresencePrintButton(\"presenceBtn\"" in overview
     assert "function overviewPresenceSelection" in overview
@@ -1462,7 +1567,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
 
 def test_frontend_knows_bemanningsansvarig_role():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
 
     assert '{ value: "staffing_manager", label: "Bemanningsansvarig" }' in users
@@ -1482,9 +1587,9 @@ def test_frontend_only_shows_super_user_role_to_super_users():
 
 def test_frontend_keeps_lager_and_artikelplacering_out_of_flow_and_bearbeta():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
-    schedule = (frontend / "js" / "schedule.js").read_text(encoding="utf-8")
-    allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
+    schedule = read_schedule_frontend(frontend)
+    allocation = read_allocation_frontend(frontend)
 
     assert 'article_placer: {' in common
     assert 'id: "schedule"' in common
@@ -1499,7 +1604,7 @@ def test_frontend_keeps_lager_and_artikelplacering_out_of_flow_and_bearbeta():
 
 
 def test_frontend_denied_view_redirect_uses_accessible_page_not_fixed_loop():
-    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend()
 
     assert "refreshRoleViewAccessForRouting" in common
     assert "firstAccessiblePageHref" in common
@@ -1525,7 +1630,7 @@ def test_login_pages_resolve_first_authorized_view_after_auth():
 
 def test_import_views_have_templates_and_help_buttons():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
     persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
@@ -1628,7 +1733,7 @@ def test_new_user_creation_uses_single_role_select_but_edit_keeps_multiple_roles
 
 
 def test_modal_enter_key_uses_primary_dialog_action():
-    common = (ROOT / "app" / "frontend" / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend()
 
     assert "function handleModalEnterKeydown" in common
     assert 'event.key !== "Enter"' in common
@@ -1666,7 +1771,7 @@ def test_sidebar_pages_reserve_layout_before_auth_finishes():
         else:
             assert '<body class="with-sidebar">' in html, f"{html_path.name} saknar sidebar-reservering"
 
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert 'document.body.classList.add("sidebar-hydrated")' in common
@@ -1733,7 +1838,7 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     html = (frontend / "meta.html").read_text(encoding="utf-8")
     js = (frontend / "js" / "meta.js").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert '<body class="with-sidebar">' in html
@@ -1778,7 +1883,9 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert 'downloadShipmentMedia(item, "label", button)' in js
     assert "variant: kind === \"video\" ? \"playable\" : \"\"" in js
     assert "function downloadDirect" in api_js
-    assert 'fetch(path, { method: "HEAD", credentials: "include" })' in api_js
+    assert 'method: "HEAD"' in api_js
+    assert 'credentials: "include"' in api_js
+    assert "withTraceHeaders({}, requestTraceParent)" in api_js
     assert "Ladda ner" in js
     assert "Analysera" in js
     assert "shipment_number" in js
@@ -1823,13 +1930,32 @@ def test_allocation_pages_are_wired_to_shared_tool_shell():
         assert f'data-allocation-view="{view}"' in html
         assert "/js/api.js" in html
         assert "/js/common.js" in html
+        assert "/js/allocation/state.js" in html
+        assert "/js/allocation/boot.js" in html
         assert "/js/allocation_tools.js" in html
+        script_order = [
+            "/js/common.js",
+            "/js/allocation/state.js",
+            "/js/allocation/files.js",
+            "/js/allocation/api.js",
+            "/js/allocation/uploads_view.js",
+            "/js/allocation/results.js",
+            "/js/allocation/process_view.js",
+            "/js/allocation/process_matrix.js",
+            "/js/allocation/map_settings.js",
+            "/js/allocation/settings_view.js",
+            "/js/allocation/split_view.js",
+            "/js/allocation/boot.js",
+            "/js/allocation_tools.js",
+        ]
+        positions = [html.index(script) for script in script_order]
+        assert positions == sorted(positions)
 
 
 def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     frontend = ROOT / "app" / "frontend"
-    common = (frontend / "js" / "common.js").read_text(encoding="utf-8")
-    allocation = (frontend / "js" / "allocation_tools.js").read_text(encoding="utf-8")
+    common = read_common_frontend(frontend)
+    allocation = read_allocation_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     catalog = (ROOT / "warehouse_tools" / "catalog.py").read_text(encoding="utf-8")
     flows = (ROOT / "warehouse_tools" / "flows.py").read_text(encoding="utf-8")

@@ -11,8 +11,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import allocation_bridge, demo_session
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
-from .database import SessionLocal
+from .database import SessionLocal, engine
 from .models import Business
+from .observability import begin_request_trace, configure_observability, current_trace_id, end_request_trace, start_span
 from .productivity_sync import start_productivity_sync_scheduler
 from .routers import (
     activities,
@@ -41,6 +42,7 @@ from .routers import (
 
 app = FastAPI(title="flow", version="0.1.5")
 logger = logging.getLogger(__name__)
+configure_observability(app, engine=engine)
 
 app.add_middleware(
     SessionMiddleware,
@@ -49,6 +51,19 @@ app.add_middleware(
     https_only=settings.is_production,
     same_site="lax",
 )
+
+
+@app.middleware("http")
+async def trace_context_middleware(request: Request, call_next):
+    token = begin_request_trace(request.headers)
+    try:
+        response = await call_next(request)
+        trace_id = current_trace_id()
+        if trace_id:
+            response.headers["X-Flow-Trace-Id"] = trace_id
+        return response
+    finally:
+        end_request_trace(token)
 
 
 @app.middleware("http")
@@ -102,25 +117,26 @@ def public_meta_upload_page_redirect() -> RedirectResponse:
 
 
 def _sync_allocation_observations_background() -> None:
-    if not settings.ALLOCATION_OBSERVATIONS_STARTUP_SYNC:
-        return
-    delay_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS or 0))
-    spacing_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS or 0))
-    if delay_seconds:
-        time.sleep(delay_seconds)
-    try:
-        engine_module, _flows_module = allocation_bridge.require_available()
-    except Exception:
-        logger.warning("Allocation observations startup sync could not load warehouse tools.", exc_info=True)
-        return
-
-    for index, business_code in enumerate(_allocation_observation_business_codes()):
-        if index and spacing_seconds:
-            time.sleep(spacing_seconds)
+    with start_span("background.allocation_observations_sync"):
+        if not settings.ALLOCATION_OBSERVATIONS_STARTUP_SYNC:
+            return
+        delay_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS or 0))
+        spacing_seconds = max(0.0, float(settings.ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS or 0))
+        if delay_seconds:
+            time.sleep(delay_seconds)
         try:
-            engine_module.fetch_observations_from_github(business_code=business_code)
+            engine_module, _flows_module = allocation_bridge.require_available()
         except Exception:
-            logger.warning("Allocation observations startup sync failed for %s.", business_code, exc_info=True)
+            logger.warning("Allocation observations startup sync could not load warehouse tools.", exc_info=True)
+            return
+
+        for index, business_code in enumerate(_allocation_observation_business_codes()):
+            if index and spacing_seconds:
+                time.sleep(spacing_seconds)
+            try:
+                engine_module.fetch_observations_from_github(business_code=business_code)
+            except Exception:
+                logger.warning("Allocation observations startup sync failed for %s.", business_code, exc_info=True)
 
 
 def _allocation_observation_business_codes() -> list[str]:
@@ -167,7 +183,8 @@ def sync_allocation_observations_on_startup() -> None:
 
 @app.on_event("startup")
 def sync_productivity_snapshots_on_startup() -> None:
-    start_productivity_sync_scheduler()
+    with start_span("background.productivity_sync_startup"):
+        start_productivity_sync_scheduler()
 
 
 @app.on_event("startup")
@@ -179,12 +196,13 @@ def cleanup_stale_demo_sessions_on_startup() -> None:
 
 
 def _purge_expired_meta_media_background() -> None:
-    try:
-        from .meta_analysis_service import purge_expired_meta_media
+    with start_span("background.meta_media_retention_purge"):
+        try:
+            from .meta_analysis_service import purge_expired_meta_media
 
-        purge_expired_meta_media()
-    except Exception:
-        logger.warning("Meta media retention purge failed at startup.", exc_info=True)
+            purge_expired_meta_media()
+        except Exception:
+            logger.warning("Meta media retention purge failed at startup.", exc_info=True)
 
 
 @app.on_event("startup")

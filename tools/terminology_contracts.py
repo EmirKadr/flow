@@ -61,6 +61,7 @@ TERMINOLOGY_RULES: tuple[TerminologyRule, ...] = (
             "app/backend/routers/activities.py",
             "app/backend/routers/persons.py",
             "app/backend/user_access.py",
+            "app/frontend/js/common/foundation.js",
             "app/frontend/js/common.js",
             "app/frontend/stallen.html",
             "tools/terminology_contracts.py",

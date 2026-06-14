@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .models import AuditLog, User
+from .observability import attach_trace_context
 
 
 def log(
@@ -31,7 +32,7 @@ def log(
             entity_id=entity_id,
             action=action,
             old_value=old_value,
-            new_value=new_value,
+            new_value=attach_trace_context(new_value),
             user_id=user_id,
         )
     )

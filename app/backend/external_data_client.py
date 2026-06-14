@@ -12,6 +12,8 @@ from urllib.parse import urljoin
 
 import requests
 
+from .observability import add_span_attributes, start_span
+
 
 class ExternalDataClientError(Exception):
     """Raised when the external data request or response cannot be handled."""
@@ -50,24 +52,36 @@ class ExternalDataClient:
         filters: Optional[Sequence[Mapping[str, Any]]] = None,
         identifiers: Optional[Union[Sequence[Mapping[str, Any]], Mapping[str, Any]]] = None,
     ) -> list[dict[str, Any]]:
-        payload = {
-            "userFilter": list(filters) if filters else None,
-            "identifiers": self._identifiers_to_payload(identifiers),
-        }
-        path = self._view_data_path(view)
+        with start_span(
+            "external.data_source.fetch",
+            {
+                "external.provider": "data_source",
+                "external.filter_count": len(filters or []),
+                "external.has_identifiers": identifiers is not None,
+            },
+        ):
+            payload = {
+                "userFilter": list(filters) if filters else None,
+                "identifiers": self._identifiers_to_payload(identifiers),
+            }
+            path = self._view_data_path(view)
 
-        try:
-            response = self.session.post(
-                self._url(path),
-                json=payload,
-                timeout=self.timeout,
-                verify=self.verify,
-            )
-        except requests.RequestException as exc:
-            raise ExternalDataClientError(
-                "Extern datakälla kunde inte nås. Kontrollera API-URL, nätåtkomst och datakällans status."
-            ) from exc
-        return self._rows(response)
+            try:
+                response = self.session.post(
+                    self._url(path),
+                    json=payload,
+                    timeout=self.timeout,
+                    verify=self.verify,
+                )
+                add_span_attributes({"external.http_status_code": response.status_code})
+            except requests.RequestException as exc:
+                add_span_attributes({"external.error_type": type(exc).__name__})
+                raise ExternalDataClientError(
+                    "Extern datakälla kunde inte nås. Kontrollera API-URL, nätåtkomst och datakällans status."
+                ) from exc
+            rows = self._rows(response)
+            add_span_attributes({"external.row_count": len(rows)})
+            return rows
 
     @staticmethod
     def eq(field: str, value: Any) -> dict[str, Any]:

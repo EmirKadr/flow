@@ -41,6 +41,16 @@ services:
         sync: false
       - key: HEALTHCHECK_PUBLIC_URL
         sync: false
+      - key: OTEL_ENABLED
+        value: "false"
+      - key: OTEL_SERVICE_NAME
+        value: flow-web
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+      - key: OTEL_TRACES_SAMPLE_RATE
+        value: "0.1"
       - key: ALLOCATION_OBSERVATIONS_STARTUP_SYNC
         value: "false"
       - key: ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS

@@ -589,6 +589,7 @@ class AuditClientErrorIn(BaseModel):
     message: str | None = Field(default=None, max_length=500)
     detail: Any | None = None
     page_path: str | None = Field(default=None, max_length=300)
+    trace_id: str | None = Field(default=None, max_length=32)
 
 
 class AuditClientEventIn(BaseModel):

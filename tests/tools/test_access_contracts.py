@@ -7,23 +7,64 @@ from app.backend.user_access import (
     ROLE_VIEW_DEFAULT_ACCESS,
     ROLE_VIEW_ID_ALIASES,
     ROLE_VIEW_IDS,
+    ROLE_VIEW_ORDER,
     ROLE_VIEW_ROLES,
+    feature_registry_payload,
 )
 from tools.terminology_contracts import forbidden_terms_in_text, role_access_required_terms
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "app" / "frontend"
+COMMON_SCRIPT_FILES = [
+    "js/common/foundation.js",
+    "js/common/theme.js",
+    "js/common/area_focus.js",
+    "js/common/runtime.js",
+    "js/common/app_log.js",
+    "js/common/telemetry.js",
+    "js/common/access.js",
+    "js/common/sidebar.js",
+    "js/common/uploads.js",
+    "js/common/demo_prefetch_init.js",
+    "js/common/import_tools.js",
+    "js/common/table_sort.js",
+    "js/common/date_state.js",
+    "js/common.js",
+]
+ALLOCATION_SCRIPT_FILES = [
+    "js/allocation/state.js",
+    "js/allocation/files.js",
+    "js/allocation/api.js",
+    "js/allocation/uploads_view.js",
+    "js/allocation/results.js",
+    "js/allocation/process_view.js",
+    "js/allocation/process_matrix.js",
+    "js/allocation/map_settings.js",
+    "js/allocation/settings_view.js",
+    "js/allocation/split_view.js",
+    "js/allocation/boot.js",
+    "js/allocation_tools.js",
+]
 
 
 def read_frontend(relative: str) -> str:
     return (FRONTEND / relative).read_text(encoding="utf-8")
 
 
+def read_allocation_frontend() -> str:
+    return "\n".join(read_frontend(path) for path in ALLOCATION_SCRIPT_FILES)
+
+
+def read_common_frontend() -> str:
+    return "\n".join(read_frontend(path) for path in COMMON_SCRIPT_FILES)
+
+
 def extract_const_block(source: str, const_name: str, opener: str, closer: str) -> str:
-    marker = f"const {const_name} = {opener}"
-    start = source.find(marker)
-    assert start != -1, f"Missing const {const_name}"
+    markers = [f"const {const_name} = {opener}", f"let {const_name} = {opener}"]
+    marker = next((candidate for candidate in markers if candidate in source), "")
+    start = source.find(marker) if marker else -1
+    assert start != -1, f"Missing declaration {const_name}"
     index = start + len(marker)
     depth = 1
     while index < len(source):
@@ -72,7 +113,7 @@ def extract_js_nested_access_object(source: str, const_name: str) -> dict[str, d
 
 
 def test_backend_frontend_and_user_admin_view_ids_match():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     users = read_frontend("js/users.js")
 
     common_view_ids = extract_js_string_array(common, "ROLE_VIEW_IDS")
@@ -83,6 +124,27 @@ def test_backend_frontend_and_user_admin_view_ids_match():
     assert "activities" in common_view_ids
     assert "stallen" not in common_view_ids
     assert "stallenImport" not in common_view_ids
+
+
+def test_backend_feature_registry_matches_frontend_access_contracts():
+    common = read_common_frontend()
+    users = read_frontend("js/users.js")
+    registry = feature_registry_payload()
+
+    common_view_ids = extract_js_string_array(common, "ROLE_VIEW_IDS")
+    admin_view_ids = extract_ids_from_object_array(users, "VIEW_ACCESS_OPTIONS")
+    registry_view_ids = [view["id"] for view in registry["views"]]
+    registry_view_labels = [view["label"] for view in registry["views"]]
+    registry_roles = [role["value"] for role in registry["roles"]]
+
+    assert registry_view_ids == list(ROLE_VIEW_ORDER)
+    assert registry_view_ids == common_view_ids == admin_view_ids
+    assert set(registry["default_access"]) == ROLE_VIEW_ROLES | {"super_user"}
+    assert registry["default_access"]["super_user"] == {view_id: "edit" for view_id in registry_view_ids}
+    assert registry_roles[:2] == ["super_user", "demo"]
+    assert set(registry_roles) == ROLE_VIEW_ROLES | {"super_user"}
+    assert "Vybehörigheter" in registry_view_labels
+    assert "feature-registry" in users
 
 
 def test_user_admin_role_access_labels_follow_terminology_contracts():
@@ -96,7 +158,7 @@ def test_user_admin_role_access_labels_follow_terminology_contracts():
 
 
 def test_sidebar_layout_only_uses_known_canonical_views():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     sidebar_view_ids = extract_ids_from_object_array(common, "SIDEBAR_DEFAULT_LAYOUT")
 
     assert set(sidebar_view_ids) <= ROLE_VIEW_IDS
@@ -106,7 +168,7 @@ def test_sidebar_layout_only_uses_known_canonical_views():
 
 
 def test_legacy_view_aliases_match_between_frontend_and_backend():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     aliases = extract_js_alias_object(common, "VIEW_ID_ALIASES")
 
     assert aliases == ROLE_VIEW_ID_ALIASES
@@ -114,7 +176,7 @@ def test_legacy_view_aliases_match_between_frontend_and_backend():
 
 
 def test_role_default_access_matches_between_frontend_and_backend():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     frontend_access = extract_js_nested_access_object(common, "ROLE_VIEW_DEFAULT_ACCESS")
 
     assert frontend_access == ROLE_VIEW_DEFAULT_ACCESS
@@ -132,7 +194,7 @@ def test_productivity_page_uses_view_access_not_super_user_gate():
 
 
 def test_role_lists_match_backend_roles_and_show_virtual_access_roles():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     users = read_frontend("js/users.js")
 
     common_roles = extract_values_from_object_array(common, "ROLE_VIEW_ROLES")
@@ -145,7 +207,7 @@ def test_role_lists_match_backend_roles_and_show_virtual_access_roles():
 
 
 def test_activities_route_contract_is_canonical_with_legacy_redirect_page():
-    common = read_frontend("js/common.js")
+    common = read_common_frontend()
     activities_html = read_frontend("aktiviteter.html")
     legacy_html = read_frontend("stallen.html")
     activities_js = read_frontend("js/activities.js")
@@ -163,8 +225,8 @@ def test_activities_route_contract_is_canonical_with_legacy_redirect_page():
 
 def test_frontend_prefetch_cache_is_available_for_visible_pages_and_uploads():
     api_js = read_frontend("js/api.js")
-    common = read_frontend("js/common.js")
-    allocation = read_frontend("js/allocation_tools.js")
+    common = read_common_frontend()
+    allocation = read_allocation_frontend()
 
     assert "prefetchGet" in api_js
     assert "clearGetCache" in api_js

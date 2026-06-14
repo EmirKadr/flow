@@ -27,7 +27,7 @@ ROLE_VIEW_ID_ALIASES = {
     "stallen": "activities",
     "stallenImport": "activityImport",
 }
-ROLE_VIEW_IDS = {
+ROLE_VIEW_ORDER = (
     "mySchedule",
     "myProductivity",
     "schedule",
@@ -48,13 +48,86 @@ ROLE_VIEW_IDS = {
     "areas",
     "analytics",
     "meta",
-    "businesses",
     "users",
     "userImport",
+    "businesses",
     "appSettings",
     "sidebarLayout",
     "roleAccess",
+)
+ROLE_VIEW_IDS = set(ROLE_VIEW_ORDER)
+ROLE_VIEW_LABELS = {
+    "mySchedule": "Mitt schema",
+    "myProductivity": "Min produktivitet",
+    "schedule": "Bemanning",
+    "overview": "Översikt",
+    "productivity": "Produktivitet",
+    "dataFetch": "Hämta data",
+    "allocationUploads": "Uppladdningar",
+    "allocationProcess": "Bearbeta",
+    "allocationProcessMatrix": "Bearbeta-matris",
+    "allocationSettings": "Inställningar",
+    "allocationSplit": "Dela",
+    "staffingSettings": "Bemanningsinställningar",
+    "persons": "Personer",
+    "personSortOrder": "Personsortering",
+    "personImport": "Personimport",
+    "activities": "Aktiviteter",
+    "activityImport": "Aktivitetsimport",
+    "areas": "Områden",
+    "analytics": "Historik",
+    "meta": "Meta",
+    "users": "Användare",
+    "userImport": "Användarimport",
+    "businesses": "Verksamheter",
+    "appSettings": "Appinställningar",
+    "sidebarLayout": "Menyordning",
+    "roleAccess": "Vybehörigheter",
 }
+ROLE_OPTION_LABELS = {
+    SUPER_USER_ROLE: "Super User",
+    DEMO_ROLE: "Demo",
+    "leader": "Arbetsledare",
+    STAFFING_MANAGER_ROLE: "Bemanningsansvarig",
+    "admin": "Administratör",
+    WAREHOUSE_CLERK_ROLE: "Lagerkontorist",
+    ARTICLE_PLACER_ROLE: "Artikelplacerare",
+    PERSON_ROLE: "Person",
+    VIEWER_ROLE: "Visning",
+}
+ROLE_OPTION_ORDER = (
+    SUPER_USER_ROLE,
+    DEMO_ROLE,
+    "leader",
+    STAFFING_MANAGER_ROLE,
+    "admin",
+    WAREHOUSE_CLERK_ROLE,
+    ARTICLE_PLACER_ROLE,
+    PERSON_ROLE,
+    VIEWER_ROLE,
+)
+ROLE_ACCESS_LEVEL_OPTIONS = (
+    {"value": "none", "label": "Ingen"},
+    {"value": "view", "label": "Visa"},
+    {"value": "edit", "label": "Redigera"},
+)
+SIDEBAR_DEFAULT_LAYOUT = (
+    {"id": "mySchedule"},
+    {"id": "myProductivity"},
+    {"id": "schedule"},
+    {"id": "overview"},
+    {"id": "productivity"},
+    {"id": "dataFetch"},
+    {"id": "allocationProcess"},
+    {"id": "allocationSettings"},
+    {"id": "allocationSplit"},
+    {"id": "persons"},
+    {"id": "activities"},
+    {"id": "analytics"},
+    {"id": "meta"},
+    {"id": "users"},
+    {"id": "businesses"},
+)
 ROLE_VIEW_DEFAULT_ACCESS = {
     "leader": {
         "schedule": "edit",
@@ -153,6 +226,30 @@ def normalize_user_roles(roles: list[str] | None, fallback_role: str = "leader")
 
 def role_view_default_access() -> dict[str, dict[str, str]]:
     return {role: dict(ROLE_VIEW_DEFAULT_ACCESS.get(role, {})) for role in ROLE_VIEW_ROLES}
+
+
+def feature_registry_payload() -> dict:
+    default_access = role_view_default_access()
+    default_access[SUPER_USER_ROLE] = {view_id: "edit" for view_id in ROLE_VIEW_ORDER}
+    return {
+        "version": 1,
+        "views": [
+            {"id": view_id, "label": ROLE_VIEW_LABELS.get(view_id, view_id)}
+            for view_id in ROLE_VIEW_ORDER
+        ],
+        "roles": [
+            {
+                "value": role,
+                "label": ROLE_OPTION_LABELS.get(role, role),
+                **({"lockedLevel": "edit"} if role == SUPER_USER_ROLE else {}),
+            }
+            for role in ROLE_OPTION_ORDER
+        ],
+        "levels": [dict(option) for option in ROLE_ACCESS_LEVEL_OPTIONS],
+        "aliases": dict(ROLE_VIEW_ID_ALIASES),
+        "default_access": default_access,
+        "sidebar_default_layout": [dict(item) for item in SIDEBAR_DEFAULT_LAYOUT],
+    }
 
 
 def normalize_role_view_id(view_id: str | None) -> str:

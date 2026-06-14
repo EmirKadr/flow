@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import settings
 from ..deps import get_current_user, get_db
 from ..models import Area, User
+from ..observability import add_span_attributes, start_span
 from ..settings_service import get_role_view_access
 from ..user_access import (
     LEGACY_SUPER_USER_ROLE,
@@ -548,43 +549,59 @@ def _call_minimax(payload: dict) -> str:
             "Content-Type": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=settings.MINIMAX_TIMEOUT_SECONDS) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raw_error = exc.read().decode("utf-8", errors="replace")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"MiniMax svarade HTTP {exc.code}: {_minimax_error_detail(raw_error)}",
-        ) from exc
-    except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="MiniMax kunde inte nas inom timeout.",
-        ) from exc
-    except Exception as exc:
-        logger.exception("MiniMax request failed unexpectedly")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"MiniMax-anropet misslyckades: {type(exc).__name__}",
-        ) from exc
+    with start_span(
+        "agent.llm_call",
+        {
+            "llm.provider": "minimax",
+            "llm.model": payload.get("model") or settings.MINIMAX_MODEL,
+            "llm.message_count": len(payload.get("messages") or []),
+            "llm.max_tokens": payload.get("max_tokens") or 0,
+            "llm.timeout_seconds": settings.MINIMAX_TIMEOUT_SECONDS,
+        },
+    ):
+        try:
+            with urllib.request.urlopen(request, timeout=settings.MINIMAX_TIMEOUT_SECONDS) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                add_span_attributes({"llm.http_status_code": getattr(response, "status", 0) or 0})
+        except urllib.error.HTTPError as exc:
+            add_span_attributes({"llm.http_status_code": exc.code, "llm.error_type": "HTTPError"})
+            raw_error = exc.read().decode("utf-8", errors="replace")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"MiniMax svarade HTTP {exc.code}: {_minimax_error_detail(raw_error)}",
+            ) from exc
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            add_span_attributes({"llm.error_type": type(exc).__name__})
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="MiniMax kunde inte nas inom timeout.",
+            ) from exc
+        except Exception as exc:
+            add_span_attributes({"llm.error_type": type(exc).__name__})
+            logger.exception("MiniMax request failed unexpectedly")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"MiniMax-anropet misslyckades: {type(exc).__name__}",
+            ) from exc
 
-    try:
-        data = json.loads(raw)
-        answer = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="MiniMax svar saknade textinnehall.",
-        ) from exc
+        try:
+            data = json.loads(raw)
+            answer = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            add_span_attributes({"llm.error_type": type(exc).__name__})
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="MiniMax svar saknade textinnehall.",
+            ) from exc
 
-    answer = _clean_minimax_answer(str(answer or ""))
-    if not answer:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="MiniMax returnerade ett tomt svar.",
-        )
-    return answer
+        answer = _clean_minimax_answer(str(answer or ""))
+        add_span_attributes({"llm.answer_chars": len(answer)})
+        if not answer:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="MiniMax returnerade ett tomt svar.",
+            )
+        return answer
 
 
 def build_minimax_payload(
@@ -596,11 +613,19 @@ def build_minimax_payload(
     messages = payload.messages[-MAX_DIALOG_MESSAGES:]
     page_path = payload.page_path or ""
     latest_question = _last_user_question(messages)
-    wiki_context = build_wiki_context(latest_question, page_path)
-    user_context = build_user_context(user, role_access, page_path, area_label)
-    repo_context = build_repo_context(latest_question) if should_search_repo(messages) else (
-        "Inte körd. Använd endast wikin och svara nej/inte dokumenterat om wikin saknar stöd."
-    )
+    repo_search_used = should_search_repo(messages)
+    with start_span("agent.context_build", {"agent.message_count": len(messages), "app.page": page_path or "unknown"}):
+        with start_span("agent.wiki_context", {"agent.message_count": len(messages)}):
+            wiki_context = build_wiki_context(latest_question, page_path)
+            add_span_attributes({"agent.wiki_context_chars": len(wiki_context)})
+        with start_span("agent.user_context"):
+            user_context = build_user_context(user, role_access, page_path, area_label)
+            add_span_attributes({"agent.user_context_chars": len(user_context)})
+        with start_span("agent.repo_search", {"agent.repo_search_used": repo_search_used}):
+            repo_context = build_repo_context(latest_question) if repo_search_used else (
+                "Inte körd. Använd endast wikin och svara nej/inte dokumenterat om wikin saknar stöd."
+            )
+            add_span_attributes({"agent.repo_context_chars": len(repo_context)})
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         page_path=page_path or "okand",
         user_context=user_context,
@@ -626,54 +651,58 @@ async def chat_with_assistant(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AssistantChatResponse:
-    if not settings.MINIMAX_API_KEY.strip():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Appchatten saknar MINIMAX_API_KEY i servermiljon.",
-        )
-    if payload.messages[-1].role != "user":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Den senaste dialograden maste vara en anvandarfraga.",
-        )
+    with start_span("agent.chat", {"agent.message_count": len(payload.messages), "app.page": payload.page_path or "unknown"}):
+        if not settings.MINIMAX_API_KEY.strip():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Appchatten saknar MINIMAX_API_KEY i servermiljon.",
+            )
+        if payload.messages[-1].role != "user":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Den senaste dialograden maste vara en anvandarfraga.",
+            )
 
-    used_questions = _session_question_count(request)
-    if used_questions >= MAX_QUESTIONS_PER_SESSION:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Max 10 fragor per session. Klicka Rensa dialog for att borja om.",
-        )
+        used_questions = _session_question_count(request)
+        add_span_attributes({"agent.session_questions_used": used_questions})
+        if used_questions >= MAX_QUESTIONS_PER_SESSION:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Max 10 fragor per session. Klicka Rensa dialog for att borja om.",
+            )
 
-    try:
-        area_label = None
-        if getattr(user, "area_id", None) is not None:
-            area = db.get(Area, user.area_id)
-            if area is not None:
-                area_label = f"{area.name} ({area.code})"
         try:
-            role_access = get_role_view_access(db, business_id=getattr(user, "business_id", None))
-        except TypeError:
-            role_access = get_role_view_access(db)
-        minimax_payload = build_minimax_payload(
-            payload,
-            user,
-            role_access=role_access,
-            area_label=area_label,
+            area_label = None
+            if getattr(user, "area_id", None) is not None:
+                area = db.get(Area, user.area_id)
+                if area is not None:
+                    area_label = f"{area.name} ({area.code})"
+            try:
+                role_access = get_role_view_access(db, business_id=getattr(user, "business_id", None))
+            except TypeError:
+                role_access = get_role_view_access(db)
+            minimax_payload = build_minimax_payload(
+                payload,
+                user,
+                role_access=role_access,
+                area_label=area_label,
+            )
+        except Exception as exc:
+            add_span_attributes({"agent.error_type": type(exc).__name__})
+            logger.exception("Assistant context build failed")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Kunde inte bygga chatkontext: {type(exc).__name__}",
+            ) from exc
+        answer = await run_in_threadpool(_call_minimax, minimax_payload)
+        used_questions += 1
+        request.session[SESSION_COUNT_KEY] = used_questions
+        add_span_attributes({"agent.remaining_questions": max(0, MAX_QUESTIONS_PER_SESSION - used_questions)})
+        return AssistantChatResponse(
+            answer=answer,
+            model=settings.MINIMAX_MODEL,
+            remaining_questions=max(0, MAX_QUESTIONS_PER_SESSION - used_questions),
         )
-    except Exception as exc:
-        logger.exception("Assistant context build failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Kunde inte bygga chatkontext: {type(exc).__name__}",
-        ) from exc
-    answer = await run_in_threadpool(_call_minimax, minimax_payload)
-    used_questions += 1
-    request.session[SESSION_COUNT_KEY] = used_questions
-    return AssistantChatResponse(
-        answer=answer,
-        model=settings.MINIMAX_MODEL,
-        remaining_questions=max(0, MAX_QUESTIONS_PER_SESSION - used_questions),
-    )
 
 
 @router.post("/clear")

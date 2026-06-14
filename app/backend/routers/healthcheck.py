@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..deps import get_current_user, get_db, require_super_user
 from ..healthcheck_service import clean_text, run_healthcheck
 from ..models import User, UserWaitMetric
+from ..observability import attach_trace_context, current_trace_id
 from ..schemas import WaitMetricBatchIn
 
 
@@ -91,6 +92,9 @@ def record_wait_metrics(
 ) -> Response:
     rows = []
     for item in payload.items[:100]:
+        detail = item.detail if isinstance(item.detail, dict) else None
+        if current_trace_id():
+            detail = attach_trace_context(detail or {})
         rows.append(
             UserWaitMetric(
                 business_id=user.business_id,
@@ -100,7 +104,7 @@ def record_wait_metrics(
                 target=clean_text(item.target, limit=160),
                 duration_ms=int(item.duration_ms),
                 status=(clean_text(item.status, limit=20) or "ok").lower(),
-                detail=item.detail if isinstance(item.detail, dict) else None,
+                detail=detail,
             )
         )
     if rows:

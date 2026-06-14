@@ -16,6 +16,7 @@ from .. import audit as audit_writer
 from ..config import settings
 from ..deps import get_current_user, get_db, require_super_user
 from ..models import AuditLog, User, UserInteractionEvent
+from ..observability import attach_trace_context, current_trace_id, normalize_trace_id
 from ..schemas import (
     AuditClientErrorIn,
     AuditClientEventIn,
@@ -289,6 +290,9 @@ def _sanitize_interaction_detail(detail: Any, *, depth: int = 0) -> dict[str, An
 
 
 def _interaction_payload(payload) -> dict[str, Any]:
+    detail = _sanitize_interaction_detail(payload.detail)
+    if current_trace_id():
+        detail = attach_trace_context(detail or {})
     return {
         "event_type": _clean_text(payload.event_type, max_length=80) or "interaction",
         "view_id": _clean_text(payload.view_id, max_length=80),
@@ -306,7 +310,7 @@ def _interaction_payload(payload) -> dict[str, Any]:
         "client_surface": _clean_text(payload.client_surface, max_length=40) or "web",
         "interaction_id": _clean_text(payload.interaction_id, max_length=80),
         "status": (_clean_text(payload.status, max_length=20) or "ok").lower(),
-        "detail": _sanitize_interaction_detail(payload.detail),
+        "detail": detail,
     }
 
 
@@ -476,7 +480,7 @@ def _client_error_payload(payload: AuditClientErrorIn) -> dict[str, Any]:
     error_code = _clean_text(payload.error_code, max_length=120) or (
         f"HTTP {status_code}" if status_code else "client_error"
     )
-    return {
+    result = {
         "path": _safe_path(payload.path),
         "method": _clean_text(payload.method.upper(), max_length=10) or "GET",
         "status_code": status_code,
@@ -485,6 +489,10 @@ def _client_error_payload(payload: AuditClientErrorIn) -> dict[str, Any]:
         "detail": _detail_summary(payload.detail),
         "page_path": _safe_path(payload.page_path),
     }
+    trace_id = normalize_trace_id(payload.trace_id)
+    if trace_id:
+        result["trace_id"] = trace_id
+    return result
 
 
 def _client_event_payload(payload: AuditClientEventIn) -> dict[str, Any]:

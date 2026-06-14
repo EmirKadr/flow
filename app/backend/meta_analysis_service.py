@@ -26,6 +26,7 @@ from .database import SessionLocal
 from .external_data_client import ExternalDataClient, ExternalDataClientError
 from .media_store import get_media_store
 from .models import MetaMediaUpload, MetaShipmentObservation
+from .observability import add_span_attributes, start_span
 from .workflow_data import WorkflowDataError, _api_client, source_spec, workflow_api_configured
 
 
@@ -364,18 +365,30 @@ def _gemini_url(path: str, query: dict[str, str] | None = None) -> str:
 
 
 def _request_json(request: urllib.request.Request, *, timeout: int) -> dict:
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise MetaAnalysisFailed(f"Gemini svarade HTTP {exc.code}: {error_body[:500]}") from exc
-    except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-        raise MetaAnalysisFailed("Gemini kunde inte nas inom timeout.") from exc
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise MetaAnalysisFailed("Gemini-svaret kunde inte tolkas som JSON.") from exc
+    with start_span(
+        "external.gemini.request",
+        {
+            "external.provider": "gemini",
+            "external.method": request.get_method(),
+            "external.timeout_seconds": timeout,
+        },
+    ):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                add_span_attributes({"external.http_status_code": getattr(response, "status", 0) or 0})
+        except urllib.error.HTTPError as exc:
+            add_span_attributes({"external.http_status_code": exc.code, "external.error_type": "HTTPError"})
+            error_body = exc.read().decode("utf-8", errors="replace")
+            raise MetaAnalysisFailed(f"Gemini svarade HTTP {exc.code}: {error_body[:500]}") from exc
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            add_span_attributes({"external.error_type": type(exc).__name__})
+            raise MetaAnalysisFailed("Gemini kunde inte nas inom timeout.") from exc
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            add_span_attributes({"external.error_type": "JSONDecodeError"})
+            raise MetaAnalysisFailed("Gemini-svaret kunde inte tolkas som JSON.") from exc
 
 
 def _gemini_upload_video_file(upload: MetaMediaUpload) -> dict:
@@ -402,14 +415,18 @@ def _gemini_upload_video_file(upload: MetaMediaUpload) -> dict:
             "X-Goog-Upload-Header-Content-Type": upload.content_type,
         },
     )
-    try:
-        with urllib.request.urlopen(start_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS) as response:
-            upload_url = response.headers.get("x-goog-upload-url")
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        raise MetaAnalysisFailed(f"Gemini upload-start svarade HTTP {exc.code}: {error_body[:500]}") from exc
-    except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-        raise MetaAnalysisFailed("Gemini upload-start kunde inte nas inom timeout.") from exc
+    with start_span("external.gemini.upload_start", {"external.provider": "gemini", "meta.media_size_bytes": size}):
+        try:
+            with urllib.request.urlopen(start_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS) as response:
+                upload_url = response.headers.get("x-goog-upload-url")
+                add_span_attributes({"external.http_status_code": getattr(response, "status", 0) or 0})
+        except urllib.error.HTTPError as exc:
+            add_span_attributes({"external.http_status_code": exc.code, "external.error_type": "HTTPError"})
+            error_body = exc.read().decode("utf-8", errors="replace")
+            raise MetaAnalysisFailed(f"Gemini upload-start svarade HTTP {exc.code}: {error_body[:500]}") from exc
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            add_span_attributes({"external.error_type": type(exc).__name__})
+            raise MetaAnalysisFailed("Gemini upload-start kunde inte nas inom timeout.") from exc
     if not upload_url:
         raise MetaAnalysisFailed("Gemini returnerade ingen upload-URL.")
 
@@ -451,14 +468,18 @@ def _gemini_upload_audio(upload: MetaMediaUpload) -> dict:
                 "X-Goog-Upload-Header-Content-Type": audio.content_type,
             },
         )
-        try:
-            with urllib.request.urlopen(start_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS) as response:
-                upload_url = response.headers.get("x-goog-upload-url")
-        except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise MetaAnalysisFailed(f"Gemini upload-start svarade HTTP {exc.code}: {error_body[:500]}") from exc
-        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
-            raise MetaAnalysisFailed("Gemini upload-start kunde inte nas inom timeout.") from exc
+        with start_span("external.gemini.upload_start", {"external.provider": "gemini", "meta.media_size_bytes": audio.size_bytes}):
+            try:
+                with urllib.request.urlopen(start_request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS) as response:
+                    upload_url = response.headers.get("x-goog-upload-url")
+                    add_span_attributes({"external.http_status_code": getattr(response, "status", 0) or 0})
+            except urllib.error.HTTPError as exc:
+                add_span_attributes({"external.http_status_code": exc.code, "external.error_type": "HTTPError"})
+                error_body = exc.read().decode("utf-8", errors="replace")
+                raise MetaAnalysisFailed(f"Gemini upload-start svarade HTTP {exc.code}: {error_body[:500]}") from exc
+            except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+                add_span_attributes({"external.error_type": type(exc).__name__})
+                raise MetaAnalysisFailed("Gemini upload-start kunde inte nas inom timeout.") from exc
         if not upload_url:
             raise MetaAnalysisFailed("Gemini returnerade ingen upload-URL.")
 

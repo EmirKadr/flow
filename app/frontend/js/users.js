@@ -7,7 +7,7 @@ let appSettings = {
 };
 let roleViewAccess = {};
 
-const ROLE_OPTIONS = [
+let ROLE_OPTIONS = [
   { value: "leader", label: "Arbetsledare" },
   { value: "staffing_manager", label: "Bemanningsansvarig" },
   { value: "admin", label: "Administratör" },
@@ -17,15 +17,15 @@ const ROLE_OPTIONS = [
   { value: "viewer", label: "Visning" },
 ];
 const SUPER_USER_ROLE_OPTION = { value: "super_user", label: "Super User" };
-const USER_ROLE_OPTIONS = [...ROLE_OPTIONS, SUPER_USER_ROLE_OPTION];
+let USER_ROLE_OPTIONS = [...ROLE_OPTIONS, SUPER_USER_ROLE_OPTION];
 
-const ROLE_ACCESS_LEVEL_OPTIONS = [
+let ROLE_ACCESS_LEVEL_OPTIONS = [
   { value: "none", label: "Ingen" },
   { value: "view", label: "Visa" },
   { value: "edit", label: "Redigera" },
 ];
-const ROLE_ACCESS_LEVEL_ORDER = ROLE_ACCESS_LEVEL_OPTIONS.map((option) => option.value);
-const VIEW_ACCESS_OPTIONS = [
+let ROLE_ACCESS_LEVEL_ORDER = ROLE_ACCESS_LEVEL_OPTIONS.map((option) => option.value);
+let VIEW_ACCESS_OPTIONS = [
   { id: "mySchedule", label: "Mitt schema" },
   { id: "myProductivity", label: "Min produktivitet" },
   { id: "schedule", label: "Bemanning" },
@@ -53,6 +53,59 @@ const VIEW_ACCESS_OPTIONS = [
   { id: "sidebarLayout", label: "Menyordning" },
   { id: "roleAccess", label: "Vybehörigheter" },
 ];
+
+function applyFeatureRegistry(payload) {
+  if (!payload || typeof payload !== "object") return;
+  const roles = Array.isArray(payload.roles)
+    ? payload.roles
+        .map((role) => ({
+          value: String(role?.value || "").trim(),
+          label: String(role?.label || role?.value || "").trim(),
+          ...(role?.lockedLevel ? { lockedLevel: String(role.lockedLevel) } : {}),
+        }))
+        .filter((role) => role.value && role.label)
+    : [];
+  const views = Array.isArray(payload.views)
+    ? payload.views
+        .map((view) => ({
+          id: String(view?.id || "").trim(),
+          label: String(view?.label || view?.id || "").trim(),
+        }))
+        .filter((view) => view.id && view.label)
+    : [];
+  const levels = Array.isArray(payload.levels)
+    ? payload.levels
+        .map((level) => ({
+          value: String(level?.value || "").trim(),
+          label: String(level?.label || level?.value || "").trim(),
+        }))
+        .filter((level) => level.value && level.label)
+    : [];
+
+  if (roles.length) {
+    const superRole = roles.find((role) => role.value === "super_user") || SUPER_USER_ROLE_OPTION;
+    ROLE_OPTIONS = roles.filter((role) => role.value !== "super_user").map(({ value, label }) => ({ value, label }));
+    USER_ROLE_OPTIONS = roles.some((role) => role.value === "super_user") ? roles : [...ROLE_OPTIONS, superRole];
+    window.ROLE_VIEW_ROLES = roles;
+  }
+  if (views.length) {
+    VIEW_ACCESS_OPTIONS = views;
+    window.ROLE_VIEW_IDS = views.map((view) => view.id);
+  }
+  if (levels.length) {
+    ROLE_ACCESS_LEVEL_OPTIONS = levels;
+    ROLE_ACCESS_LEVEL_ORDER = levels.map((option) => option.value);
+  }
+}
+
+async function loadFeatureRegistry() {
+  try {
+    const payload = await api.get("/api/settings/feature-registry", { cacheTtlMs: 5 * 60 * 1000 });
+    applyFeatureRegistry(payload);
+  } catch (error) {
+    console.warn("Kunde inte lÃ¤sa feature-registret.", error);
+  }
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -301,6 +354,7 @@ function renderRoleAccessTable(container) {
 
 async function openRoleAccessModal() {
   try {
+    await loadFeatureRegistry();
     await loadRoleViewAccess();
   } catch (error) {
     showToast(error.message || "Kunde inte läsa vybehörigheter.", "error", 7000);
@@ -625,6 +679,7 @@ function setupImportControls() {
   currentUser = await initPage("users");
   if (!currentUser) return;
 
+  await loadFeatureRegistry();
   await loadRoleViewAccess();
   const newUserButton = document.getElementById("new-user");
   newUserButton.hidden = !canEditPage(currentUser, "users");

@@ -16,6 +16,7 @@ from ..business_scope import DEFAULT_BUSINESS_CODE, assert_user_can_access_busin
 from ..coredata_service import CoreDataError, find_coredata_file
 from ..deps import get_db, require_allocation_tools_user, require_any_view_access, require_view_access
 from ..models import AllocationUserFilterProfile, Area, Business, User
+from ..observability import add_span_attributes, start_span
 from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
 from ..user_access import can_access_view, can_use_allocation_process, is_super_user
 from ..workflow_data import WorkflowDataError, allocation_api_source_map, resolve_sources, source_public_metadata
@@ -938,11 +939,18 @@ async def run_flow(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    add_span_attributes({"allocation.flow_id": flow_id})
     _assert_flow_allowed(flow_id, user, _role_access_for_user(db, user))
     try:
-        form = await request.form()
-        files, params, temp_paths = await bridge.form_to_flow_payload(form, cache_scope=_upload_cache_scope(user))
-        area_focus = bridge.normalize_process_area_focus(params.pop(bridge.PROCESS_AREA_FOCUS_PARAM, ""))
+        with start_span("allocation.flow.parse_upload", {"allocation.flow_id": flow_id}):
+            form = await request.form()
+            files, params, temp_paths = await bridge.form_to_flow_payload(form, cache_scope=_upload_cache_scope(user))
+            area_focus = bridge.normalize_process_area_focus(params.pop(bridge.PROCESS_AREA_FOCUS_PARAM, ""))
+            add_span_attributes({
+                "allocation.file_key_count": len(files),
+                "allocation.param_key_count": len([key for key in params if not str(key).startswith("__")]),
+                "allocation.area_focus": area_focus or "ALLT",
+            })
     except Exception as exc:
         _audit_allocation_event(
             db,
@@ -971,6 +979,7 @@ async def run_flow(
         _attach_required_session_artifacts(flow_id, params, user)
         default_max_csv_path = None
         business_code = _allocation_business_code(db, user, area_focus=area_focus)
+        add_span_attributes({"allocation.business_code": business_code})
         coredata_files = _business_coredata_default_files(flow_id, files, business_code, db)
         if coredata_files:
             files = {**coredata_files, **files}
@@ -984,7 +993,8 @@ async def run_flow(
             flow_by_id = {str(item.get("id") or ""): item for item in flow}
             required_keys = _allocation_flow_required_file_keys(flow_by_id.get(flow_id))
             try:
-                source_resolution = resolve_sources(source_map, files, required_keys=required_keys)
+                with start_span("allocation.flow.resolve_sources", {"allocation.flow_id": flow_id}):
+                    source_resolution = resolve_sources(source_map, files, required_keys=required_keys)
             except WorkflowDataError as exc:
                 source_status = exc.audit_entries
                 raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -992,10 +1002,11 @@ async def run_flow(
             temp_paths.extend(source_resolution.temp_paths)
             source_log = source_resolution.log_lines
             source_status = source_resolution.audit_entries
-        files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
-        temp_paths.extend(filter_temp_paths)
-        files, user_filter_temp_paths, user_filter_log = bridge.apply_user_flow_filters(files, flow_id, user_filter_profile)
-        temp_paths.extend(user_filter_temp_paths)
+        with start_span("allocation.flow.apply_filters", {"allocation.flow_id": flow_id, "allocation.area_focus": area_focus or "ALLT"}):
+            files, filter_temp_paths, area_filter_log = bridge.apply_process_area_filters(files, area_focus, process_matrix)
+            temp_paths.extend(filter_temp_paths)
+            files, user_filter_temp_paths, user_filter_log = bridge.apply_user_flow_filters(files, flow_id, user_filter_profile)
+            temp_paths.extend(user_filter_temp_paths)
         if flow_id == "ytgenerering":
             ytgenerering_focus = area_focus or "ALLT"
             map_business_id = _allocation_settings_business_id(db, user, area_focus)
@@ -1012,9 +1023,15 @@ async def run_flow(
             except FileNotFoundError as exc:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if default_max_csv_path is not None:
-            result = bridge.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max_csv_path)
+            with start_span("allocation.flow.engine_run", {"allocation.flow_id": flow_id, "allocation.default_max_csv": True}):
+                result = bridge.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max_csv_path)
         else:
-            result = bridge.run_flow_handler(flow_id, files, params)
+            with start_span("allocation.flow.engine_run", {"allocation.flow_id": flow_id, "allocation.default_max_csv": False}):
+                result = bridge.run_flow_handler(flow_id, files, params)
+        add_span_attributes({
+            "allocation.result_table_count": len(result.get("tables") or []),
+            "allocation.has_session": bool(result.get("session_id")),
+        })
         if area_filter_log:
             result["log"] = area_filter_log + list(result.get("log") or [])
             result["area_filter"] = {
@@ -1081,8 +1098,9 @@ def open_excel(
     req: bridge.OpenAllocationExcelRequest,
     user: User = Depends(require_allocation_tools_user),
 ) -> dict:
-    _assert_session_allowed(req.session_id, user)
-    return bridge.open_excel_result(req)
+    with start_span("allocation.open_excel"):
+        _assert_session_allowed(req.session_id, user)
+        return bridge.open_excel_result(req)
 
 
 @router.get("/table-column/{session_id}/{key}/{column_index}")
@@ -1092,8 +1110,9 @@ def table_column(
     column_index: int,
     user: User = Depends(require_allocation_tools_user),
 ) -> dict:
-    _assert_session_allowed(session_id, user)
-    return bridge.table_column_text(session_id, key, column_index)
+    with start_span("allocation.table_column", {"allocation.column_index": column_index}):
+        _assert_session_allowed(session_id, user)
+        return bridge.table_column_text(session_id, key, column_index)
 
 
 @router.get("/download/{session_id}/{key}")
@@ -1102,5 +1121,6 @@ def download(
     key: str,
     user: User = Depends(require_allocation_tools_user),
 ):
-    _assert_session_allowed(session_id, user)
-    return bridge.download_result(session_id, key)
+    with start_span("allocation.download"):
+        _assert_session_allowed(session_id, user)
+        return bridge.download_result(session_id, key)

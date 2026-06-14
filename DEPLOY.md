@@ -104,6 +104,24 @@ ska användas.
 | `MINIMAX_MAX_TOKENS` | Default `700` |
 | `MINIMAX_TIMEOUT_SECONDS` | Default `30` |
 
+### Observability: OpenTelemetry
+
+OpenTelemetry är avstängt som default. Slå bara på det när en intern collector
+finns och attributsaneringen är godkänd.
+
+| Variabel | Beskrivning |
+|---|---|
+| `OTEL_ENABLED` | `true` aktiverar tracing/instrumentering |
+| `OTEL_SERVICE_NAME` | Service-namn, default `flow-web` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Intern collector-endpoint, t.ex. `http://otel-collector:4318/v1/traces` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Kommaseparerade headers om collectorn kräver dem |
+| `OTEL_TRACES_SAMPLE_RATE` | Andel lyckade traces, default `0.1` |
+| `OTEL_CONSOLE_EXPORTER` | `true` skriver traces till serverloggen i lokal felsökning |
+
+Spans får inte innehålla promptar, svarstext, request bodies, tokens, cookies,
+filnamn/filsökvägar, order-/kunddata eller privata externa URL:er. Använd
+`trace_id` i Historik/Hälsa för att koppla användarhändelser till tekniska traces.
+
 ### Får inte tas med
 
 `RENDER_*`-variablerna används bara av administrativa endpoints som pratar
