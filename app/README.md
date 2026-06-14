@@ -179,6 +179,11 @@ uvicorn backend.main:app --reload
 ### Lokal testmiljö med live-data
 
 `start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
+Scriptet startar backend på port `8000` för både `localhost` och lokalt
+WiFi/LAN. Det gör att ESP32/RFID-moduler på samma WiFi kan posta till datorns
+WiFi-IP, till exempel `http://192.168.x.x:8000`, medan browsern fortfarande
+öppnas på `http://localhost:8000`. Windows-brandväggen kan fråga första gången;
+tillåt privat nätverk om RFID-modulen ska nå servern.
 
 Vid schemaändringar kör starten en lätt lokal bootstrap som behåller befintliga
 rader, lägger till saknade kolumner/tabeller och backfyller äldre lokal data till

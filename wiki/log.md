@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] fix | Lokal server lyssnar pa LAN for RFID
+
+`start_local.bat` startar nu uvicorn med `--host 0.0.0.0` sa ESP32-moduler pa
+samma WiFi kan posta RFID-scans till datorns LAN-IP. Browsern oppnas fortsatt
+pa `localhost:8000`, och RFID-wikin beskriver att saknad `POST /api/rfid/scans`
+i terminalen betyder att scannen inte natt backend.
+
 ## [2026-06-14] security | RFID-firmware flyttar lokal konfig ur ino
 
 ESP32/RDM6300-firmware laser nu lokal konfig fran

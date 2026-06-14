@@ -34,7 +34,13 @@ innehaller bara generiska placeholders for WiFi, serveradress och token. Lokala
 varden ligger i `rfid_esp32_flow.local.h`, skapad fran
 `rfid_esp32_flow.local.example.h`, och filen ar git-ignorerad.
 `FLOW_BASE_URL` ska vara datorns LAN-adress, inte `localhost`, eftersom ESP32
-inte ligger pa samma process som browsern.
+inte ligger pa samma process som browsern. Lokal server maste lyssna pa LAN;
+`start_local.bat` startar darfor uvicorn med `--host 0.0.0.0` men oppnar
+browsern pa `localhost`.
+
+Bemanning pollar `GET /api/rfid/events` var 7:e sekund nar fliken ar synlig.
+Om en scan nar backend syns den forst som `POST /api/rfid/scans` i
+`start_local.bat`-fonstret och sedan som markering i ratt person/timme.
 
 Aktuell testkonfiguration:
 
@@ -46,7 +52,7 @@ Aktuell testkonfiguration:
 
 | Fraga | Svar |
 | --- | --- |
-| "Varfor syns ingen stampel i Bemanning?" | Kontrollera att ESP32 postar mot ratt LAN-adress, att modulen heter som en aktiv aktivitet, att personen har `rfid_code`, och att vald dag/omrade matchar stampelns tid. |
+| "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
 | "Varfor blev andra scannen dubblett?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend sparar da andra stampeln som `duplicate_ignored`. |
 | "Varfor andrades bara sista delen av timmen?" | RFID-OK galler fran scannad minut till timslut. Tidigare minuter i samma timme bevaras. |

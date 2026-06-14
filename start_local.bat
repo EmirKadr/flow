@@ -11,8 +11,9 @@ set "EXCEL_API_TOKEN=dev-token"
 echo Forbereder lokal SQLite-databas...
 python -m backend.prepare_local_database || goto :error
 
+echo Startar lokal server pa localhost och WiFi/LAN. ESP32 ska anvanda datorns WiFi-IP med port 8000.
 start "" "http://localhost:8000"
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 goto :eof
 
 :error
