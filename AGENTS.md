@@ -156,6 +156,14 @@ historik for felsokning och uppfoljning. Dokumentloggen ar anvandarnara feedback
 i aktuell browser/session. Nar ett flode paverkar anvandaren ska bada anvandas
 om bada perspektiven ar relevanta.
 
+Nya anvandarsynliga handelser, integrationer och bakgrundsfloden ska ha en
+explicit Historik/Analys-plan innan arbetet anses klart. Agenten ska bestamma
+vilken `audit_log.entity_type`, `action`, `business_id`, `user_id` och sanerad
+payload som skrivs, samt hur raden blir begriplig i Historik/Analys med
+anvandarlabel i frontend och vid behov backend-summary. Det galler aven
+hardvara och externa system: om requesten aldrig nar backend ska agenten bygga
+eller dokumentera en synlig diagnostik som visar var kedjan brister.
+
 Vantetidsmatningar ar ett tredje spar: tyst prestandatelemetri for hur lange
 anvandaren faktiskt vantar pa vyer, API:er, nedladdningar och bakgrundsladdning.
 Den ska vara sanerad, kortfattad och synas i Historik/Halsa-analys, inte i
@@ -235,6 +243,14 @@ UI-tester anvanda samma kontrakt.
 Nar beteende tas bort eller byts ut ska agenten aktivt leta efter gamla tester
 som bara skyddar det borttagna beteendet. Sadana tester ska tas bort eller
 skrivas om, sa testsviten inte tvingar kvar gammal produktlogik av misstag.
+
+Nar en ny handelse eller integration laggs till ska testerna tacka hela kedjan,
+inte bara huvudfunktionen: mottagande API/domantest, sparad audit-rad,
+Historik/Analys-label eller frontendkontrakt, behorighet/verksamhetsscope samt
+minst ett relevant fel- eller okant-lage. Fysisk hardvara eller externa system
+far mockas, men testet ska bevisa att systemet hade visat det for anvandaren
+nar backend tar emot handelsen. Manuell scanning eller klickning far bara vara
+komplement, inte enda verifieringen.
 
 Nar en andring ror databas, Alembic, Render-build, CI-workflows, secret/env-
 konfiguration eller deploy ska agenten ocksa lagga eller uppdatera kontraktstester

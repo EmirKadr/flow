@@ -97,3 +97,10 @@ Skriv darfor alltid beteende i anvandartermer forst och teknisk detalj efterat.
 Nar ett flode loggar nagot ska wikin beskriva vad anvandaren ser i dokumentloggen
 och vad som hamnar i Historik/audit, sa framtida chattar kan skilja pa snabb
 sessionfeedback och sparad felsokningshistorik.
+
+Nar en ny anvandarsynlig handelse, integration, fysisk enhet eller
+bakgrundshandelse laggs till ska wikin ocksa beskriva dess Historik/Analys-spar:
+vilken `audit_log.entity_type` och `action` som skrivs, vilken anvandarlabel den
+far, vilka detaljer som ar sanerade och vilka tester som bevisar att raden syns
+begripligt. Om en handelse kan fastna fore backend ska felsokningssvaret
+beskriva den observerbara signal som skiljer hardvara/natverk fran appfel.

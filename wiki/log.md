@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] process | Agentregler kraver Historik/Analys for nya handelser
+
+Agent- och testreglerna kraver nu att nya anvandarsynliga handelser,
+integrationer och hardvarufloden har auditplan, Historik/Analys-labels,
+sanerade detaljer och automatiska fullkedjetester. Manuell scanning eller
+klickning far bara vara komplement.
+
 ## [2026-06-14] change | Historik visar RFID-stamplingar tydligare
 
 RFID-auditposter etiketteras nu som `RFID-stämpel` i Historik/Analys i stallet

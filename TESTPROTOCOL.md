@@ -111,6 +111,12 @@ Den har kartan forklarar vad testfilerna skyddar. Nar en agent andrar kod ska
 den valja minsta relevanta testurval fran tabellen och sedan lagga till bredare
 tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 
+Nya anvandarsynliga handelser och integrationer ska alltid testas genom hela
+observability-kedjan: API/domantest for handelsen, audit-rad med ratt
+`entity_type`/`action`, Historik/Analys-label i backend/frontend och minst ett
+fel-, okant- eller konfliktlage. Hardvara och externa system far simuleras, men
+manuell testning far inte vara enda beviset.
+
 | Testfil | Syfte | Kor nar du andrar |
 | --- | --- | --- |
 | `tests/conftest.py` | Delad testinfrastruktur, Qt-appfixture och testmiljo. | Testfixtures, Qt/desktop-teststod eller global testkonfiguration. |
@@ -144,6 +150,7 @@ tester om andringen ror delad logik, API-kontrakt, behorighet eller UI.
 | `tests/services/test_warehouse_tools_local_data.py` | Lagerverktygens lokala fixture-data, flodesregister och regressionsresultat. | `warehouse_tools`, allocate/refill/pallet-space eller lagerfixtures. |
 | `tests/tools/test_access_contracts.py` | Backend/frontend-kontrakt for vy-ID:n, rollistor, default access och legacy-alias. | Vybehorigheter, sidebar pages, roller eller legacy view mapping. |
 | `tests/tools/test_activity_terminology.py` | Terminologikontrakt sa gamla aktivitetsord inte smyger in. | UI-text, docs eller migration fran gammal terminologi. |
+| `tests/tools/test_agent_rules_contracts.py` | Agentregler for Historik/Analys, auditlabels och fullkedjetester for nya handelser/integrationer. | Agentregler, testprotokoll eller observability-krav for nya floden. |
 | `tests/tools/test_allocation_split_browser.py` | Playwright-test for Dela-resultattabell, Bearbeta-knappar, sessionberoenden och kolumnkopiering. | `dela.html`, `bearbeta.html`, split values, Forecast/Ytgenerering, tabellrendering eller clipboard for lagerverktyg. |
 | `tests/tools/test_compare_warehouse_results.py` | CSV/XLSX-jamforelse for Flow mot Allokera, inklusive exportnormalisering. | `tools/compare_warehouse_results.py`, parityjamforelser eller lagerexportformat. |
 | `tests/tools/test_api_route_contracts.py` | Frontendens hardkodade API-anrop finns i FastAPI med ratt metod. | Nya/andrade API-anrop i JS eller backend-rutter. |
