@@ -69,6 +69,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("allocation.filter_profile_import", "POST", "/api/allokering/filter-profile/import", "Kopiera Bearbeta-profil fran anvandare"),
     ApiRoute("allocation.map_layout_get", "GET", "/api/allokering/ytgenerering-map-layout", "Hämta Ytgenerering-kartlayout"),
     ApiRoute("allocation.map_layout_update", "PUT", "/api/allokering/ytgenerering-map-layout", "Uppdatera Ytgenerering-kartlayout"),
+    ApiRoute("allocation.map_location_options", "GET", "/api/allokering/ytgenerering-location-options", "Hamta Ytgenerering U-platslista"),
     ApiRoute("allocation.detect", "POST", "/api/allokering/detect", "Identifiera lagerverktygsfil"),
     ApiRoute("allocation.observations_update", "POST", "/api/allokering/observations/update", "Uppdatera observations från buffert"),
     ApiRoute("allocation.run_flow", "POST", "/api/allokering/flow/{flow_id}", "Kör lagerverktygsflöde"),

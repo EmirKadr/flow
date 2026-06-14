@@ -126,6 +126,79 @@ def test_wait_metric_summary_can_filter_by_business():
     assert summary["by_target"][0]["key"] == "GET /api/r3"
 
 
+def test_wait_metric_summary_surfaces_critical_targets_and_long_tasks():
+    engine, db = make_session()
+    try:
+        business = Business(code="STIGAMO", name="Stigamo")
+        db.add(business)
+        db.flush()
+        user = User(username="root", password_hash="x", role="super_user", business_id=business.id)
+        db.add(user)
+        db.flush()
+        db.add_all([
+            UserWaitMetric(
+                business_id=business.id,
+                user_id=user.id,
+                event_type="api_request",
+                view_id="myProductivity",
+                target="GET /api/personal/productivity",
+                duration_ms=9000,
+                status="ok",
+            ),
+            UserWaitMetric(
+                business_id=business.id,
+                user_id=user.id,
+                event_type="api_request",
+                view_id="allocationProcess",
+                target="GET /api/allokering/process-matrix",
+                duration_ms=2200,
+                status="ok",
+            ),
+            UserWaitMetric(
+                business_id=business.id,
+                user_id=user.id,
+                event_type="client_long_task",
+                view_id="schedule",
+                target="main_thread",
+                duration_ms=420,
+                status="warn",
+            ),
+            UserWaitMetric(
+                business_id=business.id,
+                user_id=user.id,
+                event_type="background_prefetch",
+                view_id="allocationSettings",
+                target="GET /api/allokering/ytgenerering-map-layout",
+                duration_ms=180,
+                status="ok",
+            ),
+        ])
+        db.commit()
+
+        summary = healthcheck.wait_metrics_summary(
+            period="all",
+            limit=100,
+            business_id=business.id,
+            user_id=None,
+            q=None,
+            db=db,
+            _=user,
+        )
+    finally:
+        db.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+    targets = {item["key"]: item for item in summary["by_target"]}
+    events = {item["key"]: item for item in summary["by_event"]}
+    assert summary["slow_events"][0]["target"] == "GET /api/personal/productivity"
+    assert targets["GET /api/personal/productivity"]["p95_ms"] == 9000
+    assert targets["main_thread"]["max_ms"] == 420
+    assert events["client_long_task"]["count"] == 1
+    assert any("Klientens huvudtrad" in item["message"] for item in summary["analysis"])
+    assert any("Tyngsta steg: GET /api/personal/productivity" in item["message"] for item in summary["analysis"])
+
+
 def test_healthcheck_redacts_secret_like_text():
     assert "secret[redacted]" in clean_text("secret=abc123")
     assert "abc123" not in clean_text("token=abc123")

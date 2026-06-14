@@ -407,11 +407,6 @@ function enqueueVisiblePagePrefetches(user, activePage) {
   if (canViewPage(user, "mySchedule")) {
     enqueueBackgroundPrefetch(`/api/personal/schedule?year=${year}&week=${week}`, 25 * 1000);
   }
-  if (canViewPage(user, "myProductivity")) {
-    const today = new Date();
-    const dateValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    enqueueBackgroundPrefetch(`/api/personal/productivity?date=${dateValue}`, 25 * 1000);
-  }
 
   if (canViewPage(user, "schedule")) {
     enqueueBackgroundPrefetch("/api/areas");
@@ -444,7 +439,7 @@ function enqueueVisiblePagePrefetches(user, activePage) {
     enqueueBackgroundWork("allocation-upload-metadata", warmSharedAllocationMetadataCache);
   }
   if (canViewPage(user, "allocationSettings")) {
-    enqueueBackgroundPrefetch("/api/allokering/ytgenerering-map-layout", 30 * 1000);
+    enqueueBackgroundPrefetch("/api/allokering/ytgenerering-map-layout?include_options=false", 30 * 1000);
   }
   if (canViewPage(user, "allocationProcessMatrix")) {
     enqueueBackgroundPrefetch("/api/allokering/process-matrix", 30 * 1000);

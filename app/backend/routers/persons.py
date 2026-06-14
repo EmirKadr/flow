@@ -44,6 +44,13 @@ HEADER_ALIASES = {
     "person": "name",
     "personnamn": "name",
     "noman": "noman",
+    "rfid": "rfid_code",
+    "rfidkod": "rfid_code",
+    "rfidcode": "rfid_code",
+    "bricka": "rfid_code",
+    "brickkod": "rfid_code",
+    "badge": "rfid_code",
+    "badgecode": "rfid_code",
     "hemomrade": "home_area",
     "omrade": "home_area",
     "area": "home_area",
@@ -67,6 +74,7 @@ class ImportPersonRow:
     business: str | None
     name: str
     noman: str | None
+    rfid_code: str | None
     home_area: str | None
     home_activity: str | None
     sort_order: int | None
@@ -89,12 +97,26 @@ def _noman_for_update(value: str | None, current_value: str | None) -> str | Non
     return _required_noman(value)
 
 
+def _clean_rfid_code(value: str | None) -> str | None:
+    rfid_code = (value or "").strip().upper()
+    if not rfid_code:
+        return None
+    if len(rfid_code) > 120:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="RFID-kod far vara max 120 tecken")
+    return rfid_code
+
+
+def _rfid_key(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
 def _person_snapshot(person: Person) -> dict:
     return {
         "id": person.id,
         "business_id": person.business_id,
         "name": person.name,
         "noman": person.noman,
+        "rfid_code": person.rfid_code,
         "home_area_id": person.home_area_id,
         "home_activity_id": person.home_activity_id,
         "competencies": person.competencies,
@@ -161,7 +183,7 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
     for row_number, raw_values in raw_rows:
         values = {
             field: _cell_text(raw_values.get(field))
-            for field in ("business", "name", "noman", "home_area", "home_activity", "sort_order")
+            for field in ("business", "name", "noman", "rfid_code", "home_area", "home_activity", "sort_order")
         }
         if not any(values.values()):
             continue
@@ -182,6 +204,11 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
             errors.append(PersonImportError(row=row_number, name=name, error="NoMan får vara max 120 tecken"))
             continue
 
+        rfid_code = values.get("rfid_code", "").strip().upper() or None
+        if rfid_code is not None and len(rfid_code) > 120:
+            errors.append(PersonImportError(row=row_number, name=name, error="RFID-kod far vara max 120 tecken"))
+            continue
+
         sort_order, sort_error = _parse_sort_order(values.get("sort_order", ""), row_number=row_number, name=name)
         if sort_error is not None:
             errors.append(sort_error)
@@ -193,6 +220,7 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
                 business=values.get("business") or None,
                 name=name,
                 noman=noman,
+                rfid_code=rfid_code,
                 home_area=values.get("home_area") or None,
                 home_activity=values.get("home_activity") or None,
                 sort_order=sort_order,
@@ -206,13 +234,14 @@ def build_person_import_template_excel() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Personer"
-    sheet.append(["verksamhet (frivillig)", "namn (obligatorisk)", "NoMan (obligatorisk)", "hemområde (frivillig)", "huvudaktivitet (frivillig)", "sortering (frivillig)"])
+    sheet.append(["verksamhet (frivillig)", "namn (obligatorisk)", "NoMan (obligatorisk)", "RFID (frivillig)", "hemområde (frivillig)", "huvudaktivitet (frivillig)", "sortering (frivillig)"])
     sheet.column_dimensions["A"].width = 22
     sheet.column_dimensions["B"].width = 28
     sheet.column_dimensions["C"].width = 20
-    sheet.column_dimensions["D"].width = 24
-    sheet.column_dimensions["E"].width = 28
-    sheet.column_dimensions["F"].width = 14
+    sheet.column_dimensions["D"].width = 22
+    sheet.column_dimensions["E"].width = 24
+    sheet.column_dimensions["F"].width = 28
+    sheet.column_dimensions["G"].width = 14
     sheet.freeze_panes = "A2"
 
     stream = io.BytesIO()
@@ -274,6 +303,13 @@ def _existing_person_names(db: Session, business_id: int | None) -> set[str]:
     return {_compact_key(name) for (name,) in query.all()}
 
 
+def _existing_person_rfid_codes(db: Session, business_id: int | None) -> set[str]:
+    query = db.query(Person.rfid_code).filter(Person.rfid_code.isnot(None))
+    if business_id is not None:
+        query = query.filter(Person.business_id == business_id)
+    return {_rfid_key(rfid_code) for (rfid_code,) in query.all() if _rfid_key(rfid_code)}
+
+
 def _find_name_conflict(
     db: Session,
     name: str,
@@ -293,6 +329,24 @@ def _find_name_conflict(
         if _compact_key(person.name) == key:
             return person
     return None
+
+
+def _find_rfid_conflict(
+    db: Session,
+    rfid_code: str | None,
+    *,
+    business_id: int | None,
+    exclude_person_id: int | None = None,
+) -> Person | None:
+    key = _rfid_key(rfid_code)
+    if not key:
+        return None
+    query = db.query(Person).filter(func.lower(func.trim(Person.rfid_code)) == key)
+    if business_id is not None:
+        query = query.filter(Person.business_id == business_id)
+    if exclude_person_id is not None:
+        query = query.filter(Person.id != exclude_person_id)
+    return query.first()
 
 
 def _next_sort_order(db: Session, business_id: int | None) -> int:
@@ -321,6 +375,8 @@ def _import_person_rows(
     activity_lookup = _lookup_map(activity_query.all(), "code", "label")
     existing_names: set[str] = set()
     existing_names_by_business: dict[int | None, set[str]] = {}
+    existing_rfid_by_business: dict[int | None, set[str]] = {}
+    seen_rfid_by_business: dict[int | None, set[str]] = {}
     next_sort_by_business: dict[int | None, int] = {}
     seen_names: set[str] = set()
     created = 0
@@ -377,6 +433,19 @@ def _import_person_rows(
             errors.append(PersonImportError(row=row.row_number, name=row.name, error="Personen finns redan"))
             continue
 
+        rfid_key = _rfid_key(row.rfid_code)
+        scoped_existing_rfid = existing_rfid_by_business.setdefault(
+            business_id,
+            _existing_person_rfid_codes(db, business_id),
+        )
+        scoped_seen_rfid = seen_rfid_by_business.setdefault(business_id, set())
+        if rfid_key and rfid_key in scoped_seen_rfid:
+            errors.append(PersonImportError(row=row.row_number, name=row.name, error="RFID-kod ar dubblett i importen"))
+            continue
+        if rfid_key and rfid_key in scoped_existing_rfid:
+            errors.append(PersonImportError(row=row.row_number, name=row.name, error="RFID-kod finns redan"))
+            continue
+
         next_sort = next_sort_by_business.setdefault(business_id, _next_sort_order(db, business_id))
         sort_order = row.sort_order if row.sort_order is not None else next_sort
         if row.sort_order is None:
@@ -385,6 +454,7 @@ def _import_person_rows(
         person = Person(
             name=row.name,
             noman=row.noman,
+            rfid_code=row.rfid_code,
             business_id=business_id,
             home_area_id=home_area_id,
             home_activity_id=home_activity_id,
@@ -408,6 +478,9 @@ def _import_person_rows(
         )
         existing_names.add(name_key)
         scoped_existing_names.add(name_key)
+        if rfid_key:
+            scoped_existing_rfid.add(rfid_key)
+            scoped_seen_rfid.add(rfid_key)
         created += 1
 
     db.commit()
@@ -575,6 +648,7 @@ def create_person(
     user: User = Depends(require_view_access("persons", "edit")),
 ) -> Person:
     noman = _required_noman(payload.noman)
+    rfid_code = _clean_rfid_code(payload.rfid_code)
     area = db.get(Area, payload.home_area_id) if payload.home_area_id is not None else None
     if payload.home_area_id is not None:
         assert_scoped_object(db, user, area, detail="Hemområde hittades inte")
@@ -594,6 +668,8 @@ def create_person(
     existing = _find_name_conflict(db, payload.name, business_id=business_id)
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Person med samma namn finns redan")
+    if _find_rfid_conflict(db, rfid_code, business_id=business_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="RFID-kod finns redan")
     if area is not None and area.business_id != business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Hemområde tillhör annan verksamhet")
     if activity is not None and activity.business_id != business_id:
@@ -601,6 +677,7 @@ def create_person(
 
     data = payload.model_dump()
     data["noman"] = noman
+    data["rfid_code"] = rfid_code
     data["business_id"] = business_id
     data["is_active"] = True
     person = Person(**data)
@@ -645,6 +722,10 @@ def update_person(
     data = payload.model_dump(exclude_unset=True, exclude={"is_active"})
     if "noman" in data:
         data["noman"] = _noman_for_update(data["noman"], person.noman)
+    if "rfid_code" in data:
+        data["rfid_code"] = _clean_rfid_code(data["rfid_code"])
+        if _find_rfid_conflict(db, data["rfid_code"], business_id=person.business_id, exclude_person_id=person_id):
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="RFID-kod finns redan")
     if "business_id" in data and data["business_id"] != person.business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Person kan inte flyttas mellan verksamheter")
     if "home_area_id" in data and data["home_area_id"] is not None:

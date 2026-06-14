@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import audit
@@ -20,6 +21,7 @@ from .compiled_data_paths import compiled_data_root
 from .database import SessionLocal
 from .external_data_client import ExternalDataClient
 from .business_scope import DEFAULT_BUSINESS_CODE
+from .models import Business
 from .productivity_service import ProductivitySourceError, find_kpi_file
 from .workflow_data import (
     WorkflowDataError,
@@ -516,6 +518,39 @@ def _audit_sync(
     )
 
 
+def _productivity_cache_business_id(db: Session | None, business_code: str | None) -> int | None:
+    if db is None:
+        return None
+    code = str(business_code or DEFAULT_BUSINESS_CODE or "").strip().lower()
+    if not code:
+        return None
+    return db.execute(select(Business.id).where(func.lower(Business.code) == code)).scalar()
+
+
+def _warm_person_productivity_daily_cache(
+    db: Session | None,
+    snapshot_date: date,
+    *,
+    reference_dir: Path | str | None,
+    business_code: str | None,
+    sync: dict[str, Any],
+) -> None:
+    if db is None:
+        return
+    try:
+        from .person_productivity_cache import ensure_person_productivity_daily_cache
+
+        ensure_person_productivity_daily_cache(
+            db,
+            productivity_snapshot_files(snapshot_date, reference_dir=reference_dir),
+            report_date=snapshot_date,
+            business_id=_productivity_cache_business_id(db, business_code),
+            sync=sync,
+        )
+    except Exception:
+        logger.warning("Could not warm person productivity daily cache.", exc_info=True)
+
+
 def sync_productivity_snapshot(
     snapshot_date: date | None = None,
     *,
@@ -601,6 +636,13 @@ def sync_productivity_snapshot(
         atomic_write_json(productivity_snapshot_metadata_path(day, reference_dir), metadata)
         productivity_snapshot_error_path(day, reference_dir).unlink(missing_ok=True)
         SNAPSHOT_STATUS.update(metadata)
+        _warm_person_productivity_daily_cache(
+            db,
+            day,
+            reference_dir=reference_dir,
+            business_code=business_code,
+            sync=metadata,
+        )
         _audit_sync(db, snapshot_date=day, status_text="ok", sources=source_entries, user_id=user_id)
         return metadata
     except Exception as exc:
@@ -785,6 +827,13 @@ def sync_productivity_snapshot_history(
                 status_text="ok",
                 sources=metadata["sources"],
                 user_id=user_id,
+            )
+            _warm_person_productivity_daily_cache(
+                db,
+                snapshot_date,
+                reference_dir=reference_dir,
+                business_code=business_code,
+                sync=metadata,
             )
             results.append(metadata)
 

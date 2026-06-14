@@ -7,6 +7,15 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-14] change | Verksamheter far bolag och personer far RFID
+
+Verksamheter har nu `company_codes` for bolagskoder per verksamhet. Super User
+kan skriva bolag i Verksamheter-vyn, till exempel `BOLAG1, BOLAG2, BOLAG3`,
+och API:t normaliserar listan. Personer har nu valfri `rfid_code` for
+brickkoppling i Personer-vyn, ny person-modal, direktimport och Excelmall.
+RFID-koder normaliseras till versaler och far inte dubbletteras inom samma
+verksamhet.
+
 ## [2026-06-14] change | Bemanning visar historiskt snitt vid hover
 
 Bemanning har inte langre en `V+H`-knapp som laddar hela dagens kapacitetskarta
@@ -1480,3 +1489,7 @@ Ytgenereringens resultatkarta i Bearbeta anvander nu `Aterstall vy` som minsta t
 ## [2026-06-11] change | Bearbeta-matris flyttad till Installningar
 
 Bearbeta-vyn visar inte langre en egen Matris-knapp. Bearbeta-matrisen ligger nu i `installningar.html` under fliken `Bearbeta`, syns med `allocationProcessMatrix=view` och sparas med `allocationProcessMatrix=edit`. `GET /api/allokering/process-matrix` kan fortfarande lasas av Bearbeta-vyn for flodessynlighet, men kan ocksa lasas av matrisfliken i Installningar.
+
+## [2026-06-14] change | Installningar verksamhetsseparerade
+
+Installningar skickar nu vald verksamhet fran omradesfokus till Ytkarta, Bearbeta-matris och Bemanning. `allocation_process_matrix`, `ytgenerering_map_layout`, `staffing_history_hours` och hover-aktiviteternas settings sparas/lases per verksamhet, medan Vybehorigheter fortsatt ar global rollatkomst. Frontendens bootcache scopeas sa matris/coredata inte ateranvands mellan verksamheter.

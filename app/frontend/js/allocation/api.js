@@ -1,7 +1,19 @@
+function allocationDefaultGetCacheTtlMs(path, options = {}) {
+  if (options.skipCache || options.cacheTtlMs) return 0;
+  const text = String(path || "");
+  if (text.includes("/api/allokering/process-matrix")) return 30 * 1000;
+  if (text.includes("/api/allokering/ytgenerering-map-layout")) return 30 * 1000;
+  if (text.includes("/api/allokering/ytgenerering-location-options")) return 30 * 1000;
+  if (text.includes("/api/allokering/flows")) return 60 * 1000;
+  if (text.includes("/api/coredata/files")) return 20 * 1000;
+  return 0;
+}
+
 async function allocationJson(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   if (method === "GET" && window.api?.get) {
-    return await window.api.get(path, options);
+    const cacheTtlMs = allocationDefaultGetCacheTtlMs(path, options);
+    return await window.api.get(path, cacheTtlMs ? { ...options, cacheTtlMs } : options);
   }
   let response;
   try {

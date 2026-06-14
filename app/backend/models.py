@@ -55,6 +55,7 @@ class Business(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    company_codes: Mapped[list[str]] = mapped_column(JsonField, nullable=False, default=list)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -84,11 +85,15 @@ class Area(Base):
 
 class Person(Base):
     __tablename__ = "persons"
+    __table_args__ = (
+        UniqueConstraint("business_id", "rfid_code", name="uq_persons_business_rfid_code"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     noman: Mapped[str | None] = mapped_column(String(120))
+    rfid_code: Mapped[str | None] = mapped_column(String(120))
     home_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     home_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     competencies: Mapped[list] = mapped_column(JsonField, nullable=False, default=list)
@@ -238,6 +243,9 @@ class UserWaitMetric(Base):
     __tablename__ = "user_wait_metrics"
     __table_args__ = (
         Index("ix_user_wait_metrics_created_at", "created_at"),
+        Index("ix_user_wait_metrics_business_created", "business_id", "created_at"),
+        Index("ix_user_wait_metrics_user_created", "user_id", "created_at"),
+        Index("ix_user_wait_metrics_event_created", "event_type", "created_at"),
         Index("ix_user_wait_metrics_view_target", "view_id", "target"),
     )
 

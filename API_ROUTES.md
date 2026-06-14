@@ -84,6 +84,7 @@ verksamheter.
 | `allocation.filter_profile_import` | `POST` | `/api/allokering/filter-profile/import` | Kopiera Bearbeta-profil fran anvandare |
 | `allocation.map_layout_get` | `GET` | `/api/allokering/ytgenerering-map-layout` | Hamta Ytgenerering-kartlayout |
 | `allocation.map_layout_update` | `PUT` | `/api/allokering/ytgenerering-map-layout` | Uppdatera Ytgenerering-kartlayout |
+| `allocation.map_location_options` | `GET` | `/api/allokering/ytgenerering-location-options` | Hamta Ytgenerering U-platslista |
 | `allocation.detect` | `POST` | `/api/allokering/detect` | Identifiera lagerverktygsfil |
 | `allocation.observations_update` | `POST` | `/api/allokering/observations/update` | Uppdatera observations från buffert |
 | `allocation.run_flow` | `POST` | `/api/allokering/flow/{flow_id}` | Kör lagerverktygsflöde |

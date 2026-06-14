@@ -82,12 +82,26 @@ def test_persons_view_exposes_required_noman_field():
 
     assert '<th data-sort="noman">NoMan' in persons_html
     assert 'data-filter="noman"' in persons_html
-    assert 'const filters = { name: "", noman: "", business: "", home_area: "", home_activity: "", sort_order: "" }' in persons_js
+    assert 'const filters = { name: "", noman: "", rfid_code: "", business: "", home_area: "", home_activity: "", sort_order: "" }' in persons_js
     assert 'case "noman": return (p.noman || "").toLowerCase();' in persons_js
     assert 'editText(tdNoman, p, "noman", p.noman || "", "NoMan")' in persons_js
     assert '{ key: "noman", label: "NoMan", required: true }' in persons_js
     assert 'noman: document.getElementById("m-noman").value.trim()' in persons_js
     assert 'if (!payload.noman) { showToast("NoMan krävs", "error"); return; }' in persons_js
+
+
+def test_persons_view_exposes_optional_rfid_field():
+    frontend = ROOT / "app" / "frontend"
+    persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
+    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+
+    assert '<th data-sort="rfid_code">RFID' in persons_html
+    assert 'data-filter="rfid_code"' in persons_html
+    assert 'case "rfid_code": return (p.rfid_code || "").toLowerCase();' in persons_js
+    assert 'editText(tdRfid, p, "rfid_code", p.rfid_code || "", "RFID")' in persons_js
+    assert '{ key: "rfid_code", label: "RFID", required: false }' in persons_js
+    assert 'rfid_code: document.getElementById("m-rfid").value.trim()' in persons_js
+    assert 'rfid_code: person.rfid_code ?? null' in persons_js
 
 
 def test_persons_view_shows_business_column():

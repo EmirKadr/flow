@@ -1,7 +1,7 @@
 ---
 title: Verksamheter och isolering
 status: aktiv
-updated: 2026-06-09
+updated: 2026-06-14
 tags: [verksamheter, behorighet, isolering, super-user]
 ---
 
@@ -29,8 +29,8 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 | Områdestoggle | Sidebar footer | Alla inloggade | Vanligt klick stegar mellan fokuslagen; hogerklick oppnar omradesmenyn. Menyn kan scrollas nar manga omraden finns och stangs inte av scroll inne i menyn. Filtrerar vyer efter synliga områden och verksamhet | `common.js`, `flow-area-focus`, `/api/areas` | Gammalt lokalt fokus migreras från områdeskod till `AREA:<id>`. |
 | `∞` | Områdestoggle | Alla, men med olika scope | Vanliga användare får `∞` när egen verksamhet har aktivt `ANNAT`; Super User ser globalt allt | `areaFocusOptions`, `ANNAT`, business-scopeade API | Om `∞` saknas för en verksamhet: lägg till `ANNAT` i Verksamheter-vyn. |
 | Verksamheter | Sidebar | Super User | Oppnar lista over verksamheter och deras omraden | `verksamheter.html`, `businesses.js` | Saknas korrekt for vanliga anvandare. |
-| Ny verksamhet | Verksamheter | Super User | Skapar verksamhet med namn, sortering och aktiv-status. Kod skapas automatiskt från namnet | `POST /api/businesses` | Namn krävs. Om koden redan finns får den automatiskt suffix. |
-| Klickbar verksamhetscell | Verksamheter | Super User | Klicka i kod, namn, sortering eller aktiv-status för att ändra direkt i tabellen | `PUT /api/businesses/{business_id}` | Inaktiv verksamhet döljs i normal lista om `Visa inaktiva` inte är vald. |
+| Ny verksamhet | Verksamheter | Super User | Skapar verksamhet med namn, bolag, sortering och aktiv-status. Kod skapas automatiskt från namnet | `POST /api/businesses` | Namn krävs. Om koden redan finns får den automatiskt suffix. |
+| Klickbar verksamhetscell | Verksamheter | Super User | Klicka i kod, namn, bolag, sortering eller aktiv-status för att ändra direkt i tabellen | `PUT /api/businesses/{business_id}` | Inaktiv verksamhet döljs i normal lista om `Visa inaktiva` inte är vald. |
 | Rubriker | Verksamheter | Super User | Klick sorterar verksamheter eller områden efter kolumnen | `businesses.js` | Sorteringen är bara visuell och ändrar inte sparad sorteringsordning. |
 | Nytt omrade | Verksamheter, under vald verksamhet | Super User | Skapar omrade pa vald verksamhet. Kod skapas automatiskt från namnet | `POST /api/areas` med `business_id` | Namn krävs. Områdeskod får återanvändas i annan verksamhet men inte inom samma. |
 | Lägg till `∞` | Verksamheter, under Omraden | Super User | Skapar eller återaktiverar området `ANNAT`/`Annat` på vald verksamhet | `POST /api/areas`, `PUT /api/areas/{area_id}` | Om `ANNAT` redan finns aktivt visas `∞ aktiv`. |
@@ -40,11 +40,11 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
 
 ## Tekniskt flöde
 
-- `businesses` innehåller `code`, `name`, `sort_order` och `is_active`.
+- `businesses` innehåller `code`, `name`, `company_codes`, `sort_order` och `is_active`. `company_codes` ar verksamhetens bolagskoder, till exempel `BOLAG1`, `BOLAG2`, och sparas som en lista.
 - `verksamheter.html` visar varje verksamhet med en undersektion Omraden. Den hamtar `/api/businesses` och `/api/areas?include_inactive=true`, grupperar omradena pa `business_id` och uppdaterar sidebarens omradesfokus efter andringar.
 - Celler i Verksamheter-vyn är inline-redigerbara. Text- och sifferceller sparas på Enter eller när fältet tappar fokus. Aktiv-status sparas direkt via checkbox. API-success/fel visas med toast och dokumentlogg.
 - Området `ANNAT` är verksamhetens markör för eget alla-områden-läge. `common.js` filtrerar bort `ANNAT` som vanligt områdesval men lägger till `∞` när markören är aktiv.
-- `POST /api/businesses` och `POST /api/areas` kan ta emot kod, men Verksamheter-vyn skickar normalt bara namn/sortering/aktiv-status. Backend skapar då en sanerad versal kod från namnet och lägger till `_2`, `_3` osv vid krock.
+- `POST /api/businesses` och `POST /api/areas` kan ta emot kod, men Verksamheter-vyn skickar normalt namn, bolag, sortering och aktiv-status. Backend skapar då en sanerad versal kod från namnet och lägger till `_2`, `_3` osv vid krock. Bolag kan skrivas komma-, semikolon- eller radbrytningsseparerat i klienten och normaliseras till versala koder utan dubbletter.
 - `users`, `areas`, `persons`, `activities`, `audit_log` och verksamhetsspecifika `app_settings` har `business_id`.
 - `STIGAMO` är bakåtkompatibel default. Migrationen kopplar befintliga användare, områden, personer, aktiviteter, historik och settings dit när verksamhetskolumnen införs.
 - `R3` skapas av verksamhetsmigrationen. Lokal/dev-seed kan fylla R3-område och frånvaroaktiviteter, men seed körs inte och är spärrad mot production/live.
@@ -82,6 +82,7 @@ python -m tools.visual_smoke --via-desktop-proxy --roles admin,r3 --output artif
 | "Varför betyder `∞` olika saker?" | För vanliga användare betyder `∞` alla områden i egen verksamhet när `ANNAT` finns där. För Super User betyder `∞` globalt allt. |
 | "Varför måste Super User välja verksamhet?" | Backend kan inte alltid härleda verksamhet från område/person/aktivitet. Då krävs ett explicit val för att undvika fel verksamhet. |
 | "Varför finns ingen kodruta när jag skapar verksamhet eller område?" | Koden skapas automatiskt från namnet när du sparar. Vid krock får den ett nummersuffix. |
+| "Hur lagger jag bolag pa en verksamhet?" | Skriv bolagskoderna i kolumnen `Bolag`, till exempel `BOLAG1, BOLAG2, BOLAG3`. Backend sparar dem som en normaliserad lista pa verksamheten. |
 | "Hur ändrar jag ett värde i Verksamheter?" | Klicka direkt i cellen, ändra värdet och tryck Enter eller klicka utanför. Aktiv-status ändras med checkboxen. |
 | "Varför hittas inte ett id som jag vet finns?" | Det kan tillhöra en annan verksamhet. API:t svarar då som saknad resurs för att inte avslöja annan verksamhet. |
 | "Varför påverkar vybehörigheten även den andra verksamheten?" | Vybehörigheter är globala per roll. Menyordning och vissa settings kan vara verksamhetsspecifika, men rollens vyåtkomst är samma i Stigamo och R3. |

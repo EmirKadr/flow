@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.backend import allocation_bridge as bridge
+from app.backend.coredata_service import CoreDataError
 from app.backend.database import Base
 from app.backend.models import AllocationUserFilterProfile, Area, Business, User
 from app.backend.routers import allocation as allocation_router
@@ -1224,6 +1225,56 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
         "coredata_type": "location",
         "business_code": "STIGAMO",
     }
+
+
+def test_ytgenerering_location_options_reuses_file_version_cache(monkeypatch, tmp_path):
+    allocation_router._clear_ytgenerering_location_options_cache()
+    user = business_user(7, 20)
+    location_path = tmp_path / "location.csv"
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL01\tU\t1\n", encoding="utf-8")
+    calls = {"count": 0}
+
+    monkeypatch.setattr(allocation_router, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
+    monkeypatch.setattr(allocation_router, "find_coredata_file", lambda *_args, **_kwargs: location_path)
+
+    def fake_location_rows(path):
+        calls["count"] += 1
+        assert Path(path) == location_path
+        return [{"location": "UTL01", "maxPall": 1.0}]
+
+    monkeypatch.setattr(bridge, "ytgenerering_location_option_rows", fake_location_rows)
+
+    first = allocation_router._ytgenerering_location_options(object(), user)
+    second = allocation_router._ytgenerering_location_options(object(), user)
+
+    assert first == [{"location": "UTL01", "maxPall": 1.0}]
+    assert second == first
+    assert calls["count"] == 1
+
+    location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL020\tU\t2.5\n", encoding="utf-8")
+    allocation_router._ytgenerering_location_options(object(), user)
+
+    assert calls["count"] == 2
+    allocation_router._clear_ytgenerering_location_options_cache()
+
+
+def test_ytgenerering_location_options_negative_caches_missing_coredata(monkeypatch):
+    allocation_router._clear_ytgenerering_location_options_cache()
+    user = business_user(7, 20)
+    calls = {"count": 0}
+
+    monkeypatch.setattr(allocation_router, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
+
+    def fake_find_coredata_file(*_args, **_kwargs):
+        calls["count"] += 1
+        raise CoreDataError("missing location")
+
+    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+
+    assert allocation_router._ytgenerering_location_options(object(), user) == []
+    assert allocation_router._ytgenerering_location_options(object(), user) == []
+    assert calls["count"] == 1
+    allocation_router._clear_ytgenerering_location_options_cache()
 
 
 def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(monkeypatch):

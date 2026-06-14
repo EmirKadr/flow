@@ -8,6 +8,8 @@
     week: null,
     date: localDateString(new Date()),
   };
+  const PERSONAL_SCHEDULE_CACHE_TTL_MS = 25 * 1000;
+  const PERSONAL_PRODUCTIVITY_CACHE_TTL_MS = 25 * 1000;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) =>
@@ -402,7 +404,10 @@
     const app = document.getElementById("personalApp");
     app.classList.add("is-loading");
     try {
-      const schedule = await api.get(`/api/personal/schedule?year=${state.year}&week=${state.week}${personQuery()}`);
+      const schedule = await api.get(
+        `/api/personal/schedule?year=${state.year}&week=${state.week}${personQuery()}`,
+        { cacheTtlMs: PERSONAL_SCHEDULE_CACHE_TTL_MS },
+      );
       state.personId = schedule.person.id;
       renderSchedule(schedule);
     } catch (error) {
@@ -416,7 +421,10 @@
     const app = document.getElementById("personalApp");
     app.classList.add("is-loading");
     try {
-      const payload = await api.get(`/api/personal/productivity?date=${encodeURIComponent(state.date)}${personQuery()}`);
+      const payload = await api.get(
+        `/api/personal/productivity?date=${encodeURIComponent(state.date)}${personQuery()}`,
+        { cacheTtlMs: PERSONAL_PRODUCTIVITY_CACHE_TTL_MS },
+      );
       state.personId = payload.person.id;
       renderProductivity(payload);
     } catch (error) {

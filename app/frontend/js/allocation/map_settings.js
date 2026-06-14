@@ -126,9 +126,25 @@ function allocationMapLayoutSaveSignature(items = []) {
     .join("\n");
 }
 
-async function loadAllocationMapLayout() {
+function allocationMapSettingsQuery(options = {}) {
   const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
+  const params = new URLSearchParams(query.startsWith("?") ? query.slice(1) : "");
+  if (Object.prototype.hasOwnProperty.call(options, "includeOptions")) {
+    params.set("include_options", options.includeOptions ? "true" : "false");
+  }
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+async function loadAllocationMapLayout(options = {}) {
+  const query = allocationMapSettingsQuery({ includeOptions: options.includeOptions !== false });
   return normalizeAllocationMapLayout(await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`));
+}
+
+async function loadAllocationMapLocationOptions() {
+  const query = allocationMapSettingsQuery();
+  const payload = await allocationJson(`${ALLOCATION_API}/ytgenerering-location-options${query}`);
+  return normalizeAllocationMapLayout({ available_locations: payload?.available_locations || [] }).availableLocations;
 }
 
 
@@ -343,6 +359,9 @@ async function mountAllocationMapSettingsPage(editor) {
   let layout;
   let rows = [];
   let availableLocations = [];
+  let availableLocationsLoading = false;
+  let availableLocationsLoaded = false;
+  let availableLocationsError = "";
   let selectedLocation = "";
   let selectedLocations = new Set();
   let clipboardRows = [];
@@ -359,7 +378,7 @@ async function mountAllocationMapSettingsPage(editor) {
   const MAP_SNAP_MIN_UNITS = 2;
 
   try {
-    layout = await loadAllocationMapLayout();
+    layout = await loadAllocationMapLayout({ includeOptions: false });
     rows = [...(layout.locations || [])];
     availableLocations = [...(layout.availableLocations || [])];
     selectedLocation = rows[0]?.location || "";
@@ -367,6 +386,22 @@ async function mountAllocationMapSettingsPage(editor) {
   } catch (error) {
     editor.innerHTML = `<p class="allocation-status error">${allocationEscape(error.message || "Kunde inte läsa ytkartan.")}</p>`;
     return;
+  }
+
+  async function loadAvailableLocations() {
+    if (availableLocationsLoading || availableLocationsLoaded) return;
+    availableLocationsLoading = true;
+    availableLocationsError = "";
+    renderEditor();
+    try {
+      availableLocations = await loadAllocationMapLocationOptions();
+      availableLocationsLoaded = true;
+    } catch (error) {
+      availableLocationsError = error.message || "Kunde inte lÃ¤sa lediga U-platser.";
+    } finally {
+      availableLocationsLoading = false;
+      renderEditor();
+    }
   }
 
   function selectedRow() {
@@ -758,7 +793,7 @@ async function mountAllocationMapSettingsPage(editor) {
     if (!canEdit) return;
     button.disabled = true;
     try {
-      const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
+      const query = allocationMapSettingsQuery({ includeOptions: false });
       const requestedSignature = allocationMapLayoutSaveSignature(rows);
       const response = await allocationJson(`${ALLOCATION_API}/ytgenerering-map-layout${query}`, {
         method: "PUT",
@@ -771,7 +806,6 @@ async function mountAllocationMapSettingsPage(editor) {
       }
       layout = savedLayout;
       rows = [...layout.locations];
-      availableLocations = [...(layout.availableLocations || [])];
       statusText = "Ytkartsinställningar sparade.";
       showToast(statusText, "success", 2500);
       renderEditor();
@@ -1098,11 +1132,15 @@ async function mountAllocationMapSettingsPage(editor) {
             ` : `<p class="allocation-muted">Ingen yta vald.</p>`}
             <div class="allocation-map-settings-list-head">
               <strong>Lediga U-platser</strong>
-              <span>${freeLocations.length}/${availableLocations.length}</span>
+              <span>${availableLocationsLoading ? "..." : `${freeLocations.length}/${availableLocations.length}`}</span>
             </div>
             <input data-map-location-search class="allocation-map-location-search" placeholder="Sök UTL" value="${allocationEscape(editor.querySelector("[data-map-location-search]")?.value || "")}" />
             <div class="allocation-map-settings-list">
-              ${freeLocations.map((item) => `
+              ${availableLocationsLoading
+                ? `<p class="allocation-muted">Laddar lediga U-platser...</p>`
+                : availableLocationsError
+                  ? `<p class="allocation-status error">${allocationEscape(availableLocationsError)}</p>`
+                  : freeLocations.map((item) => `
                 <button type="button" data-map-add-location="${allocationEscape(item.location)}" draggable="${canEdit ? "true" : "false"}" ${canEdit ? "" : "disabled"}>
                   <span>${allocationEscape(item.location)}</span><small>${allocationEscape(item.maxPall)} pall</small>
                 </button>
@@ -1370,5 +1408,6 @@ async function mountAllocationMapSettingsPage(editor) {
 
   fitView();
   renderEditor();
+  void loadAvailableLocations();
 }
 

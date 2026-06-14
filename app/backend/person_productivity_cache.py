@@ -99,6 +99,234 @@ def person_productivity_cache_is_current(
     )
 
 
+def person_productivity_daily_report_if_current(
+    db: Session,
+    snapshot_date: date,
+    *,
+    business_id: int | None,
+    person_id: int,
+    sync: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not person_productivity_cache_is_current(db, snapshot_date, business_id=business_id, sync=sync):
+        return None
+
+    rows = (
+        _cache_query(db, snapshot_date, business_id)
+        .filter(PersonProductivityDaily.person_id == person_id)
+        .order_by(
+            PersonProductivityDaily.row_type.asc(),
+            PersonProductivityDaily.start_minute.asc(),
+            PersonProductivityDaily.item_key.asc(),
+        )
+        .all()
+    )
+    person_rows = [row for row in rows if row.row_type == PRODUCTIVITY_CACHE_ROW_PERSON]
+    cell_rows = [row for row in rows if row.row_type == PRODUCTIVITY_CACHE_ROW_CELL]
+    if not rows:
+        return {"date": snapshot_date.isoformat(), "people": []}
+
+    person_row = person_rows[0] if person_rows else None
+    time_cells: list[dict[str, Any]] = []
+    for row in cell_rows:
+        kind = str(row.kind or "")
+        minutes = row.kpi_minutes
+        if kind == "support":
+            minutes = row.support_minutes
+        elif kind == "absence":
+            minutes = row.absence_minutes
+        time_cells.append(
+            {
+                "kind": kind,
+                "activity_id": row.activity_id,
+                "activity_label": row.activity_label,
+                "display": row.activity_label or row.process_label or "",
+                "start_minute": row.start_minute,
+                "end_minute": row.end_minute,
+                "points": row.kpi_points,
+                "expected_points": row.planned_kpi_points,
+                "minutes": minutes,
+                "event_count": row.event_count,
+                "diff_count": row.diff_count,
+            }
+        )
+
+    return {
+        "date": snapshot_date.isoformat(),
+        "people": [
+            {
+                "person_id": person_id,
+                "kpi_points": person_row.kpi_points if person_row else sum(row.kpi_points for row in cell_rows),
+                "planned_kpi_points": person_row.planned_kpi_points
+                if person_row
+                else sum(row.planned_kpi_points for row in cell_rows),
+                "kpi_minutes": person_row.kpi_minutes if person_row else sum(row.kpi_minutes for row in cell_rows),
+                "support_minutes": person_row.support_minutes if person_row else sum(row.support_minutes for row in cell_rows),
+                "absence_minutes": person_row.absence_minutes if person_row else sum(row.absence_minutes for row in cell_rows),
+                "time_cells": time_cells,
+            }
+        ],
+    }
+
+
+def person_productivity_period_stats_if_current(
+    db: Session,
+    snapshot_dates: list[date],
+    *,
+    business_id: int | None,
+    person_id: int,
+    sync_by_date: dict[date, dict[str, Any]],
+) -> dict[str, Any] | None:
+    dates = sorted(set(snapshot_dates))
+    if not dates:
+        return {
+            "dates": [],
+            "activities": [],
+            "summary": {
+                "days_with_data": 0,
+                "days_with_activity": 0,
+                "kpi_points": 0,
+                "planned_kpi_points": 0,
+                "productivity_pct": None,
+                "points_per_hour": None,
+                "kpi_minutes": 0,
+                "kpi_hours": 0,
+                "support_minutes": 0,
+                "absence_minutes": 0,
+                "event_count": 0,
+                "diff_count": 0,
+            },
+        }
+
+    for snapshot_date in dates:
+        if not person_productivity_cache_is_current(
+            db,
+            snapshot_date,
+            business_id=business_id,
+            sync=sync_by_date.get(snapshot_date),
+        ):
+            return None
+
+    base_filters = [
+        PersonProductivityDaily.snapshot_date.in_(dates),
+        PersonProductivityDaily.person_id == person_id,
+    ]
+    if business_id is not None:
+        base_filters.append(PersonProductivityDaily.business_id == business_id)
+
+    person_summary = db.execute(
+        select(
+            func.count(func.distinct(PersonProductivityDaily.snapshot_date)),
+            func.coalesce(func.sum(PersonProductivityDaily.support_minutes), 0),
+            func.coalesce(func.sum(PersonProductivityDaily.absence_minutes), 0),
+        ).where(
+            *base_filters,
+            PersonProductivityDaily.row_type == PRODUCTIVITY_CACHE_ROW_PERSON,
+        )
+    ).one()
+    days_with_data = int(person_summary[0] or 0)
+    support_minutes = int(person_summary[1] or 0)
+    absence_minutes = int(person_summary[2] or 0)
+
+    activity_label = func.coalesce(
+        PersonProductivityDaily.activity_label,
+        PersonProductivityDaily.process_label,
+        "Okand aktivitet",
+    )
+    activity_rows = db.execute(
+        select(
+            activity_label.label("activity"),
+            func.coalesce(func.sum(PersonProductivityDaily.kpi_points), 0),
+            func.coalesce(func.sum(PersonProductivityDaily.planned_kpi_points), 0),
+            func.coalesce(func.sum(PersonProductivityDaily.kpi_minutes), 0),
+            func.count(PersonProductivityDaily.id),
+            func.coalesce(func.sum(PersonProductivityDaily.event_count), 0),
+            func.coalesce(func.sum(PersonProductivityDaily.diff_count), 0),
+        )
+        .where(
+            *base_filters,
+            PersonProductivityDaily.row_type == PRODUCTIVITY_CACHE_ROW_CELL,
+            PersonProductivityDaily.kind == "kpi",
+            PersonProductivityDaily.planned_kpi_points > 0,
+        )
+        .group_by(activity_label)
+    ).all()
+
+    activities: list[dict[str, float | int | str | None]] = []
+    total_points = 0.0
+    total_planned = 0.0
+    total_minutes = 0
+    event_count = 0
+    diff_count = 0
+    for row in activity_rows:
+        points = float(row[1] or 0)
+        planned = float(row[2] or 0)
+        minutes = int(row[3] or 0)
+        periods = int(row[4] or 0)
+        events = int(row[5] or 0)
+        diffs = int(row[6] or 0)
+        hours = minutes / 60.0 if minutes else 0.0
+        total_points += points
+        total_planned += planned
+        total_minutes += minutes
+        event_count += events
+        diff_count += diffs
+        activities.append(
+            {
+                "activity": str(row[0] or "Okand aktivitet"),
+                "productivity_pct": points / planned if planned > 0 else None,
+                "points_per_hour": points / hours if hours > 0 else None,
+                "kpi_points": round(points, 2),
+                "planned_kpi_points": round(planned, 2),
+                "kpi_minutes": minutes,
+                "kpi_hours": round(hours, 2),
+                "periods": periods,
+                "event_count": events,
+                "diff_count": diffs,
+            }
+        )
+
+    activities.sort(key=lambda item: (-float(item["kpi_minutes"] or 0), str(item["activity"]).upper()))
+    total_hours = total_minutes / 60.0 if total_minutes else 0.0
+    days_with_activity = int(
+        db.execute(
+            select(func.count(func.distinct(PersonProductivityDaily.snapshot_date))).where(
+                *base_filters,
+                PersonProductivityDaily.row_type == PRODUCTIVITY_CACHE_ROW_CELL,
+                PersonProductivityDaily.kind == "kpi",
+                PersonProductivityDaily.planned_kpi_points > 0,
+            )
+        ).scalar()
+        or 0
+    )
+    used_dates = db.execute(
+        select(PersonProductivityDaily.snapshot_date)
+        .where(
+            *base_filters,
+            PersonProductivityDaily.row_type == PRODUCTIVITY_CACHE_ROW_PERSON,
+        )
+        .distinct()
+        .order_by(PersonProductivityDaily.snapshot_date.asc())
+    ).scalars().all()
+    return {
+        "dates": [item.isoformat() for item in used_dates],
+        "activities": activities,
+        "summary": {
+            "days_with_data": days_with_data,
+            "days_with_activity": days_with_activity,
+            "kpi_points": round(total_points, 2),
+            "planned_kpi_points": round(total_planned, 2),
+            "productivity_pct": total_points / total_planned if total_planned > 0 else None,
+            "points_per_hour": total_points / total_hours if total_hours > 0 else None,
+            "kpi_minutes": total_minutes,
+            "kpi_hours": round(total_hours, 2),
+            "support_minutes": support_minutes,
+            "absence_minutes": absence_minutes,
+            "event_count": event_count,
+            "diff_count": diff_count,
+        },
+    }
+
+
 def _read_rows_by_source(files: dict[str, Path]) -> dict[str, list[dict[str, str]]]:
     rows_by_source: dict[str, list[dict[str, str]]] = {}
     for key, path in files.items():

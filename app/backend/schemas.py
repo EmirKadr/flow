@@ -13,13 +13,20 @@ class BusinessOut(BaseModel):
     id: int
     code: str
     name: str
+    company_codes: list[str] = Field(default_factory=list)
     sort_order: int
     is_active: bool
+
+    @field_validator("company_codes", mode="before")
+    @classmethod
+    def _default_company_codes(cls, value):
+        return [] if value is None else value
 
 
 class BusinessCreate(BaseModel):
     code: str | None = None
     name: str
+    company_codes: list[str] = Field(default_factory=list)
     sort_order: int = 0
     is_active: bool = True
 
@@ -27,6 +34,7 @@ class BusinessCreate(BaseModel):
 class BusinessUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
+    company_codes: list[str] | None = None
     sort_order: int | None = None
     is_active: bool | None = None
 
@@ -134,6 +142,7 @@ class PersonOut(BaseModel):
     business_id: int | None = None
     name: str
     noman: str | None = None
+    rfid_code: str | None = None
     home_area_id: int | None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -147,6 +156,7 @@ class PersonCreate(BaseModel):
     business_id: int | None = None
     name: str
     noman: str | None = None
+    rfid_code: str | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -160,6 +170,7 @@ class PersonUpdate(BaseModel):
     business_id: int | None = None
     name: str | None = None
     noman: str | None = None
+    rfid_code: str | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] | None = None
@@ -185,6 +196,7 @@ class PersonImportRowInput(BaseModel):
     business: str | int | float | None = None
     name: str | int | float | None = None
     noman: str | int | float | None = None
+    rfid_code: str | int | float | None = None
     home_area: str | int | float | None = None
     home_activity: str | int | float | None = None
     sort_order: str | int | float | None = None

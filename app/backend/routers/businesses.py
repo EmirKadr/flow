@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ def _business_snapshot(business: Business) -> dict:
         "id": business.id,
         "code": business.code,
         "name": business.name,
+        "company_codes": list(business.company_codes or []),
         "sort_order": business.sort_order,
         "is_active": business.is_active,
     }
@@ -33,6 +35,26 @@ def _clean_code(value: str) -> str:
     if not code:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Verksamhetskod saknar giltiga tecken")
     return code[:20]
+
+
+def _clean_company_codes(values: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        for part in re.split(r"[,;\n\r]+", str(raw)):
+            if not part.strip():
+                continue
+            code = code_part(part)
+            if not code:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bolagskod saknar giltiga tecken")
+            code = code[:20]
+            if code in seen:
+                continue
+            seen.add(code)
+            cleaned.append(code)
+    if len(cleaned) > 50:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Max 50 bolag per verksamhet")
+    return cleaned
 
 
 def _unique_business_code(db: Session, base: str) -> str:
@@ -89,6 +111,7 @@ def create_business(
     business = Business(
         code=code,
         name=payload.name.strip() or code,
+        company_codes=_clean_company_codes(payload.company_codes),
         sort_order=payload.sort_order,
         is_active=payload.is_active,
     )
@@ -130,6 +153,8 @@ def update_business(
         business.code = code
     if "name" in data and data["name"] is not None:
         business.name = data["name"].strip() or business.code
+    if "company_codes" in data and data["company_codes"] is not None:
+        business.company_codes = _clean_company_codes(data["company_codes"])
     if "sort_order" in data and data["sort_order"] is not None:
         business.sort_order = data["sort_order"]
     if "is_active" in data and data["is_active"] is not None:

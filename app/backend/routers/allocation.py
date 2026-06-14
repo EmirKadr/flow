@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
+from pathlib import Path
 import re
+import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .. import audit
 from .. import allocation_bridge as bridge
@@ -57,6 +62,11 @@ logger = logging.getLogger(__name__)
 ALLOCATION_FLOW_ERROR_CODE = "allocation_flow_failed"
 ALLOCATION_FLOW_PATH_PREFIX = "/api/allokering/flow"
 YTGENERERING_MAP_LAYOUT_KEY = "ytgenerering_map_layout"
+_YTGENERERING_LOCATION_OPTIONS_CACHE_MAX_ITEMS = 32
+_YTGENERERING_LOCATION_OPTIONS_MISSING_TTL_SECONDS = 60
+_YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK = threading.Lock()
+_YTGENERERING_LOCATION_OPTIONS_CACHE: dict[tuple[str, str, int, int], list[dict[str, object]]] = {}
+_YTGENERERING_LOCATION_OPTIONS_MISSING_CACHE: dict[tuple[str, str], float] = {}
 
 
 class AllocationProcessMatrixUpdate(BaseModel):
@@ -427,6 +437,56 @@ def _ytgenerering_map_layout_response(db: Session, user: User, *, business_id: i
     }
 
 
+def _clear_ytgenerering_location_options_cache() -> None:
+    with _YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK:
+        _YTGENERERING_LOCATION_OPTIONS_CACHE.clear()
+        _YTGENERERING_LOCATION_OPTIONS_MISSING_CACHE.clear()
+
+
+def _ytgenerering_location_missing_key(business_code: str | None) -> tuple[str, str]:
+    return ("location", str(business_code or ""))
+
+
+def _ytgenerering_location_missing_cached(business_code: str | None) -> bool:
+    key = _ytgenerering_location_missing_key(business_code)
+    now = time.monotonic()
+    with _YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK:
+        expires_at = _YTGENERERING_LOCATION_OPTIONS_MISSING_CACHE.get(key)
+        if expires_at and expires_at > now:
+            return True
+        if expires_at:
+            _YTGENERERING_LOCATION_OPTIONS_MISSING_CACHE.pop(key, None)
+    return False
+
+
+def _remember_ytgenerering_location_missing(business_code: str | None) -> None:
+    key = _ytgenerering_location_missing_key(business_code)
+    with _YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK:
+        _YTGENERERING_LOCATION_OPTIONS_MISSING_CACHE[key] = time.monotonic() + _YTGENERERING_LOCATION_OPTIONS_MISSING_TTL_SECONDS
+
+
+def _cached_ytgenerering_location_option_rows(location_path: str | Path, business_code: str | None) -> list[dict[str, object]]:
+    path = Path(location_path)
+    stat = path.stat()
+    key = (
+        str(business_code or ""),
+        str(path.resolve()),
+        int(stat.st_mtime_ns),
+        int(stat.st_size),
+    )
+    with _YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK:
+        cached = _YTGENERERING_LOCATION_OPTIONS_CACHE.get(key)
+        if cached is not None:
+            return deepcopy(cached)
+
+    rows = bridge.ytgenerering_location_option_rows(path)
+    with _YTGENERERING_LOCATION_OPTIONS_CACHE_LOCK:
+        if len(_YTGENERERING_LOCATION_OPTIONS_CACHE) >= _YTGENERERING_LOCATION_OPTIONS_CACHE_MAX_ITEMS:
+            _YTGENERERING_LOCATION_OPTIONS_CACHE.pop(next(iter(_YTGENERERING_LOCATION_OPTIONS_CACHE)), None)
+        _YTGENERERING_LOCATION_OPTIONS_CACHE[key] = deepcopy(rows)
+    return rows
+
+
 def _ytgenerering_location_options(
     db: Session,
     user: User,
@@ -443,8 +503,14 @@ def _ytgenerering_location_options(
                 business_code = None
         if not business_code:
             business_code = _allocation_business_code(db, user, area_focus=area_focus)
+        if _ytgenerering_location_missing_cached(business_code):
+            return []
         location_path = find_coredata_file("location", business_code=business_code, db=db)
-        return bridge.ytgenerering_location_option_rows(location_path)
+        return _cached_ytgenerering_location_option_rows(location_path, business_code)
+    except CoreDataError:
+        _remember_ytgenerering_location_missing(locals().get("business_code"))
+        logger.warning("Could not load ytgenerering location options.", exc_info=True)
+        return []
     except Exception:
         logger.warning("Could not load ytgenerering location options.", exc_info=True)
         return []
@@ -456,12 +522,15 @@ def _ytgenerering_map_layout_with_options(
     *,
     area_focus: str | None = None,
     business_id: int | None = None,
+    include_options: bool = True,
 ) -> dict[str, object]:
     business_id = _allocation_settings_business_id(db, user, area_focus, business_id)
-    return {
+    payload = {
         **_ytgenerering_map_layout_response(db, user, business_id=business_id),
-        "available_locations": _ytgenerering_location_options(db, user, area_focus=area_focus, business_id=business_id),
     }
+    if include_options:
+        payload["available_locations"] = _ytgenerering_location_options(db, user, area_focus=area_focus, business_id=business_id)
+    return payload
 
 
 def _session_owner_payload(user: User) -> dict:
@@ -807,6 +876,7 @@ def import_filter_profile(
 def get_ytgenerering_map_layout(
     area_focus: str | None = None,
     business_id: int | None = Query(None),
+    include_options: bool = Query(True),
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("allocationSettings", "view")),
 ) -> dict:
@@ -815,7 +885,26 @@ def get_ytgenerering_map_layout(
         user,
         area_focus=bridge.normalize_process_area_focus(area_focus or ""),
         business_id=business_id,
+        include_options=include_options,
     )
+
+
+@router.get("/ytgenerering-location-options")
+def get_ytgenerering_location_options(
+    area_focus: str | None = None,
+    business_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("allocationSettings", "view")),
+) -> dict:
+    scoped_business_id = _allocation_settings_business_id(db, user, area_focus, business_id)
+    return {
+        "available_locations": _ytgenerering_location_options(
+            db,
+            user,
+            area_focus=bridge.normalize_process_area_focus(area_focus or ""),
+            business_id=scoped_business_id,
+        )
+    }
 
 
 @router.put("/ytgenerering-map-layout")
@@ -823,6 +912,7 @@ def update_ytgenerering_map_layout(
     payload: YtgenereringMapLayoutUpdate,
     area_focus: str | None = None,
     business_id: int | None = Query(None),
+    include_options: bool = Query(True),
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("allocationSettings", "edit")),
 ) -> dict:
@@ -856,6 +946,7 @@ def update_ytgenerering_map_layout(
         admin,
         area_focus=bridge.normalize_process_area_focus(area_focus or ""),
         business_id=business_id,
+        include_options=include_options,
     )
 
 
@@ -1073,10 +1164,16 @@ async def run_flow(
                 raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if default_max_csv_path is not None:
             with start_span("allocation.flow.engine_run", {"allocation.flow_id": flow_id, "allocation.default_max_csv": True}):
-                result = bridge.run_flow_handler(flow_id, files, params, default_max_csv_path=default_max_csv_path)
+                result = await run_in_threadpool(
+                    bridge.run_flow_handler,
+                    flow_id,
+                    files,
+                    params,
+                    default_max_csv_path=default_max_csv_path,
+                )
         else:
             with start_span("allocation.flow.engine_run", {"allocation.flow_id": flow_id, "allocation.default_max_csv": False}):
-                result = bridge.run_flow_handler(flow_id, files, params)
+                result = await run_in_threadpool(bridge.run_flow_handler, flow_id, files, params)
         add_span_attributes({
             "allocation.result_table_count": len(result.get("tables") or []),
             "allocation.has_session": bool(result.get("session_id")),

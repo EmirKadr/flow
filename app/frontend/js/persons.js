@@ -8,7 +8,7 @@ let persons = [];
 let currentUser = null;
 let sortKey = "sort_order";
 let sortAsc = true;
-const filters = { name: "", noman: "", business: "", home_area: "", home_activity: "", sort_order: "" };
+const filters = { name: "", noman: "", rfid_code: "", business: "", home_area: "", home_activity: "", sort_order: "" };
 const personUndoStack = [];
 const PERSON_UNDO_LIMIT = 50;
 let personUndoBusy = false;
@@ -334,6 +334,7 @@ function passesFilter(p) {
   const match = (val, q) => !q || String(val ?? "").toLowerCase().includes(q.toLowerCase());
   if (!match(p.name, filters.name)) return false;
   if (!match(p.noman, filters.noman)) return false;
+  if (!match(p.rfid_code, filters.rfid_code)) return false;
   if (!match(businessName(p.business_id), filters.business)) return false;
   if (!match(areaName(p.home_area_id), filters.home_area)) return false;
   if (!match(activityLabel(p.home_activity_id), filters.home_activity)) return false;
@@ -345,6 +346,7 @@ function sortKeyValue(p) {
   switch (sortKey) {
     case "name": return (p.name || "").toLowerCase();
     case "noman": return (p.noman || "").toLowerCase();
+    case "rfid_code": return (p.rfid_code || "").toLowerCase();
     case "business": return businessName(p.business_id).toLowerCase();
     case "home_area": return areaName(p.home_area_id).toLowerCase();
     case "home_activity": return activityLabel(p.home_activity_id).toLowerCase();
@@ -369,6 +371,7 @@ function snapshotPerson(person) {
     id: person.id,
     name: person.name,
     noman: person.noman ?? null,
+    rfid_code: person.rfid_code ?? null,
     home_area_id: person.home_area_id ?? null,
     home_activity_id: person.home_activity_id ?? null,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -382,6 +385,7 @@ function personPayloadFromSnapshot(person) {
   return {
     name: person.name,
     noman: person.noman ?? null,
+    rfid_code: person.rfid_code ?? null,
     home_area_id: person.home_area_id,
     home_activity_id: person.home_activity_id,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -575,6 +579,13 @@ function renderRows() {
     if (canEditPersons) tdNoman.addEventListener("click", () => editText(tdNoman, p, "noman", p.noman || "", "NoMan"));
     tr.appendChild(tdNoman);
 
+    // RFID
+    const tdRfid = document.createElement("td");
+    if (canEditPersons) tdRfid.className = "editable";
+    tdRfid.textContent = p.rfid_code || "";
+    if (canEditPersons) tdRfid.addEventListener("click", () => editText(tdRfid, p, "rfid_code", p.rfid_code || "", "RFID"));
+    tr.appendChild(tdRfid);
+
     // Verksamhet
     const tdBusiness = document.createElement("td");
     tdBusiness.textContent = businessName(p.business_id);
@@ -741,6 +752,7 @@ function openBulkPersonsModal() {
       ...businessColumn,
       { key: "name", label: "Namn", required: true },
       { key: "noman", label: "NoMan", required: true },
+      { key: "rfid_code", label: "RFID", required: false },
       { key: "home_area", label: "Hemområde", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
       { key: "home_activity", label: "Huvudaktivitet", required: false, type: "select", options: activitiesActive.map((activity) => ({ value: activity.label, label: activity.label })) },
       { key: "sort_order", label: "Sortering", required: false, type: "number" },
@@ -804,6 +816,8 @@ function openModal(person) {
       <input id="m-name" value="${escapeHtml(person?.name || "")}" />
       <label>NoMan</label>
       <input id="m-noman" value="${escapeHtml(person?.noman || "")}" required />
+      <label>RFID</label>
+      <input id="m-rfid" value="${escapeHtml(person?.rfid_code || "")}" />
       <label>Hemområde</label>
       <select id="m-area">
         <option value="">(inget)</option>
@@ -828,6 +842,7 @@ function openModal(person) {
     const payload = {
       name: document.getElementById("m-name").value.trim(),
       noman: document.getElementById("m-noman").value.trim(),
+      rfid_code: document.getElementById("m-rfid").value.trim(),
       home_area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       home_activity_id: document.getElementById("m-activity").value ? Number(document.getElementById("m-activity").value) : null,
       sort_order: Number(document.getElementById("m-sort").value) || 0,

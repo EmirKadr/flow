@@ -611,12 +611,15 @@ def test_local_bootstrap_upgrades_existing_persons_table(tmp_path):
 
     with sqlite3.connect(db_path) as connection:
         columns = {row[1] for row in connection.execute("pragma table_info(persons)").fetchall()}
+        business_columns = {row[1] for row in connection.execute("pragma table_info(businesses)").fetchall()}
         fixed_schedule = connection.execute(
             "select has_fixed_schedule from persons where name = 'Legacy Person'"
         ).fetchone()[0]
 
     assert "has_fixed_schedule" in columns
     assert "noman" in columns
+    assert "rfid_code" in columns
+    assert "company_codes" in business_columns
     assert fixed_schedule == 1
 
 
@@ -1554,6 +1557,10 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert 'data-${scope}-sort="${key}"' in businesses
     assert 'data-business-sort="code"' in businesses_html
     assert 'data-business-sort="name"' in businesses_html
+    assert 'data-business-sort="company_codes"' in businesses_html
+    assert 'editableCell("business", business, "company_codes")' in businesses
+    assert "normalizeCompanyCodes" in businesses
+    assert 'company_codes: companyCodes' in businesses
     assert '/js/businesses.js?v=20260601-inline-edit' in businesses_html
     assert 'data-new-area="${business.id}"' in businesses
     assert 'api.post("/api/areas", payload)' in businesses
@@ -1659,6 +1666,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "openBulkPersonsModal" in persons_js
     assert re.search(r'key:\s*"name",\s*label:\s*"Namn",\s*required:\s*true', persons_js)
     assert re.search(r'key:\s*"noman",\s*label:\s*"NoMan",\s*required:\s*true', persons_js)
+    assert re.search(r'key:\s*"rfid_code",\s*label:\s*"RFID",\s*required:\s*false', persons_js)
     assert re.search(r'key:\s*"home_area",\s*label:\s*"[^"]+",\s*required:\s*false', persons_js)
     assert 'setupImportHelpButton("person-import-help", "Importera personer")' in persons_js
     assert 'api.download("/api/persons/import-template", "personer-importmall.xlsx")' in persons_js

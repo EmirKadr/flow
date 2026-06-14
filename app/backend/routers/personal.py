@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from copy import deepcopy
 from datetime import date
+from pathlib import Path
+import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -10,6 +14,10 @@ from sqlalchemy.orm import Session
 from ..deps import get_current_user, get_db
 from ..home_activity import build_home_activity_resolver
 from ..models import Activity, Area, Business, Person, ScheduleCell, User
+from ..person_productivity_cache import (
+    person_productivity_daily_report_if_current,
+    person_productivity_period_stats_if_current,
+)
 from ..productivity_kpi_rules import build_person_productivity_report_from_files
 from ..productivity_service import ProductivitySourceError
 from ..productivity_sync import (
@@ -34,6 +42,10 @@ from .productivity import _aggregate_person_activity_stats, _date_span, _period_
 from .schedule import HOURS, _covered_intervals, _schedule_date, _uncovered_intervals
 
 router = APIRouter(prefix="/api/personal", tags=["personal"])
+_PERSONAL_PRODUCTIVITY_REPORT_CACHE_TTL_SECONDS = 2 * 60
+_PERSONAL_PRODUCTIVITY_REPORT_CACHE_MAX_ITEMS = 256
+_PERSONAL_PRODUCTIVITY_REPORT_CACHE_LOCK = threading.Lock()
+_PERSONAL_PRODUCTIVITY_REPORT_CACHE: dict[tuple, tuple[float, dict]] = {}
 
 WEEKDAY_LABELS = {
     1: "Måndag",
@@ -413,7 +425,100 @@ def _empty_personal_productivity_stats(
     }
 
 
-def _personal_productivity_stats(db: Session, person: Person, *, period: str, anchor_date: date) -> dict:
+def _personal_productivity_report_cache_key(
+    files: dict[str, Path],
+    report_date: date,
+    business_id: int | None,
+    sync: dict,
+) -> tuple:
+    parts: list[tuple] = [
+        ("date", report_date.isoformat()),
+        ("business_id", business_id if business_id is not None else ""),
+        ("sync", str((sync or {}).get("last_sync_at") or "")),
+        ("builder", id(build_person_productivity_report_from_files)),
+    ]
+    for key, path in sorted(files.items()):
+        resolved = Path(path)
+        try:
+            stat = resolved.stat()
+            parts.append((key, str(resolved.resolve()), stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            parts.append((key, str(resolved), None, None))
+    return tuple(parts)
+
+
+def _build_cached_personal_productivity_report(
+    db: Session,
+    files: dict[str, Path],
+    *,
+    report_date: date,
+    business_id: int | None,
+    sync: dict,
+) -> dict:
+    key = _personal_productivity_report_cache_key(files, report_date, business_id, sync)
+    now = time.monotonic()
+    with _PERSONAL_PRODUCTIVITY_REPORT_CACHE_LOCK:
+        cached = _PERSONAL_PRODUCTIVITY_REPORT_CACHE.get(key)
+        if cached and cached[0] > now:
+            return deepcopy(cached[1])
+        if cached:
+            _PERSONAL_PRODUCTIVITY_REPORT_CACHE.pop(key, None)
+
+    report = build_person_productivity_report_from_files(
+        db,
+        files,
+        report_date=report_date,
+        business_id=business_id,
+        sync=sync,
+    )
+    with _PERSONAL_PRODUCTIVITY_REPORT_CACHE_LOCK:
+        if len(_PERSONAL_PRODUCTIVITY_REPORT_CACHE) >= _PERSONAL_PRODUCTIVITY_REPORT_CACHE_MAX_ITEMS:
+            _PERSONAL_PRODUCTIVITY_REPORT_CACHE.pop(next(iter(_PERSONAL_PRODUCTIVITY_REPORT_CACHE)), None)
+        _PERSONAL_PRODUCTIVITY_REPORT_CACHE[key] = (
+            now + _PERSONAL_PRODUCTIVITY_REPORT_CACHE_TTL_SECONDS,
+            deepcopy(report),
+        )
+    return report
+
+
+def _personal_productivity_report_for_day(
+    db: Session,
+    person: Person,
+    day: date,
+    sync_status: dict,
+    report_cache: dict[date, dict] | None,
+) -> dict:
+    if report_cache is not None and day in report_cache:
+        return report_cache[day]
+
+    report = person_productivity_daily_report_if_current(
+        db,
+        day,
+        business_id=person.business_id,
+        person_id=person.id,
+        sync=sync_status,
+    )
+    if report is None:
+        report = _build_cached_personal_productivity_report(
+            db,
+            productivity_snapshot_files(day),
+            report_date=day,
+            business_id=person.business_id,
+            sync=sync_status,
+        )
+    if report_cache is not None:
+        report_cache[day] = report
+    return report
+
+
+def _personal_productivity_stats(
+    db: Session,
+    person: Person,
+    *,
+    period: str,
+    anchor_date: date,
+    report_cache: dict[date, dict] | None = None,
+) -> dict:
     period_start, period_end, period_label = _period_bounds(
         period,
         anchor_date=anchor_date,
@@ -437,24 +542,62 @@ def _personal_productivity_stats(db: Session, person: Person, *, period: str, an
         )
 
     reports: list[dict] = []
+    ready_days: list[date] = []
+    sync_by_day: dict[date, dict] = {}
     missing_dates: list[str] = []
     errors: list[dict] = []
     source_status: list[dict] = []
 
     for day in days:
         sync_status = productivity_snapshot_status(day)
+        sync_by_day[day] = sync_status
         if not sync_status.get("ready"):
             missing_dates.append(day.isoformat())
             source_status.append({"date": day.isoformat(), "status": "missing", "source": sync_status.get("source")})
             continue
+        ready_days.append(day)
+
+    cached_aggregate = person_productivity_period_stats_if_current(
+        db,
+        ready_days,
+        business_id=person.business_id,
+        person_id=person.id,
+        sync_by_date=sync_by_day,
+    )
+    if cached_aggregate is not None:
+        if ready_days and missing_dates:
+            status_text = "partial"
+        elif ready_days:
+            status_text = "ok"
+        else:
+            status_text = "missing"
+        return {
+            "status": status_text,
+            "period": {
+                "type": period_type,
+                "label": period_label,
+                "start_date": period_start.isoformat(),
+                "end_date": period_end.isoformat(),
+                "requested_days": len(days),
+            },
+            "dates": cached_aggregate["dates"],
+            "missing_dates": missing_dates,
+            "source_status": [
+                *source_status,
+                *[
+                    {"date": day.isoformat(), "status": "ok", "source": sync_by_day[day].get("source")}
+                    for day in ready_days
+                ],
+            ],
+            "errors": [],
+            "activities": cached_aggregate["activities"],
+            "summary": cached_aggregate["summary"],
+        }
+
+    for day in ready_days:
+        sync_status = sync_by_day[day]
         try:
-            report = build_person_productivity_report_from_files(
-                db,
-                productivity_snapshot_files(day),
-                report_date=day,
-                business_id=person.business_id,
-                sync=sync_status,
-            )
+            report = _personal_productivity_report_for_day(db, person, day, sync_status, report_cache)
             reports.append(report)
             source_status.append({"date": day.isoformat(), "status": "ok", "source": sync_status.get("source")})
         except (ProductivitySourceError, ProductivitySyncError, OSError, ValueError) as exc:
@@ -487,9 +630,22 @@ def _personal_productivity_stats(db: Session, person: Person, *, period: str, an
 
 
 def _personal_productivity_data(db: Session, person: Person, selected_date: date) -> dict:
+    report_cache: dict[date, dict] = {}
     return {
-        "day": _personal_productivity_stats(db, person, period="day", anchor_date=selected_date),
-        "week": _personal_productivity_stats(db, person, period="week", anchor_date=selected_date),
+        "day": _personal_productivity_stats(
+            db,
+            person,
+            period="day",
+            anchor_date=selected_date,
+            report_cache=report_cache,
+        ),
+        "week": _personal_productivity_stats(
+            db,
+            person,
+            period="week",
+            anchor_date=selected_date,
+            report_cache=report_cache,
+        ),
         "backfill": productivity_backfill_status(),
     }
 

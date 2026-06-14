@@ -94,8 +94,8 @@ def _seed_default_businesses(target_connection) -> int:
     target_connection.execute(
         insert(Business.__table__),
         [
-            {"code": DEFAULT_BUSINESS_CODE, "name": DEFAULT_BUSINESS_NAME, "sort_order": 1, "is_active": True},
-            {"code": R3_BUSINESS_CODE, "name": R3_BUSINESS_NAME, "sort_order": 2, "is_active": True},
+            {"code": DEFAULT_BUSINESS_CODE, "name": DEFAULT_BUSINESS_NAME, "company_codes": [], "sort_order": 1, "is_active": True},
+            {"code": R3_BUSINESS_CODE, "name": R3_BUSINESS_NAME, "company_codes": [], "sort_order": 2, "is_active": True},
         ],
     )
     return int(

@@ -11,13 +11,13 @@ from app.backend.routers import businesses as businesses_router
 from app.backend.routers import public
 from app.backend.routers.activities import create_activity, list_activities, update_activity
 from app.backend.routers.areas import create_area, delete_area, list_areas
-from app.backend.routers.businesses import create_business
+from app.backend.routers.businesses import create_business, update_business
 from app.backend.routers.overview import get_overview_revision
 from app.backend.routers.persons import create_person, get_person, list_persons, update_person
 from app.backend.routers.schedule import bulk_update_cells, get_schedule, get_schedule_revision, get_summary, update_cell
 from app.backend.routers.settings import get_app_settings, get_staffing_settings, update_app_settings, update_staffing_settings
 from app.backend.routers.users import create_user, list_users, update_user
-from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
+from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, BusinessUpdate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
 from app.backend.schemas import AppSettingsUpdate, StaffingSettingsUpdate
 
 
@@ -276,9 +276,11 @@ def test_super_user_must_choose_business_when_create_cannot_infer(business_sessi
 
 def test_duplicate_names_and_codes_are_scoped_per_business(business_session):
     session, data = business_session
+    data["stigamo_person"].rfid_code = "TAG-1"
+    session.commit()
 
     r3_person = create_person(
-        PersonCreate(name="Stigamo Person", noman="R3S01", business_id=data["r3"].id, home_area_id=data["r3_person"].home_area_id),
+        PersonCreate(name="Stigamo Person", noman="R3S01", rfid_code="tag-1", business_id=data["r3"].id, home_area_id=data["r3_person"].home_area_id),
         session,
         data["super_user"],
     )
@@ -294,12 +296,20 @@ def test_duplicate_names_and_codes_are_scoped_per_business(business_session):
     )
 
     assert r3_person.business_id == data["r3"].id
+    assert r3_person.rfid_code == "TAG-1"
     assert r3_activity.business_id == data["r3"].id
     assert r3_area.business_id == data["r3"].id
     assert_http_status(
         409,
         create_person,
         PersonCreate(name="Stigamo Person", noman="STI02", home_area_id=data["stigamo_person"].home_area_id),
+        session,
+        data["user"],
+    )
+    assert_http_status(
+        409,
+        create_person,
+        PersonCreate(name="RFID Krock", noman="STI03", rfid_code="TAG-1", home_area_id=data["stigamo_person"].home_area_id),
         session,
         data["user"],
     )
@@ -352,7 +362,7 @@ def test_business_and_area_codes_are_generated_from_name(business_session, monke
     monkeypatch.setattr(businesses_router, "_ensure_business_data_roots", lambda code: provisioned_codes.append(code))
 
     business = create_business(
-        BusinessCreate(name="T3", sort_order=3),
+        BusinessCreate(name="T3", company_codes=["bolag1, bolag2", "bolag1"], sort_order=3),
         session,
         data["super_user"],
     )
@@ -369,9 +379,18 @@ def test_business_and_area_codes_are_generated_from_name(business_session, monke
 
     assert business.code == "T3"
     assert business.name == "T3"
+    assert business.company_codes == ["BOLAG1", "BOLAG2"]
     assert provisioned_codes == ["T3"]
     assert area.code == "AUTOSTORE"
     assert duplicate_area.code == "AUTOSTORE_2"
+
+    updated = update_business(
+        business.id,
+        BusinessUpdate(company_codes=["t3; r3"]),
+        session,
+        data["super_user"],
+    )
+    assert updated.company_codes == ["T3", "R3"]
 
 
 def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_session):

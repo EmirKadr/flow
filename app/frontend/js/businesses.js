@@ -32,6 +32,7 @@ function syncVisibleAreas() {
 function sortValue(item, key) {
   if (key === "sort_order") return Number(item?.sort_order) || 0;
   if (key === "is_active") return item?.is_active !== false ? 1 : 0;
+  if (key === "company_codes") return companyCodesText(item);
   return String(item?.[key] ?? "").trim().toLocaleLowerCase("sv");
 }
 
@@ -111,6 +112,7 @@ function cellLabel(entityType, field) {
     business: {
       code: "Verksamhetskod",
       name: "Verksamhetsnamn",
+      company_codes: "Bolag",
       sort_order: "Verksamhetssortering",
       is_active: "Verksamhet aktiv",
     },
@@ -125,11 +127,60 @@ function cellLabel(entityType, field) {
 }
 
 function displayEditableValue(entityType, record, field) {
+  if (entityType === "business" && field === "company_codes") {
+    return escapeHtml(companyCodesText(record));
+  }
   const value = record?.[field];
   if (entityType === "area" && field === "code" && isAllAreasMarker(record)) {
     return `<span class="business-infinity-mark">∞</span><span>${escapeHtml(value)}</span>`;
   }
   return escapeHtml(value);
+}
+
+function companyCodesText(record) {
+  const codes = Array.isArray(record?.company_codes) ? record.company_codes : [];
+  return codes.filter(Boolean).join(", ");
+}
+
+function codePart(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+function normalizeCompanyCodes(rawValue) {
+  const codes = [];
+  const seen = new Set();
+  String(rawValue || "")
+    .split(/[,;\n\r]+/)
+    .forEach((part) => {
+      if (!part.trim()) return;
+      const code = codePart(part).slice(0, 20);
+      if (!code) throw new Error("Bolagskod saknar giltiga tecken.");
+      if (seen.has(code)) return;
+      seen.add(code);
+      codes.push(code);
+    });
+  if (codes.length > 50) throw new Error("Max 50 bolag per verksamhet.");
+  return codes;
+}
+
+function inlineInputValue(entityType, record, field) {
+  if (entityType === "business" && field === "company_codes") return companyCodesText(record);
+  return record?.[field] ?? "";
+}
+
+function inlineValueChanged(entityType, field, nextValue, originalValue) {
+  if (entityType === "business" && field === "company_codes") {
+    const originalCodes = Array.isArray(originalValue) ? originalValue : [];
+    return JSON.stringify(nextValue) !== JSON.stringify(originalCodes);
+  }
+  return String(nextValue) !== String(originalValue ?? "");
 }
 
 function editableCell(entityType, record, field, kind = "text") {
@@ -207,11 +258,12 @@ function renderBusinesses() {
     <tr class="business-row">
       ${editableCell("business", business, "code")}
       ${editableCell("business", business, "name")}
+      ${editableCell("business", business, "company_codes")}
       ${editableCell("business", business, "sort_order", "number")}
       ${activeCell("business", business)}
     </tr>
     <tr class="business-areas-row">
-      <td colspan="4">
+      <td colspan="5">
         <div class="business-areas-header">
           <span>Områden</span>
           <span class="business-areas-header-actions">
@@ -236,6 +288,13 @@ function normalizeInlineValue(entityType, field, kind, rawValue) {
     return { ok: true, value: Math.trunc(value) };
   }
   const value = String(rawValue ?? "").trim();
+  if (entityType === "business" && field === "company_codes") {
+    try {
+      return { ok: true, value: normalizeCompanyCodes(value) };
+    } catch (error) {
+      return { ok: false, message: error.message || "Bolag kunde inte tolkas." };
+    }
+  }
   if ((field === "code" || field === "name") && !value) {
     return { ok: false, message: field === "code" ? "Kod krävs." : "Namn krävs." };
   }
@@ -280,7 +339,7 @@ function startInlineEdit(cell) {
   const input = document.createElement("input");
   input.className = "inline-table-input";
   input.type = kind === "number" ? "number" : "text";
-  input.value = original ?? "";
+  input.value = inlineInputValue(entityType, record, field);
   if (field === "code") input.maxLength = 20;
   if (field === "name") input.maxLength = 100;
 
@@ -299,7 +358,7 @@ function startInlineEdit(cell) {
       return;
     }
     const nextValue = normalized.value;
-    if (String(nextValue) === String(original ?? "")) {
+    if (!inlineValueChanged(entityType, field, nextValue, original)) {
       renderBusinesses();
       return;
     }
@@ -430,6 +489,7 @@ function openBusinessModal() {
     <div class="modal">
       <h2>Ny verksamhet</h2>
       <label>Namn <input id="m-name" maxlength="100" /></label>
+      <label>Bolag <input id="m-company-codes" maxlength="300" /></label>
       <label>Sortering <input id="m-sort" type="number" value="0" /></label>
       <label class="modal-checkbox"><input id="m-active" type="checkbox" checked /> Aktiv</label>
       <div class="actions">
@@ -441,8 +501,16 @@ function openBusinessModal() {
   document.body.appendChild(backdrop);
   backdrop.querySelector("#cancel").addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("#save").addEventListener("click", async () => {
+    let companyCodes = [];
+    try {
+      companyCodes = normalizeCompanyCodes(document.getElementById("m-company-codes").value);
+    } catch (error) {
+      showToast(error.message || "Bolag kunde inte tolkas.", "warn", 3000);
+      return;
+    }
     const payload = {
       name: document.getElementById("m-name").value.trim(),
+      company_codes: companyCodes,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
       is_active: document.getElementById("m-active").checked,
     };

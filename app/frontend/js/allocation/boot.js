@@ -46,6 +46,7 @@ function handleAllocationAreaFocusChanged() {
     const text = String(key || "");
     return text.includes("/api/allokering/process-matrix")
       || text.includes("/api/allokering/ytgenerering-map-layout")
+      || text.includes("/api/allokering/ytgenerering-location-options")
       || text.includes("/api/settings/staffing")
       || text.includes("/api/activities");
   });

@@ -22,12 +22,12 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Vybehorigheter | Oppnar rollmatris | Sparar global vyatkomst for roller | `GET/PUT /api/settings/role-access` | Fel matris kan dolja vyer for rollen i alla verksamheter. |
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
-| Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
-| Bearbeta-matris | Flik under `installningar.html` | Styr vilka Bearbeta-funktioner som visas per toggle | `GET/PUT /api/allokering/process-matrix` | Kraver `allocationProcessMatrix`; `view` kan lasa och `edit` kan spara. |
+| Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` med `business_id`/`area_focus` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
+| Bearbeta-matris | Flik under `installningar.html` | Styr vilka Bearbeta-funktioner som visas per toggle for vald verksamhet | `GET/PUT /api/allokering/process-matrix` med `business_id`/`area_focus` | Kraver `allocationProcessMatrix`; `view` kan lasa och `edit` kan spara. |
 | Tabellrubriker | Klickar pa t.ex. Anvandarnamn, Verksamhet, Roll, Omrade eller Skapad | Sorterar synliga anvandarrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus, roller eller serverdata. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas. |
 | Ta bort | Bekraftar borttagning | Tar bort konto permanent och nollar gamla `updated_by`/audit-referenser | `DELETE /api/users/{id}` | Eget konto, sista admin i en verksamhet och demo-användaren skyddas. |
-| Verksamheter | Sidebar-vy for Super User | Skapar verksamheter och omraden, redigerar celler inline och kan lagga till `∞`/`ANNAT` per verksamhet | `GET/POST/PUT /api/businesses`, `GET/POST/PUT/DELETE /api/areas` | Vanliga anvandare ser inte vyn. Omraden med kopplad data inaktiveras i stallet for att hardraderas. |
+| Verksamheter | Sidebar-vy for Super User | Skapar verksamheter, deras bolagskoder och omraden, redigerar celler inline och kan lagga till `∞`/`ANNAT` per verksamhet | `GET/POST/PUT /api/businesses`, `GET/POST/PUT/DELETE /api/areas` | Vanliga anvandare ser inte vyn. Omraden med kopplad data inaktiveras i stallet for att hardraderas. |
 
 Andringar i anvandare, forsta losenord och verksamhetens installningar skrivs till Historik. Loggen visar till exempel `user/set_password`, `app_setting/update_lock`, `app_setting/update_sidebar_layout` och `app_setting/update_role_access`, men aldrig sjalva losenordet.
 
@@ -71,7 +71,9 @@ Raden `Personsortering` (`personSortOrder`) styr om Bemanningsansvarig/admin kan
 
 Raden `Bemanningsinställningar` (`staffingSettings`) styr fliken Bemanning pa `installningar.html`. `view` far lasa historikfonstret for historiskt snitt/automatisk bemanningskalkyl och vilka KPI-aktiviteter som far visa hover-snitt. `edit` far andra bada. Admin och demo har `edit` som standard, Super User har alltid full atkomst.
 
-Raden `Bearbeta-matris` (`allocationProcessMatrix`) styr fliken Bearbeta pa `installningar.html`. `view` far oppna matrisen lasande och `edit` far spara vilka Bearbeta-funktioner som ska synas per toggle. Admin och demo har `edit` som standard, Super User har alltid full atkomst. Bearbeta-vyn anvander fortsatt matrisen nar floden visas, men sjalva redigeringen ligger i Installningar.
+Raden `Bearbeta-matris` (`allocationProcessMatrix`) styr fliken Bearbeta pa `installningar.html`. `view` far oppna matrisen lasande och `edit` far spara vilka Bearbeta-funktioner som ska synas per toggle i vald verksamhet. Admin och demo har `edit` som standard, Super User har alltid full atkomst. Bearbeta-vyn anvander fortsatt matrisen nar floden visas, men sjalva redigeringen ligger i Installningar.
+
+Installningar foljer sidebarens omradesfokus for verksamhetsscope. Nar fokus ar ett omrade i T3 eller R3 hamtar och sparar Ytkarta, Bearbeta-matris och Bemanning-fliken den verksamhetens egna `app_settings`-rader. Nar fokus ar `∞` pa Installningar faller klienten tillbaka till anvandarens egen verksamhet, normalt Stigamo for Super User. Vybehorigheter ar undantaget: rollmatrisen ar fortsatt global for alla verksamheter.
 
 Knappar:
 
@@ -89,12 +91,12 @@ Knappar:
 
 ## Verksamheter-vy
 
-Vyn finns bara for Super User och visar `code`, `name`, `sort_order` och aktiv-status for verksamheter. Under varje verksamhet visas dess omraden. Rubrikerna sorterar listan visuellt, och celler for kod, namn, sortering och aktiv-status kan andras direkt i tabellen.
+Vyn finns bara for Super User och visar `code`, `name`, `company_codes`, `sort_order` och aktiv-status for verksamheter. Under varje verksamhet visas dess omraden. Rubrikerna sorterar listan visuellt, och celler for kod, namn, bolag, sortering och aktiv-status kan andras direkt i tabellen.
 
 Knappar:
 
-- `Ny verksamhet`: oppnar modal och skapar via `POST /api/businesses`; kod skapas automatiskt från namnet.
-- Klick i verksamhetscell: uppdaterar kod, namn, sortering eller aktiv-status via `PUT /api/businesses/{business_id}`.
+- `Ny verksamhet`: oppnar modal och skapar via `POST /api/businesses`; kod skapas automatiskt från namnet och bolag sparas som `company_codes`.
+- Klick i verksamhetscell: uppdaterar kod, namn, bolag, sortering eller aktiv-status via `PUT /api/businesses/{business_id}`.
 - `Nytt omrade`: skapar omrade pa vald verksamhet via `POST /api/areas` med `business_id`; kod skapas automatiskt från namnet.
 - `Lagg till ∞`: skapar eller ateraktiverar omradet `ANNAT`/`Annat` for vald verksamhet. Nar det ar aktivt far vanliga anvandare i verksamheten `∞` som alla-omraden-lage.
 - Klick i omradescell: uppdaterar kod, namn, sortering eller aktiv-status via `PUT /api/areas/{area_id}`.

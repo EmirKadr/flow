@@ -32,6 +32,7 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             return set()
         return {column["name"] for column in inspector.get_columns(table)}
 
+    business_columns = columns_for("businesses")
     user_columns = columns_for("users")
     area_columns = columns_for("areas")
     person_columns = columns_for("persons")
@@ -43,6 +44,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
     meta_shipment_columns = columns_for("meta_shipment_observations")
     Base.metadata.create_all(bind=target_engine)
     with target_engine.begin() as connection:
+        if business_columns and "company_codes" not in business_columns:
+            connection.exec_driver_sql("ALTER TABLE businesses ADD COLUMN company_codes JSON NOT NULL DEFAULT '[]'")
         if user_columns and "business_id" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if area_columns and "business_id" not in area_columns:
@@ -51,6 +54,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if person_columns and "noman" not in person_columns:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN noman VARCHAR(120)")
+        if person_columns and "rfid_code" not in person_columns:
+            connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN rfid_code VARCHAR(120)")
         if activity_columns and "business_id" not in activity_columns:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if activity_columns and "kpi_process_name" not in activity_columns:
@@ -123,16 +128,18 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
             return
         connection.exec_driver_sql(
             """
-            INSERT OR IGNORE INTO businesses (code, name, sort_order, is_active)
-            VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+            INSERT OR IGNORE INTO businesses (code, name, company_codes, sort_order, is_active)
+            VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
             """,
             (
                 DEFAULT_BUSINESS_CODE,
                 DEFAULT_BUSINESS_NAME,
+                "[]",
                 1,
                 1,
                 R3_BUSINESS_CODE,
                 R3_BUSINESS_NAME,
+                "[]",
                 2,
                 1,
             ),

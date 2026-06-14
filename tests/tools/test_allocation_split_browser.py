@@ -388,6 +388,14 @@ def test_bearbeta_matrix_is_managed_from_settings(local_allocation_server, chrom
                 body=json.dumps({"version": 1, "can_edit": True, "locations": [], "defaults": [], "available_locations": []}),
             ),
         )
+        page.route(
+            "**/api/allokering/ytgenerering-location-options**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"available_locations": []}),
+            ),
+        )
 
         def handle_process_matrix(route):
             if route.request.method == "PUT":
@@ -560,6 +568,14 @@ def test_staffing_settings_selects_vh_capacity_activities(local_allocation_serve
                 status=200,
                 headers={"content-type": "application/json"},
                 body=json.dumps({"version": 1, "can_edit": True, "locations": [], "defaults": [], "available_locations": []}),
+            ),
+        )
+        page.route(
+            "**/api/allokering/ytgenerering-location-options**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"available_locations": []}),
             ),
         )
         page.route(
@@ -834,6 +850,14 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
             )
 
         page.route("**/api/allokering/ytgenerering-map-layout**", handle_map_layout)
+        page.route(
+            "**/api/allokering/ytgenerering-location-options**",
+            lambda route: route.fulfill(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({"available_locations": base_layout["available_locations"]}, ensure_ascii=False),
+            ),
+        )
         page.goto(f"{local_allocation_server}/installningar.html", wait_until="domcontentloaded")
         page.wait_for_selector(".allocation-map-settings-page-panel", timeout=15000)
 
