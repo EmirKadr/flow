@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -16,24 +16,29 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ..audit import log as audit_log
+from ..business_scope import visible_business_id
 from ..config import settings
 from ..data_fetch_service import (
     DataFetchConfigError,
     DataFetchPlanError,
+    apply_local_filters,
     apply_prompt_period_hint,
     build_catalog_context,
     build_data_fetch_minimax_payload,
+    calculation_query_text,
     catalog_summary,
     clear_catalog_cache,
     columns_for_response,
+    execute_calculation,
+    external_filters_for_api,
     load_catalog,
     parse_minimax_plan,
     project_rows,
     validate_plan_payload,
 )
 from ..deps import get_db, require_view_access
-from ..models import User
-from ..external_data_client import ExternalDataClient, ExternalDataClientError
+from ..external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
+from ..models import Business, User
 from ..observability import add_span_attributes, start_span
 from .assistant import _call_minimax
 
@@ -50,6 +55,7 @@ class DataFetchRunRequest(BaseModel):
     plan: dict | None = None
     prompt: str | None = Field(default=None, max_length=4000)
     max_rows: int | None = Field(default=None, ge=1, le=5000)
+    business_id: int | None = None
 
 
 DATA_FETCH_SESSIONS: dict[str, dict] = {}
@@ -191,15 +197,19 @@ def _missing_api_settings() -> list[str]:
     ]
 
 
-def _api_client_or_503() -> ExternalDataClient:
+def _api_client_or_503(tenant: str | None = None) -> ExternalDataClient:
     missing_settings = _missing_api_settings()
     if missing_settings:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Saknar {', '.join(missing_settings)} i servermiljön.",
         )
+    try:
+        base_url = data_source_base_url_for_tenant(settings.DATA_SOURCE_API_BASE_URL, tenant)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     return ExternalDataClient(
-        base_url=settings.DATA_SOURCE_API_BASE_URL.strip(),
+        base_url=base_url,
         api_key=settings.DATA_SOURCE_API_KEY.strip() or None,
         api_client=settings.DATA_SOURCE_API_CLIENT.strip() or None,
         api_key_header=settings.DATA_SOURCE_API_KEY_HEADER.strip() or None,
@@ -219,6 +229,13 @@ def _filter_summary(filters: list[dict] | None) -> list[dict]:
     ]
 
 
+def _business_tenant(db: Session, business_id: int | None) -> str | None:
+    if business_id is None or not hasattr(db, "get"):
+        return None
+    business = db.get(Business, business_id)
+    return getattr(business, "tenant", None) if business is not None else None
+
+
 def _data_fetch_error_detail(message: str, error_id: str, plan: dict) -> dict:
     return {
         "message": message,
@@ -234,6 +251,8 @@ def _audit_data_fetch(
     action: str,
     plan: dict,
     payload: dict,
+    *,
+    business_id: int | None = None,
 ) -> None:
     try:
         audit_log(
@@ -249,6 +268,7 @@ def _audit_data_fetch(
                 **payload,
             },
             getattr(user, "id", None),
+            business_id=business_id,
         )
         db.commit()
     except Exception:
@@ -281,14 +301,141 @@ def _validate_submitted_plan(plan: dict) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-def _fetch_rows(plan: dict, error_id: str) -> list[dict]:
-    client = _api_client_or_503()
-    try:
-        return client.fetch_data(
-            plan["view"],
-            filters=plan.get("filters") or None,
-            identifiers=plan.get("identifiers") or None,
+def _response_row_cap() -> int:
+    return max(1, int(getattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 0) or 50000))
+
+
+def _parse_date_bound(value) -> date | None:
+    """Tolka ett Between-gränsvärde som ett datum (YYYYMMDD-int, ISO-datum eller ISO-datetime)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        text = str(int(value))
+    else:
+        text = str(value).strip()
+    if not text:
+        return None
+    digits = text.split("T", 1)[0].replace("-", "")
+    if len(digits) >= 8 and digits[:8].isdigit():
+        try:
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _date_bound_kind(value) -> str:
+    """Avgör hur ett gränsvärde ska återskapas efter uppdelning."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return "int"
+    text = str(value or "")
+    if "T" in text:
+        return "iso_datetime"
+    if "-" in text:
+        return "iso_date"
+    return "int_str"
+
+
+def _format_date_bound(day: date, kind: str, *, is_upper: bool) -> object:
+    if kind == "int":
+        return int(day.strftime("%Y%m%d"))
+    if kind == "int_str":
+        return day.strftime("%Y%m%d")
+    if kind == "iso_datetime":
+        return f"{day.isoformat()}T{'23:59:59' if is_upper else '00:00:00'}"
+    return day.isoformat()
+
+
+def _find_date_between_filter(external_filters: list[dict]) -> int | None:
+    """Index för första Between-filtret vars båda gränser är datum, annars None."""
+    for index, item in enumerate(external_filters):
+        if str(item.get("operator") or "") != "Between":
+            continue
+        value = item.get("value")
+        if not isinstance(value, list) or len(value) != 2:
+            continue
+        if _parse_date_bound(value[0]) and _parse_date_bound(value[1]):
+            return index
+    return None
+
+
+def _fetch_window(
+    client: ExternalDataClient,
+    view: str,
+    external_filters: list[dict],
+    identifiers,
+    date_index: int,
+    start: date,
+    end: date,
+    kind: str,
+    cap: int,
+) -> list[dict]:
+    """Hämta ett datumfönster och dela upp rekursivt om svaret är avhugget."""
+    windowed = [dict(item) for item in external_filters]
+    windowed[date_index] = {
+        **windowed[date_index],
+        "value": [
+            _format_date_bound(start, kind, is_upper=False),
+            _format_date_bound(end, kind, is_upper=True),
+        ],
+    }
+    rows = client.fetch_data(view, filters=windowed or None, identifiers=identifiers)
+    if len(rows) < cap:
+        return rows
+    if start >= end:
+        raise ExternalDataClientError(
+            f"Ett enskilt dygn ({start.isoformat()}) når datakällans tak på {cap} rader och "
+            "kan inte delas upp mer på datum. Resultatet skulle bli ofullständigt."
         )
+    half = (end - start).days // 2
+    mid = start + timedelta(days=half)
+    left = _fetch_window(client, view, external_filters, identifiers, date_index, start, mid, kind, cap)
+    right = _fetch_window(client, view, external_filters, identifiers, date_index, mid + timedelta(days=1), end, kind, cap)
+    return left + right
+
+
+def _fetch_external_rows(
+    client: ExternalDataClient,
+    view: str,
+    external_filters: list[dict],
+    identifiers,
+) -> list[dict]:
+    """Hämta alla rader, uppdelat i datumfönster när svaret når datakällans radtak."""
+    cap = _response_row_cap()
+    rows = client.fetch_data(view, filters=external_filters or None, identifiers=identifiers)
+    if len(rows) < cap:
+        return rows
+
+    date_index = _find_date_between_filter(external_filters)
+    if date_index is None:
+        logger.warning(
+            "Data fetch hit response cap (%s rows) for view=%s without a date filter to split on.",
+            cap,
+            view,
+        )
+        return rows
+
+    bounds = external_filters[date_index].get("value")
+    start = _parse_date_bound(bounds[0])
+    end = _parse_date_bound(bounds[1])
+    if start is None or end is None or start > end:
+        return rows
+    kind = _date_bound_kind(bounds[0])
+    return _fetch_window(client, view, external_filters, identifiers, date_index, start, end, kind, cap)
+
+
+def _fetch_rows(plan: dict, error_id: str, tenant: str | None = None) -> list[dict]:
+    client = _api_client_or_503(tenant=tenant)
+    filters = plan.get("filters") or []
+    external_filters = external_filters_for_api(filters)
+    try:
+        rows = _fetch_external_rows(
+            client,
+            plan["view"],
+            external_filters,
+            plan.get("identifiers") or None,
+        )
+        return apply_local_filters(rows, filters)
     except ExternalDataClientError as exc:
         logger.warning(
             "Data fetch external request failed error_id=%s view=%s filters=%s reason=%s",
@@ -324,6 +471,12 @@ def _write_excel(session: dict) -> str:
     meta.append(["Visningsnamn", session["plan"].get("view_label")])
     meta.append(["Antal rader i API-svar", session["total_rows"]])
     meta.append(["Exporterade rader", len(rows)])
+    calculation = session.get("calculation")
+    if calculation:
+        meta.append(["Beräkning", calculation.get("label") or calculation.get("metric")])
+        meta.append(["Beräknat värde", calculation.get("value")])
+        if session.get("calculation_query"):
+            meta.append(["SQL/query", session["calculation_query"]])
     meta.append(["Skapad", datetime.now().isoformat(timespec="seconds")])
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
@@ -410,6 +563,12 @@ async def run_data_fetch(
         "data_fetch.view": plan.get("view", ""),
         "data_fetch.status": plan.get("status", "ok"),
     })
+    business_id = visible_business_id(db, current_user, payload.business_id)
+    tenant = _business_tenant(db, business_id)
+    add_span_attributes({
+        "data_fetch.business_id": business_id or 0,
+        "data_fetch.has_tenant": bool(tenant),
+    })
     if plan.get("status") == "needs_clarification":
         add_span_attributes({"data_fetch.result": "needs_clarification"})
         return {"plan": plan, "columns": [], "rows": [], "total_rows": 0, "session_id": None}
@@ -417,7 +576,7 @@ async def run_data_fetch(
     error_id = uuid4().hex[:10]
     try:
         with start_span("data_fetch.external_fetch", {"data_fetch.view": plan.get("view", "")}):
-            rows = await run_in_threadpool(_fetch_rows, plan, error_id)
+            rows = await run_in_threadpool(_fetch_rows, plan, error_id, tenant)
     except HTTPException as exc:
         add_span_attributes({"data_fetch.result": "error", "data_fetch.status_code": exc.status_code})
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
@@ -431,6 +590,7 @@ async def run_data_fetch(
                 "status_code": exc.status_code,
                 "message": detail.get("message") or str(exc.detail),
             },
+            business_id=business_id,
         )
         raise
     except Exception as exc:
@@ -446,6 +606,7 @@ async def run_data_fetch(
                 "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "message": "Oväntat serverfel i datahämtning.",
             },
+            business_id=business_id,
         )
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -458,6 +619,8 @@ async def run_data_fetch(
     max_rows = _max_rows(payload.max_rows)
     projected_rows = project_rows(rows, plan["output_columns"], max_rows)
     columns = columns_for_response(plan)
+    calculation = execute_calculation(rows, plan)
+    calculation_query = calculation_query_text(plan) if calculation else ""
     _cleanup_data_fetch_sessions()
     session_id = uuid4().hex
     row_storage = _write_data_fetch_rows(session_id, projected_rows)
@@ -469,6 +632,8 @@ async def run_data_fetch(
         **row_storage,
         "total_rows": len(rows),
         "shown_rows": len(projected_rows),
+        "calculation": calculation,
+        "calculation_query": calculation_query,
     }
     _cleanup_data_fetch_sessions()
     _audit_data_fetch(
@@ -480,13 +645,16 @@ async def run_data_fetch(
             "total_rows": len(rows),
             "shown_rows": len(projected_rows),
             "truncated": len(rows) > len(projected_rows),
+            "has_calculation": calculation is not None,
         },
+        business_id=business_id,
     )
     add_span_attributes({
         "data_fetch.result": "ok",
         "data_fetch.total_rows": len(rows),
         "data_fetch.shown_rows": len(projected_rows),
         "data_fetch.truncated": len(rows) > len(projected_rows),
+        "data_fetch.has_calculation": bool(calculation),
     })
     return {
         "plan": plan,
@@ -495,6 +663,8 @@ async def run_data_fetch(
         "total_rows": len(rows),
         "shown_rows": len(projected_rows),
         "truncated": len(rows) > len(projected_rows),
+        "calculation": calculation,
+        "calculation_query": calculation_query,
         "session_id": session_id,
     }
 

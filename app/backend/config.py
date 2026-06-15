@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     DATA_SOURCE_VERIFY_SSL: bool = True
     DATA_SOURCE_CA_BUNDLE: str = ""
     DATA_SOURCE_MAX_ROWS: int = 1000
+    # Externa datakällans tak för antal rader per API-svar. När ett svar når detta
+    # antal antas det vara avhugget och hämtningen delas upp i mindre datumfönster.
+    DATA_SOURCE_RESPONSE_ROW_CAP: int = 50000
     DATA_SOURCE_CATALOG_PATH: str = ""
     DATA_SOURCE_CATALOG_JSON: str = ""
     DEMO_USER_PASSWORD: str = "demo1234"

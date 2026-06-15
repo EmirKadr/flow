@@ -10,8 +10,8 @@ import requests
 
 from app.backend import data_fetch_service as service
 from app.backend.config import settings
-from app.backend.external_data_client import ExternalDataClient, ExternalDataClientError
-from app.backend.models import AuditLog
+from app.backend.external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
+from app.backend.models import AuditLog, Business
 from app.backend.routers import data_fetch
 
 
@@ -53,6 +53,8 @@ PICK_LOG_CATALOG = {
                 {"id": "time_stamp_int", "order": 2, "label_en": "Time Stamp Int", "label_sv": "Datum"},
                 {"id": "item_num", "order": 3, "label_en": "Item Num", "label_sv": "Artikel"},
                 {"id": "company", "order": 4, "label_en": "Company", "label_sv": "Bolag"},
+                {"id": "pick_zone", "order": 5, "label_en": "Pick Zone", "label_sv": "Zon"},
+                {"id": "qty_suf", "order": 6, "label_en": "Qty Suf", "label_sv": "Plockat"},
             ],
         }
     ],
@@ -68,6 +70,24 @@ TRANS_LOG_CATALOG = {
                 {"id": "type", "order": 1, "label_en": "Type", "label_sv": "Typ"},
                 {"id": "timestamp", "order": 2, "label_en": "Timestamp", "label_sv": "Timestamp"},
                 {"id": "company", "order": 3, "label_en": "Company", "label_sv": "Bolag"},
+            ],
+        }
+    ],
+}
+RECEIVE_LOG_CATALOG = {
+    "version": 1,
+    "views": [
+        {
+            "id": "v_ask_receive_log",
+            "label_en": "Receive log",
+            "label_sv": "Varumottagningslogg",
+            "columns": [
+                {"id": "type", "order": 1, "label_en": "Type", "label_sv": "Typ"},
+                {"id": "book_num", "order": 2, "label_en": "Book Num", "label_sv": "Inköpsnr"},
+                {"id": "item_num", "order": 3, "label_en": "Item Num", "label_sv": "Artikel"},
+                {"id": "qty_suf", "order": 4, "label_en": "Qty Suf", "label_sv": "Mottaget"},
+                {"id": "timestamp", "order": 5, "label_en": "Timestamp", "label_sv": "Ändrad"},
+                {"id": "company", "order": 6, "label_en": "Company", "label_sv": "Bolag"},
             ],
         }
     ],
@@ -114,6 +134,8 @@ def test_minimax_payload_never_contains_external_connection_details(monkeypatch)
     assert "secret-client" not in text
     assert "secret-key-header" not in text
     assert "secret/path" not in text
+    assert "count_distinct" in text
+    assert "Använd aldrig identifiers för dubletter" in text
 
 
 def test_validate_plan_normalizes_columns_and_filters():
@@ -131,6 +153,228 @@ def test_validate_plan_normalizes_columns_and_filters():
     assert plan["view_label"] == "Aktivitetslogg"
     assert plan["output_column_labels"]["type"] == "Typ"
     assert plan["filters"] == [{"id": "type", "operator": "EQ", "value": "korrigering"}]
+
+
+def test_validate_plan_supports_calculation_and_expands_exclusions():
+    catalog = service.catalog_from_payload(RECEIVE_LOG_CATALOG)
+
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_receive_log",
+            "output_columns": ["book_num", "item_num"],
+            "filters": [{"field": "type", "operator": "NE", "value": [45, 91, 100]}],
+            "calculation": {
+                "metric": "count_distinct",
+                "distinct_by": ["book_num", "item_num"],
+            },
+        },
+        catalog,
+    )
+
+    assert plan["filters"] == [
+        {"id": "type", "operator": "NE", "value": 45},
+        {"id": "type", "operator": "NE", "value": 91},
+        {"id": "type", "operator": "NE", "value": 100},
+    ]
+    assert service.external_filters_for_api(plan["filters"]) == []
+    assert service.apply_local_filters(
+        [
+            {"type": 10, "book_num": "PO1", "item_num": "A1"},
+            {"type": 45, "book_num": "PO2", "item_num": "A2"},
+            {"type": "91", "book_num": "PO3", "item_num": "A3"},
+            {"type": 100, "book_num": "PO4", "item_num": "A4"},
+        ],
+        plan["filters"],
+    ) == [{"type": 10, "book_num": "PO1", "item_num": "A1"}]
+    assert plan["calculation"] == {
+        "metric": "count_distinct",
+        "field": None,
+        "distinct_by": ["book_num", "item_num"],
+        "group_by": [],
+        "sort_by": None,
+        "limit": None,
+    }
+
+
+def test_identifier_column_list_becomes_count_distinct_calculation():
+    catalog = service.catalog_from_payload(RECEIVE_LOG_CATALOG)
+
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_receive_log",
+            "output_columns": ["book_num", "item_num"],
+            "identifiers": ["book_num", "item_num"],
+        },
+        catalog,
+    )
+
+    assert plan["identifiers"] == []
+    assert plan["calculation"]["metric"] == "count_distinct"
+    assert plan["calculation"]["distinct_by"] == ["book_num", "item_num"]
+
+
+def test_execute_calculation_counts_distinct_purchase_item_pairs():
+    catalog = service.catalog_from_payload(RECEIVE_LOG_CATALOG)
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_receive_log",
+            "output_columns": ["book_num", "item_num"],
+            "calculation": {
+                "metric": "count_distinct",
+                "distinct_by": ["book_num", "item_num"],
+            },
+        },
+        catalog,
+    )
+    rows = [
+        {"book_num": "PO1", "item_num": "A1"},
+        {"book_num": "PO1", "item_num": "A1"},
+        {"book_num": "PO1", "item_num": "A2"},
+        {"book_num": "PO2", "item_num": "A1"},
+    ]
+
+    result = service.execute_calculation(rows, plan)
+
+    assert result["value"] == 3
+    assert result["label"] == "Antal unika Inköpsnr + Artikel"
+    assert service.calculation_query_text(plan) == (
+        "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log;"
+    )
+
+
+def test_execute_calculation_groups_sorts_and_limits():
+    catalog = service.catalog_from_payload(RECEIVE_LOG_CATALOG)
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_receive_log",
+            "output_columns": ["item_num", "qty_suf"],
+            "calculation": {
+                "metric": "sum",
+                "field": "qty_suf",
+                "group_by": ["item_num"],
+                "sort_by": {"field": "value", "direction": "desc"},
+                "limit": 2,
+            },
+        },
+        catalog,
+    )
+    rows = [
+        {"item_num": "A1", "qty_suf": "2,5"},
+        {"item_num": "A1", "qty_suf": 3},
+        {"item_num": "A2", "qty_suf": 10},
+        {"item_num": "A3", "qty_suf": 1},
+    ]
+
+    result = service.execute_calculation(rows, plan)
+
+    assert result["value"] == 16.5
+    assert result["rows"] == [
+        {"item_num": "A2", "value": 10},
+        {"item_num": "A1", "value": 5.5},
+    ]
+    assert service.calculation_query_text(plan) == (
+        "SELECT item_num, SUM(qty_suf) AS value FROM v_ask_receive_log "
+        "GROUP BY item_num ORDER BY value DESC LIMIT 2;"
+    )
+
+
+def test_prefix_filter_counts_unique_order_numbers():
+    catalog = service.catalog_from_payload(PICK_LOG_CATALOG)
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "output_columns": ["order_num"],
+            "filters": [{"field": "order_num", "operator": "StartsWith", "value": "TO"}],
+            "calculation": {
+                "metric": "count_distinct",
+                "distinct_by": ["order_num"],
+            },
+        },
+        catalog,
+    )
+    rows = [
+        {"order_num": "TO100"},
+        {"order_num": "TO100"},
+        {"order_num": "TP100"},
+        {"order_num": "to200"},
+    ]
+
+    filtered_rows = service.apply_local_filters(rows, plan["filters"])
+    result = service.execute_calculation(filtered_rows, plan)
+
+    assert service.external_filters_for_api(plan["filters"]) == []
+    assert [row["order_num"] for row in filtered_rows] == ["TO100", "TO100", "to200"]
+    assert result["value"] == 2
+    assert service.calculation_query_text(plan) == (
+        "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full "
+        "WHERE order_num LIKE 'TO%';"
+    )
+
+
+def test_like_filter_accepts_sql_wildcard_pattern():
+    catalog = service.catalog_from_payload(PICK_LOG_CATALOG)
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "output_columns": ["order_num"],
+            "filters": [{"field": "order_num", "operator": "Like", "value": "TO_"}],
+        },
+        catalog,
+    )
+    rows = [
+        {"order_num": "TO1"},
+        {"order_num": "TO12"},
+        {"order_num": "TP1"},
+    ]
+
+    assert service.apply_local_filters(rows, plan["filters"]) == [{"order_num": "TO1"}]
+
+
+def test_range_and_exclusion_filters_are_applied_locally_after_stable_api_filters():
+    catalog = service.catalog_from_payload(PICK_LOG_CATALOG)
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "output_columns": ["order_num", "pick_zone", "qty_suf"],
+            "filters": [
+                {"field": "pick_zone", "operator": "NE", "value": "H"},
+                {"field": "qty_suf", "operator": "GTE", "value": 1},
+                {"field": "time_stamp_int", "operator": "Between", "value": [20260501, 20260531]},
+                {"field": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "count"},
+        },
+        catalog,
+    )
+    rows = [
+        {"order_num": "O1", "pick_zone": "A", "qty_suf": 1, "time_stamp_int": 20260501, "company": "GG"},
+        {"order_num": "O2", "pick_zone": "H", "qty_suf": 2, "time_stamp_int": 20260502, "company": "GG"},
+        {"order_num": "O3", "pick_zone": "A", "qty_suf": 0, "time_stamp_int": 20260503, "company": "GG"},
+        {"order_num": "O4", "pick_zone": "A", "qty_suf": "1,5", "time_stamp_int": 20260504, "company": "GG"},
+        {"order_num": "O5", "pick_zone": "A", "qty_suf": 2, "time_stamp_int": 20260601, "company": "GG"},
+        {"order_num": "O6", "pick_zone": "A", "qty_suf": 2, "time_stamp_int": 20260505, "company": "MG"},
+    ]
+
+    assert service.external_filters_for_api(plan["filters"]) == [
+        {"id": "time_stamp_int", "operator": "Between", "value": [20260501, 20260531]},
+        {"id": "company", "operator": "EQ", "value": "GG"},
+    ]
+    filtered_rows = service.apply_local_filters(rows, plan["filters"])
+
+    assert [row["order_num"] for row in filtered_rows] == ["O1", "O4"]
+    assert service.execute_calculation(filtered_rows, plan)["value"] == 2
+    assert service.calculation_query_text(plan) == (
+        "SELECT COUNT(*) AS value FROM v_ask_pick_log_full "
+        "WHERE pick_zone <> 'H' AND qty_suf >= 1 "
+        "AND time_stamp_int BETWEEN 20260501 AND 20260531 AND company = 'GG';"
+    )
 
 
 def test_blank_max_rows_means_all_rows(monkeypatch):
@@ -381,6 +625,184 @@ def test_excel_export_session_is_bound_to_user():
         data_fetch.DATA_FETCH_SESSIONS.pop(session_id, None)
 
 
+def test_run_data_fetch_uses_business_tenant_for_api_base_url(monkeypatch):
+    captured = {}
+
+    class TenantAuditDb(FakeAuditDb):
+        def __init__(self):
+            super().__init__()
+            self.business = Business(id=42, code="T3", name="T3", tenant="itworks")
+
+        def get(self, model, object_id):
+            if model is Business and int(object_id) == self.business.id:
+                return self.business
+            return None
+
+    class FakeExternalDataClient:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+
+        def fetch_data(self, view, filters=None, identifiers=None):
+            captured["view"] = view
+            return [{"type": "korrigering", "item_num": "A1"}]
+
+    monkeypatch.setattr(settings, "DATA_SOURCE_CATALOG_JSON", json.dumps(SAMPLE_CATALOG))
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://data-frey.example.test/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY", "secret-key")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT", "secret-client")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY_HEADER", "secret-key-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT_HEADER", "secret-client-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+    service.clear_catalog_cache()
+    monkeypatch.setattr(data_fetch, "ExternalDataClient", FakeExternalDataClient)
+    db = TenantAuditDb()
+
+    result = asyncio.run(
+        data_fetch.run_data_fetch(
+            data_fetch.DataFetchRunRequest(
+                business_id=42,
+                plan={
+                    "status": "ok",
+                    "view": "dblog_count_log",
+                    "output_columns": ["type", "item_num"],
+                    "filters": [],
+                },
+            ),
+            current_user=fake_user(),
+            db=db,
+        )
+    )
+
+    assert captured["client_kwargs"]["base_url"] == "https://data-itworks.example.test/api/"
+    assert captured["view"] == "dblog_count_log"
+    assert result["rows"] == [{"type": "korrigering", "item_num": "A1"}]
+    assert db.items[0].business_id == 42
+
+
+def test_run_data_fetch_returns_calculation_result(monkeypatch):
+    captured = {}
+
+    class FakeExternalDataClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def fetch_data(self, view, filters=None, identifiers=None):
+            captured["filters"] = filters
+            return [
+                {"book_num": "PO1", "item_num": "A1", "type": 10},
+                {"book_num": "PO1", "item_num": "A1", "type": 10},
+                {"book_num": "PO1", "item_num": "A2", "type": 10},
+                {"book_num": "PO2", "item_num": "A1", "type": 10},
+                {"book_num": "PO9", "item_num": "A9", "type": 45},
+                {"book_num": "PO9", "item_num": "A8", "type": "91"},
+                {"book_num": "PO8", "item_num": "A7", "type": 100},
+            ]
+
+    monkeypatch.setattr(settings, "DATA_SOURCE_CATALOG_JSON", json.dumps(RECEIVE_LOG_CATALOG))
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://secret.example/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY", "secret-key")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT", "secret-client")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY_HEADER", "secret-key-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT_HEADER", "secret-client-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+    service.clear_catalog_cache()
+    monkeypatch.setattr(data_fetch, "ExternalDataClient", FakeExternalDataClient)
+
+    result = asyncio.run(
+        data_fetch.run_data_fetch(
+            data_fetch.DataFetchRunRequest(
+                plan={
+                    "status": "ok",
+                    "view": "v_ask_receive_log",
+                    "output_columns": ["book_num", "item_num"],
+                    "filters": [{"id": "type", "operator": "NE", "value": [45, 91, 100]}],
+                    "calculation": {
+                        "metric": "count_distinct",
+                        "distinct_by": ["book_num", "item_num"],
+                    },
+                },
+            ),
+            current_user=fake_user(),
+            db=FakeAuditDb(),
+        )
+    )
+
+    assert captured["filters"] is None
+    assert result["calculation"]["value"] == 3
+    assert result["calculation"]["distinct_by"] == ["book_num", "item_num"]
+    assert result["calculation_query"] == (
+        "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log "
+        "WHERE type <> 45 AND type <> 91 AND type <> 100;"
+    )
+
+
+def test_run_data_fetch_applies_prefix_filter_after_external_fetch(monkeypatch):
+    captured = {}
+
+    class FakeExternalDataClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def fetch_data(self, view, filters=None, identifiers=None):
+            captured["view"] = view
+            captured["filters"] = filters
+            captured["identifiers"] = identifiers
+            return [
+                {"order_num": "TO100", "time_stamp_int": 20260102},
+                {"order_num": "TO100", "time_stamp_int": 20260103},
+                {"order_num": "TP100", "time_stamp_int": 20260104},
+                {"order_num": "to200", "time_stamp_int": 20260105},
+            ]
+
+    monkeypatch.setattr(settings, "DATA_SOURCE_CATALOG_JSON", json.dumps(PICK_LOG_CATALOG))
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://secret.example/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY", "secret-key")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT", "secret-client")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY_HEADER", "secret-key-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT_HEADER", "secret-client-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+    service.clear_catalog_cache()
+    monkeypatch.setattr(data_fetch, "ExternalDataClient", FakeExternalDataClient)
+
+    result = asyncio.run(
+        data_fetch.run_data_fetch(
+            data_fetch.DataFetchRunRequest(
+                plan={
+                    "status": "ok",
+                    "view": "v_ask_pick_log_full",
+                    "output_columns": ["order_num"],
+                    "filters": [
+                        {"field": "time_stamp_int", "operator": "Between", "value": [20260101, 20260131]},
+                        {"field": "order_num", "operator": "StartsWith", "value": "TO"},
+                    ],
+                    "calculation": {
+                        "metric": "count_distinct",
+                        "distinct_by": ["order_num"],
+                    },
+                },
+            ),
+            current_user=fake_user(),
+            db=FakeAuditDb(),
+        )
+    )
+
+    assert captured["view"] == "v_ask_pick_log_full"
+    assert captured["filters"] == [
+        {"id": "time_stamp_int", "operator": "Between", "value": [20260101, 20260131]}
+    ]
+    assert captured["identifiers"] is None
+    assert result["rows"] == [
+        {"order_num": "TO100"},
+        {"order_num": "TO100"},
+        {"order_num": "to200"},
+    ]
+    assert result["calculation"]["value"] == 2
+    assert result["calculation_query"] == (
+        "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full "
+        "WHERE time_stamp_int BETWEEN 20260101 AND 20260131 AND order_num LIKE 'TO%';"
+    )
+
+
 def test_excel_export_writes_data_and_metadata(tmp_path):
     session = {
         "plan": {"view": "dblog_count_log", "view_label": "Aktivitetslogg"},
@@ -485,6 +907,17 @@ def test_external_data_client_builds_path_and_passes_tls_verify():
     assert captured["verify"] is False
 
 
+def test_data_source_base_url_can_be_tenant_scoped():
+    assert (
+        data_source_base_url_for_tenant("https://data-frey.example.test/api/", "itworks")
+        == "https://data-itworks.example.test/api/"
+    )
+    assert (
+        data_source_base_url_for_tenant("https://data-{tenant}.example.test/api/", "itworks")
+        == "https://data-itworks.example.test/api/"
+    )
+
+
 def test_api_client_passes_tls_settings(monkeypatch):
     captured = {}
 
@@ -554,3 +987,85 @@ def test_run_data_fetch_returns_logged_external_error(monkeypatch):
     assert db.items[0].action == "fetch_failed"
     assert db.items[0].new_value["status_code"] == 502
     assert db.items[0].new_value["error_id"] == exc_info.value.detail["error_id"]
+
+
+class _WindowedClient:
+    """Fake källa som respekterar ett radtak och filtrerar på Between-datumfönstret."""
+
+    def __init__(self, rows, cap, date_field="ts"):
+        self.rows = rows
+        self.cap = cap
+        self.date_field = date_field
+        self.calls = []
+
+    def fetch_data(self, view, filters=None, identifiers=None):
+        between = next(
+            (item for item in (filters or []) if item.get("operator") == "Between"),
+            None,
+        )
+        if between is None:
+            window = list(self.rows)
+        else:
+            low, high = between["value"]
+            window = [row for row in self.rows if low <= row[self.date_field] <= high]
+        self.calls.append((view, between["value"] if between else None))
+        return window[: self.cap]
+
+
+def test_fetch_external_rows_splits_date_window_when_response_capped(monkeypatch):
+    monkeypatch.setattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 3)
+    all_rows = [
+        {"id": f"{day}-{n}", "ts": 20260500 + day}
+        for day in range(1, 5)
+        for n in range(2)
+    ]
+    client = _WindowedClient(all_rows, cap=3)
+    external_filters = [{"id": "ts", "operator": "Between", "value": [20260501, 20260504]}]
+
+    rows = data_fetch._fetch_external_rows(client, "v_test", external_filters, None)
+
+    assert len(rows) == len(all_rows)
+    assert {row["id"] for row in rows} == {row["id"] for row in all_rows}
+    # Varje delfönster ligger under taket -> inga rader tappas och inget överlapp.
+    assert all(len(call_value or []) == 2 for _view, call_value in client.calls if call_value)
+
+
+def test_fetch_external_rows_returns_capped_without_date_filter(monkeypatch):
+    monkeypatch.setattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 3)
+    all_rows = [{"id": idx, "ts": 20260501} for idx in range(10)]
+    client = _WindowedClient(all_rows, cap=3)
+
+    rows = data_fetch._fetch_external_rows(client, "v_test", [], None)
+
+    # Utan datumfilter att dela på kan vi inte gå runt taket – men vi kraschar inte.
+    assert len(rows) == 3
+    assert len(client.calls) == 1
+
+
+def test_fetch_external_rows_raises_when_single_day_exceeds_cap(monkeypatch):
+    monkeypatch.setattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 3)
+    all_rows = [{"id": idx, "ts": 20260501} for idx in range(10)]
+    client = _WindowedClient(all_rows, cap=3)
+    external_filters = [{"id": "ts", "operator": "Between", "value": [20260501, 20260501]}]
+
+    with pytest.raises(ExternalDataClientError) as exc_info:
+        data_fetch._fetch_external_rows(client, "v_test", external_filters, None)
+
+    assert "2026-05-01" in str(exc_info.value)
+
+
+def test_fetch_external_rows_splits_iso_datetime_window(monkeypatch):
+    monkeypatch.setattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 3)
+    all_rows = [
+        {"id": f"{day}-{n}", "ts": f"2026-05-0{day}T12:00:00"}
+        for day in range(1, 5)
+        for n in range(2)
+    ]
+    client = _WindowedClient(all_rows, cap=3)
+    external_filters = [
+        {"id": "ts", "operator": "Between", "value": ["2026-05-01T00:00:00", "2026-05-04T23:59:59"]}
+    ]
+
+    rows = data_fetch._fetch_external_rows(client, "v_test", external_filters, None)
+
+    assert {row["id"] for row in rows} == {row["id"] for row in all_rows}
