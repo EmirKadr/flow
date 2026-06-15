@@ -79,23 +79,40 @@ Obs att kolumnuppsättningen skiljer sig: `dblog_pick_log` är den råa
 (~48 kolumner). Den "fulla" berikningen finns alltså inte nödvändigtvis i
 arkivvyn.
 
-## Gäller detta automatiskt i Hämta data? (Nej – känd lucka)
+## Gäller detta automatiskt i Hämta data? (Ja, sedan 2026-06)
 
-`Hämta data` dirigerar **inte** automatiskt en gammal period till arkivvyn.
-Verifierat 2026-06: `data_fetch_service.py` har ingen retention- eller
-`dblog`-logik. Två konsekvenser:
+`Hämta data` dirigerar nu automatiskt mellan live-vy och arkivvy utifrån
+periodens datum. Logiken finns i `data_fetch_service.build_retention_segments`
+och styrs av tabellen `LIVE_ARCHIVE_PAIRS` (live-vy → retention-dagar →
+arkivvy). Beteendet (exempel `v_ask_pick_log_full`, retention 40 dagar,
+cutoff = idag − 40):
 
-1. **Namnmatchning väljer live-vyn.** En prompt som "plocklogg full för januari"
-   matchar `v_ask_pick_log_full` (label "Plocklogg Full"), inte
-   `dblog_pick_log`. MiniMax får bara kandidatvyer + en periodhint; den vet inte
-   att januari ligger bortom de 40 dagarna.
-2. **Ingen varning.** Backend reparerar periodens *datumkolumn* men varnar inte
-   för att perioden ligger utanför live-vyns retention. Resultatet blir tomt
-   eller nästan tomt utan förklaring.
+| Du frågar | Period | Vad som händer | Notis |
+| --- | --- | --- | --- |
+| Plocklogg full | helt inom 40 dagar | live, oförändrat | ingen |
+| Plocklogg full | helt äldre än 40 dagar | **byter till** `dblog_pick_log` | "…hämtades från arkivet Arkiv Plocklogg…" |
+| Plocklogg full | spänner över cutoff | hämtar **båda**, slår ihop (union) | "…spänner över gränsen…hämtade både…" |
+| Arkiv Plocklogg | datum inom aktiv period | hämtar **även** live-vyn | "…ligger delvis i aktiv databas…hämtade även…" |
 
-Tills detta åtgärdas i kod (se [data-fetch.md](data-fetch.md)) måste användaren
-**be explicit om arkivvyn** för perioder äldre än live-vyns `days`, t.ex.
-"Arkiv Plocklogg för januari" → `dblog_pick_log`.
+Detaljer:
+- **Split vid cutoff.** Vid spann hämtas live för `datum ≥ cutoff` och arkiv för
+  `datum < cutoff`, så rader inte dubbelräknas vid gränsen.
+- **Union av kolumner.** Resultatet behåller den valda vyns `output_columns`;
+  rader från den andra vyn fyller bara de kolumn-id som matchar. Kolumnerna
+  skiljer sig (t.ex. 48 vs 35 för plock), så vissa fält blir tomma. Detta är
+  medvetet.
+- **Notis åt båda håll** sätts på planen (`plan.notice`) och visas i planpanelen
+  redan vid `Tolka`, samt vilka vyer som faktiskt hämtas (`plan.fetched_views`).
+- **Bara de 14 mappade vyerna** (radnivå-vyer med både live- och `dblog_`-vy i
+  katalogen). Aggregat-/statistikvyer och arkivtabeller utan live-vy auto-byts
+  inte.
+
+Mappade par: `v_ask_pick_log_full`↔`dblog_pick_log` (40 d), `v_ask_trans_log`
+(60), `v_ask_order_log` (80), `v_ask_palletloading_log`↔`dblog_loading_log`
+(60), `v_ask_receive_log` (60), `v_ask_correct_log` (60), `v_ask_count_log`
+(90), `v_ask_login_log` (60), `v_ask_robot_pick_log` (30), `v_ask_pick_rest_log`
+(60), `v_ask_return_order_log` (60), `v_ask_trace_log` (60), `v_ask_fill_rate_log`
+(30), `v_ask_pallet_rent_log_raw` (3).
 
 ## Hur man läser konfigfilen
 
@@ -126,6 +143,8 @@ Svar: I [`../vyer & kolumner/ask_rensning_och_arkivering.xml`](../vyer%20%26%20k
 ## Källor
 
 - `../vyer & kolumner/ask_rensning_och_arkivering.xml` – själva rensnings-/arkiveringskonfigurationen för WMan.
+- `../app/backend/data_fetch_service.py` – `LIVE_ARCHIVE_PAIRS` och `build_retention_segments` (auto-byte/merge).
+- `../app/backend/routers/data_fetch.py` – `_apply_retention` och `_fetch_rows_with_segments`.
 - [data-fetch.md](data-fetch.md) – hur `v_ask_*`-vyer hämtas via katalog och MiniMax.
 - `../vyer & kolumner/views_summary_20260521_154102.xlsx` – vy-katalog.
 - `../vyer & kolumner/views_swedish_columns_commands_20260521_155519.xlsx` – kolumn-katalog.

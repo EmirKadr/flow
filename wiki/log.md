@@ -7,6 +7,12 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-15] change | GG far plockade rader-default
+
+Intakt/utgift-defaulten for `GG` har nu ocksa forifylld `Utrakning` for
+BUTIK-raden `Plockade rader`: plocklogg full, ordernummer som borjar pa `TO`,
+utan zon `H`, minst 1 i `qty_suf`, datumintervall och `company = 'GG'`.
+
 ## [2026-06-15] change | GG far forifyllda utrakningar
 
 Intakt/utgift-defaulten for `GG` har nu forifyllda `Utrakning`-prompter,
@@ -1685,3 +1691,7 @@ Lade till `vyer & kolumner/ask_rensning_och_arkivering.xml` (tidigare felnamnda 
 ## [2026-06-15] gap | Hamta data dirigerar inte gammal period till arkivvy
 
 Verifierade att `Hamta data` inte automatiskt valjer arkivvyn for perioder bortom live-vyns retention: `data_fetch_service.py` har ingen retention-/`dblog`-logik. En prompt som "plocklogg full for januari" matchar `v_ask_pick_log_full` (40 dagar) och blir tom utan varning. Katalogen har 28 `dblog_*`-arkivvyer (prefix `dblog_`, label "Arkiv ..."), en per `archive="true"`-tabell, som laser `log_wmanfrey` (~800 dagar). Dokumenterade konventionen och luckan i `ask-datalagring.md` och ett felsokningssvar i `data-fetch.md`. Foreslagen kodatgard: hint nar detekterad period ligger utanfor en live-vys retention och en `dblog_*`-motsvarighet finns.
+
+## [2026-06-15] feature | Hamta data auto-dirigerar mellan live- och arkivvy
+
+Implementerade auto-byte/merge i `data_fetch_service.build_retention_segments` + `LIVE_ARCHIVE_PAIRS` (14 radniva-vyer med bade live- och `dblog_`-vy). Routern (`_apply_retention`, `_fetch_rows_with_segments`) lar planens Between-datumfilter avgora: helt inom retention -> live; helt aldre -> byt till `dblog_*`; spann -> hamta bada och sla ihop (split vid cutoff, union av kolumner, saknade falt tomma). Aven omvant: arkiv-fraga med datum i aktiv period hamtar aven live. `plan.notice`/`plan.fetched_views` sätts och visas som gul notisruta i planpanelen (`data_fetch.js` + CSS). 6 nya enhetstester i `test_data_fetch_service.py` (alla 39 passerar). Utelamnade par: `customs_dispatched_log`/`item_log` finns inte i archive="true"-blocket. Uppdaterade `ask-datalagring.md` och `data-fetch.md`.
