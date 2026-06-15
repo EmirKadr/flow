@@ -1,11 +1,115 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-15] change | GG far forifyllda utrakningar
+
+Intakt/utgift-defaulten for `GG` har nu forifyllda `Utrakning`-prompter,
+validerade planer och SQL/querytext for `Mottagna etiketter`, `Mottagna
+artikelrader` och BUTIK-raden `Plockade orders`.
+
+## [2026-06-15] fix | Hamta data far sakra textfilter
+
+Hamta data och Intakt/utgift-utrakningar accepterar nu validerade textfilter
+som `StartsWith`, `EndsWith`, `Contains` och `Like`. Filter som "ordernummer
+borjar pa TO" visas som `LIKE 'TO%'` i SQL/querytexten, men skickas inte som
+okanda operatorer till extern API-kalla; backend applicerar dem lokalt pa
+hamtade rader innan berakning och tabellpreview.
+
+## [2026-06-15] fix | Exkludera-filter kor lokalt
+
+`NE`-filter, till exempel "exkludera typ 45, 91 och 100", skickas inte langre
+till extern API-kalla. Backend hamtar med ovriga filter och tar sedan bort
+exkluderade varden lokalt, sa SQL/querytexten `type <> 45` motsvarar faktisk
+exkludering aven om provider-API:t tolkar `NE` annorlunda.
+
+## [2026-06-15] fix | Jamforelsefilter kor lokalt
+
+Numeriska jamforelsefilter som `qty_suf >= 1` skickas inte langre till extern
+API-kalla. Backend pushar fortfarande stabila urval som datumperiod och bolag,
+men applicerar `GT`, `GTE`, `LT` och `LTE` lokalt pa hamtade rader innan
+berakning.
+
+## [2026-06-15] test | Live-test for extern datakalla
+
+Det finns nu ett opt-in integrationstest for riktig `DATA_SOURCE_*`-datakalla:
+`tests/integration/test_data_source_live.py`. Testet kor inte i standard-sviten
+utan kraver `RUN_DATA_SOURCE_INTEGRATION=1`, hamtar plocklogg for vald manad och
+bolag, applicerar lokala filter och kan jamfora mot
+`LIVE_DATA_SOURCE_EXPECTED_PICK_COUNT` eller ett eget SQL-facit via
+`LIVE_DATA_SOURCE_SQL_URL` + `LIVE_DATA_SOURCE_SQL`.
+
+## [2026-06-15] feature | Hamta data far validerade berakningar
+
+Hamta data-planen kan nu innehalla en whitelistad `calculation` ovanpa samma
+externa API-hamtning: `count`, `count_distinct`, `sum`, `avg`, `min`, `max`,
+valfri gruppering, sortering och limit. Backend validerar alla berakningskolumner
+mot katalogen och kor berakningen lokalt pa hamtade rader; MiniMax skriver inte
+fri SQL. Intakt/utgift-radernas `Utrakning` ateranvander samma motor och kan nu
+rakna exempelvis unika artikelnummer per inkopsnummer utan att missbruka
+`identifiers`.
+
+## [2026-06-15] fix | Intakt/utgift far toppsparning och stabil dialog
+
+Intakt/utgift-flikens `Spara`-knapp ligger nu over intaktstabellerna. Dialogen
+for radens `Utrakning` stangs inte langre av backdrop-klick, sa textmarkering
+eller drag ut ur textarea inte kan stanga dialogen av misstag. Repo-reglerna har
+en frontendregel som forbjuder enkelt backdrop-`click`-monster for framtida
+text- och formulardialoger.
+
+## [2026-06-15] fix | Utrakningstest filtrerar pa bolag
+
+Intakt/utgift-radernas `Utrakning`-test skickar nu med aktuell bolagskod fran
+bolagsrutan. Backend lagger automatiskt pa `company`/Bolag-filter i den
+validerade Hamta data-planen och i sparad SQL/querytext nar den valda ASK-vyn
+har en bolagskolumn.
+
+## [2026-06-15] change | MG-underlag begransas till VAS och IT
+
+Intakt/utgift-defaulten for bolaget `MG` visar nu bara VAS-rader och IT-raden.
+VAS far samma forifyllda varden som `GG`, medan IT-raden defaultar till 445 kr
+per timme. Gamla sparade MG-rader utanfor VAS/IT filtreras bort nar
+installningen visas eller sparas igen.
+
+## [2026-06-15] feature | Intaktsrader far utrakningstest
+
+Intakt/utgift-underlaget har nu kolumnen `ST / Antal` och en `Utrakning`-knapp
+per rad. Dialogen testar anvandarens utrakning mot valbar startad manad i
+innevarande ar via samma MiniMax/Hamta data-plan som `hamta-data.html`, visar
+radantalet och sparar prompt, validerad plan och SQL/querytext pa raden.
+
+## [2026-06-15] feature | Intakt/utgift far GG-underlag
+
+Intakt/utgift-fliken visar nu intaktsunderlag per bolag med bolagskoden som
+rubrik, till exempel `GG` i stallet for faktureringsunderlagets fulla namn.
+`GG` ar forifyllt med Grann-garden-priser for Inbound, BUTIK, E-handel, VAS,
+IT och Ovrigt. De sparade VAS-raderna matar fortsatt Produktivitetens
+intaktsberakning via Normal-raden per Blue/White collar.
+
+## [2026-06-15] feature | VAS-intakt per bolag far Blue/White collar
+
+Intakt/utgift-installningen sparar nu separat VAS-intakt per timme for
+Blue collar och White collar per bolag. Produktivitetens intakt pa
+hierarkikorten valjer rate efter aktivitetens bolag och personens arbetstyp,
+med `blue_collar` som fallback for personer utan explicit arbetstyp.
+
+## [2026-06-15] feature | Verksamheter far Tenant for extern API-bas
+
+Verksamheter har nu faltet `tenant`. Verksamheter-vyn visar och redigerar
+Tenant inline, Stigamo defaultar till `frey`, R3 till `loki` och T3 till `itworks`.
+Hamta data, Bearbeta-kallor och Produktivitetens API-snapshot bygger extern
+API-bas fran verksamhetens tenant nar backend kanner till vald verksamhet.
+
+## [2026-06-15] change | RFID-sketch provar flera WiFi
+
+Den lokala RFID-sketchens WiFi-konfiguration har fyra slots. Tomma slots hoppas
+over och ESP32 provar varje ifyllt nat med timeout innan den gar vidare till
+nasta.
 
 ## [2026-06-14] process | Agentregler kraver Historik/Analys for nya handelser
 
@@ -1557,3 +1661,23 @@ RFID-scans for samma person och samma aktivitet tva ganger i rad sparas inte lan
 ## [2026-06-14] observability | Workflow, Meta och Data-fetch far bredare signal
 
 Workflow-kallor audit-loggas nu som `workflow_source/source_fetch` eller `source_fetch_failed` med sanerad payload, och publika Meta-uppladdningar loggar aven lyckade forsok som `meta_media_upload/upload_success`. Historik/Analys har labels for `workflow_source`, `meta_media_upload` och `coredata_file`. OTel har nya spans/attribut for workflow-kallor, Data-fetch plan/run/export samt Meta-export/manuell analys utan prompts, filnamn, sokvagar eller raddata. Tester skyddar auditkedjan och Historik-labels.
+
+## [2026-06-15] feature | Produktivitet far behorighetsstyrd intakt/utgift
+
+Produktivitet kan nu visa intakt, utgift och resultat pa varje kort i hierarkitradet nar rollen har `productivityFinance=view`. Beloppen beraknas server-side fran arbetade minuter, kostnad per timme och VAS-intakt per timme per bolag. Nya Installningar-fliken `Intakt/utgift` sparar vardena per verksamhet via `GET/PUT /api/settings/productivity-finance` och styrs av `productivityFinanceSettings`; bada nya behorigheter ar bara seedade till Super User tills de delas ut i Vybehorigheter.
+
+## [2026-06-15] fix | Intakt/utgift anvander bolag fran Verksamheter
+
+Intakt/utgift-fliken listar nu bara verksamhetens `company_codes`, till exempel `GG` och `MG` for Stigamo. VAS-omraden som `AS` och verksamhetskoden `STIGAMO` visas inte langre som egna intaktsrader, och backend filtrerar bort sparade VAS-intakter som inte matchar verksamhetens bolag.
+
+## [2026-06-15] feature | Personer far Blue/White collar
+
+Personregistret har nu faltet `collar_type` med vardena `blue_collar` och `white_collar`. Personer visar kolumnen `Arbetstyp`, kan redigera den inline eller i Ny person-modal, och direkt-/Excelimport kan fylla den via `arbetstyp` med alias som `Blue collar`, `Blue color`, `White collar` och `White color`. Befintliga och nya personer defaultar till `Blue collar`.
+
+## [2026-06-15] feature | Aktiviteter far KPI-processval
+
+Aktivitetsmodalen har nu en multival-rullista for KPI Mal dar anvandaren kan bocka i flera kanda KPI-processer. `GET /api/activities/kpi-process-options` hamtar processnamn fran KPI-mal, intern KPI-logik och befintliga aktiviteter; sparningen fortsatter skriva kommaseparerat `kpi_process_name` via befintliga create/update-endpoints.
+
+## [2026-06-15] ingest | ASK datalagring (rensning och arkivering)
+
+Lade till `vyer & kolumner/ask_rensning_och_arkivering.xml` (tidigare felnamnda `clean_clear_archive.html` i repo-roten) som kalla for ASK/WMan:s schemalagda rensnings-/arkiveringsjobb. Ny wiki-sida `ask-datalagring.md` forklarar `archive="true"` (flyttas till `log_wmanfrey`, ~800 dagar) vs `archive="false"` (raderas permanent efter `days`) och kopplar retention till flows `v_ask_*`-vyer. Viktigt fynd: `PICKLOCATION_LOG` (plockplatsbyten via `v_ask_pick_location_log`) ar `archive="false"` med 40 dagars retention och kan inte aterstallas. Korslankad fran `index.md` och `data-fetch.md`.
