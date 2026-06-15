@@ -1681,3 +1681,7 @@ Aktivitetsmodalen har nu en multival-rullista for KPI Mal dar anvandaren kan boc
 ## [2026-06-15] ingest | ASK datalagring (rensning och arkivering)
 
 Lade till `vyer & kolumner/ask_rensning_och_arkivering.xml` (tidigare felnamnda `clean_clear_archive.html` i repo-roten) som kalla for ASK/WMan:s schemalagda rensnings-/arkiveringsjobb. Ny wiki-sida `ask-datalagring.md` forklarar `archive="true"` (flyttas till `log_wmanfrey`, ~800 dagar) vs `archive="false"` (raderas permanent efter `days`) och kopplar retention till flows `v_ask_*`-vyer. Viktigt fynd: `PICKLOCATION_LOG` (plockplatsbyten via `v_ask_pick_location_log`) ar `archive="false"` med 40 dagars retention och kan inte aterstallas. Korslankad fran `index.md` och `data-fetch.md`.
+
+## [2026-06-15] gap | Hamta data dirigerar inte gammal period till arkivvy
+
+Verifierade att `Hamta data` inte automatiskt valjer arkivvyn for perioder bortom live-vyns retention: `data_fetch_service.py` har ingen retention-/`dblog`-logik. En prompt som "plocklogg full for januari" matchar `v_ask_pick_log_full` (40 dagar) och blir tom utan varning. Katalogen har 28 `dblog_*`-arkivvyer (prefix `dblog_`, label "Arkiv ..."), en per `archive="true"`-tabell, som laser `log_wmanfrey` (~800 dagar). Dokumenterade konventionen och luckan i `ask-datalagring.md` och ett felsokningssvar i `data-fetch.md`. Foreslagen kodatgard: hint nar detekterad period ligger utanfor en live-vys retention och en `dblog_*`-motsvarighet finns.

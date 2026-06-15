@@ -120,6 +120,9 @@ Svar: Beskriv nyckeln i prompten, till exempel "ta bort dubletter för artikelnu
 Fråga: Varför stoppas en MiniMax-plan?
 Svar: Backend accepterar bara vyer, kolumner, filteroperatorer och beräkningsoperationer som finns i kontraktet/katalogen. Om modellen hittar på något stoppas körningen innan extern datakälla anropas.
 
+Fråga: Varför blir "plocklogg full för januari" tomt fem månader senare?
+Svar: "Plocklogg Full" (`v_ask_pick_log_full`) är den live/operativa vyn och läser `PICK_LOG`, som bara behålls ~40 dagar i den operativa databasen. Januari ligger bortom det. Hämta data dirigerar i dagsläget **inte** automatiskt om till arkivet — du måste be explicit om arkivvyn, t.ex. "Arkiv Plocklogg för januari" (`dblog_pick_log`, läser `log_wmanfrey`, ~800 dagar). Se [ASK datalagring](ask-datalagring.md) för retention per vy och `dblog_*`-konventionen. Detta är en känd lucka; en föreslagen kodändring ska ge en hint när en period ligger utanför en live-vys retention och en `dblog_*`-motsvarighet finns.
+
 ## Källor
 
 - `../app/frontend/hamta-data.html`

@@ -61,6 +61,42 @@ De vyer flow faktiskt använder och deras underliggande retention:
 > historik finns alltså bara **40 dagar** bak och går inte att återskapa. Detta
 > är viktigt för platsanalys och all historisk plockplatsuppföljning.
 
+## Arkivvyer i katalogen (`dblog_*`)
+
+Den externa datakatalogen (`data/external_data_catalog.json`) innehåller separata
+arkivvyer för de tabeller som arkiveras. Konventionen är:
+
+- **Live/operativ vy** – t.ex. `v_ask_pick_log_full` ("Plocklogg Full"), läser
+  `WManFrey` → bara `days` dagar bak.
+- **Arkivvy** – prefix **`dblog_`** och svensk label **`Arkiv …`**, t.ex.
+  `dblog_pick_log` ("Arkiv Plocklogg"), läser `log_wmanfrey` → ~800 dagar bak.
+
+Det finns 28 `dblog_*`-vyer, en per `archive="true"`-tabell (Arkiv Plocklogg,
+Arkiv Translogg, Arkiv Orderlogg, Arkiv Pallastningslogg osv.).
+
+Obs att kolumnuppsättningen skiljer sig: `dblog_pick_log` är den råa
+`PICK_LOG`-arkivvyn (~35 kolumner), medan `v_ask_pick_log_full` är berikad
+(~48 kolumner). Den "fulla" berikningen finns alltså inte nödvändigtvis i
+arkivvyn.
+
+## Gäller detta automatiskt i Hämta data? (Nej – känd lucka)
+
+`Hämta data` dirigerar **inte** automatiskt en gammal period till arkivvyn.
+Verifierat 2026-06: `data_fetch_service.py` har ingen retention- eller
+`dblog`-logik. Två konsekvenser:
+
+1. **Namnmatchning väljer live-vyn.** En prompt som "plocklogg full för januari"
+   matchar `v_ask_pick_log_full` (label "Plocklogg Full"), inte
+   `dblog_pick_log`. MiniMax får bara kandidatvyer + en periodhint; den vet inte
+   att januari ligger bortom de 40 dagarna.
+2. **Ingen varning.** Backend reparerar periodens *datumkolumn* men varnar inte
+   för att perioden ligger utanför live-vyns retention. Resultatet blir tomt
+   eller nästan tomt utan förklaring.
+
+Tills detta åtgärdas i kod (se [data-fetch.md](data-fetch.md)) måste användaren
+**be explicit om arkivvyn** för perioder äldre än live-vyns `days`, t.ex.
+"Arkiv Plocklogg för januari" → `dblog_pick_log`.
+
 ## Hur man läser konfigfilen
 
 Filen är en XML-konfiguration (filändelsen var ursprungligen `.html` men
