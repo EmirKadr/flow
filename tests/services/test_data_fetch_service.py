@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 from types import SimpleNamespace
 
@@ -10,7 +10,12 @@ import requests
 
 from app.backend import data_fetch_service as service
 from app.backend.config import settings
-from app.backend.external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
+from app.backend.external_data_client import (
+    ExternalDataClient,
+    ExternalDataClientError,
+    data_source_base_url_for_tenant,
+    fetch_all_rows,
+)
 from app.backend.models import AuditLog, Business
 from app.backend.routers import data_fetch
 
@@ -1069,3 +1074,290 @@ def test_fetch_external_rows_splits_iso_datetime_window(monkeypatch):
     rows = data_fetch._fetch_external_rows(client, "v_test", external_filters, None)
 
     assert {row["id"] for row in rows} == {row["id"] for row in all_rows}
+
+
+# --- Delad fetch_all_rows / ExternalDataClient.fetch_all -----------------------
+
+def test_fetch_all_rows_no_cap_returns_everything_without_windowing():
+    all_rows = [{"id": idx, "ts": 20260501} for idx in range(10)]
+    client = _WindowedClient(all_rows, cap=3)
+    # response_row_cap=0 stänger av uppdelning -> en enda hämtning, inga fönster
+    rows = fetch_all_rows(client.fetch_data, "v_test", None, response_row_cap=0)
+    assert rows == client.fetch_data("v_test")  # samma som rå-hämtning
+    assert len(client.calls) >= 1
+    assert all(call_value is None for _view, call_value in client.calls)
+
+
+# --- Förpacknings-uppdelning (package_breakdown) ------------------------------
+
+PACKAGE_PICK_CATALOG = {
+    "version": 1,
+    "views": [
+        {
+            "id": "v_ask_pick_log_full",
+            "label_en": "Pick Log Full",
+            "label_sv": "Plocklogg Full",
+            "columns": [
+                {"id": "item_num", "order": 1, "label_en": "Item Num", "label_sv": "Artikelnr"},
+                {"id": "company", "order": 2, "label_en": "Company", "label_sv": "Bolag"},
+                {"id": "qty_pre", "order": 3, "label_en": "Qty Pre", "label_sv": "Beställt"},
+                {"id": "pick_zone", "order": 4, "label_en": "Pick Zone", "label_sv": "Zon"},
+                {"id": "rel_num", "order": 5, "label_en": "Rel Num", "label_sv": "Relnr"},
+            ],
+        }
+    ],
+}
+
+
+def test_split_quantity_into_packages_is_greedy_largest_first():
+    ladder = [("DFP", 10), ("ST", 1)]
+    assert service.split_quantity_into_packages(15, ladder) == {"DFP": 1, "ST": 5}
+    assert service.split_quantity_into_packages(30, ladder) == {"DFP": 3}
+    assert service.split_quantity_into_packages(0, ladder) == {}
+    assert service.split_quantity_into_packages(-4, ladder) == {}
+
+
+def test_build_package_ladders_sorts_desc_and_guarantees_base_unit():
+    ladders = service.build_package_ladders(
+        [
+            {"item_num": "A1", "company": "GG", "unit": "DFP", "conversion_factor": 10},
+            {"item_num": "A1", "company": "GG", "unit": "KRT", "conversion_factor": 4},
+            # ingen faktor-1-rad: en bas-enhet ska ändå läggas till
+            {"item_num": "A2", "company": "GG", "unit": "RULLE", "conversion_factor": 240},
+        ]
+    )
+    assert ladders[("A1", "GG")] == [("DFP", 10), ("KRT", 4), ("ST", 1)]
+    assert ladders[("A2", "GG")] == [("RULLE", 240), ("ST", 1)]
+
+
+def test_execute_package_breakdown_splits_per_row_not_grouped():
+    # Användarens exempel: två orderrader á 15. Uppdelning per rad ger 12 (2 DFP +
+    # 10 ST), inte 3 som en hopslagen total (30 / 10) hade gett.
+    pick_rows = [
+        {"order_num": "1", "item_num": "ART1", "company": "GG", "qty_pre": 15},
+        {"order_num": "2", "item_num": "ART1", "company": "GG", "qty_pre": 15},
+    ]
+    alias_rows = [
+        {"item_num": "ART1", "company": "GG", "unit": "ST", "conversion_factor": 1},
+        {"item_num": "ART1", "company": "GG", "unit": "DFP", "conversion_factor": 10},
+    ]
+    plan = {"calculation": {"metric": "package_breakdown", "field": "qty_pre", "group_by": ["item_num"]}}
+
+    result = service.execute_package_breakdown(pick_rows, alias_rows, plan)
+
+    assert result["value"] == 12
+    assert result["unit_totals"] == {"ST": 10, "DFP": 2}
+    by_unit = {(row["item_num"], row["unit"]): row["value"] for row in result["rows"]}
+    assert by_unit == {("ART1", "DFP"): 2, ("ART1", "ST"): 10}
+
+
+def test_execute_package_breakdown_falls_back_to_base_unit_without_alias():
+    pick_rows = [{"item_num": "MISSING", "company": "GG", "qty_pre": 7}]
+    plan = {"calculation": {"metric": "package_breakdown", "field": "qty_pre", "group_by": ["item_num"]}}
+
+    result = service.execute_package_breakdown(pick_rows, [], plan)
+
+    assert result["value"] == 7
+    assert result["unit_totals"] == {"ST": 7}
+
+
+def test_validate_plan_requires_field_for_package_breakdown():
+    catalog = service.catalog_from_payload(PACKAGE_PICK_CATALOG)
+    with pytest.raises(service.DataFetchPlanError):
+        service.validate_plan_payload(
+            {
+                "status": "ok",
+                "view": "v_ask_pick_log_full",
+                "output_columns": ["item_num"],
+                "calculation": {"metric": "package_breakdown", "group_by": ["item_num"]},
+            },
+            catalog,
+        )
+
+    plan = service.validate_plan_payload(
+        {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "output_columns": ["item_num"],
+            "calculation": {"metric": "förpackningar", "field": "qty_pre", "group_by": ["item_num"]},
+        },
+        catalog,
+    )
+    assert plan["calculation"]["metric"] == "package_breakdown"
+    assert plan["calculation"]["field"] == "qty_pre"
+
+
+def test_run_data_fetch_package_breakdown_fetches_alias_and_splits(monkeypatch):
+    calls = []
+    pick_rows = [
+        {"item_num": "ART1", "company": "GG", "qty_pre": 15, "pick_zone": "A", "rel_num": 0},
+        {"item_num": "ART1", "company": "GG", "qty_pre": 15, "pick_zone": "A", "rel_num": 0},
+    ]
+    alias_rows = [
+        {"item_num": "ART1", "company": "GG", "unit": "ST", "conversion_factor": 1},
+        {"item_num": "ART1", "company": "GG", "unit": "DFP", "conversion_factor": 10},
+    ]
+
+    class FakeExternalDataClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def fetch_data(self, view, filters=None, identifiers=None):
+            calls.append((view, filters))
+            return alias_rows if view == "asw_item_alias" else pick_rows
+
+    monkeypatch.setattr(settings, "DATA_SOURCE_CATALOG_JSON", json.dumps(PACKAGE_PICK_CATALOG))
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://secret.example/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY", "secret-key")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT", "secret-client")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY_HEADER", "secret-key-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT_HEADER", "secret-client-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+    service.clear_catalog_cache()
+    monkeypatch.setattr(data_fetch, "ExternalDataClient", FakeExternalDataClient)
+
+    result = asyncio.run(
+        data_fetch.run_data_fetch(
+            data_fetch.DataFetchRunRequest(
+                plan={
+                    "status": "ok",
+                    "view": "v_ask_pick_log_full",
+                    "output_columns": ["item_num"],
+                    "filters": [
+                        {"field": "pick_zone", "operator": "NE", "value": "H"},
+                        {"field": "rel_num", "operator": "EQ", "value": 0},
+                        {"field": "company", "operator": "EQ", "value": "GG"},
+                    ],
+                    "calculation": {"metric": "package_breakdown", "field": "qty_pre", "group_by": ["item_num"]},
+                },
+            ),
+            current_user=fake_user(),
+            db=FakeAuditDb(),
+        )
+    )
+
+    assert result["calculation"]["value"] == 12
+    assert result["calculation"]["unit_totals"] == {"ST": 10, "DFP": 2}
+    # Alias-vyn hämtades, filtrerad på samma bolag som plockplanen.
+    alias_calls = [filters for view, filters in calls if view == "asw_item_alias"]
+    assert alias_calls and {"id": "company", "operator": "EQ", "value": "GG"} in alias_calls[0]
+    assert "package_breakdown" in result["calculation"]["metric"]
+
+
+def test_fetch_all_rows_windows_when_capped():
+    all_rows = [{"id": f"{day}-{n}", "ts": 20260500 + day} for day in range(1, 5) for n in range(2)]
+    client = _WindowedClient(all_rows, cap=3)
+    filters = [{"id": "ts", "operator": "Between", "value": [20260501, 20260504]}]
+    rows = fetch_all_rows(client.fetch_data, "v_test", filters, response_row_cap=3)
+    assert {row["id"] for row in rows} == {row["id"] for row in all_rows}
+
+
+def test_external_client_fetch_all_uses_shared_windowing():
+    all_rows = [{"id": f"{day}-{n}", "ts": 20260500 + day} for day in range(1, 5) for n in range(2)]
+    windowed = _WindowedClient(all_rows, cap=3)
+    client = ExternalDataClient(base_url="http://example.test", response_row_cap=3)
+    client.fetch_data = windowed.fetch_data  # type: ignore[assignment]
+    filters = [{"id": "ts", "operator": "Between", "value": [20260501, 20260504]}]
+    rows = client.fetch_all("v_test", filters=filters)
+    assert {row["id"] for row in rows} == {row["id"] for row in all_rows}
+    assert len(windowed.calls) > 1  # delades upp i fönster
+
+
+# --- Retention: live/archive auto-byte och merge -------------------------------
+
+def _date_col(order):
+    return {"id": "time_stamp_int", "order": order, "label_en": "Time Stamp Int", "label_sv": "Datum"}
+
+
+RETENTION_CATALOG = service.catalog_from_payload({
+    "version": 1,
+    "views": [
+        {
+            "id": "v_ask_pick_log_full",
+            "label_en": "Pick Log Full",
+            "label_sv": "Plocklogg Full",
+            "columns": [
+                {"id": "order_num", "order": 1, "label_en": "Order Num", "label_sv": "Ordernr"},
+                _date_col(2),
+                {"id": "company", "order": 3, "label_en": "Company", "label_sv": "Bolag"},
+                {"id": "qty_suf", "order": 4, "label_en": "Qty Suf", "label_sv": "Plockat"},
+            ],
+        },
+        {
+            "id": "dblog_pick_log",
+            "label_en": "Archive Pick Log",
+            "label_sv": "Arkiv Plocklogg",
+            "columns": [
+                {"id": "order_num", "order": 1, "label_en": "Order Num", "label_sv": "Ordernr"},
+                _date_col(2),
+                {"id": "company", "order": 3, "label_en": "Company", "label_sv": "Bolag"},
+            ],
+        },
+    ],
+})
+TODAY = date(2026, 6, 15)  # cutoff för 40d retention = 2026-05-06
+
+
+def _pick_plan(view, start_int, end_int):
+    return {
+        "status": "ok",
+        "view": view,
+        "output_columns": ["order_num", "time_stamp_int", "company"],
+        "filters": [
+            {"id": "company", "operator": "EQ", "value": "GG"},
+            {"id": "time_stamp_int", "operator": "Between", "value": [start_int, end_int]},
+        ],
+        "identifiers": [],
+        "calculation": None,
+    }
+
+
+def test_retention_live_only_when_period_within_active_window():
+    plan = _pick_plan("v_ask_pick_log_full", 20260609, 20260615)
+    assert service.build_retention_segments(plan, RETENTION_CATALOG, TODAY) is None
+
+
+def test_retention_redirects_old_period_to_archive():
+    plan = _pick_plan("v_ask_pick_log_full", 20260101, 20260131)
+    result = service.build_retention_segments(plan, RETENTION_CATALOG, TODAY)
+    assert result is not None
+    assert [seg["view"] for seg in result["segments"]] == ["dblog_pick_log"]
+    assert result["fetched_views"] == ["dblog_pick_log"]
+    assert "Arkiv Plocklogg" in result["notice"]
+    # company-filtret behålls, datumfiltret pekar på arkivets datumkolumn
+    segment = result["segments"][0]
+    company = [f for f in segment["filters"] if f["id"] == "company"]
+    between = [f for f in segment["filters"] if f["operator"] == "Between"]
+    assert company and company[0]["value"] == "GG"
+    assert between and between[0]["value"] == [20260101, 20260131]
+
+
+def test_retention_spanning_period_fetches_both_and_splits_at_cutoff():
+    plan = _pick_plan("v_ask_pick_log_full", 20260420, 20260610)
+    result = service.build_retention_segments(plan, RETENTION_CATALOG, TODAY)
+    assert result is not None
+    assert [seg["view"] for seg in result["segments"]] == ["v_ask_pick_log_full", "dblog_pick_log"]
+    live_between = [f for f in result["segments"][0]["filters"] if f["operator"] == "Between"][0]
+    archive_between = [f for f in result["segments"][1]["filters"] if f["operator"] == "Between"][0]
+    assert live_between["value"] == [20260506, 20260610]      # från cutoff
+    assert archive_between["value"] == [20260420, 20260505]    # till cutoff-1
+
+
+def test_retention_archive_request_with_active_dates_also_fetches_live():
+    plan = _pick_plan("dblog_pick_log", 20260610, 20260614)
+    result = service.build_retention_segments(plan, RETENTION_CATALOG, TODAY)
+    assert result is not None
+    assert [seg["view"] for seg in result["segments"]] == ["dblog_pick_log", "v_ask_pick_log_full"]
+    assert "v_ask_pick_log_full" in result["fetched_views"]
+    assert "Plocklogg Full" in result["notice"]
+
+
+def test_retention_archive_request_with_old_dates_stays_archive_only():
+    plan = _pick_plan("dblog_pick_log", 20260101, 20260131)
+    assert service.build_retention_segments(plan, RETENTION_CATALOG, TODAY) is None
+
+
+def test_retention_ignored_for_unmapped_view():
+    plan = _pick_plan("v_ask_trans_log", 20260101, 20260131)
+    plan["view"] = "v_ask_some_unmapped_view"
+    assert service.build_retention_segments(plan, RETENTION_CATALOG, TODAY) is None

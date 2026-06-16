@@ -64,6 +64,81 @@ function dataFetchRemainingColumns(plan = dataFetchState.plan) {
   return (plan?.output_columns || []).filter((columnId) => !removed.has(columnId));
 }
 
+function dataFetchMetricLabel(metric) {
+  return ({
+    count: "Antal rader",
+    count_distinct: "Antal unika",
+    sum: "Summa",
+    avg: "Snitt",
+    min: "Min",
+    max: "Max",
+  })[metric] || "Beräkning";
+}
+
+function renderDataFetchCalculationPlan(plan) {
+  const calculation = plan?.calculation;
+  if (!calculation) return "";
+  const field = calculation.field ? dataFetchColumnLabel(plan, calculation.field) : "";
+  const distinctBy = (calculation.distinct_by || [])
+    .map((columnId) => `<code>${dataFetchEscape(columnId)}</code> ${dataFetchEscape(dataFetchColumnLabel(plan, columnId))}`)
+    .join(", ");
+  const groupBy = (calculation.group_by || [])
+    .map((columnId) => `<code>${dataFetchEscape(columnId)}</code> ${dataFetchEscape(dataFetchColumnLabel(plan, columnId))}`)
+    .join(", ");
+  const sortBy = calculation.sort_by
+    ? `${dataFetchEscape(calculation.sort_by.field || "value")} ${dataFetchEscape(calculation.sort_by.direction || "desc")}`
+    : "";
+  const details = [
+    field ? `Fält: ${dataFetchEscape(field)}` : "",
+    distinctBy ? `Unikt per: ${distinctBy}` : "",
+    groupBy ? `Gruppera per: ${groupBy}` : "",
+    sortBy ? `Sortering: ${sortBy}` : "",
+    calculation.limit ? `Max grupper: ${dataFetchEscape(calculation.limit)}` : "",
+  ].filter(Boolean);
+  return `
+    <div class="data-fetch-calculation-plan">
+      <strong>${dataFetchEscape(dataFetchMetricLabel(calculation.metric))}</strong>
+      ${details.length ? `<ul>${details.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+    </div>
+  `;
+}
+
+function renderDataFetchCalculationResult(result) {
+  const calculation = result?.calculation;
+  if (!calculation) return "";
+  const groupColumns = Array.isArray(calculation.columns) ? calculation.columns : [];
+  const groupRows = Array.isArray(calculation.rows) ? calculation.rows : [];
+  const groupTable = groupColumns.length && groupRows.length
+    ? `
+      <div class="data-fetch-table-wrap data-fetch-calculation-table">
+        <table>
+          <thead><tr>${groupColumns.map((column) => `<th>${dataFetchEscape(column.label)}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${groupRows.map((row) => `
+              <tr>${groupColumns.map((column) => `<td>${dataFetchEscape(dataFetchValueText(row[column.id]))}</td>`).join("")}</tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
+    : "";
+  return `
+    <div class="data-fetch-calculation-result">
+      <div>
+        <span>${dataFetchEscape(calculation.label || dataFetchMetricLabel(calculation.metric))}</span>
+        <strong>${dataFetchEscape(dataFetchValueText(calculation.value))}</strong>
+      </div>
+      ${result.calculation_query ? `
+        <details>
+          <summary>SQL/query</summary>
+          <pre>${dataFetchEscape(result.calculation_query)}</pre>
+        </details>
+      ` : ""}
+      ${groupTable}
+    </div>
+  `;
+}
+
 function dataFetchUpdateActions() {
   const planButton = document.getElementById("dataFetchPlan");
   const runButton = document.getElementById("dataFetchRun");
@@ -100,6 +175,12 @@ function dataFetchMaxRows() {
   return Math.min(5000, Math.max(1, Math.floor(value)));
 }
 
+function dataFetchBusinessId() {
+  if (typeof areaFocusBusinessId !== "function") return null;
+  const businessId = Number(areaFocusBusinessId());
+  return Number.isInteger(businessId) && businessId > 0 ? businessId : null;
+}
+
 function updateDataFetchPlanColumns() {
   const plan = dataFetchState.plan;
   if (!plan || plan.status !== "ok" || !dataFetchState.pendingRemovedColumns?.size) return;
@@ -108,7 +189,7 @@ function updateDataFetchPlanColumns() {
     showToast("Minst en kolumn måste vara kvar.", "warn", 5000);
     return;
   }
-  const labels = {};
+  const labels = { ...(plan.output_column_labels || {}) };
   outputColumns.forEach((columnId) => {
     labels[columnId] = dataFetchColumnLabel(plan, columnId);
   });
@@ -175,6 +256,7 @@ function renderDataFetchPlan(plan, options = {}) {
     <li><code>${dataFetchEscape(filter.id)}</code> ${dataFetchEscape(filter.operator)}
       <strong>${dataFetchEscape(dataFetchValueText(filter.value))}</strong></li>
   `).join("");
+  const calculation = renderDataFetchCalculationPlan(plan);
   const columns = (plan.output_columns || []).map((columnId) => `
     <button
       type="button"
@@ -196,6 +278,7 @@ function renderDataFetchPlan(plan, options = {}) {
       </div>
     </div>
     ${plan.reason ? `<p>${dataFetchEscape(plan.reason)}</p>` : ""}
+    ${plan.notice ? `<p class="data-fetch-notice" role="status">${dataFetchEscape(plan.notice)}</p>` : ""}
     <div class="data-fetch-column-list">${columns}</div>
     <div class="data-fetch-column-actions">
       <button type="button" data-update-columns ${updateDisabled ? "disabled" : ""}>Uppdatera plan</button>
@@ -204,6 +287,7 @@ function renderDataFetchPlan(plan, options = {}) {
       <strong>Filter</strong>
       ${filters ? `<ul>${filters}</ul>` : '<p class="note">Inga filter.</p>'}
     </div>
+    ${calculation}
   `;
   bindDataFetchPlanControls(panel);
 }
@@ -234,6 +318,7 @@ function renderDataFetchResult(result) {
         </p>
       </div>
     </div>
+    ${renderDataFetchCalculationResult(result)}
     <div class="data-fetch-table-wrap">
       <table>
         <thead><tr>${header}</tr></thead>
@@ -312,10 +397,13 @@ async function runDataFetch() {
   if (!dataFetchState.catalogReady || !dataFetchState.apiReady || !dataFetchState.plan || dataFetchState.plan.status !== "ok") return;
   dataFetchSetBusy(true, "Hämtar data...");
   try {
-    const result = await api.post("/api/query-data/run", {
+    const payload = {
       plan: dataFetchState.plan,
       max_rows: dataFetchMaxRows(),
-    });
+    };
+    const businessId = dataFetchBusinessId();
+    if (businessId != null) payload.business_id = businessId;
+    const result = await api.post("/api/query-data/run", payload);
     renderDataFetchResult(result);
     dataFetchSetBusy(false, "Data hämtad.");
   } catch (error) {
@@ -345,6 +433,7 @@ function resetDataFetchForPromptEdit() {
 async function initDataFetchPage() {
   const user = await initPage("dataFetch");
   if (!user) return;
+  if (typeof loadAreaFocusAreas === "function") await loadAreaFocusAreas(user).catch(() => {});
   await loadDataFetchHealth();
   document.getElementById("dataFetchPrompt").addEventListener("input", resetDataFetchForPromptEdit);
   document.getElementById("dataFetchPlan").addEventListener("click", planDataFetch);

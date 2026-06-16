@@ -8,7 +8,7 @@ from typing import Any
 
 from .config import settings
 from .data_fetch_service import DataFetchConfigError, DataFetchPlanError, DataView, load_catalog
-from .external_data_client import ExternalDataClient, ExternalDataClientError
+from .external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
 
 
 class WorkflowDataError(RuntimeError):
@@ -265,15 +265,19 @@ def sources_available(source_keys: list[str] | tuple[str, ...]) -> bool:
     return True
 
 
-def _api_client() -> ExternalDataClient:
+def _api_client(tenant: str | None = None) -> ExternalDataClient:
     missing = api_config_missing()
     if missing:
         raise WorkflowDataError(
             f"Saknar {', '.join(missing)} i servermiljön.",
             status_code=503,
         )
+    try:
+        base_url = data_source_base_url_for_tenant(settings.DATA_SOURCE_API_BASE_URL, tenant)
+    except ValueError as exc:
+        raise WorkflowDataError(str(exc), status_code=503) from exc
     return ExternalDataClient(
-        base_url=settings.DATA_SOURCE_API_BASE_URL.strip(),
+        base_url=base_url,
         api_key=settings.DATA_SOURCE_API_KEY.strip() or None,
         api_client=settings.DATA_SOURCE_API_CLIENT.strip() or None,
         api_key_header=settings.DATA_SOURCE_API_KEY_HEADER.strip() or None,
@@ -282,6 +286,7 @@ def _api_client() -> ExternalDataClient:
         timeout=settings.DATA_SOURCE_TIMEOUT_SECONDS,
         verify_ssl=settings.DATA_SOURCE_VERIFY_SSL,
         ca_bundle=settings.DATA_SOURCE_CA_BUNDLE.strip() or None,
+        response_row_cap=int(getattr(settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 0) or 0),
     )
 
 
@@ -333,6 +338,8 @@ def _materialize_csv(spec: WorkflowSourceSpec, rows: list[dict[str, Any]], view:
 def fetch_source_to_temp(
     source_key: str,
     filters: list[dict[str, Any]] | None = None,
+    *,
+    tenant: str | None = None,
 ) -> tuple[Path, WorkflowSourceEntry]:
     spec = source_spec(source_key)
     try:
@@ -343,7 +350,8 @@ def fetch_source_to_temp(
     except DataFetchPlanError as exc:
         raise WorkflowDataError(str(exc), status_code=503) from exc
     try:
-        rows = _api_client().fetch_data(spec.view, filters=filters)
+        client = _api_client(tenant=tenant) if tenant else _api_client()
+        rows = client.fetch_all(spec.view, filters=filters)
     except ExternalDataClientError as exc:
         raise WorkflowDataError(str(exc), status_code=502) from exc
     path = _materialize_csv(spec, rows, view)
@@ -368,6 +376,7 @@ def resolve_sources(
     *,
     required_keys: set[str],
     local_ref_keys: set[str] | None = None,
+    tenant: str | None = None,
 ) -> WorkflowResolution:
     resolved = dict(files)
     temp_paths: list[Path] = []
@@ -377,7 +386,10 @@ def resolve_sources(
         spec = source_spec(source_key)
         required = file_key in required_keys
         try:
-            path, entry = fetch_source_to_temp(source_key)
+            if tenant:
+                path, entry = fetch_source_to_temp(source_key, tenant=tenant)
+            else:
+                path, entry = fetch_source_to_temp(source_key)
             resolved[file_key] = path
             temp_paths.append(path)
             entries.append(WorkflowSourceEntry(**{**entry.__dict__, "key": file_key}))

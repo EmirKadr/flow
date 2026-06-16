@@ -113,6 +113,7 @@ function cellLabel(entityType, field) {
       code: "Verksamhetskod",
       name: "Verksamhetsnamn",
       company_codes: "Bolag",
+      tenant: "Tenant",
       sort_order: "Verksamhetssortering",
       is_active: "Verksamhet aktiv",
     },
@@ -168,6 +169,15 @@ function normalizeCompanyCodes(rawValue) {
     });
   if (codes.length > 50) throw new Error("Max 50 bolag per verksamhet.");
   return codes;
+}
+
+function normalizeTenant(rawValue) {
+  const tenant = String(rawValue || "").trim().toLowerCase();
+  if (!tenant) return "";
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$/.test(tenant)) {
+    throw new Error("Tenant får bara innehålla a-z, 0-9 och bindestreck.");
+  }
+  return tenant;
 }
 
 function inlineInputValue(entityType, record, field) {
@@ -259,11 +269,12 @@ function renderBusinesses() {
       ${editableCell("business", business, "code")}
       ${editableCell("business", business, "name")}
       ${editableCell("business", business, "company_codes")}
+      ${editableCell("business", business, "tenant")}
       ${editableCell("business", business, "sort_order", "number")}
       ${activeCell("business", business)}
     </tr>
     <tr class="business-areas-row">
-      <td colspan="5">
+      <td colspan="6">
         <div class="business-areas-header">
           <span>Områden</span>
           <span class="business-areas-header-actions">
@@ -293,6 +304,13 @@ function normalizeInlineValue(entityType, field, kind, rawValue) {
       return { ok: true, value: normalizeCompanyCodes(value) };
     } catch (error) {
       return { ok: false, message: error.message || "Bolag kunde inte tolkas." };
+    }
+  }
+  if (entityType === "business" && field === "tenant") {
+    try {
+      return { ok: true, value: normalizeTenant(value) || null };
+    } catch (error) {
+      return { ok: false, message: error.message || "Tenant kunde inte tolkas." };
     }
   }
   if ((field === "code" || field === "name") && !value) {
@@ -342,6 +360,7 @@ function startInlineEdit(cell) {
   input.value = inlineInputValue(entityType, record, field);
   if (field === "code") input.maxLength = 20;
   if (field === "name") input.maxLength = 100;
+  if (field === "tenant") input.maxLength = 80;
 
   let settled = false;
   const cancel = () => {
@@ -490,6 +509,7 @@ function openBusinessModal() {
       <h2>Ny verksamhet</h2>
       <label>Namn <input id="m-name" maxlength="100" /></label>
       <label>Bolag <input id="m-company-codes" maxlength="300" /></label>
+      <label>Tenant <input id="m-tenant" maxlength="80" /></label>
       <label>Sortering <input id="m-sort" type="number" value="0" /></label>
       <label class="modal-checkbox"><input id="m-active" type="checkbox" checked /> Aktiv</label>
       <div class="actions">
@@ -502,15 +522,18 @@ function openBusinessModal() {
   backdrop.querySelector("#cancel").addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("#save").addEventListener("click", async () => {
     let companyCodes = [];
+    let tenant = "";
     try {
       companyCodes = normalizeCompanyCodes(document.getElementById("m-company-codes").value);
+      tenant = normalizeTenant(document.getElementById("m-tenant").value);
     } catch (error) {
-      showToast(error.message || "Bolag kunde inte tolkas.", "warn", 3000);
+      showToast(error.message || "Bolag eller tenant kunde inte tolkas.", "warn", 3000);
       return;
     }
     const payload = {
       name: document.getElementById("m-name").value.trim(),
       company_codes: companyCodes,
+      tenant: tenant || null,
       sort_order: Number(document.getElementById("m-sort").value) || 0,
       is_active: document.getElementById("m-active").checked,
     };

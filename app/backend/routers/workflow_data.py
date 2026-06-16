@@ -12,7 +12,7 @@ from starlette.background import BackgroundTask
 
 from .. import audit
 from ..deps import get_current_user, get_db
-from ..models import User
+from ..models import Business, User
 from ..observability import add_span_attributes, start_span
 from ..settings_service import get_role_view_access
 from ..user_access import can_access_view, can_use_allocation_process
@@ -86,6 +86,14 @@ def _audit_workflow_source(
     )
 
 
+def _workflow_source_tenant(db: Session, user: User) -> str | None:
+    business_id = getattr(user, "business_id", None)
+    if business_id is None or not hasattr(db, "get"):
+        return None
+    business = db.get(Business, business_id)
+    return getattr(business, "tenant", None) if business is not None else None
+
+
 def _assert_workflow_source_allowed(payload: WorkflowSourceRequest, user: User, db: Session) -> None:
     feature = payload.feature.strip().lower()
     source_key = payload.source_key.strip()
@@ -122,8 +130,12 @@ def workflow_source(
         },
     ):
         _assert_workflow_source_allowed(payload, user, db)
+        tenant = _workflow_source_tenant(db, user)
         try:
-            path, entry = fetch_source_to_temp(payload.source_key)
+            if tenant:
+                path, entry = fetch_source_to_temp(payload.source_key, tenant=tenant)
+            else:
+                path, entry = fetch_source_to_temp(payload.source_key)
         except WorkflowDataError as exc:
             add_span_attributes({"workflow.status": "error", "workflow.error_type": type(exc).__name__})
             _audit_workflow_source(

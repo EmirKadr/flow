@@ -150,6 +150,25 @@ def test_staffing_settings_has_separate_view_and_edit_permission():
     assert can_access_view(make_user("admin"), {}, "staffingSettings", "edit")
 
 
+def test_productivity_finance_permissions_are_separate_and_super_user_seed_only():
+    user = make_user("leader")
+    access = {
+        "leader": {
+            "productivityFinance": "view",
+            "productivityFinanceSettings": "view",
+        }
+    }
+
+    assert can_access_view(user, access, "productivityFinance", "view")
+    assert not can_access_view(user, access, "productivityFinance", "edit")
+    assert can_access_view(user, access, "productivityFinanceSettings", "view")
+    assert not can_access_view(user, access, "productivityFinanceSettings", "edit")
+    assert not can_access_view(make_user("admin"), {}, "productivityFinance", "view")
+    assert not can_access_view(make_user("admin"), {}, "productivityFinanceSettings", "edit")
+    assert can_access_view(make_user("super_user", roles=["super_user"]), {}, "productivityFinance", "edit")
+    assert can_access_view(make_user("super_user", roles=["super_user"]), {}, "productivityFinanceSettings", "edit")
+
+
 def test_role_view_access_levels_match_view_and_edit_contract():
     viewer = make_user("viewer")
 

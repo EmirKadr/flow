@@ -527,6 +527,15 @@ def _productivity_cache_business_id(db: Session | None, business_code: str | Non
     return db.execute(select(Business.id).where(func.lower(Business.code) == code)).scalar()
 
 
+def _productivity_data_source_tenant(db: Session | None, business_code: str | None) -> str | None:
+    if db is None:
+        return None
+    code = str(business_code or DEFAULT_BUSINESS_CODE or "").strip().lower()
+    if not code:
+        return None
+    return db.execute(select(Business.tenant).where(func.lower(Business.code) == code)).scalar()
+
+
 def _warm_person_productivity_daily_cache(
     db: Session | None,
     snapshot_date: date,
@@ -583,6 +592,7 @@ def sync_productivity_snapshot(
     staging_dir = snapshot_dir / f".staging-{os.getpid()}-{int(time.time() * 1000)}"
     try:
         source_map = productivity_api_source_map()
+        tenant = _productivity_data_source_tenant(db, business_code)
         staging_dir.mkdir(parents=True, exist_ok=True)
         for file_key in SNAPSHOT_SOURCE_KEYS:
             source_key = source_map[file_key]
@@ -591,7 +601,14 @@ def sync_productivity_snapshot(
             source_status = "api"
             fallback_reason = None
             try:
-                temp_path, entry = fetch_source_to_temp(source_key, filters=_source_filters(file_key, day))
+                if tenant:
+                    temp_path, entry = fetch_source_to_temp(
+                        source_key,
+                        filters=_source_filters(file_key, day),
+                        tenant=tenant,
+                    )
+                else:
+                    temp_path, entry = fetch_source_to_temp(source_key, filters=_source_filters(file_key, day))
                 temp_paths.append(temp_path)
                 view = entry.view
             except WorkflowDataError as exc:
@@ -731,6 +748,7 @@ def sync_productivity_snapshot_history(
     current_source: dict[str, Any] | None = None
     try:
         source_map = productivity_api_source_map()
+        tenant = _productivity_data_source_tenant(db, business_code)
         source_payloads: dict[str, dict[str, Any]] = {}
         for file_key in SNAPSHOT_SOURCE_KEYS:
             source_key = source_map[file_key]
@@ -739,10 +757,17 @@ def sync_productivity_snapshot_history(
             source_status = "api"
             fallback_reason = None
             try:
-                temp_path, entry = fetch_source_to_temp(
-                    source_key,
-                    filters=_source_range_filters(file_key, start_date, final_date),
-                )
+                if tenant:
+                    temp_path, entry = fetch_source_to_temp(
+                        source_key,
+                        filters=_source_range_filters(file_key, start_date, final_date),
+                        tenant=tenant,
+                    )
+                else:
+                    temp_path, entry = fetch_source_to_temp(
+                        source_key,
+                        filters=_source_range_filters(file_key, start_date, final_date),
+                    )
                 temp_paths.append(temp_path)
                 view = entry.view
             except WorkflowDataError as exc:

@@ -465,6 +465,14 @@ function canEditStaffingSettings() {
   return Boolean(window.canEditPage?.(allocationState.user, "staffingSettings") || allocationState.user?.is_super_user);
 }
 
+function canViewProductivityFinanceSettings() {
+  return Boolean(window.canViewPage?.(allocationState.user, "productivityFinanceSettings") || allocationState.user?.is_super_user);
+}
+
+function canEditProductivityFinanceSettings() {
+  return Boolean(window.canEditPage?.(allocationState.user, "productivityFinanceSettings") || allocationState.user?.is_super_user);
+}
+
 
 function renderCombinedView() {
   const flows = combinedAllocationFlows();

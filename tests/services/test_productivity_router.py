@@ -18,6 +18,141 @@ def test_productivity_router_no_longer_registers_file_upload_routes():
     assert ("DELETE", "/api/productivity/files/{file_type}") not in routes
 
 
+def test_productivity_finance_is_hidden_without_finance_permission():
+    report = {
+        "people": [
+            {
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "minutes": 60, "points": 10},
+                ],
+            }
+        ],
+    }
+
+    productivity_router._attach_productivity_finance(report, {"visible": False})
+
+    assert report["finance"] == {"visible": False}
+    assert "finance" not in report["people"][0]["time_cells"][0]
+
+
+def test_productivity_finance_calculates_cost_revenue_and_result():
+    report = {
+        "people": [
+            {
+                "person_id": 4,
+                "name": "Alvin",
+                "collar_type": "white_collar",
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "minutes": 60, "points": 50},
+                    {"kind": "support", "activity_id": 2, "minutes": 30, "points": 0},
+                ],
+            }
+        ],
+    }
+    context = {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": 200,
+        "vas_hourly_revenue_by_company": {
+            "GG": {"blue_collar": 500, "white_collar": 650},
+        },
+        "company_codes": ["GG"],
+        "activity_meta": {
+            1: {"is_vas": True, "company": "GG"},
+            2: {"is_vas": False, "company": "GG"},
+        },
+    }
+
+    productivity_router._attach_productivity_finance(report, context)
+
+    vas_cell = report["people"][0]["time_cells"][0]["finance"]
+    support_cell = report["people"][0]["time_cells"][1]["finance"]
+    assert vas_cell["revenue"] == 650.0
+    assert vas_cell["cost"] == 200.0
+    assert vas_cell["result"] == 450.0
+    assert vas_cell["collar_type"] == "white_collar"
+    assert support_cell["revenue"] == 0.0
+    assert support_cell["cost"] == 100.0
+    assert support_cell["result"] == -100.0
+    assert report["people"][0]["finance"] == {
+        "visible": True,
+        "currency": "SEK",
+        "revenue": 650.0,
+        "cost": 300.0,
+        "result": 350.0,
+        "work_minutes": 90,
+        "vas_minutes": 60,
+    }
+    assert report["finance"] == report["people"][0]["finance"]
+
+
+def test_productivity_finance_does_not_treat_non_company_area_as_company():
+    report = {
+        "people": [
+            {
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "activity_area_code": "AS", "minutes": 60, "points": 50},
+                ],
+            }
+        ],
+    }
+    context = {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": 200,
+        "vas_hourly_revenue_by_company": {
+            "GG": {"blue_collar": 500, "white_collar": 650},
+            "MG": {"blue_collar": 450, "white_collar": 600},
+        },
+        "company_codes": ["GG", "MG"],
+        "activity_meta": {
+            1: {"is_vas": True, "company": ""},
+        },
+    }
+
+    productivity_router._attach_productivity_finance(report, context)
+
+    finance = report["people"][0]["time_cells"][0]["finance"]
+    assert finance["company"] is None
+    assert finance["revenue"] == 0.0
+    assert finance["cost"] == 200.0
+    assert finance["result"] == -200.0
+
+
+def test_productivity_finance_uses_person_collar_from_context():
+    report = {
+        "people": [
+            {
+                "person_id": 4,
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "minutes": 60, "points": 50},
+                ],
+            }
+        ],
+    }
+    context = {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": 200,
+        "vas_hourly_revenue_by_company": {
+            "GG": {"blue_collar": 500, "white_collar": 750},
+        },
+        "company_codes": ["GG"],
+        "activity_meta": {
+            1: {"is_vas": True, "company": "GG"},
+        },
+        "person_collar_by_id": {4: "white_collar"},
+    }
+
+    productivity_router._attach_productivity_finance(report, context)
+
+    finance = report["people"][0]["time_cells"][0]["finance"]
+    assert finance["collar_type"] == "white_collar"
+    assert finance["revenue"] == 750.0
+    assert finance["cost"] == 200.0
+    assert finance["result"] == 550.0
+
+
 def test_productivity_report_uses_api_snapshot_and_audits(monkeypatch, tmp_path):
     source_files = {
         key: tmp_path / f"{key}.csv"

@@ -123,6 +123,7 @@ function canUseAllocationTools(user) {
     || canViewPage(user, "allocationProcess")
     || canViewPage(user, "allocationProcessMatrix")
     || canViewPage(user, "allocationSettings")
+    || canViewPage(user, "productivityFinanceSettings")
   );
 }
 
@@ -201,7 +202,10 @@ function sidebarPageDefinitions(user, activePage) {
       label: "Inställningar",
       href: "/installningar.html",
       icon: "⚙",
-      visible: canViewPage(user, "allocationSettings") || canViewPage(user, "staffingSettings") || canViewPage(user, "allocationProcessMatrix"),
+      visible: canViewPage(user, "allocationSettings")
+        || canViewPage(user, "staffingSettings")
+        || canViewPage(user, "allocationProcessMatrix")
+        || canViewPage(user, "productivityFinanceSettings"),
       active: activePage === "allocationSettings",
     },
     {

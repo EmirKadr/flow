@@ -15,7 +15,13 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import NoSuchTableError
 
 from . import models  # noqa: F401  -- register models on Base.metadata
-from .business_scope import DEFAULT_BUSINESS_CODE, DEFAULT_BUSINESS_NAME, R3_BUSINESS_CODE, R3_BUSINESS_NAME
+from .business_scope import (
+    DEFAULT_BUSINESS_CODE,
+    DEFAULT_BUSINESS_NAME,
+    R3_BUSINESS_CODE,
+    R3_BUSINESS_NAME,
+    default_business_tenant,
+)
 from .config import settings
 from .database import Base, _normalize_url
 from .models import Activity, AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, RfidDevice, RfidScanEvent, ScheduleCell, User
@@ -101,8 +107,22 @@ def _seed_default_businesses(target_connection) -> int:
     target_connection.execute(
         insert(Business.__table__),
         [
-            {"code": DEFAULT_BUSINESS_CODE, "name": DEFAULT_BUSINESS_NAME, "company_codes": [], "sort_order": 1, "is_active": True},
-            {"code": R3_BUSINESS_CODE, "name": R3_BUSINESS_NAME, "company_codes": [], "sort_order": 2, "is_active": True},
+            {
+                "code": DEFAULT_BUSINESS_CODE,
+                "name": DEFAULT_BUSINESS_NAME,
+                "company_codes": [],
+                "tenant": default_business_tenant(DEFAULT_BUSINESS_CODE),
+                "sort_order": 1,
+                "is_active": True,
+            },
+            {
+                "code": R3_BUSINESS_CODE,
+                "name": R3_BUSINESS_NAME,
+                "company_codes": [],
+                "tenant": default_business_tenant(R3_BUSINESS_CODE),
+                "sort_order": 2,
+                "is_active": True,
+            },
         ],
     )
     return int(

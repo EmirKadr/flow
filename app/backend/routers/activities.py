@@ -16,6 +16,7 @@ from ..business_scope import (
     business_id_from_area_focus,
     filter_query_for_business,
     get_business_by_input,
+    normalize_business_code,
     normalize_business_id_param,
     related_business_ids,
     resolve_write_business_id,
@@ -24,12 +25,20 @@ from ..business_scope import (
 )
 from ..code_utils import code_part as _code_part
 from ..deps import get_current_user, get_db, require_view_access
-from ..models import Activity, Area, Person, ScheduleCell, User
+from ..models import Activity, Area, Business, Person, ScheduleCell, User
+from ..productivity_kpi_rules import (
+    SQL_REFERENCE_KPI_RULE_ROWS,
+    normalize_process,
+    parse_kpi_targets,
+    split_process_names,
+)
+from ..productivity_service import ProductivitySourceError, _read_csv_rows_with_headers, find_kpi_file
 from ..schemas import (
     ActivityCreate,
     ActivityImportError,
     ActivityImportResult,
     ActivityImportRowsRequest,
+    ActivityKpiProcessOption,
     ActivityOut,
     ActivityUpdate,
 )
@@ -173,6 +182,79 @@ def _normalize_kpi_process_name(value: object) -> str | None:
     if len(normalized) > KPI_PROCESS_NAME_MAX_LENGTH:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="KPI Mål får vara max 255 tecken")
     return normalized
+
+
+def _add_kpi_process_option(options: dict[str, str], value: object) -> None:
+    text = _cell_text(value)
+    if not text or ":" in text:
+        return
+    key = normalize_process(text)
+    plain_key = unicodedata.normalize("NFKD", key).encode("ascii", "ignore").decode("ascii")
+    if not key or plain_key in {"STOD", "SUPPORT", "ABSENCE"}:
+        return
+    options.setdefault(key, text)
+
+
+def _visible_kpi_businesses(
+    db: Session,
+    user: User,
+    business_id: int | None,
+    area_focus: str | None,
+) -> tuple[int | None, list[Business]]:
+    scoped_business_id = normalize_business_id_param(business_id)
+    if scoped_business_id is None:
+        scoped_business_id = business_id_from_area_focus(db, area_focus)
+    scoped_business_id = visible_business_id(db, user, scoped_business_id)
+    if scoped_business_id is not None:
+        business = db.get(Business, scoped_business_id)
+        return scoped_business_id, [business] if business is not None else []
+    return (
+        scoped_business_id,
+        db.query(Business).filter(Business.is_active.is_(True)).order_by(Business.sort_order, Business.id).all(),
+    )
+
+
+def _add_kpi_target_process_options(options: dict[str, str], db: Session, business: Business) -> None:
+    business_code = normalize_business_code(getattr(business, "code", None))
+    if not business_code:
+        return
+    try:
+        path = find_kpi_file(business_code=business_code, db=db)
+        _headers, rows = _read_csv_rows_with_headers(path, compressed=str(path).lower().endswith(".gz"))
+    except (OSError, ProductivitySourceError):
+        return
+    company_codes = {
+        normalize_business_code(code)
+        for code in (getattr(business, "company_codes", None) or [])
+        if normalize_business_code(code)
+    }
+    for (company, _process_key), target in parse_kpi_targets(rows).items():
+        if company_codes and normalize_business_code(company) not in company_codes:
+            continue
+        _add_kpi_process_option(options, target.process)
+
+
+def _activity_kpi_process_options(
+    db: Session,
+    user: User,
+    *,
+    business_id: int | None = None,
+    area_focus: str | None = None,
+) -> list[ActivityKpiProcessOption]:
+    scoped_business_id, businesses = _visible_kpi_businesses(db, user, business_id, area_focus)
+    options: dict[str, str] = {}
+    for business in businesses:
+        _add_kpi_target_process_options(options, db, business)
+    for row in SQL_REFERENCE_KPI_RULE_ROWS:
+        _add_kpi_process_option(options, row.get("process"))
+    query = filter_query_for_business(db.query(Activity), Activity, db, user, scoped_business_id)
+    for activity in query.filter(Activity.is_active.is_(True)).order_by(Activity.sort_order, Activity.label).all():
+        for process in split_process_names(activity.kpi_process_name):
+            _add_kpi_process_option(options, process)
+    return [
+        ActivityKpiProcessOption(value=value, label=value)
+        for _key, value in sorted(options.items(), key=lambda item: item[1].upper())
+    ]
 
 
 def _normalize_work_type(value: object) -> str:
@@ -562,6 +644,16 @@ def _import_activity_rows(
 
     db.commit()
     return ActivityImportResult(created=created, skipped=len(errors), errors=errors)
+
+
+@router.get("/kpi-process-options", response_model=list[ActivityKpiProcessOption])
+def activity_kpi_process_options(
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ActivityKpiProcessOption]:
+    return _activity_kpi_process_options(db, user, business_id=business_id, area_focus=area_focus)
 
 
 @router.get("", response_model=list[ActivityOut])

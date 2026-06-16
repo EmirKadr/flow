@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -20,6 +20,13 @@ rapporterna. `productivity=edit` kravs bara for manuell drift/test-sync via
 `POST /api/productivity/sync`. Den separata vyn/behorigheten
 `productivityOverview` finns inte langre. Gamla `/oversikt-produktivitet.html`
 ar borttagen och ska inte langre anvandas.
+
+Rollen kan dessutom fa `productivityFinance=view`. Da visar Produktivitet
+intakt, utgift och resultat pa varje kort i hierarkitradet. Utan den
+behorigheten returnerar API:t bara `finance.visible=false` och inga belopp
+laggs pa cellerna. Berakningsreglerna styrs av
+`productivityFinanceSettings`, som ligger under Installningar och bara ar
+seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
 
 ## Vad vyn visar
 
@@ -42,6 +49,20 @@ ar borttagen och ska inte langre anvandas.
 - En person med bara stodtid syns i tradet under stodaktiviteten med sina
   poang och timmar. Personens egen produktivitetsvy fortsatter daremot att
   visa bara KPI-aktiviteter.
+- Med `productivityFinance=view` visas en extra rad pa korten:
+  `Intakt`, `Utgift` och `Resultat`. Utgift ar arbetad tid multiplicerad med
+  installningen `kostnad per timme`. Intakt raknas bara for VAS-aktiviteter:
+  VAS-minuter multipliceras med verksamhetens VAS-intakt per timme for
+  aktivitetens bolag och personens arbetstyp (`blue_collar` eller
+  `white_collar`). Berakningen anvander VAS-raden `Normal`; Overtid/OB-raderna
+  sparas i intaktsunderlaget for senare bruk. Tillatna bolag hamtas fran
+  Verksamheter-vyns `company_codes`, till exempel `GG` och `MG` for Stigamo. En
+  aktivitets omrade, kod eller etikett far bara anvandas om koden matchar ett
+  av dessa bolag; vanliga omraden som inte ar bolag ger ingen VAS-intakt. Om en
+  person saknar arbetstyp raknas den som `blue_collar`.
+  Timkort rullar upp exakt till person, aktivitet, omrade och verksamhet.
+  Processkorten far en proportionell andel av timkortets belopp utifran
+  processpoangens andel av timmens processpoang.
 
 Dagens datum raknas bara till och med senaste avslutade heltimme. Aldre datum i
 vald period raknar hela dagen. Innevarande vecka, manad och ar klipps vid dagens
@@ -54,6 +75,12 @@ API-snapshot primar sanning. Forsta startup-syncen fyller 13 dagar bakat plus
 dagens datum. Efter det uppdateras dagens snapshot vid varje hel- och halvtimme
 i Europe/Berlin-tid. En global historik-backfill hamtar sedan en aldre dag per
 kalenderdag tills historiken ar fylld.
+
+Snapshotens API-kallor (`pick`, `trans`, `pallet`, `receive`, `order_log` m.fl.)
+hamtas via `ExternalDataClient.fetch_all` (delad `fetch_all_rows`). Nar en dag
+overstiger datakallans radtak (`DATA_SOURCE_RESPONSE_ROW_CAP`) delas hamtningen
+upp i datumfonster och slas ihop, sa stora dagar/perioder inte tyst trunkeras.
+Det ar samma logik som Hamta data och Bearbeta anvander.
 
 Servern lagrar snapshots under
 `compiled_data_root()/productivity_snapshots/` som gzip-CSV plus metadata per
@@ -103,6 +130,9 @@ Produktivitet.
   `missing_dates`, `source_status`, `sync` och `backfill`. Endpointen laser
   befintliga snapshots for perioden och triggar inte extern historikhamtning vid
   varje periodbyte.
+  Med `productivityFinance=view` innehaller payloaden aven `finance` pa
+  periodniva, personniva och relevanta `time_cells`; utan behorighet ar
+  `finance.visible=false`.
 - `GET /api/productivity/persons/{person_id}` returnerar personens snitt per
   aktivitet for `period=week|month|year|custom`. Dagar som inte hunnit
   backfillas returneras i `missing_dates`.
@@ -112,6 +142,25 @@ Produktivitet.
   Bemanning-specifik personkarta fran `person_productivity_daily`.
 - `POST /api/productivity/sync` kor manuell snapshot-sync for drift/test och
   kraver `productivity=edit`.
+- `GET/PUT /api/settings/productivity-finance` laser/sparar
+  produktivitetens ekonomiberakning per verksamhet. Den styr `hourly_cost`,
+  `invoice_rows_by_company` och `vas_hourly_revenue_by_company`, dar varje
+  bolag far ett eget intaktsunderlag med rubriken som bolagskod. `GG` fylls
+  forvalt med Grann-garden-priserna for Inbound, BUTIK, E-handel, VAS, IT och
+  Ovrigt. `GG` har forifylld utrakningsprompt, plan och SQL/querytext for
+  `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade
+  orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` fylls bara med VAS-raderna, med samma VAS-priser som `GG`, plus
+  IT-raden med 445 kr per timme. VAS-raderna har separata `blue_collar`- och `white_collar`-varden for
+  `normal`, `ot_50`, `ob1_40`, `ob2_70` och `ob3_100`. Endpointen kraver
+  `productivityFinanceSettings=view|edit` och foljer samma `business_id` /
+  `area_focus`-scope som Bemanningens installningar.
+- `POST /api/settings/productivity-finance/calculation/test` testar en
+  intaktsrads utrakning for vald manad. Dialogen skickar anvandarens
+  utrakningstext, manad och aktuell bolagskod till MiniMax/Hamta data-planen.
+  Nar den valda ASK-vyn har kolumnen `company`/Bolag lagger backend pa
+  bolagsfiltret automatiskt innan planen kors mot extern datakalla. Svaret
+  returnerar `quantity`, plan och en sparbar SQL/querytext. Bara manader som har
+  startat i innevarande ar far testas.
 
 Produktivitetsfilroutes ar borttagna: det finns inte langre
 `/api/productivity/files`, `/api/productivity/files/raw`,
@@ -156,6 +205,8 @@ serverdata for schema och KPI-snapshot.
 - `../app/backend/productivity_kpi_rules.py`
 - `../app/backend/productivity_sync.py`
 - `../app/backend/routers/productivity.py`
+- `../app/backend/routers/settings.py`
+- `../app/backend/settings_service.py`
 - `../app/backend/workflow_data.py`
 - `../app/frontend/produktivitet.html`
 - `../app/frontend/js/productivity_overview.js`

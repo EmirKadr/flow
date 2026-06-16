@@ -962,12 +962,14 @@ def test_data_fetch_plan_columns_are_user_editable():
     assert "Tolka med MiniMax</button>" not in html
     assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" />' in html
     assert 'id="dataFetchMaxRows" type="number" min="1" max="5000" value=' not in html
-    assert 'src="/js/data_fetch.js?v=20260605-max-rows"' in html
+    assert 'src="/js/data_fetch.js?v=20260615-calculation"' in html
     assert 'id="dataFetchRun" type="button" disabled' in html
     assert 'id="dataFetchExport" type="button" disabled' in html
     assert "dataFetchUpdateActions" in data_fetch
     assert 'document.getElementById("dataFetchMaxRows").value || 500' not in data_fetch
     assert "if (!rawValue) return null;" in data_fetch
+    assert "dataFetchBusinessId" in data_fetch
+    assert "payload.business_id = businessId" in data_fetch
     assert "resetDataFetchForPromptEdit" in data_fetch
     assert '!dataFetchState.result?.session_id' in data_fetch
     assert "pendingRemovedColumns" in data_fetch
@@ -975,9 +977,12 @@ def test_data_fetch_plan_columns_are_user_editable():
     assert "data-update-columns" in data_fetch
     assert "updateDataFetchPlanColumns" in data_fetch
     assert "renderDataFetchResult(null)" in data_fetch
+    assert "renderDataFetchCalculationPlan" in data_fetch
+    assert "renderDataFetchCalculationResult" in data_fetch
     assert "Minst en kolumn måste vara kvar." in data_fetch
     assert ".data-fetch-chip.is-removing" in styles
     assert ".data-fetch-column-actions" in styles
+    assert ".data-fetch-calculation-result" in styles
 
 
 def test_area_focus_toggle_is_wired_to_views():
@@ -1203,7 +1208,10 @@ def test_bearbeta_area_focus_filter_contract():
     assert "renderAllocationProcessMatrixSettingsPanel" in allocation
     assert 'id="allocation-process-matrix-settings-editor"' in allocation
     assert 'id="allocation-process-matrix-settings-save">Spara</button>' in allocation
-    assert 'visible: canViewPage(user, "allocationSettings") || canViewPage(user, "staffingSettings") || canViewPage(user, "allocationProcessMatrix")' in common
+    assert 'canViewPage(user, "allocationSettings")' in common
+    assert 'canViewPage(user, "staffingSettings")' in common
+    assert 'canViewPage(user, "allocationProcessMatrix")' in common
+    assert 'canViewPage(user, "productivityFinanceSettings")' in common
     assert 'data-flow-filter="${allocationEscape(flow.id)}"' in allocation
     assert "allocation-flow-filter" in allocation
     assert "allocation-filter-modal" in styles
@@ -1231,6 +1239,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert '"settings") return "allocationSettings"' in allocation
     assert "renderAllocationMapSettingsView" in allocation
     assert 'const STAFFING_SETTINGS_API = "/api/settings/staffing"' in allocation
+    assert 'const PRODUCTIVITY_FINANCE_SETTINGS_API = "/api/settings/productivity-finance"' in allocation
     assert "Avancerad filfiltrering" in terminology_wiki
     assert "openAllocationFlowFilterModal" in terminology_wiki
     assert "__allocation_user_filters_json" in terminology_wiki
@@ -1246,8 +1255,32 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-staffing-capacity-all" in allocation
     assert "data-staffing-capacity-activity" in allocation
     assert "staffing-capacity-activity-grid" in styles
-    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix"]' in allocation
+    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings"]' in allocation
     assert "canEditStaffingSettings" in allocation
+    assert "canEditProductivityFinanceSettings" in allocation
+    assert '{ id: "productivity-finance", label: "Intäkt/utgift" }' in allocation
+    assert "data-productivity-finance-hourly-cost" in allocation
+    assert "productivity-finance-settings-heading" in allocation
+    assert "productivity-finance-settings-actions" in allocation
+    assert "data-productivity-finance-company-rate" in allocation
+    assert "data-productivity-finance-invoice-row" in allocation
+    assert "data-productivity-finance-row-price" in allocation
+    assert "data-productivity-finance-row-quantity" in allocation
+    assert "data-productivity-finance-calculation" in allocation
+    assert "data-productivity-finance-calculation-month" in allocation
+    assert "company_code: companyCode" in allocation
+    finance_calculation_dialog = allocation.split("function openProductivityFinanceCalculationDialog", 1)[1].split(
+        "function renderProductivityFinanceSettingsPanel",
+        1,
+    )[0]
+    assert "event.target === backdrop" not in finance_calculation_dialog
+    assert "Dialogregel for frontend" in (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "ST / Antal" in allocation
+    assert "invoice_rows_by_company" in allocation
+    assert "Blue collar" in allocation
+    assert "White collar" in allocation
+    assert "productivity-finance-company-grid" in styles
+    assert "productivity-finance-invoice-table" in styles
     assert "ytgenerering-map-layout" in allocation
     assert "availableLocations" in allocation
     assert "allocationMapLayoutSaveSignature" in allocation
@@ -1569,10 +1602,14 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert 'data-business-sort="code"' in businesses_html
     assert 'data-business-sort="name"' in businesses_html
     assert 'data-business-sort="company_codes"' in businesses_html
+    assert 'data-business-sort="tenant"' in businesses_html
     assert 'editableCell("business", business, "company_codes")' in businesses
+    assert 'editableCell("business", business, "tenant")' in businesses
     assert "normalizeCompanyCodes" in businesses
+    assert "normalizeTenant" in businesses
     assert 'company_codes: companyCodes' in businesses
-    assert '/js/businesses.js?v=20260601-inline-edit' in businesses_html
+    assert 'tenant: tenant || null' in businesses
+    assert '/js/businesses.js?v=20260615-tenant' in businesses_html
     assert 'data-new-area="${business.id}"' in businesses
     assert 'api.post("/api/areas", payload)' in businesses
     assert 'api.put(`/api/areas/${record.id}`, payload)' in businesses
@@ -1711,7 +1748,8 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="activity-import-help"' in activities_html
     assert "<th>KPI Mål</th>" in activities_html
     assert "<th>Arbetstyp</th>" in activities_html
-    assert '/js/activities.js?v=20260610-work-type' in activities_html
+    assert '/js/activities.js?v=20260615-kpi-process-picker' in activities_html
+    assert "/api/activities/kpi-process-options" in activities_js
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js
     assert "openBulkActivitiesModal" in activities_js
@@ -1719,10 +1757,15 @@ def test_import_views_have_templates_and_help_buttons():
     assert re.search(r'key:\s*"area",\s*label:\s*"[^"]+",\s*required:\s*false', activities_js)
     assert re.search(r'key:\s*"kpi_process_name",\s*label:\s*"KPI Mål",\s*required:\s*false', activities_js)
     assert re.search(r'key:\s*"work_type",\s*label:\s*"Arbetstyp",\s*required:\s*false', activities_js)
-    assert 'id="m-kpi-process-name"' in activities_js
+    assert 'id="m-kpi-process-picker"' in activities_js
+    assert 'id="m-kpi-process-toggle"' in activities_js
+    assert 'id="m-kpi-process-menu"' in activities_js
+    assert 'id="m-kpi-process-name" type="hidden"' in activities_js
+    assert "data-kpi-process" in activities_js
+    assert "selectedKpiProcessNames" in activities_js
+    assert "setupKpiProcessPicker" in activities_js
     assert 'id="m-work-type"' in activities_js
-    assert 'maxlength="255"' in activities_js
-    assert 'placeholder="dekant, plock"' in activities_js
+    assert "KPI Mål får vara max 255 tecken" in activities_js
     assert "kpi_process_name" in activities_js
     assert "activityWorkTypeLabel" in activities_js
     assert "syncWorkTypeState" in activities_js

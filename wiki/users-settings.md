@@ -1,13 +1,13 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [anvandare, settings, roller, ui]
 ---
 
 # Anvandare och installningar
 
-Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager- och bemanningsinstallningar: Ytkarta, Bearbeta-matris och Bemanningens historiska snitt. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
+Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager-, bemannings- och produktivitetsinstallningar: Ytkarta, Bearbeta-matris, Bemanningens historiska snitt och Produktivitetens intakt/utgift. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
 
 Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `∞` visar alla omraden i den verksamheten nar verksamheten har aktivt `ANNAT`; for Super User betyder `∞` globalt allt. Nar en ny anvandare skapas forvalt valt omradesfokus som anvandarens omrade, men omradet kan fortfarande andras i modalen eller lamnas tomt.
 
@@ -23,11 +23,12 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
 | Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` med `business_id`/`area_focus` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
+| Intakt/utgift | Flik under `installningar.html` | Sparar kostnad per timme och intaktsunderlag per bolag fran Verksamheter-vyns `company_codes`; `GG` ar forifyllt med hela Grann-garden-underlaget och `MG` bara med VAS + IT | `GET/PUT /api/settings/productivity-finance` med `business_id`/`area_focus` | Kraver `productivityFinanceSettings`; utan edit kan rollen bara se vardena. Endast Super User har standardatkomst just nu. |
 | Bearbeta-matris | Flik under `installningar.html` | Styr vilka Bearbeta-funktioner som visas per toggle for vald verksamhet | `GET/PUT /api/allokering/process-matrix` med `business_id`/`area_focus` | Kraver `allocationProcessMatrix`; `view` kan lasa och `edit` kan spara. |
 | Tabellrubriker | Klickar pa t.ex. Anvandarnamn, Verksamhet, Roll, Omrade eller Skapad | Sorterar synliga anvandarrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus, roller eller serverdata. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas. |
 | Ta bort | Bekraftar borttagning | Tar bort konto permanent och nollar gamla `updated_by`/audit-referenser | `DELETE /api/users/{id}` | Eget konto, sista admin i en verksamhet och demo-användaren skyddas. |
-| Verksamheter | Sidebar-vy for Super User | Skapar verksamheter, deras bolagskoder och omraden, redigerar celler inline och kan lagga till `∞`/`ANNAT` per verksamhet | `GET/POST/PUT /api/businesses`, `GET/POST/PUT/DELETE /api/areas` | Vanliga anvandare ser inte vyn. Omraden med kopplad data inaktiveras i stallet for att hardraderas. |
+| Verksamheter | Sidebar-vy for Super User | Skapar verksamheter, deras bolagskoder, Tenant och omraden, redigerar celler inline och kan lagga till `∞`/`ANNAT` per verksamhet | `GET/POST/PUT /api/businesses`, `GET/POST/PUT/DELETE /api/areas` | Vanliga anvandare ser inte vyn. Omraden med kopplad data inaktiveras i stallet for att hardraderas. |
 
 Andringar i anvandare, forsta losenord och verksamhetens installningar skrivs till Historik. Loggen visar till exempel `user/set_password`, `app_setting/update_lock`, `app_setting/update_sidebar_layout` och `app_setting/update_role_access`, men aldrig sjalva losenordet.
 
@@ -71,9 +72,13 @@ Raden `Personsortering` (`personSortOrder`) styr om Bemanningsansvarig/admin kan
 
 Raden `Bemanningsinställningar` (`staffingSettings`) styr fliken Bemanning pa `installningar.html`. `view` far lasa historikfonstret for historiskt snitt/automatisk bemanningskalkyl och vilka KPI-aktiviteter som far visa hover-snitt. `edit` far andra bada. Admin och demo har `edit` som standard, Super User har alltid full atkomst.
 
+Raden `Intakt/utgift` (`productivityFinance`) styr om Produktivitet visar belopp pa hierarkikorten. `view` racker for att se intakt, utgift och resultat. Inga vanliga roller har standardatkomst; Super User har alltid full atkomst.
+
+Raden `Intakt/utgift-installningar` (`productivityFinanceSettings`) styr fliken Intakt/utgift pa `installningar.html`. `view` far lasa kostnad per timme och intaktsunderlag per bolag. `Spara` ligger hogst upp i fliken sa man inte behover scrolla forbi hela intaktstabellen. Varje bolagsruta har rubriken som bolagskod, till exempel `GG`, och `GG` ar forifyllt med Grann-garden-rader for Inbound, BUTIK, E-handel, VAS, IT och Ovrigt. `GG` har ocksa forifyllda utrakningar for `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` far bara VAS-raderna, med samma VAS-varden som `GG`, och IT-raden med 445 kr per timme. VAS-raderna sparar Blue collar och White collar med Normal/OT/OB-rader. Varje rad har `ST / Antal` och knappen `Utrakning`; dar kan admin skriva hur antalet ska raknas, testa mot en startad manad i innevarande ar via samma MiniMax/Hamta data-plan som `hamta-data.html`, och spara prompt, validerad plan och SQL/querytext pa raden. Den sparade planen kan innehalla whitelistad `calculation` som `count`, `count_distinct`, `sum`, `avg`, `min` eller `max`; till exempel raknas "ta bort dubletter per inkop och artikel" som `count_distinct` pa `book_num` + `item_num`. Testet skickar alltid med bolagsrutans kod och backend lagger pa `company`/Bolag-filter nar den valda ASK-vyn har en bolagskolumn. Dialogen stangs med `Avbryt` eller efter sparning, inte av backdrop-klick, sa textmarkering i rutan inte stanger den. Bolagsraderna hamtas fran Verksamheter-vyns `company_codes`, inte fran omraden. `edit` far spara. Inga vanliga roller har standardatkomst; Super User har alltid full atkomst.
+
 Raden `Bearbeta-matris` (`allocationProcessMatrix`) styr fliken Bearbeta pa `installningar.html`. `view` far oppna matrisen lasande och `edit` far spara vilka Bearbeta-funktioner som ska synas per toggle i vald verksamhet. Admin och demo har `edit` som standard, Super User har alltid full atkomst. Bearbeta-vyn anvander fortsatt matrisen nar floden visas, men sjalva redigeringen ligger i Installningar.
 
-Installningar foljer sidebarens omradesfokus for verksamhetsscope. Nar fokus ar ett omrade i T3 eller R3 hamtar och sparar Ytkarta, Bearbeta-matris och Bemanning-fliken den verksamhetens egna `app_settings`-rader. Nar fokus ar `∞` pa Installningar faller klienten tillbaka till anvandarens egen verksamhet, normalt Stigamo for Super User. Vybehorigheter ar undantaget: rollmatrisen ar fortsatt global for alla verksamheter.
+Installningar foljer sidebarens omradesfokus for verksamhetsscope. Nar fokus ar ett omrade i T3 eller R3 hamtar och sparar Ytkarta, Bearbeta-matris, Bemanning-fliken och Intakt/utgift-fliken den verksamhetens egna `app_settings`-rader. Nar fokus ar `∞` pa Installningar faller klienten tillbaka till anvandarens egen verksamhet, normalt Stigamo for Super User. Vybehorigheter ar undantaget: rollmatrisen ar fortsatt global for alla verksamheter.
 
 Knappar:
 
@@ -91,12 +96,12 @@ Knappar:
 
 ## Verksamheter-vy
 
-Vyn finns bara for Super User och visar `code`, `name`, `company_codes`, `sort_order` och aktiv-status for verksamheter. Under varje verksamhet visas dess omraden. Rubrikerna sorterar listan visuellt, och celler for kod, namn, bolag, sortering och aktiv-status kan andras direkt i tabellen.
+Vyn finns bara for Super User och visar `code`, `name`, `company_codes`, `tenant`, `sort_order` och aktiv-status for verksamheter. Under varje verksamhet visas dess omraden. Rubrikerna sorterar listan visuellt, och celler for kod, namn, bolag, Tenant, sortering och aktiv-status kan andras direkt i tabellen.
 
 Knappar:
 
-- `Ny verksamhet`: oppnar modal och skapar via `POST /api/businesses`; kod skapas automatiskt från namnet och bolag sparas som `company_codes`.
-- Klick i verksamhetscell: uppdaterar kod, namn, bolag, sortering eller aktiv-status via `PUT /api/businesses/{business_id}`.
+- `Ny verksamhet`: oppnar modal och skapar via `POST /api/businesses`; kod skapas automatiskt från namnet, bolag sparas som `company_codes` och Tenant sparas som kort slug for extern datakalla.
+- Klick i verksamhetscell: uppdaterar kod, namn, bolag, Tenant, sortering eller aktiv-status via `PUT /api/businesses/{business_id}`.
 - `Nytt omrade`: skapar omrade pa vald verksamhet via `POST /api/areas` med `business_id`; kod skapas automatiskt från namnet.
 - `Lagg till ∞`: skapar eller ateraktiverar omradet `ANNAT`/`Annat` for vald verksamhet. Nar det ar aktivt far vanliga anvandare i verksamheten `∞` som alla-omraden-lage.
 - Klick i omradescell: uppdaterar kod, namn, sortering eller aktiv-status via `PUT /api/areas/{area_id}`.

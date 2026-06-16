@@ -14,7 +14,13 @@ from sqlalchemy import inspect, text
 
 from .database import Base, engine
 from . import models  # noqa: F401  -- register models on Base.metadata
-from .business_scope import DEFAULT_BUSINESS_CODE, DEFAULT_BUSINESS_NAME, R3_BUSINESS_CODE, R3_BUSINESS_NAME
+from .business_scope import (
+    DEFAULT_BUSINESS_CODE,
+    DEFAULT_BUSINESS_NAME,
+    R3_BUSINESS_CODE,
+    R3_BUSINESS_NAME,
+    default_business_tenant,
+)
 from .seed import run as seed_run
 
 
@@ -46,6 +52,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
     with target_engine.begin() as connection:
         if business_columns and "company_codes" not in business_columns:
             connection.exec_driver_sql("ALTER TABLE businesses ADD COLUMN company_codes JSON NOT NULL DEFAULT '[]'")
+        if business_columns and "tenant" not in business_columns:
+            connection.exec_driver_sql("ALTER TABLE businesses ADD COLUMN tenant VARCHAR(80)")
         if user_columns and "business_id" not in user_columns:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if area_columns and "business_id" not in area_columns:
@@ -56,6 +64,10 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN noman VARCHAR(120)")
         if person_columns and "rfid_code" not in person_columns:
             connection.exec_driver_sql("ALTER TABLE persons ADD COLUMN rfid_code VARCHAR(120)")
+        if person_columns and "collar_type" not in person_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE persons ADD COLUMN collar_type VARCHAR(20) NOT NULL DEFAULT 'blue_collar'"
+            )
         if activity_columns and "business_id" not in activity_columns:
             connection.exec_driver_sql("ALTER TABLE activities ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if activity_columns and "kpi_process_name" not in activity_columns:
@@ -128,21 +140,35 @@ def _sync_sqlite_business_constraints(target_engine=engine) -> None:
             return
         connection.exec_driver_sql(
             """
-            INSERT OR IGNORE INTO businesses (code, name, company_codes, sort_order, is_active)
-            VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO businesses (code, name, company_codes, tenant, sort_order, is_active)
+            VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)
             """,
             (
                 DEFAULT_BUSINESS_CODE,
                 DEFAULT_BUSINESS_NAME,
                 "[]",
+                default_business_tenant(DEFAULT_BUSINESS_CODE),
                 1,
                 1,
                 R3_BUSINESS_CODE,
                 R3_BUSINESS_NAME,
                 "[]",
+                default_business_tenant(R3_BUSINESS_CODE),
                 2,
                 1,
             ),
+        )
+        connection.exec_driver_sql(
+            "UPDATE businesses SET tenant = ? WHERE code = ? AND (tenant IS NULL OR tenant = '')",
+            (default_business_tenant(DEFAULT_BUSINESS_CODE), DEFAULT_BUSINESS_CODE),
+        )
+        connection.exec_driver_sql(
+            "UPDATE businesses SET tenant = ? WHERE code = ? AND (tenant IS NULL OR tenant = '')",
+            (default_business_tenant(R3_BUSINESS_CODE), R3_BUSINESS_CODE),
+        )
+        connection.exec_driver_sql(
+            "UPDATE businesses SET tenant = ? WHERE code = ? AND (tenant IS NULL OR tenant = '')",
+            (default_business_tenant("T3"), "T3"),
         )
         stigamo_id = connection.execute(
             text("SELECT id FROM businesses WHERE code = :code"),

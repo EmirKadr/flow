@@ -82,7 +82,9 @@ Datahämtningsvyn använder samma MiniMax-konfiguration, men skickar aldrig API-
 
 Bas-URL och sökvägsmall hålls separata: bas-URL ska normalt bara vara hosten,
 medan sökvägsmallen innehåller hela API-sökvägen och `{view}`-platsen. Klienten
-skickar JSON-payload och förväntar JSON-svar; CSV-läge används inte av appen.
+kan byta verksamhetens tenant i bas-URL via `{tenant}` eller hostens tenantled.
+Om en verksamhet saknar tenant används bas-URL:n oförändrad. Klienten skickar
+JSON-payload och förväntar JSON-svar; CSV-läge används inte av appen.
 Prompten får appens aktuella datum/tid via backend, och backend efterkorrigerar
 relativa datum som `idag`, `dagens` och `senaste N dagarna` innan extern hämtning.
 

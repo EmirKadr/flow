@@ -1,7 +1,7 @@
 ---
 title: Aktiviteter och omraden
 status: aktiv
-updated: 2026-06-10
+updated: 2026-06-15
 tags: [aktiviteter, omraden, ui, import]
 ---
 
@@ -20,6 +20,7 @@ Kort svar: Aktiviteter ar de valbara varden som bemanningsceller kan fa. Varje a
 | Hjalp med import | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Tabellrubriker | Klickar pa t.ex. Etikett, Verksamhet, Omrade, Kategori eller Sortering | Sorterar synliga aktivitetsrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus eller sparad sorteringsordning. |
 | Redigera | Oppnar modal for befintlig aktivitet | Sparar andringar | `PUT /api/activities/{id}` | Kod kan vara read-only for icke-super-user. |
+| KPI Mal-rullista | Bockar i en eller flera KPI-processer i aktivitetsmodalen | Hamter kanda processnamn fran KPI-mal, intern KPI-logik och befintliga aktiviteter och sparar dem kommaseparerat i `kpi_process_name` | `GET /api/activities/kpi-process-options`, `POST/PUT /api/activities` | Om listan inte kan hamtas visas varning; sparning stoppar fortfarande bolagsprefix och varden over 255 tecken. |
 | Ta bort | Bekraftar | Inaktiverar aktivitet | `DELETE /api/activities/{id}` | Text sager permanent men beteendet ar soft delete. |
 
 ## Aktivitet-modal
@@ -31,7 +32,7 @@ Falt:
 - Kod: visas/hanteras bara for anvandare som far se koder.
 - Omrade: kopplar aktiviteten till MG/GG/AS/EH eller inget omrade.
 - Summeras som: pekar pa annan aktivitet for summering.
-- KPI Mal: ett eller flera valfria processnamn fran KPI-malet, t.ex. `dekant, plock`. Bolag skrivs inte i faltet.
+- KPI Mal: multival-rullista med checkboxar for kanda processnamn fran KPI-malet, intern KPI-logik och befintliga aktiviteter. Valen sparas som kommaseparerade processnamn, t.ex. `dekant, plock`. Bolag skrivs inte i faltet.
 - Farg: anvands i schema och oversikt.
 - Kategori: `work` eller `absence`; VAS ska inte laggas som kategori.
 - Arbetstyp: `Normal` eller `VAS`. VAS betyder Value Added Services men aktiviteten raknas fortfarande som arbete i schema och produktivitet.
@@ -41,6 +42,8 @@ Knappar:
 
 - `Avbryt`: stanger utan sparning.
 - `Spara`: skickar `POST`/`PUT`.
+
+KPI-rullistan ar read-only metadata. Sjalva skapandet/uppdateringen audit-loggas fortsatt som `activity/create` eller `activity/update`; att bara hamta processlistan skapar ingen sparad audit-rad.
 
 ## Omraden
 
@@ -71,6 +74,7 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 | --- | --- |
 | "Varfor ser jag inte kodkolumnen?" | Endast anvandare med ratt behorighet/super-user-lage ser eller far andra aktivitetskoder. |
 | "Varfor kan jag inte skapa aktivitet?" | Anvandaren saknar edit-atkomst till `activities` eller etiketten saknas. |
+| "Varfor syns inte KPI-processerna?" | Modalen hamtar dem via `GET /api/activities/kpi-process-options`. Om KPI-malet saknas anvands intern KPI-logik och befintliga aktivitetsvarden som fallback; om anropet misslyckas visas en varning. |
 | "Varfor blir summeringen fel?" | Kontrollera `Summeras som`; aktiviteten kan vara mappad till annan summeringsaktivitet. |
 | "Ska VAS vara kategori?" | Nej. Lat kategori vara `work` och satt Arbetstyp till `VAS`, sa bemanning och produktivitet fortfarande raknar aktiviteten som arbete. |
 | "Varfor hittar jag inte Stallen?" | `stallen.html` redirectar till Aktiviteter. Begreppet har migrerats. |
@@ -82,3 +86,4 @@ Omradesfokus i sidebar filtrerar aktivitetslistan per omrade. `∞` visar alla a
 - `../app/frontend/js/activities.js`
 - `../app/backend/routers/activities.py`
 - `../app/backend/routers/areas.py`
+- `../app/backend/productivity_kpi_rules.py`

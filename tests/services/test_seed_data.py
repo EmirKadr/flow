@@ -186,6 +186,9 @@ def test_local_bootstrap_migrates_legacy_sqlite_business_constraints(tmp_path):
     with engine.begin() as connection:
         stigamo_id = connection.exec_driver_sql("SELECT id FROM businesses WHERE code = 'STIGAMO'").scalar_one()
         r3_id = connection.exec_driver_sql("SELECT id FROM businesses WHERE code = 'R3'").scalar_one()
+        tenants = dict(connection.exec_driver_sql("SELECT code, tenant FROM businesses").fetchall())
+        assert tenants["STIGAMO"] == "frey"
+        assert tenants["R3"] == "loki"
         assert connection.exec_driver_sql("SELECT business_id FROM activities WHERE code = 'LEDIG'").scalar_one() == stigamo_id
         assert connection.exec_driver_sql("SELECT work_type FROM activities WHERE code = 'LEDIG'").scalar_one() == "normal"
 

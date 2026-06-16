@@ -662,6 +662,14 @@ def _allocation_business_code(db: Session, user: User, area_focus: str | None = 
         return DEFAULT_BUSINESS_CODE
 
 
+def _business_tenant_for_code(db: Session, business_code: str | None) -> str | None:
+    code = normalize_business_code(business_code)
+    if not code:
+        return None
+    business = db.query(Business).filter(Business.code == code).one_or_none()
+    return getattr(business, "tenant", None) if business is not None else None
+
+
 def _business_coredata_default_files(
     flow_id: str,
     files: dict,
@@ -1134,7 +1142,12 @@ async def run_flow(
             required_keys = _allocation_flow_required_file_keys(flow_by_id.get(flow_id))
             try:
                 with start_span("allocation.flow.resolve_sources", {"allocation.flow_id": flow_id}):
-                    source_resolution = resolve_sources(source_map, files, required_keys=required_keys)
+                    source_resolution = resolve_sources(
+                        source_map,
+                        files,
+                        required_keys=required_keys,
+                        tenant=_business_tenant_for_code(db, business_code),
+                    )
             except WorkflowDataError as exc:
                 source_status = exc.audit_entries
                 raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

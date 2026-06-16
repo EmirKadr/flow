@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 UserRole = Literal["admin", "leader", "staffing_manager", "viewer", "warehouse_clerk", "article_placer", "person", "super_user"]
+PersonCollarType = Literal["blue_collar", "white_collar"]
 
 
 class BusinessOut(BaseModel):
@@ -14,6 +15,7 @@ class BusinessOut(BaseModel):
     code: str
     name: str
     company_codes: list[str] = Field(default_factory=list)
+    tenant: str | None = None
     sort_order: int
     is_active: bool
 
@@ -27,6 +29,7 @@ class BusinessCreate(BaseModel):
     code: str | None = None
     name: str
     company_codes: list[str] = Field(default_factory=list)
+    tenant: str | None = None
     sort_order: int = 0
     is_active: bool = True
 
@@ -35,6 +38,7 @@ class BusinessUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
     company_codes: list[str] | None = None
+    tenant: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
 
@@ -80,6 +84,11 @@ class ActivityOut(BaseModel):
     is_active: bool
     required_competency: str | None
     kpi_process_name: str | None = None
+
+
+class ActivityKpiProcessOption(BaseModel):
+    value: str
+    label: str
 
 
 class ActivityCreate(BaseModel):
@@ -143,6 +152,7 @@ class PersonOut(BaseModel):
     name: str
     noman: str | None = None
     rfid_code: str | None = None
+    collar_type: PersonCollarType = "blue_collar"
     home_area_id: int | None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -157,6 +167,7 @@ class PersonCreate(BaseModel):
     name: str
     noman: str | None = None
     rfid_code: str | None = None
+    collar_type: PersonCollarType = "blue_collar"
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] = Field(default_factory=list)
@@ -171,6 +182,7 @@ class PersonUpdate(BaseModel):
     name: str | None = None
     noman: str | None = None
     rfid_code: str | None = None
+    collar_type: PersonCollarType | None = None
     home_area_id: int | None = None
     home_activity_id: int | None = None
     competencies: list[str] | None = None
@@ -197,6 +209,7 @@ class PersonImportRowInput(BaseModel):
     name: str | int | float | None = None
     noman: str | int | float | None = None
     rfid_code: str | int | float | None = None
+    collar_type: str | int | float | None = None
     home_area: str | int | float | None = None
     home_activity: str | int | float | None = None
     sort_order: str | int | float | None = None
@@ -768,6 +781,66 @@ class StaffingSettingsOut(BaseModel):
 class StaffingSettingsUpdate(BaseModel):
     history_hours: float = Field(ge=1.0, le=240.0)
     activity_capacity_activity_ids: list[int] | None = None
+
+
+class ProductivityFinanceVasRateAmounts(BaseModel):
+    normal: float = 0.0
+    ot_50: float = 0.0
+    ob1_40: float = 0.0
+    ob2_70: float = 0.0
+    ob3_100: float = 0.0
+
+
+class ProductivityFinanceCompanyRates(BaseModel):
+    blue_collar: ProductivityFinanceVasRateAmounts = Field(default_factory=ProductivityFinanceVasRateAmounts)
+    white_collar: ProductivityFinanceVasRateAmounts = Field(default_factory=ProductivityFinanceVasRateAmounts)
+
+
+class ProductivityFinanceInvoiceRow(BaseModel):
+    id: str
+    section: str = ""
+    service: str = ""
+    description: str = ""
+    unit: str = ""
+    price: float = 0.0
+    quantity: float = 0.0
+    calculation_prompt: str = ""
+    calculation_plan: dict[str, Any] | None = None
+    calculation_sql: str = ""
+    collar_type: PersonCollarType | None = None
+    vas_rate_type: str | None = None
+
+
+class ProductivityFinanceSettingsOut(BaseModel):
+    hourly_cost: float = 0.0
+    min_amount: float = 0.0
+    max_amount: float = 10000000.0
+    vas_hourly_revenue_by_company: dict[str, ProductivityFinanceCompanyRates] = Field(default_factory=dict)
+    invoice_rows_by_company: dict[str, list[ProductivityFinanceInvoiceRow]] = Field(default_factory=dict)
+    company_codes: list[str] = Field(default_factory=list)
+
+
+class ProductivityFinanceSettingsUpdate(BaseModel):
+    hourly_cost: float = Field(default=0.0, ge=0.0, le=10000000.0)
+    vas_hourly_revenue_by_company: dict[str, Any] = Field(default_factory=dict)
+    invoice_rows_by_company: dict[str, list[ProductivityFinanceInvoiceRow]] = Field(default_factory=dict)
+
+
+class ProductivityFinanceCalculationTestRequest(BaseModel):
+    prompt: str = Field(min_length=3, max_length=4000)
+    month: int = Field(ge=1, le=12)
+    company_code: str | None = Field(default=None, max_length=40)
+    business_id: int | None = None
+
+
+class ProductivityFinanceCalculationTestOut(BaseModel):
+    quantity: float
+    month: int
+    year: int
+    plan: dict[str, Any]
+    calculation_sql: str
+    view: str
+    view_label: str
 
 
 class SidebarLayoutItem(BaseModel):

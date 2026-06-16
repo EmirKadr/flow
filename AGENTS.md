@@ -127,6 +127,17 @@ Vid varje andring som paverkar produktbeteende ska agenten:
 - uppdatera tester och dokumentation nar det ar relevant
 - tydligt saga till om full paritet inte hanns med eller om nagot blockerar den
 
+## Dialogregel for frontend
+
+Dialoger och modaler som innehaller textfalt, textarea, tabeller eller andra
+markerbara ytor far inte stangas med ett enkelt backdrop-`click`-monster som
+`event.target === backdrop`. Det kan stanga dialogen nar anvandaren markerar text
+och slapper musen utanfor rutan. Anvand en explicit `Avbryt`/`Stang`-knapp som
+grundregel. Om en dialog verkligen ska kunna stangas genom klick utanfor ska
+implementationen skilja pa klick och drag/textmarkering, till exempel genom att
+krava att bade pointerdown och pointerup startar/slutar pa backdropen, och ett
+test ska skydda beteendet.
+
 ## Loggregel for agenter
 
 Anvandaren ska kunna se vad som lyckades, vad som misslyckades och vad systemet

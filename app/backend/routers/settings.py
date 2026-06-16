@@ -1,13 +1,29 @@
-from fastapi import APIRouter, Depends, Query
+import json
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ..audit import log as audit_log
 from ..business_scope import business_id_from_area_focus, normalize_business_id_param, visible_business_id
+from ..data_fetch_service import (
+    DataFetchConfigError,
+    DataFetchPlanError,
+    calculation_query_text,
+    execute_calculation,
+    load_catalog,
+    plan_with_default_calculation,
+)
 from ..deps import get_current_user, get_db, require_view_access
-from ..models import User
+from ..models import Business, User
 from ..schemas import (
     AppSettingsOut,
     AppSettingsUpdate,
+    ProductivityFinanceCalculationTestOut,
+    ProductivityFinanceCalculationTestRequest,
+    ProductivityFinanceSettingsOut,
+    ProductivityFinanceSettingsUpdate,
     RoleViewAccessOut,
     RoleViewAccessUpdate,
     SidebarLayoutOut,
@@ -21,18 +37,27 @@ from ..settings_service import (
     SIDEBAR_LAYOUT_KEY,
     STAFFING_HISTORY_HOURS_MAX,
     STAFFING_HISTORY_HOURS_MIN,
+    PRODUCTIVITY_FINANCE_AMOUNT_MAX,
+    PRODUCTIVITY_FINANCE_AMOUNT_MIN,
+    PRODUCTIVITY_FINANCE_KEY,
+    clean_productivity_finance_company_code,
     get_lock_foreign_schedule_cells,
+    get_productivity_finance_settings,
     get_role_view_access,
     get_sidebar_layout,
     get_staffing_activity_capacity_activity_ids,
     get_staffing_history_hours,
+    productivity_finance_invoice_rows_for_company,
+    productivity_finance_vas_rates_from_invoice_rows,
     set_role_view_access,
     set_lock_foreign_schedule_cells,
+    set_productivity_finance_settings,
     set_sidebar_layout,
     set_staffing_activity_capacity_activity_ids,
     set_staffing_history_hours,
 )
 from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, feature_registry_payload, normalize_role_view_id
+from .data_fetch import _business_tenant, _fetch_rows, _plan_from_prompt
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -61,6 +86,41 @@ def _staffing_settings_out(db: Session, business_id: int | None) -> StaffingSett
         min_history_hours=STAFFING_HISTORY_HOURS_MIN,
         max_history_hours=STAFFING_HISTORY_HOURS_MAX,
         activity_capacity_activity_ids=get_staffing_activity_capacity_activity_ids(db, business_id=business_id),
+    )
+
+
+def _productivity_finance_company_codes(db: Session, business_id: int | None) -> list[str]:
+    codes: set[str] = set()
+    business = db.get(Business, business_id) if business_id is not None else None
+    if business is not None:
+        codes.update(clean_productivity_finance_company_code(code) for code in (business.company_codes or []))
+    return sorted(code for code in codes if code)
+
+
+def _productivity_finance_settings_out(db: Session, business_id: int | None) -> ProductivityFinanceSettingsOut:
+    setting = get_productivity_finance_settings(db, business_id=business_id)
+    company_codes = _productivity_finance_company_codes(db, business_id)
+    allowed_company_codes = set(company_codes)
+    stored_invoice_rows = setting.get("invoice_rows_by_company") or {}
+    invoice_rows_by_company = {
+        company: productivity_finance_invoice_rows_for_company(company, stored_invoice_rows.get(company))
+        for company in company_codes
+    }
+    rates = {
+        company: amount
+        for company, amount in (setting.get("vas_hourly_revenue_by_company") or {}).items()
+        if company in allowed_company_codes
+    }
+    for company, rows in invoice_rows_by_company.items():
+        if company not in rates:
+            rates[company] = productivity_finance_vas_rates_from_invoice_rows(rows)
+    return ProductivityFinanceSettingsOut(
+        hourly_cost=float(setting.get("hourly_cost") or 0.0),
+        min_amount=PRODUCTIVITY_FINANCE_AMOUNT_MIN,
+        max_amount=PRODUCTIVITY_FINANCE_AMOUNT_MAX,
+        vas_hourly_revenue_by_company=rates,
+        invoice_rows_by_company=invoice_rows_by_company,
+        company_codes=company_codes,
     )
 
 
@@ -101,6 +161,64 @@ def _audit_setting_change(
         user_id=user_id,
         business_id=business_id,
     )
+
+
+def _month_test_prompt(prompt: str, *, year: int, month: int) -> str:
+    month_name = [
+        "januari",
+        "februari",
+        "mars",
+        "april",
+        "maj",
+        "juni",
+        "juli",
+        "augusti",
+        "september",
+        "oktober",
+        "november",
+        "december",
+    ][month - 1]
+    return f"{prompt.strip()} under {month_name} {year}"
+
+
+def _company_column_id_for_plan(plan: dict) -> str | None:
+    try:
+        view = load_catalog().view(str(plan.get("view") or ""))
+    except DataFetchConfigError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except DataFetchPlanError:
+        return None
+
+    for column_id in ("company", "company_code", "bolag"):
+        if column_id in view.column_by_id:
+            return column_id
+    for column in view.columns:
+        label = f"{column.id} {column.label_en} {column.label_sv}".strip().lower().replace("_", " ")
+        if "bolag" in label or "company" in label:
+            return column.id
+    return None
+
+
+def _calculation_plan_with_company_filter(plan: dict, company_code: object) -> dict:
+    code = clean_productivity_finance_company_code(company_code)
+    if not code:
+        return plan
+    company_column_id = _company_column_id_for_plan(plan)
+    if not company_column_id:
+        return plan
+    filters = [
+        item
+        for item in (plan.get("filters") or [])
+        if str(item.get("id") or item.get("field") or "") != company_column_id
+    ]
+    filters.append({"id": company_column_id, "operator": "EQ", "value": code})
+    reason = str(plan.get("reason") or "").strip()
+    suffix = f"Bolagsfilter {company_column_id}={code} lades pa automatiskt."
+    return {**plan, "filters": filters, "reason": f"{reason} {suffix}".strip()}
+
+
+def _calculation_sql_for_plan(plan: dict) -> str:
+    return calculation_query_text(plan_with_default_calculation(plan, "count"))
 
 
 def _clean_sidebar_layout(payload: SidebarLayoutUpdate) -> list[dict]:
@@ -240,6 +358,107 @@ def update_staffing_settings(
     )
     db.commit()
     return _staffing_settings_out(db, scoped_business_id)
+
+
+@router.get("/productivity-finance", response_model=ProductivityFinanceSettingsOut)
+def get_productivity_finance_settings_route(
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("productivityFinanceSettings", "view")),
+) -> ProductivityFinanceSettingsOut:
+    scoped_business_id = _scoped_settings_business_id(db, user, business_id, area_focus)
+    return _productivity_finance_settings_out(db, scoped_business_id)
+
+
+@router.put("/productivity-finance", response_model=ProductivityFinanceSettingsOut)
+def update_productivity_finance_settings_route(
+    payload: ProductivityFinanceSettingsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_view_access("productivityFinanceSettings", "edit")),
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
+) -> ProductivityFinanceSettingsOut:
+    scoped_business_id = _scoped_settings_business_id(db, admin, business_id, area_focus)
+    before = _productivity_finance_settings_out(db, scoped_business_id).model_dump()
+    allowed_company_codes = set(_productivity_finance_company_codes(db, scoped_business_id))
+    update_payload = payload.model_dump()
+    filtered_invoice_rows = {
+        clean_productivity_finance_company_code(company): productivity_finance_invoice_rows_for_company(company, rows)
+        for company, rows in update_payload.get("invoice_rows_by_company", {}).items()
+        if clean_productivity_finance_company_code(company) in allowed_company_codes
+    }
+    filtered_rates = {
+        clean_productivity_finance_company_code(company): amount
+        for company, amount in update_payload.get("vas_hourly_revenue_by_company", {}).items()
+        if clean_productivity_finance_company_code(company) in allowed_company_codes
+    }
+    for company, rows in filtered_invoice_rows.items():
+        filtered_rates[company] = productivity_finance_vas_rates_from_invoice_rows(rows)
+    update_payload["invoice_rows_by_company"] = filtered_invoice_rows
+    update_payload["vas_hourly_revenue_by_company"] = filtered_rates
+    set_productivity_finance_settings(
+        db,
+        update_payload,
+        user_id=admin.id,
+        business_id=scoped_business_id,
+    )
+    after = _productivity_finance_settings_out(db, scoped_business_id).model_dump()
+    _audit_setting_change(
+        db,
+        key=PRODUCTIVITY_FINANCE_KEY,
+        action="update_productivity_finance_settings",
+        old_value=before,
+        new_value=after,
+        user_id=admin.id,
+        business_id=scoped_business_id,
+    )
+    db.commit()
+    return _productivity_finance_settings_out(db, scoped_business_id)
+
+
+@router.post("/productivity-finance/calculation/test", response_model=ProductivityFinanceCalculationTestOut)
+async def test_productivity_finance_calculation_route(
+    payload: ProductivityFinanceCalculationTestRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_view_access("productivityFinanceSettings", "edit")),
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
+) -> ProductivityFinanceCalculationTestOut:
+    today = date.today()
+    requested_business_id = business_id if business_id is not None else payload.business_id
+    scoped_business_id = _scoped_settings_business_id(db, admin, requested_business_id, area_focus)
+    company_code = clean_productivity_finance_company_code(payload.company_code)
+    allowed_company_codes = set(_productivity_finance_company_codes(db, scoped_business_id))
+    if company_code and company_code not in allowed_company_codes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bolaget ingar inte i vald verksamhet.")
+    if payload.month > today.month:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Det går bara att testa månader som har startat i år.",
+        )
+    prompt = _month_test_prompt(payload.prompt, year=today.year, month=payload.month)
+    plan = await _plan_from_prompt(prompt)
+    if plan.get("status") == "needs_clarification":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=plan.get("question") or "Uträkningen behöver förtydligas.")
+    plan = _calculation_plan_with_company_filter(plan, company_code)
+    plan = plan_with_default_calculation(plan, "count")
+    tenant = _business_tenant(db, scoped_business_id)
+    rows = await run_in_threadpool(_fetch_rows, plan, "financecalc", tenant)
+    calculation = execute_calculation(rows, plan)
+    value = calculation.get("value") if calculation else len(rows)
+    if not isinstance(value, (int, float)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Uträkningen måste ge ett numeriskt värde.")
+    calculation_sql = _calculation_sql_for_plan(plan)
+    return ProductivityFinanceCalculationTestOut(
+        quantity=value,
+        month=payload.month,
+        year=today.year,
+        plan=json.loads(json.dumps(plan, ensure_ascii=False, default=str)),
+        calculation_sql=calculation_sql,
+        view=str(plan.get("view") or ""),
+        view_label=str(plan.get("view_label") or plan.get("view") or ""),
+    )
 
 
 @router.get("/sidebar", response_model=SidebarLayoutOut)

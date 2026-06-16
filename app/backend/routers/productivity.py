@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, scoped_get, user_business_id
 from ..deps import get_db, require_view_access
-from ..models import Business, Person, User
+from ..models import Activity, Business, Person, User
 from ..productivity_service import (
     ProductivitySourceError,
 )
@@ -26,6 +26,18 @@ from ..productivity_sync import (
     productivity_snapshot_status,
     sync_productivity_snapshot,
 )
+from ..settings_service import (
+    PRODUCTIVITY_FINANCE_COLLAR_TYPES,
+    PRODUCTIVITY_FINANCE_DEFAULT_VAS_RATE_TYPE,
+    PRODUCTIVITY_FINANCE_VAS_RATE_TYPES,
+    clean_productivity_finance_company_code,
+    get_productivity_finance_settings,
+    get_role_view_access,
+    normalize_productivity_finance_collar_type,
+    productivity_finance_default_invoice_rows,
+    productivity_finance_vas_rates_from_invoice_rows,
+)
+from ..user_access import can_access_view
 from ..workflow_data import productivity_api_source_map, sources_available
 
 
@@ -35,6 +47,10 @@ _PERSON_REPORT_CACHE_TTL_SECONDS = 2 * 60
 _PERSON_REPORT_CACHE_MAX_ITEMS = 256
 _PERSON_REPORT_CACHE_LOCK = threading.Lock()
 _PERSON_REPORT_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _round_money(value: float) -> float:
+    return round(float(value or 0.0), 2)
 
 
 def _productivity_business_code(db: Session, user: User) -> str:
@@ -51,6 +67,232 @@ def _productivity_business_id(db: Session, user: User) -> int | None:
         return user_business_id(db, user)
     except Exception:
         return getattr(user, "business_id", None)
+
+
+def _can_view_productivity_finance(db: Session, user: User) -> bool:
+    if getattr(user, "is_super_user", False):
+        return True
+    if not hasattr(user, "role"):
+        return False
+    try:
+        return can_access_view(user, get_role_view_access(db), "productivityFinance", "view")
+    except Exception:
+        return False
+
+
+def _productivity_finance_business_company_codes(business: Business | None) -> list[str]:
+    codes = []
+    for raw_code in (getattr(business, "company_codes", None) or []):
+        code = clean_productivity_finance_company_code(raw_code)
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+
+def _productivity_finance_company_for_activity(
+    activity: Activity | None,
+    business: Business | None,
+    company_codes: set[str] | None = None,
+) -> str:
+    allowed_codes = company_codes if company_codes is not None else set(_productivity_finance_business_company_codes(business))
+    if not allowed_codes:
+        return ""
+    area = getattr(activity, "area", None) if activity is not None else None
+    for candidate in (
+        getattr(area, "code", None),
+        str(getattr(activity, "code", "") or "").split("_", 1)[0],
+        str(getattr(activity, "label", "") or "").split(" ", 1)[0],
+    ):
+        code = clean_productivity_finance_company_code(candidate)
+        if code in allowed_codes:
+            return code
+    return ""
+
+
+def _productivity_finance_vas_rate_amounts(value: object) -> dict[str, float]:
+    amounts = {rate_type: 0.0 for rate_type in PRODUCTIVITY_FINANCE_VAS_RATE_TYPES}
+    if isinstance(value, dict):
+        for rate_type in PRODUCTIVITY_FINANCE_VAS_RATE_TYPES:
+            amounts[rate_type] = float(value.get(rate_type, 0.0) or 0.0)
+        return amounts
+    amounts[PRODUCTIVITY_FINANCE_DEFAULT_VAS_RATE_TYPE] = float(value or 0.0)
+    return amounts
+
+
+def _productivity_finance_collar_rates(value: object) -> dict[str, dict[str, float]]:
+    if isinstance(value, dict):
+        blue_value = value.get("blue_collar", value.get("blueCollar", value.get("blue")))
+        white_value = value.get("white_collar", value.get("whiteCollar", value.get("white")))
+        if blue_value is not None or white_value is not None:
+            return {
+                "blue_collar": _productivity_finance_vas_rate_amounts(blue_value),
+                "white_collar": _productivity_finance_vas_rate_amounts(white_value),
+            }
+        rate_amounts = _productivity_finance_vas_rate_amounts(value)
+        return {collar_type: dict(rate_amounts) for collar_type in PRODUCTIVITY_FINANCE_COLLAR_TYPES}
+    rate_amounts = _productivity_finance_vas_rate_amounts(value)
+    return {collar_type: dict(rate_amounts) for collar_type in PRODUCTIVITY_FINANCE_COLLAR_TYPES}
+
+
+def _productivity_finance_person_collars(db: Session, business_id: int | None) -> dict[int, str]:
+    query = db.query(Person.id, Person.collar_type)
+    if business_id is not None:
+        query = query.filter(Person.business_id == business_id)
+    collars: dict[int, str] = {}
+    for person_id, collar_type in query.all():
+        try:
+            key = int(person_id)
+        except (TypeError, ValueError):
+            continue
+        collars[key] = normalize_productivity_finance_collar_type(collar_type)
+    return collars
+
+
+def _productivity_finance_context(db: Session, user: User, business_id: int | None) -> dict:
+    if not _can_view_productivity_finance(db, user):
+        return {"visible": False}
+    settings_payload = get_productivity_finance_settings(db, business_id=business_id)
+    business = db.get(Business, business_id) if business_id is not None else None
+    company_codes = _productivity_finance_business_company_codes(business)
+    allowed_company_codes = set(company_codes)
+    invoice_rows_by_company = settings_payload.get("invoice_rows_by_company") or {}
+    rates = {
+        company: _productivity_finance_collar_rates(amount)
+        for company, amount in (settings_payload.get("vas_hourly_revenue_by_company") or {}).items()
+        if company in allowed_company_codes
+    }
+    for company in company_codes:
+        if company in rates:
+            continue
+        rows = invoice_rows_by_company.get(company) or productivity_finance_default_invoice_rows(company)
+        rates[company] = _productivity_finance_collar_rates(productivity_finance_vas_rates_from_invoice_rows(rows))
+    query = db.query(Activity).filter(Activity.is_active.is_(True))
+    if business_id is not None:
+        query = query.filter(Activity.business_id == business_id)
+    activities = query.all()
+    activity_meta = {
+        int(activity.id): {
+            "is_vas": str(activity.work_type or "").strip().lower() == "vas",
+            "company": _productivity_finance_company_for_activity(activity, business, allowed_company_codes),
+        }
+        for activity in activities
+        if getattr(activity, "id", None) is not None
+    }
+    return {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": float(settings_payload.get("hourly_cost") or 0.0),
+        "vas_hourly_revenue_by_company": rates,
+        "company_codes": company_codes,
+        "activity_meta": activity_meta,
+        "person_collar_by_id": _productivity_finance_person_collars(db, business_id),
+    }
+
+
+def _productivity_cell_work_minutes(cell: dict) -> int:
+    if cell.get("kind") in {"kpi", "support"}:
+        return int(cell.get("minutes") or 0)
+    if float(cell.get("expected_points") or 0) > 0:
+        return int(cell.get("minutes") or 0)
+    return 0
+
+
+def _empty_productivity_finance_summary(*, visible: bool = True, currency: str = "SEK") -> dict:
+    return {
+        "visible": visible,
+        "currency": currency,
+        "revenue": 0.0,
+        "cost": 0.0,
+        "result": 0.0,
+        "work_minutes": 0,
+        "vas_minutes": 0,
+    }
+
+
+def _add_productivity_finance_summary(target: dict, source: dict) -> None:
+    target["revenue"] = _round_money(float(target.get("revenue") or 0) + float(source.get("revenue") or 0))
+    target["cost"] = _round_money(float(target.get("cost") or 0) + float(source.get("cost") or 0))
+    target["result"] = _round_money(float(target.get("result") or 0) + float(source.get("result") or 0))
+    target["work_minutes"] = int(target.get("work_minutes") or 0) + int(source.get("work_minutes") or 0)
+    target["vas_minutes"] = int(target.get("vas_minutes") or 0) + int(source.get("vas_minutes") or 0)
+
+
+def _productivity_finance_rate_for_company(context: dict, company: str, collar_type: str) -> float:
+    rates = context.get("vas_hourly_revenue_by_company") or {}
+    company_rates = rates.get(company, 0.0)
+    if isinstance(company_rates, dict):
+        collar_rates = company_rates.get(collar_type, company_rates.get("blue_collar", 0.0))
+        if isinstance(collar_rates, dict):
+            return float(collar_rates.get(PRODUCTIVITY_FINANCE_DEFAULT_VAS_RATE_TYPE, 0.0) or 0.0)
+        return float(collar_rates or 0.0)
+    return float(company_rates or 0.0)
+
+
+def _finance_for_productivity_cell(cell: dict, context: dict, collar_type: str) -> dict | None:
+    work_minutes = _productivity_cell_work_minutes(cell)
+    if work_minutes <= 0:
+        return None
+    activity_id = cell.get("activity_id")
+    try:
+        activity_key = int(activity_id) if activity_id is not None else None
+    except (TypeError, ValueError):
+        activity_key = None
+    meta = (context.get("activity_meta") or {}).get(activity_key, {}) if activity_key is not None else {}
+    is_vas = bool(meta.get("is_vas"))
+    allowed_company_codes = set(context.get("company_codes") or [])
+    company = clean_productivity_finance_company_code(meta.get("company") if meta else cell.get("activity_area_code"))
+    if company not in allowed_company_codes:
+        company = ""
+    hourly_cost = float(context.get("hourly_cost") or 0.0)
+    hours = work_minutes / 60.0
+    cost = hours * hourly_cost
+    rate = _productivity_finance_rate_for_company(context, company, collar_type) if is_vas and company else 0.0
+    revenue = hours * rate
+    return {
+        "visible": True,
+        "currency": context.get("currency") or "SEK",
+        "revenue": _round_money(revenue),
+        "cost": _round_money(cost),
+        "result": _round_money(revenue - cost),
+        "work_minutes": work_minutes,
+        "vas_minutes": work_minutes if is_vas else 0,
+        "is_vas": is_vas,
+        "company": (company or None) if is_vas else None,
+        "collar_type": collar_type,
+        "rate_type": PRODUCTIVITY_FINANCE_DEFAULT_VAS_RATE_TYPE if is_vas else None,
+    }
+
+
+def _productivity_finance_person_collar(person: dict, context: dict) -> str:
+    raw_collar_type = person.get("collar_type")
+    if not raw_collar_type:
+        try:
+            person_id = int(person.get("person_id"))
+        except (TypeError, ValueError):
+            person_id = None
+        raw_collar_type = (context.get("person_collar_by_id") or {}).get(person_id)
+    return normalize_productivity_finance_collar_type(raw_collar_type)
+
+
+def _attach_productivity_finance(report: dict, context: dict) -> dict:
+    if not context.get("visible"):
+        report["finance"] = {"visible": False}
+        return report
+    report_finance = _empty_productivity_finance_summary(currency=str(context.get("currency") or "SEK"))
+    for person in report.get("people") or []:
+        collar_type = _productivity_finance_person_collar(person, context)
+        person_finance = _empty_productivity_finance_summary(currency=report_finance["currency"])
+        for cell in person.get("time_cells") or []:
+            cell_finance = _finance_for_productivity_cell(cell, context, collar_type)
+            if cell_finance is None:
+                continue
+            cell["finance"] = cell_finance
+            _add_productivity_finance_summary(person_finance, cell_finance)
+        if person_finance["work_minutes"] > 0:
+            person["finance"] = person_finance
+            _add_productivity_finance_summary(report_finance, person_finance)
+    report["finance"] = report_finance
+    return report
 
 
 def _audit_productivity_report_sources(
@@ -477,6 +719,8 @@ def get_productivity_overview(
         end_date=end_date,
     )
     days = _date_span(period_start, period_end)
+    business_id = _productivity_business_id(db, user)
+    finance_context = _productivity_finance_context(db, user, business_id)
     errors: list[dict] = []
     reports: list[dict] = []
     source_status: list[dict] = []
@@ -490,6 +734,7 @@ def get_productivity_overview(
                 ensure_snapshot=False,
                 wait_seconds=0,
             )
+            _attach_productivity_finance(report, finance_context)
             reports.append(report)
             source_status.append({
                 "date": day.isoformat(),
@@ -533,6 +778,13 @@ def get_productivity_overview(
         "sync": sync,
         "backfill": productivity_backfill_status(),
     }
+    if finance_context.get("visible"):
+        finance_summary = _empty_productivity_finance_summary(currency=str(finance_context.get("currency") or "SEK"))
+        for report in reports:
+            _add_productivity_finance_summary(finance_summary, report.get("finance") or {})
+        payload["finance"] = finance_summary
+    else:
+        payload["finance"] = {"visible": False}
     _audit_productivity_report_sources(db, user, status_text="ok", source_status=source_status)
     return payload
 
@@ -549,6 +801,7 @@ def get_productivity(
         selected_date_filter = date_filter if isinstance(date_filter, date) else None
         business_code = _productivity_business_code(db, user)
         business_id = _productivity_business_id(db, user)
+        finance_context = _productivity_finance_context(db, user, business_id)
         if not sources_available(tuple(productivity_api_source_map().values())):
             raise ProductivitySyncError("Produktivitetens globala API-källor är inte konfigurerade.")
         sync_status = ensure_productivity_snapshot(
@@ -568,6 +821,7 @@ def get_productivity(
             business_id=business_id,
             sync=productivity_snapshot_status(snapshot_date),
         )
+        _attach_productivity_finance(report, finance_context)
         report["source_status"] = source_status
         report["backfill"] = productivity_backfill_status()
         _audit_productivity_report_sources(db, user, status_text="ok", source_status=source_status)

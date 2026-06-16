@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.backend import workflow_data
+from app.backend.config import settings
 from app.backend.data_fetch_service import DataCatalog, DataColumn, DataView
 from app.backend.database import Base
 from app.backend.external_data_client import ExternalDataClientError
@@ -22,12 +23,16 @@ class FakeExternalClient:
         self.views: list[str] = []
         self.filters: list[object] = []
 
-    def fetch_data(self, view_id: str, filters=None):
+    def fetch_data(self, view_id: str, filters=None, identifiers=None):
         self.views.append(view_id)
         self.filters.append(filters)
         if self.error is not None:
             raise self.error
         return list(self.rows)
+
+    def fetch_all(self, view_id: str, filters=None, identifiers=None):
+        # Speglar ExternalDataClient.fetch_all: workflow-vägen går nu via fetch_all.
+        return self.fetch_data(view_id, filters=filters, identifiers=identifiers)
 
 
 class FakeAuditDb:
@@ -85,6 +90,26 @@ def test_productivity_api_source_map_includes_snapshot_sources():
         "base_pallet": "base_pallet",
         "kpi": "kpi",
     }
+
+
+def test_workflow_api_client_uses_tenant_base_url(monkeypatch):
+    captured = {}
+
+    class FakeExternalDataClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://data-frey.example.test/api/")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY", "secret-key")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT", "secret-client")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_KEY_HEADER", "secret-key-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_API_CLIENT_HEADER", "secret-client-header")
+    monkeypatch.setattr(settings, "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE", "secret/path/{view}/data")
+    monkeypatch.setattr(workflow_data, "ExternalDataClient", FakeExternalDataClient)
+
+    workflow_data._api_client(tenant="itworks")
+
+    assert captured["base_url"] == "https://data-itworks.example.test/api/"
 
 
 def test_fetch_source_materializes_api_rows_with_saldo_alias_headers(monkeypatch):

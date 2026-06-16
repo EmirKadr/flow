@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api/persons", tags=["persons"])
 
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
+DEFAULT_COLLAR_TYPE = "blue_collar"
 
 HEADER_ALIASES = {
     "namn": "name",
@@ -51,6 +52,14 @@ HEADER_ALIASES = {
     "brickkod": "rfid_code",
     "badge": "rfid_code",
     "badgecode": "rfid_code",
+    "arbetstyp": "collar_type",
+    "personkategori": "collar_type",
+    "kategori": "collar_type",
+    "collartype": "collar_type",
+    "workertype": "collar_type",
+    "bluewhite": "collar_type",
+    "bluewhitecollar": "collar_type",
+    "bluewhitecolor": "collar_type",
     "hemomrade": "home_area",
     "omrade": "home_area",
     "area": "home_area",
@@ -75,6 +84,7 @@ class ImportPersonRow:
     name: str
     noman: str | None
     rfid_code: str | None
+    collar_type: str
     home_area: str | None
     home_activity: str | None
     sort_order: int | None
@@ -117,6 +127,7 @@ def _person_snapshot(person: Person) -> dict:
         "name": person.name,
         "noman": person.noman,
         "rfid_code": person.rfid_code,
+        "collar_type": person.collar_type,
         "home_area_id": person.home_area_id,
         "home_activity_id": person.home_activity_id,
         "competencies": person.competencies,
@@ -131,6 +142,38 @@ def _compact_key(value: str | None) -> str:
     normalized = unicodedata.normalize("NFKD", value or "")
     without_marks = "".join(ch for ch in normalized if not unicodedata.combining(ch))
     return "".join(ch for ch in without_marks.strip().lower() if ch.isalnum())
+
+
+COLLAR_TYPE_ALIASES = {
+    "blue": "blue_collar",
+    "bluecollar": "blue_collar",
+    "bluecolor": "blue_collar",
+    "bla": "blue_collar",
+    "blacollar": "blue_collar",
+    "blacolor": "blue_collar",
+    "lager": "blue_collar",
+    "produktion": "blue_collar",
+    "white": "white_collar",
+    "whitecollar": "white_collar",
+    "whitecolor": "white_collar",
+    "vit": "white_collar",
+    "vitcollar": "white_collar",
+    "vitcolor": "white_collar",
+    "kontor": "white_collar",
+}
+
+
+def _parse_collar_type(value: str | None, *, row_number: int, name: str) -> tuple[str, PersonImportError | None]:
+    if not value:
+        return DEFAULT_COLLAR_TYPE, None
+    collar_type = COLLAR_TYPE_ALIASES.get(_compact_key(value))
+    if collar_type is None:
+        return DEFAULT_COLLAR_TYPE, PersonImportError(
+            row=row_number,
+            name=name or None,
+            error="Arbetstyp maste vara Blue collar eller White collar",
+        )
+    return collar_type, None
 
 
 def _header_key(value: str | None) -> str:
@@ -183,7 +226,16 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
     for row_number, raw_values in raw_rows:
         values = {
             field: _cell_text(raw_values.get(field))
-            for field in ("business", "name", "noman", "rfid_code", "home_area", "home_activity", "sort_order")
+            for field in (
+                "business",
+                "name",
+                "noman",
+                "rfid_code",
+                "collar_type",
+                "home_area",
+                "home_activity",
+                "sort_order",
+            )
         }
         if not any(values.values()):
             continue
@@ -209,6 +261,15 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
             errors.append(PersonImportError(row=row_number, name=name, error="RFID-kod far vara max 120 tecken"))
             continue
 
+        collar_type, collar_type_error = _parse_collar_type(
+            values.get("collar_type", ""),
+            row_number=row_number,
+            name=name,
+        )
+        if collar_type_error is not None:
+            errors.append(collar_type_error)
+            continue
+
         sort_order, sort_error = _parse_sort_order(values.get("sort_order", ""), row_number=row_number, name=name)
         if sort_error is not None:
             errors.append(sort_error)
@@ -221,6 +282,7 @@ def _parse_person_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -
                 name=name,
                 noman=noman,
                 rfid_code=rfid_code,
+                collar_type=collar_type,
                 home_area=values.get("home_area") or None,
                 home_activity=values.get("home_activity") or None,
                 sort_order=sort_order,
@@ -234,14 +296,24 @@ def build_person_import_template_excel() -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Personer"
-    sheet.append(["verksamhet (frivillig)", "namn (obligatorisk)", "NoMan (obligatorisk)", "RFID (frivillig)", "hemområde (frivillig)", "huvudaktivitet (frivillig)", "sortering (frivillig)"])
+    sheet.append([
+        "verksamhet (frivillig)",
+        "namn (obligatorisk)",
+        "NoMan (obligatorisk)",
+        "RFID (frivillig)",
+        "arbetstyp (frivillig)",
+        "hemområde (frivillig)",
+        "huvudaktivitet (frivillig)",
+        "sortering (frivillig)",
+    ])
     sheet.column_dimensions["A"].width = 22
     sheet.column_dimensions["B"].width = 28
     sheet.column_dimensions["C"].width = 20
     sheet.column_dimensions["D"].width = 22
-    sheet.column_dimensions["E"].width = 24
-    sheet.column_dimensions["F"].width = 28
-    sheet.column_dimensions["G"].width = 14
+    sheet.column_dimensions["E"].width = 18
+    sheet.column_dimensions["F"].width = 24
+    sheet.column_dimensions["G"].width = 28
+    sheet.column_dimensions["H"].width = 14
     sheet.freeze_panes = "A2"
 
     stream = io.BytesIO()
@@ -455,6 +527,7 @@ def _import_person_rows(
             name=row.name,
             noman=row.noman,
             rfid_code=row.rfid_code,
+            collar_type=row.collar_type,
             business_id=business_id,
             home_area_id=home_area_id,
             home_activity_id=home_activity_id,
@@ -678,6 +751,7 @@ def create_person(
     data = payload.model_dump()
     data["noman"] = noman
     data["rfid_code"] = rfid_code
+    data["collar_type"] = data.get("collar_type") or DEFAULT_COLLAR_TYPE
     data["business_id"] = business_id
     data["is_active"] = True
     person = Person(**data)
@@ -726,6 +800,8 @@ def update_person(
         data["rfid_code"] = _clean_rfid_code(data["rfid_code"])
         if _find_rfid_conflict(db, data["rfid_code"], business_id=person.business_id, exclude_person_id=person_id):
             raise HTTPException(status.HTTP_409_CONFLICT, detail="RFID-kod finns redan")
+    if "collar_type" in data:
+        data["collar_type"] = data["collar_type"] or DEFAULT_COLLAR_TYPE
     if "business_id" in data and data["business_id"] != person.business_id:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Person kan inte flyttas mellan verksamheter")
     if "home_area_id" in data and data["home_area_id"] is not None:

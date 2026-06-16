@@ -72,7 +72,7 @@ verksamheter.
 | `query_data.health` | `GET` | `/api/query-data/health` | Datahämtning health |
 | `query_data.reload_catalog` | `POST` | `/api/query-data/catalog/reload` | Läs om extern datakatalog |
 | `query_data.plan` | `POST` | `/api/query-data/plan` | Tolka datafråga med MiniMax |
-| `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla |
+| `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla med tenant per verksamhet, lokala exkluderingar/jämförelser/textfilter och validerad beräkning |
 | `query_data.export` | `GET` | `/api/query-data/export/{session_id}` | Exportera datahämtning till Excel |
 | `allocation.health` | `GET` | `/api/allokering/health` | Lagerverktyg health |
 | `allocation.flows` | `GET` | `/api/allokering/flows` | Lista lagerverktygsflöden |
@@ -91,7 +91,7 @@ verksamheter.
 | `allocation.open_excel` | `POST` | `/api/allokering/open-excel` | Öppna lagerverktygsresultat i Excel |
 | `allocation.table_column` | `GET` | `/api/allokering/table-column/{session_id}/{key}/{column_index}` | Hämta resultatkolumn |
 | `allocation.download` | `GET` | `/api/allokering/download/{session_id}/{key}` | Ladda ner Allokering-resultat |
-| `workflow_data.source` | `POST` | `/api/workflow-data/source` | Hamta workflow-kalla som temporar CSV |
+| `workflow_data.source` | `POST` | `/api/workflow-data/source` | Hamta workflow-kalla som temporar CSV med tenant per verksamhet |
 | `coredata.files` | `GET` | `/api/coredata/files` | Coredata-karnfiler fran Postgres/fallback och sammanstalld data for verksamheten |
 | `coredata.preview` | `GET` | `/api/coredata/files/{file_key}/preview` | Forhandsvisa coredata-karnfil eller sammanstalld data |
 | `coredata.download` | `GET` | `/api/coredata/files/{file_key}/download` | Ladda ner coredata-karnfil eller sammanstalld data |
@@ -101,6 +101,7 @@ verksamheter.
 | `areas.update` | `PUT` | `/api/areas/{area_id}` | Uppdatera område |
 | `areas.delete` | `DELETE` | `/api/areas/{area_id}` | Ta bort eller inaktivera område |
 | `activities.list` | `GET` | `/api/activities` | Lista aktiviteter med KPI Mal-processnamn och arbetstyp |
+| `activities.kpi_process_options` | `GET` | `/api/activities/kpi-process-options` | Lista valbara KPI-processer |
 | `activities.import_template` | `GET` | `/api/activities/import-template` | Hämta importmall för aktiviteter |
 | `activities.import` | `POST` | `/api/activities/import` | Importera aktiviteter |
 | `activities.import_rows` | `POST` | `/api/activities/import-rows` | Importera aktivitetsrader med valfria KPI Mal-processnamn och arbetstyp (`normal`/`VAS`) |
@@ -111,6 +112,9 @@ verksamheter.
 | `settings.update` | `PUT` | `/api/settings` | Uppdatera verksamhetens inställningar |
 | `settings.staffing_get` | `GET` | `/api/settings/staffing` | Hämta bemanningens historiktimmar och val för historiskt snitt |
 | `settings.staffing_update` | `PUT` | `/api/settings/staffing` | Uppdatera bemanningens historiktimmar och val för historiskt snitt |
+| `settings.productivity_finance_get` | `GET` | `/api/settings/productivity-finance` | Hämta produktivitetens intäkt/utgift |
+| `settings.productivity_finance_update` | `PUT` | `/api/settings/productivity-finance` | Uppdatera produktivitetens intäkt/utgift |
+| `settings.productivity_finance_calculation_test` | `POST` | `/api/settings/productivity-finance/calculation/test` | Testa uträkning för produktivitetens intäkt/utgift |
 | `settings.sidebar_get` | `GET` | `/api/settings/sidebar` | Hämta verksamhetens sidomeny |
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera verksamhetens sidomeny |
 | `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta verksamhetens roll-vyåtkomst |

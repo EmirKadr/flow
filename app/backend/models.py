@@ -56,6 +56,7 @@ class Business(Base):
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     company_codes: Mapped[list[str]] = mapped_column(JsonField, nullable=False, default=list)
+    tenant: Mapped[str | None] = mapped_column(String(80))
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -94,6 +95,12 @@ class Person(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     noman: Mapped[str | None] = mapped_column(String(120))
     rfid_code: Mapped[str | None] = mapped_column(String(120))
+    collar_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="blue_collar",
+        server_default="blue_collar",
+    )
     home_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     home_activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     competencies: Mapped[list] = mapped_column(JsonField, nullable=False, default=list)

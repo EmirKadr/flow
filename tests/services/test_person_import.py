@@ -33,11 +33,12 @@ def test_build_person_import_template_excel_has_expected_headers():
     workbook = load_workbook(io.BytesIO(build_person_import_template_excel()))
     sheet = workbook.active
 
-    assert [sheet.cell(1, column).value for column in range(1, 8)] == [
+    assert [sheet.cell(1, column).value for column in range(1, 9)] == [
         "verksamhet (frivillig)",
         "namn (obligatorisk)",
         "NoMan (obligatorisk)",
         "RFID (frivillig)",
+        "arbetstyp (frivillig)",
         "hemomr\u00e5de (frivillig)",
         "huvudaktivitet (frivillig)",
         "sortering (frivillig)",
@@ -74,9 +75,25 @@ def test_parse_person_import_excel_accepts_optional_fields():
     assert len(rows) == 1
     assert rows[0].noman == "BOB01"
     assert rows[0].rfid_code == "RFID-77"
+    assert rows[0].collar_type == "blue_collar"
     assert rows[0].home_area == "GG"
     assert rows[0].home_activity == "GG VM"
     assert rows[0].sort_order == 12
+
+
+def test_parse_person_import_excel_accepts_collar_type_aliases():
+    rows, errors = parse_person_import_excel(
+        workbook_bytes(
+            [
+                ["namn", "NoMan", "arbetstyp"],
+                ["Anna Andersson", "ANN01", "White color"],
+            ]
+        )
+    )
+
+    assert errors == []
+    assert len(rows) == 1
+    assert rows[0].collar_type == "white_collar"
 
 
 def test_parse_person_import_excel_collects_row_errors():
@@ -147,7 +164,7 @@ def test_import_person_rows_creates_from_direct_table(person_db):
     result = import_person_rows(
         PersonImportRowsRequest(
             rows=[
-                PersonImportRowInput(name="Mira Multi", noman="MIR01", rfid_code="abc123", home_area="GG", home_activity="GG Plock", sort_order="7"),
+                PersonImportRowInput(name="Mira Multi", noman="MIR01", rfid_code="abc123", collar_type="white_collar", home_area="GG", home_activity="GG Plock", sort_order="7"),
                 PersonImportRowInput(name="Mira Multi", noman="MIR02", home_area="GG"),
             ]
         ),
@@ -164,6 +181,7 @@ def test_import_person_rows_creates_from_direct_table(person_db):
     assert person.home_activity_id == activity.id
     assert person.noman == "MIR01"
     assert person.rfid_code == "ABC123"
+    assert person.collar_type == "white_collar"
     assert person.sort_order == 7
 
 
@@ -203,10 +221,12 @@ def test_create_and_update_person_persists_required_noman(person_db):
 
     person = create_person(PersonCreate(name="NoMan Person", noman="NMP01"), db=person_db, user=admin)
     assert person.noman == "NMP01"
+    assert person.collar_type == "blue_collar"
 
-    updated = update_person(person.id, PersonUpdate(noman="NMP02"), db=person_db, user=admin)
+    updated = update_person(person.id, PersonUpdate(noman="NMP02", collar_type="white_collar"), db=person_db, user=admin)
 
     assert updated.noman == "NMP02"
+    assert updated.collar_type == "white_collar"
 
     with pytest.raises(HTTPException) as exc:
         update_person(person.id, PersonUpdate(noman=None), db=person_db, user=admin)

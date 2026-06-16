@@ -1,7 +1,7 @@
 ---
 title: Datamodell
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [databas, modeller]
 ---
 
@@ -13,10 +13,10 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 
 | Tabell | Modell | Syfte | Viktiga falt |
 | --- | --- | --- | --- |
-| `businesses` | `Business` | Verksamheter/isoleringsniva | `code`, `name`, `company_codes`, `sort_order`, `is_active` |
+| `businesses` | `Business` | Verksamheter/isoleringsniva | `code`, `name`, `company_codes`, `tenant`, `sort_order`, `is_active` |
 | `users` | `User` | Inloggning, roller, verksamhet, omrade och eventuell personkoppling | `business_id`, `username`, `password_hash`, `role`, `roles`, `area_id`, `person_id`, `is_active`, `must_change_password` |
 | `areas` | `Area` | Omraden/stallen inom en verksamhet | `business_id`, `code`, `name`, `sort_order`, `is_active` |
-| `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `noman`, `rfid_code`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
+| `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `noman`, `rfid_code`, `collar_type`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
 | `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `work_type`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `version`, `updated_by` |
 | `rfid_devices` | `RfidDevice` | Fysiska RFID-moduler kopplade till aktivitet | `business_id`, `device_id`, `module_name`, `activity_id`, `is_active`, `last_seen_at` |
@@ -40,8 +40,10 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - Icke-Super Users filtreras alltid till sin egen `business_id`.
 - Super User kan se allt med `∞`, eller filtrera pa `business_id`.
 - `Business.company_codes` ar en JSON-lista med bolagskoder som hor till verksamheten. Klienten visar dem som kommaseparerad text i Verksamheter-vyn.
+- `Business.tenant` ar en kort slug for extern datakalla. Den anvands nar backend bygger tenant-specifik `DATA_SOURCE_API_BASE_URL` for Hamta data, Bearbeta och Produktivitet.
 - Omradeskod, aktivitetskod och liknande registerdubbletter ar scopeade per verksamhet. Anvandarnamn ar fortsatt globalt unikt.
 - `Person.rfid_code` ar valfri brickkod. Backend normaliserar den till versaler och stoppar dubbletter inom samma verksamhet.
+- `Person.collar_type` ar `blue_collar` eller `white_collar`. Befintliga och nya personer defaultar till `blue_collar`, som visas som `Blue collar` i Personer.
 - `RfidDevice.module_name` ar modulens aktivitetsnamn, till exempel `MG Plock`. Vid scan matchas det mot aktiv aktivitets `label` eller `code`; `RfidScanEvent` sparar resultatet som pending, ignored, applied eller konfliktstatus. Gamla `duplicate_ignored`-rader kan finnas kvar som legacy.
 - En RFID-stampling blir inte en schemacell forran en anvandare med `schedule=edit` applicerar den i Bemanning. Ignorerade handelser sparas kvar for sparbarhet, men direkta dubbletter for samma person och aktivitet droppas innan ny `RfidScanEvent` skapas.
 - Personkonton kan ha `person_id` till `persons`. Auto-skapade `person`-anvandare far `person_id`, `business_id` och `area_id` fran matchande `Person.noman`.
@@ -121,3 +123,4 @@ Viktiga settings:
 - `../app/alembic/versions/0037_staffing_calculator_profiles.py`
 - `../app/alembic/versions/0041_company_rfid.py`
 - `../app/alembic/versions/0042_rfid_scan_events.py`
+- `../app/alembic/versions/0044_business_tenant.py`

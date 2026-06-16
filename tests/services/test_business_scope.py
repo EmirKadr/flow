@@ -380,17 +380,27 @@ def test_business_and_area_codes_are_generated_from_name(business_session, monke
     assert business.code == "T3"
     assert business.name == "T3"
     assert business.company_codes == ["BOLAG1", "BOLAG2"]
+    assert business.tenant == "itworks"
     assert provisioned_codes == ["T3"]
     assert area.code == "AUTOSTORE"
     assert duplicate_area.code == "AUTOSTORE_2"
 
     updated = update_business(
         business.id,
-        BusinessUpdate(company_codes=["t3; r3"]),
+        BusinessUpdate(company_codes=["t3; r3"], tenant="Frey"),
         session,
         data["super_user"],
     )
     assert updated.company_codes == ["T3", "R3"]
+    assert updated.tenant == "frey"
+    assert_http_status(
+        400,
+        update_business,
+        business.id,
+        BusinessUpdate(tenant="bad tenant"),
+        session,
+        data["super_user"],
+    )
 
 
 def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_session):

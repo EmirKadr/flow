@@ -17,12 +17,18 @@ sketch:
 
 - `WIFI_SSID`
 - `WIFI_PASSWORD`
+- `WIFI_SSID_2` / `WIFI_PASSWORD_2`
+- `WIFI_SSID_3` / `WIFI_PASSWORD_3`
+- `WIFI_SSID_4` / `WIFI_PASSWORD_4`
 - `FLOW_BASE_URL`, till exempel datorns WiFi-IP med port 8000
 - `RFID_TOKEN` om `RFID_DEVICE_TOKEN` ar satt i backend
 - `DEVICE_ID` och `MODULE_NAME` om du flashar fler fysiska moduler
 
 ESP32 kan inte posta till `localhost` pa din dator. Anvand datorns IP-adress pa
 samma WiFi.
+
+Sketchen provar de ifyllda WiFi-naten i ordning. Tomma slots hoppas over, sa du
+kan fylla tre nat nu och lata `WIFI_SSID_4` vara tom tills senare.
 
 ## Utan admin eller brandvaggsregel
 

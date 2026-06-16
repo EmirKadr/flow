@@ -80,9 +80,9 @@ Krävs för att appen ska kunna hämta livedata från ASK WMS.
 
 | Variabel | Beskrivning |
 |---|---|
-| `DATA_SOURCE_API_BASE_URL` | T.ex. `https://noeffectui-frey-development.nowastelogistics.com` |
+| `DATA_SOURCE_API_BASE_URL` | Bas-URL for extern datakalla. Kan vara tenantmall, t.ex. `https://data-{tenant}.example.test`, eller en tenant-host dar backend byter hostens tenantled. |
 | `DATA_SOURCE_API_KEY` | API-nyckel |
-| `DATA_SOURCE_API_CLIENT` | Klient-ID, t.ex. `nowaste-internal-emir` |
+| `DATA_SOURCE_API_CLIENT` | Klient-ID |
 | `DATA_SOURCE_API_KEY_HEADER` | Header-namn för API-nyckel. Vanligen `x-api-key` |
 | `DATA_SOURCE_API_CLIENT_HEADER` | Header-namn för klient. Vanligen `x-api-key-client` |
 | `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE` | T.ex. `/api/integration/views/{view}/data` |

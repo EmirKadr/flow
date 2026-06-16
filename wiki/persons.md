@@ -1,20 +1,20 @@
 ---
 title: Personer
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [personer, register, ui, import]
 ---
 
 # Personer
 
-Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, valfri `RFID`-kod for brickkoppling, sortering/filter, mjuk borttagning, personlig veckomall och personnara produktivitetssnitt via dubbelklick pa en personrad. Nya personer far implicit schemamall forst fran sitt skapandedatum, sa gamla veckor inte fylls med standardtimmar.
+Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny person, import, inline-redigering, obligatoriskt WMS-anvandarnamn via `NoMan` for nya personer, valfri `RFID`-kod for brickkoppling, arbetstypen `Blue collar`/`White collar`, sortering/filter, mjuk borttagning, personlig veckomall och personnara produktivitetssnitt via dubbelklick pa en personrad. Nya personer far implicit schemamall forst fran sitt skapandedatum, sa gamla veckor inte fylls med standardtimmar.
 
 ## Knappar och kontroller
 
 | Kontroll | Vad anvandaren gor | Vad systemet gor | API/kod | Vanliga fel |
 | --- | --- | --- | --- | --- |
-| Ny person | Oppnar modal | Skapar person med namn, obligatoriskt `NoMan`, valfri `RFID`, hemomrade, huvudaktivitet, sortering och verksamhet for Super User | `POST /api/persons` | Namn och NoMan kravs; dubblettnamn och RFID-dubbletter stoppas inom verksamheten. |
-| Flera nya personer | Oppnar tabellmodal | Skapar flera personer direkt i appen med samma falt som importmallen | `POST /api/persons/import-rows` | Tomma rader ignoreras; dubbletter och okand verksamhet visas i resultatmodal. |
+| Ny person | Oppnar modal | Skapar person med namn, obligatoriskt `NoMan`, valfri `RFID`, arbetstyp, hemomrade, huvudaktivitet, sortering och verksamhet for Super User | `POST /api/persons` | Namn och NoMan kravs; dubblettnamn och RFID-dubbletter stoppas inom verksamheten. |
+| Flera nya personer | Oppnar tabellmodal | Skapar flera personer direkt i appen med samma falt som importmallen, inklusive arbetstyp | `POST /api/persons/import-rows` | Tomma rader ignoreras; dubbletter och okand verksamhet visas i resultatmodal. |
 | Ladda ner importmall | Laddar Excelmall | Hamter mall | `GET /api/persons/import-template` | Knappen dolds utan importbehorighet. |
 | Importera Excel | Oppnar filval | Skickar vald `.xlsx` | `POST /api/persons/import` | Max 5 MB; dubbletter stoppar import. |
 | Hjalp med import | Oppnar hjalpmodal | Visar generell importhjalp | `setupImportHelpButton` | Ingen serverkoppling. |
@@ -24,6 +24,7 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 | Klick pa Namn | Inline-redigera namn | Sparar vid blur/Enter | `PUT /api/persons/{id}` | Escape avbryter; tomt/dubblett kan nekas. |
 | Klick pa NoMan | Inline-redigera WMS-anvandarnamn | Sparar obligatoriskt textfalt vid blur/Enter | `PUT /api/persons/{id}` | Tomt varde stoppas med `NoMan kravs`. Faltet anvands inte i planering eller forecast annu. |
 | Klick pa RFID | Inline-redigera brickkod | Sparar valfri RFID-kod vid blur/Enter | `PUT /api/persons/{id}` | Tomt varde tar bort brickkopplingen. Dubblett inom samma verksamhet nekas. |
+| Klick pa Arbetstyp | Inline-select | Sparar `Blue collar` eller `White collar` pa personen | `PUT /api/persons/{id}`, `Person.collar_type` | Befintliga och nya personer defaultar till `Blue collar` tills de andras. |
 | Klick pa Hemomrade | Inline-select | Sparar nytt hemomrade | `PUT /api/persons/{id}` | Omrade styr sort/fokus och standardplacering. |
 | Klick pa Huvudaktivitet | Inline-select | Sparar huvudaktivitet | `PUT /api/persons/{id}` | Visas i schema som personens standardaktivitet. |
 | Klick pa Sortering | Inline-number | Sparar sorteringsnummer | `PUT /api/persons/{id}` | Ctrl+Z kan angra senaste personandring. |
@@ -40,6 +41,7 @@ Falt:
 - Namn.
 - NoMan, obligatoriskt WMS-anvandarnamn per ny person.
 - RFID, valfri brickkod.
+- Arbetstyp, `Blue collar` eller `White collar`.
 - Verksamhet, bara for Super User nar den inte kan harledas.
 - Hemomrade.
 - Huvudaktivitet.
@@ -81,10 +83,10 @@ successivt av Produktivitetens globala historik-backfill.
 
 ## Importregler
 
-- Direktimporten `Flera nya personer` har samma falt som Excelmallen: verksamhet vid behov, namn, NoMan, RFID, hemomrade, huvudaktivitet och sortering.
+- Direktimporten `Flera nya personer` har samma falt som Excelmallen: verksamhet vid behov, namn, NoMan, RFID, arbetstyp, hemomrade, huvudaktivitet och sortering.
 - Varje kolumn i direkttabellen visar om faltet ar `Obligatoriskt` eller `Frivilligt` i rubriken.
 - `Namn` och `NoMan` ar obligatoriska for nya personer i modal, direktimport och Excelimport. Tomt NoMan ger toasten `NoMan kravs` i modal/inline eller radfelet `NoMan saknas` vid import.
-- Excelimport matchar svenska och alternativa rubriker. `NoMan` och `RFID` sparas bara pa personen.
+- Excelimport matchar svenska och alternativa rubriker. `NoMan`, `RFID` och arbetstyp sparas bara pa personen. Arbetstyp accepterar bland annat `Blue collar`, `Blue color`, `White collar` och `White color`; tomt varde blir `Blue collar`.
 - Vanliga anvandare importerar alltid till egen verksamhet. Super User kan ange verksamhet med kod, namn eller id, eller lata omrade/aktivitet harleda den.
 - Import skapar aktiva personer.
 - Dubbletter i fil, i direkttabellen eller mot befintliga personer stoppar importen. RFID-dubbletter stoppas inom samma verksamhet och tom RFID betyder ingen bricka kopplad.
@@ -98,6 +100,7 @@ successivt av Produktivitetens globala historik-backfill.
 | "Varfor gick importen inte igenom?" | Kontrollera filstorlek/rubriker vid Excel, eller radfel och dubbletter i resultatmodalen vid direktimport. |
 | "Vad anvands NoMan till?" | Det ar ett obligatoriskt WMS-anvandarnamn for nya personer. Det sparas, kan importeras och anvands av Produktivitet for att matcha externa loggrader till Flow-personer. |
 | "Vad anvands RFID till?" | RFID ar en valfri brickkod pa personen. Den kan fyllas i manuellt eller importeras och maste vara unik inom personens verksamhet nar den ar ifylld. |
+| "Vad betyder Arbetstyp?" | Det ar personens `Blue collar`/`White collar`-klassning. Alla gamla och nya personer far `Blue collar` som standard och kan andras inline i Personer. |
 | "Varfor kan jag inte spara ny person?" | Kontrollera att bade Namn och NoMan ar ifyllda. NoMan ar obligatoriskt i ny person, direktimport och Excelimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
 | "Varfor far den nya personen inga timmar i gamla veckor?" | Implicita malltimmar borjar pa personens skapandedatum. Gamla datum visar bara explicita celler som lagts in manuellt. |

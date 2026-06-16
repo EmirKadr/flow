@@ -48,10 +48,11 @@ function handleAllocationAreaFocusChanged() {
       || text.includes("/api/allokering/ytgenerering-map-layout")
       || text.includes("/api/allokering/ytgenerering-location-options")
       || text.includes("/api/settings/staffing")
+      || text.includes("/api/settings/productivity-finance")
       || text.includes("/api/activities");
   });
   if (allocationState.page === "settings") {
-    resetAllocationBusinessScopedState({ includeStaffing: true });
+    resetAllocationBusinessScopedState({ includeStaffing: true, includeFinance: true });
     renderAllocationPage();
     return;
   }
@@ -70,7 +71,7 @@ async function initAllocationPage() {
   if (!root) return;
   allocationState.page = root.dataset.allocationView || "uploads";
   const pageOptions = allocationState.page === "settings"
-    ? { anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix"] }
+    ? { anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings"] }
     : { requireAllocationTools: true };
   if (allocationState.page === "process") {
     pageOptions.requireAllocationProcess = true;

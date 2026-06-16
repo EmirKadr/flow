@@ -8,7 +8,11 @@ let persons = [];
 let currentUser = null;
 let sortKey = "sort_order";
 let sortAsc = true;
-const filters = { name: "", noman: "", rfid_code: "", business: "", home_area: "", home_activity: "", sort_order: "" };
+const filters = { name: "", noman: "", rfid_code: "", collar_type: "", business: "", home_area: "", home_activity: "", sort_order: "" };
+const PERSON_COLLAR_TYPES = [
+  { value: "blue_collar", label: "Blue collar" },
+  { value: "white_collar", label: "White collar" },
+];
 const personUndoStack = [];
 const PERSON_UNDO_LIMIT = 50;
 let personUndoBusy = false;
@@ -50,6 +54,11 @@ function businessName(id) {
     return currentUser?.business_name || currentUser?.business_code || "";
   }
   return `Verksamhet #${id}`;
+}
+
+function collarTypeLabel(value) {
+  const option = PERSON_COLLAR_TYPES.find((item) => item.value === value);
+  return option ? option.label : "Blue collar";
 }
 
 function businessOptions(selectedId, disabled = false) {
@@ -335,6 +344,7 @@ function passesFilter(p) {
   if (!match(p.name, filters.name)) return false;
   if (!match(p.noman, filters.noman)) return false;
   if (!match(p.rfid_code, filters.rfid_code)) return false;
+  if (!match(collarTypeLabel(p.collar_type), filters.collar_type)) return false;
   if (!match(businessName(p.business_id), filters.business)) return false;
   if (!match(areaName(p.home_area_id), filters.home_area)) return false;
   if (!match(activityLabel(p.home_activity_id), filters.home_activity)) return false;
@@ -347,6 +357,7 @@ function sortKeyValue(p) {
     case "name": return (p.name || "").toLowerCase();
     case "noman": return (p.noman || "").toLowerCase();
     case "rfid_code": return (p.rfid_code || "").toLowerCase();
+    case "collar_type": return collarTypeLabel(p.collar_type).toLowerCase();
     case "business": return businessName(p.business_id).toLowerCase();
     case "home_area": return areaName(p.home_area_id).toLowerCase();
     case "home_activity": return activityLabel(p.home_activity_id).toLowerCase();
@@ -372,6 +383,7 @@ function snapshotPerson(person) {
     name: person.name,
     noman: person.noman ?? null,
     rfid_code: person.rfid_code ?? null,
+    collar_type: person.collar_type || "blue_collar",
     home_area_id: person.home_area_id ?? null,
     home_activity_id: person.home_activity_id ?? null,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -386,6 +398,7 @@ function personPayloadFromSnapshot(person) {
     name: person.name,
     noman: person.noman ?? null,
     rfid_code: person.rfid_code ?? null,
+    collar_type: person.collar_type || "blue_collar",
     home_area_id: person.home_area_id,
     home_activity_id: person.home_activity_id,
     competencies: Array.isArray(person.competencies) ? [...person.competencies] : [],
@@ -537,6 +550,40 @@ function editSelect(td, person, field, currentId, options, getId, getLabel) {
   });
 }
 
+function editChoice(td, person, field, currentValue, options, label) {
+  if (td.querySelector("input,select")) return;
+  td.classList.add("editing");
+  const select = document.createElement("select");
+  select.className = "inline-input";
+  select.innerHTML = options
+    .map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === currentValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`)
+    .join("");
+  td.innerHTML = "";
+  td.appendChild(select);
+  select.focus();
+
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return; done = true;
+    td.classList.remove("editing");
+    const newValue = select.value || options[0]?.value || "";
+    if (commit && newValue !== currentValue) {
+      try {
+        const before = snapshotPerson(person);
+        await savePersonField(person.id, { [field]: newValue });
+        pushPersonUndo(label, before);
+        person[field] = newValue;
+      } catch (e) {}
+    }
+    await loadPersons();
+  };
+  select.addEventListener("change", () => select.blur());
+  select.addEventListener("blur", () => finish(true));
+  select.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+}
+
 
 // ---- Rendering ----
 function renderRows() {
@@ -585,6 +632,15 @@ function renderRows() {
     tdRfid.textContent = p.rfid_code || "";
     if (canEditPersons) tdRfid.addEventListener("click", () => editText(tdRfid, p, "rfid_code", p.rfid_code || "", "RFID"));
     tr.appendChild(tdRfid);
+
+    // Arbetstyp
+    const tdCollarType = document.createElement("td");
+    if (canEditPersons) tdCollarType.className = "editable";
+    tdCollarType.textContent = collarTypeLabel(p.collar_type);
+    if (canEditPersons) tdCollarType.addEventListener("click", () =>
+      editChoice(tdCollarType, p, "collar_type", p.collar_type || "blue_collar", PERSON_COLLAR_TYPES, "arbetstyp")
+    );
+    tr.appendChild(tdCollarType);
 
     // Verksamhet
     const tdBusiness = document.createElement("td");
@@ -753,6 +809,7 @@ function openBulkPersonsModal() {
       { key: "name", label: "Namn", required: true },
       { key: "noman", label: "NoMan", required: true },
       { key: "rfid_code", label: "RFID", required: false },
+      { key: "collar_type", label: "Arbetstyp", required: false, type: "select", options: PERSON_COLLAR_TYPES },
       { key: "home_area", label: "Hemområde", required: false, type: "select", options: areas.map((area) => ({ value: area.name, label: area.name })) },
       { key: "home_activity", label: "Huvudaktivitet", required: false, type: "select", options: activitiesActive.map((activity) => ({ value: activity.label, label: activity.label })) },
       { key: "sort_order", label: "Sortering", required: false, type: "number" },
@@ -818,6 +875,10 @@ function openModal(person) {
       <input id="m-noman" value="${escapeHtml(person?.noman || "")}" required />
       <label>RFID</label>
       <input id="m-rfid" value="${escapeHtml(person?.rfid_code || "")}" />
+      <label>Arbetstyp</label>
+      <select id="m-collar-type">
+        ${PERSON_COLLAR_TYPES.map((option) => `<option value="${option.value}" ${(person?.collar_type || "blue_collar") === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+      </select>
       <label>Hemområde</label>
       <select id="m-area">
         <option value="">(inget)</option>
@@ -843,6 +904,7 @@ function openModal(person) {
       name: document.getElementById("m-name").value.trim(),
       noman: document.getElementById("m-noman").value.trim(),
       rfid_code: document.getElementById("m-rfid").value.trim(),
+      collar_type: document.getElementById("m-collar-type").value || "blue_collar",
       home_area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
       home_activity_id: document.getElementById("m-activity").value ? Number(document.getElementById("m-activity").value) : null,
       sort_order: Number(document.getElementById("m-sort").value) || 0,

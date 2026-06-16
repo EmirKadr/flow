@@ -1,5 +1,6 @@
 const ALLOCATION_API = "/api/allokering";
 const STAFFING_SETTINGS_API = "/api/settings/staffing";
+const PRODUCTIVITY_FINANCE_SETTINGS_API = "/api/settings/productivity-finance";
 const ALLOCATION_DB_NAME = "flow-allokering-files";
 const ALLOCATION_DB_VERSION = 1;
 const ALLOCATION_STORE = "files";
@@ -268,6 +269,10 @@ const allocationState = {
   staffingActivitiesLoaded: false,
   staffingActivitiesLoading: false,
   staffingActivitiesError: "",
+  productivityFinanceSettings: null,
+  productivityFinanceSettingsLoading: false,
+  productivityFinanceSettingsSaving: false,
+  productivityFinanceSettingsError: "",
 };
 
 let allocationPopoverDismissBound = false;
@@ -523,6 +528,12 @@ function resetAllocationBusinessScopedState(options = {}) {
     allocationState.staffingActivitiesLoaded = false;
     allocationState.staffingActivitiesLoading = false;
     allocationState.staffingActivitiesError = "";
+  }
+  if (options.includeFinance) {
+    allocationState.productivityFinanceSettings = null;
+    allocationState.productivityFinanceSettingsError = "";
+    allocationState.productivityFinanceSettingsLoading = false;
+    allocationState.productivityFinanceSettingsSaving = false;
   }
 }
 

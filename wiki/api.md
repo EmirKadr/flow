@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [api, backend]
 ---
 
@@ -20,8 +20,8 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `POST /api/assistant/clear` - nollstaller apphjalpens serverkvot i aktuell session.
 - `GET /api/query-data/health` - kontrollerar extern datakatalog och om API/MiniMax ar konfigurerade; returnerar `api_missing` med saknade env-namn.
 - `POST /api/query-data/catalog/reload` - rensar katalogcache och laser om vy-/kolumnkatalogen; OTel-spanen `data_fetch.catalog_reload` satter antal vyer/kolumner.
-- `POST /api/query-data/plan` - tolkar en svensk datafraga med MiniMax till validerad vy/filter/kolumn-plan; OTel-spanen `data_fetch.plan` sparar bara inputlangd, vy och status.
-- `POST /api/query-data/run` - kor en validerad plan mot extern datakalla och returnerar tabellpreview. Audit skriver `data_fetch/fetch_success|fetch_failed`; OTel markerar planstatus, extern fetch, radantal och felstatus utan prompt eller raddata.
+- `POST /api/query-data/plan` - tolkar en svensk datafraga med MiniMax till validerad vy/filter/kolumn-plan och eventuell whitelistad `calculation`; OTel-spanen `data_fetch.plan` sparar bara inputlangd, vy och status.
+- `POST /api/query-data/run` - kor en validerad plan mot extern datakalla, applicerar lokala exkluderingar/jamforelser/textfilter som `NE`, `GTE`, `StartsWith` och `Like`, returnerar tabellpreview och eventuell berakning (`count`, `count_distinct`, `sum`, `avg`, `min`, `max`, grupper/sortering/limit). Accepterar valfritt `business_id` sa verksamhetens `tenant` kan styra extern API-bas. Audit skriver `data_fetch/fetch_success|fetch_failed`; OTel markerar planstatus, extern fetch, radantal, berakningsflagga och felstatus utan prompt eller raddata.
 - `GET /api/query-data/export/{session_id}` - laddar ner senaste datahamtning som Excel och satter OTel-spanen `data_fetch.export`.
 
 ## Bemanning och oversikt
@@ -59,13 +59,13 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 
 ## Register och settings
 
-- `GET/POST/PUT/DELETE /api/persons...`, `POST /api/persons/import-rows`, `PUT /api/persons/sort-order` - personregister med obligatoriskt `NoMan` for nya personer och import, valfri `rfid_code` for brickkoppling, Excelimport, direktimport fran tabellrader och begransad sortering fran planeringsvyerna.
+- `GET/POST/PUT/DELETE /api/persons...`, `POST /api/persons/import-rows`, `PUT /api/persons/sort-order` - personregister med obligatoriskt `NoMan` for nya personer och import, valfri `rfid_code` for brickkoppling, `collar_type` for `blue_collar`/`white_collar`, Excelimport, direktimport fran tabellrader och begransad sortering fran planeringsvyerna.
 - `GET/PUT /api/persons/{id}/schedule` - veckomall.
-- `GET/POST/PUT/DELETE /api/activities...`, `POST /api/activities/import-rows` - aktivitetsregister med valfria kommaseparerade `kpi_process_name`/KPI Mal-processnamn, `work_type` (`normal` eller `vas`), Excelimport och direktimport fran tabellrader. Listan accepterar `business_id` och `area_focus` sa settingsvyer kan hamta aktiviteter for vald verksamhet.
+- `GET/POST/PUT/DELETE /api/activities...`, `POST /api/activities/import-rows` - aktivitetsregister med valfria kommaseparerade `kpi_process_name`/KPI Mal-processnamn, `work_type` (`normal` eller `vas`), Excelimport och direktimport fran tabellrader. Listan accepterar `business_id` och `area_focus` sa settingsvyer kan hamta aktiviteter for vald verksamhet. `GET /api/activities/kpi-process-options` returnerar valbara KPI-processnamn for aktivitetsmodalens multival.
 - `GET/POST/PUT/DELETE /api/areas...` - omraden. Delete tar bort tomma omraden men inaktiverar omradet om personer, aktiviteter eller anvandare redan pekar pa det.
 - `GET/POST/PUT/DELETE /api/users...`, `POST /api/users/import-rows` - anvandare, Excelimport, direktimport fran tabellrader och permanent borttagning.
 - `GET/PUT /api/settings/staffing` - hamta/spara `staffing_history_hours`, historiktimmarna for historiskt snitt och automatisk bemanningskalkyl, samt `activity_capacity_activity_ids` for vilka aktiviteter som far visa hover-snitt. Accepterar `business_id` eller `area_focus`; `null` betyder alla KPI-aktiviteter och `[]` betyder inga. Lasning kraver `staffingSettings=view`, sparning kraver `staffingSettings=edit`.
-- `GET/POST/PUT /api/businesses...` - Super User-vy for verksamheter med `company_codes` som verksamhetens bolagslista.
+- `GET/POST/PUT /api/businesses...` - Super User-vy for verksamheter med `company_codes` som verksamhetens bolagslista och `tenant` for extern datakalla.
 - `GET/PUT /api/settings` - appsettings per verksamhet.
 - `GET/PUT /api/settings/sidebar` - sidebar per verksamhet.
 - `GET/PUT /api/settings/role-access` - global roll-vyatkomst for alla verksamheter.
@@ -92,6 +92,7 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/productivity/persons/{person_id}` - personens aktivitetssnitt for `period=week|month|year|custom`. `date` styr vecka/manad/ar och `start_date`/`end_date` styr custom. Svaret innehaller `activities[]`, totalsummering, `missing_dates` och `backfill`.
 - `GET /api/productivity/overview` - periodpayload for Produktivitet med dag/vecka/manad/ar/custom, underliggande dagsrapporter, periodsummary, saknade datum och global backfillstatus.
 - `POST /api/productivity/sync` - manuell sync av Produktivitetens API-snapshot for valt datum eller dagens datum, kraver `productivity=edit`.
+- `POST /api/settings/productivity-finance/calculation/test` - testar en Intakt/utgift-rads utrakning for vald startad manad i innevarande ar. Endpointen kraver `productivityFinanceSettings=edit`, tolkar prompten via MiniMax/Hamta data, lagger automatiskt pa aktuell `company_code` som `company`/Bolag-filter nar vald ASK-vy har bolagskolumn, kor validerad plan mot extern datakalla, applicerar lokala exkluderingar/jamforelser/textfilter, beraknar eventuell `calculation` lokalt pa raderna och returnerar `quantity`, plan och sparbar SQL/querytext.
 - Produktivitetsfilroutes ar borttagna: `/api/productivity/files`, `/api/productivity/files/raw`, `/api/productivity/files/{file_type}` och `/api/productivity/targets` finns inte langre.
 - `POST /api/rfid/scans`, `GET /api/rfid/events`, `POST /api/rfid/events/{id}/apply|ignore` - RFID-flodet for Bemanning. Device-endpointen ar avsiktligt separat fran inloggad UI, men kan skyddas med `RFID_DEVICE_TOKEN`; inloggade apply/ignore kraver `schedule=edit`.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler fran Postgres-tabellen `coredata_files` med filbaserad fallback, samt sammanstalld data som `artikel_max.csv`. Bearbeta anropar den bara for Uppladdningar eller synliga floden dar kallvalet kraver `Uppladdning`; API-installda kallor behover inte uppladdningsstatus.
@@ -99,7 +100,7 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/coredata/files/{file_key}/download` - laddar ner serverlagrad coredata-karnfil eller sammanstalld data forst nar anvandaren klickar explicit nedladdning.
 - `POST /api/coredata/files/raw` - laddar upp en coredata-karnfil eller sammanstalld datafil till anvandarens verksamhet och ersatter aldre fil med samma prefix, kraver `allocationUploads=edit`. Coredata-karnfiler sparas som blobbar i Postgres; sammanstalld data behaller sitt befintliga lagringsflode.
 - `GET /api/allokering/health`, `/flows`, `/pool`, `GET/PUT /process-matrix`, `GET/PUT /filter-profile`, `POST /filter-profile/import`, `GET/PUT /ytgenerering-map-layout`, `POST /detect`, `POST /flow/{flow_id}`, `POST /open-excel`, `GET /table-column/...`, `GET /download/...` - lagerverktyg. `GET /process-matrix` kan lasas av Bearbeta (`allocationProcess=view`) eller Installningars Bearbeta-flik (`allocationProcessMatrix=view`), medan `PUT /process-matrix` kraver `allocationProcessMatrix=edit`; bada accepterar `business_id` eller `area_focus` och sparar `allocation_process_matrix` per verksamhet. `filter-profile` sparar personliga Bearbeta-källval, filtreringar per anvandare och Ytgenereringens personliga UTL-/transportorsinstallningar; import-endpointen kopierar en annan atkomlig anvandares profil. `ytgenerering-map-layout` kraver `allocationSettings`, accepterar `business_id`/`area_focus`, sparar kartan per verksamhet och returnerar aven `available_locations` fran samma verksamhets `location`-karnfil.
-- `POST /api/workflow-data/source` - desktop/runtime-endpoint som returnerar en temporar CSV for en tillaten workflow-kalla. Body ar `{ feature, flow_id, source_key }`. Behorighet styrs av malfunktionen (`allocationProcess` eller `productivity`) och svaret innehaller bara CSV + sanerade source-headers, inte privata API-detaljer. Forsok audit-loggas som `workflow_source/source_fetch` eller `workflow_source/source_fetch_failed` med sanerad payload och OTel-spanen `workflow_data.source`.
+- `POST /api/workflow-data/source` - desktop/runtime-endpoint som returnerar en temporar CSV for en tillaten workflow-kalla. Body ar `{ feature, flow_id, source_key }`. Behorighet styrs av malfunktionen (`allocationProcess` eller `productivity`) och anvandarens verksamhet kan styra tenant for extern API-bas. Svaret innehaller bara CSV + sanerade source-headers, inte privata API-detaljer. Forsok audit-loggas som `workflow_source/source_fetch` eller `workflow_source/source_fetch_failed` med sanerad payload och OTel-spanen `workflow_data.source`.
 - Desktop-only lokala endpoints finns bara i Windows-proxyn: `/api/desktop/capabilities`, `/api/desktop/jobs`, `/api/desktop/cache/sync`, `/api/desktop/files/{ref}/detect|open|open-folder` och `/api/desktop/sync/coredata`. De proxas inte som centrala serverkontrakt.
 - `GET /api/public/...` - publika text/CSV-summeringar for timmar/personer. Queryparametern `business` defaultar till `STIGAMO`; publika endpoints summerar inte globalt.
 - `POST /api/meta/uploads` - publik multipart-uppladdning for flera bilder/videor utan inloggning. Sparar filer i `meta_media_uploads` med tidsstamplat `stored_filename`, `content_hash`, eventuell `duration_seconds` och status `pending_analysis`. Exakta dubbletter hoppas over och returneras i `skipped`. Lyckade forsok loggas som `meta_media_upload/upload_success`; fel som hinner na backend loggas sanerat som `meta_media_upload/upload_failed`, sa anonyma 4xx/5xx fran den publika sidan syns i Historik > Felkoder utan filnamn eller filinnehall. OTel-attributen ar bara antal, status, storlek och analysstatus.

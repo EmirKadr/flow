@@ -40,6 +40,17 @@ function formatProductivityOverviewHours(minutes) {
   return `${formatProductivityOverviewNumber(hours, decimals)} h`;
 }
 
+function formatProductivityOverviewMoney(value, currency = "SEK") {
+  const amount = Number(value || 0);
+  const decimals = Math.abs(amount - Math.round(amount)) < 0.01 ? 0 : 2;
+  return amount.toLocaleString("sv-SE", {
+    style: "currency",
+    currency: currency || "SEK",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 function productivityOverviewPointsPerHour(node) {
   if (Number(node?.kpiMinutes || 0) <= 0) return null;
   const hours = Number(node?.workMinutes || 0) / 60;
@@ -247,6 +258,13 @@ function createProductivityOverviewNode(type, id, label, parentId = null) {
     workMinutes: 0,
     kpiMinutes: 0,
     eventCount: 0,
+    financeVisible: false,
+    financeCurrency: "SEK",
+    financeRevenue: 0,
+    financeCost: 0,
+    financeResult: 0,
+    financeWorkMinutes: 0,
+    financeVasMinutes: 0,
     children: [],
     childMap: new Map(),
     cells: [],
@@ -275,6 +293,40 @@ function addProductivityOverviewWorkMinutes(node, minutes) {
 
 function addProductivityOverviewKpiMinutes(node, minutes) {
   node.kpiMinutes = Math.round((Number(node.kpiMinutes || 0) + Number(minutes || 0)) * 100) / 100;
+}
+
+function roundProductivityOverviewMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function addProductivityOverviewFinance(node, finance) {
+  if (!finance?.visible) return;
+  node.financeVisible = true;
+  node.financeCurrency = finance.currency || node.financeCurrency || "SEK";
+  node.financeRevenue = roundProductivityOverviewMoney(Number(node.financeRevenue || 0) + Number(finance.revenue || 0));
+  node.financeCost = roundProductivityOverviewMoney(Number(node.financeCost || 0) + Number(finance.cost || 0));
+  node.financeResult = roundProductivityOverviewMoney(Number(node.financeResult || 0) + Number(finance.result || 0));
+  node.financeWorkMinutes = Math.round((Number(node.financeWorkMinutes || 0) + Number(finance.work_minutes || 0)) * 100) / 100;
+  node.financeVasMinutes = Math.round((Number(node.financeVasMinutes || 0) + Number(finance.vas_minutes || 0)) * 100) / 100;
+}
+
+function productivityOverviewFinanceVisible(report) {
+  if (report?.finance?.visible) return true;
+  return productivityOverviewReports(report).some((dayReport) => dayReport?.finance?.visible);
+}
+
+function productivityOverviewFinanceForProcess(cellFinance, share) {
+  const ratio = Math.max(0, Math.min(1, Number(share || 0)));
+  if (!cellFinance?.visible || ratio <= 0) return null;
+  return {
+    visible: true,
+    currency: cellFinance.currency || "SEK",
+    revenue: roundProductivityOverviewMoney(Number(cellFinance.revenue || 0) * ratio),
+    cost: roundProductivityOverviewMoney(Number(cellFinance.cost || 0) * ratio),
+    result: roundProductivityOverviewMoney(Number(cellFinance.result || 0) * ratio),
+    work_minutes: Math.round(Number(cellFinance.work_minutes || 0) * ratio * 100) / 100,
+    vas_minutes: Math.round(Number(cellFinance.vas_minutes || 0) * ratio * 100) / 100,
+  };
 }
 
 function productivityOverviewCellWorkMinutes(cell) {
@@ -395,7 +447,10 @@ function buildProductivityOverviewPersonHours(personNode) {
     addProductivityOverviewWorkMinutes(hourNode, productivityOverviewCellWorkMinutes(cell));
     addProductivityOverviewKpiMinutes(hourNode, productivityOverviewCellKpiMinutes(cell));
     addProductivityOverviewPoints(hourNode, cellPoints, Number(cell.event_count || 0));
-    for (const processPoint of processPointsForProductivityOverviewCell(cell)) {
+    addProductivityOverviewFinance(hourNode, cell.finance);
+    const processPoints = processPointsForProductivityOverviewCell(cell);
+    const processPointTotal = processPoints.reduce((sum, item) => sum + Math.abs(Number(item.points || 0)), 0);
+    for (const processPoint of processPoints) {
       const processNode = ensureProductivityOverviewChild(
         hourNode,
         "process",
@@ -403,6 +458,12 @@ function buildProductivityOverviewPersonHours(personNode) {
         processPoint.process
       );
       addProductivityOverviewPoints(processNode, processPoint.points, processPoint.eventCount);
+      if (cell.finance?.visible && processPointTotal > 0) {
+        addProductivityOverviewFinance(
+          processNode,
+          productivityOverviewFinanceForProcess(cell.finance, Math.abs(Number(processPoint.points || 0)) / processPointTotal)
+        );
+      }
     }
   }
 }
@@ -433,6 +494,8 @@ function indexProductivityOverviewTree(node, index = new Map()) {
 function buildProductivityOverviewTree(report) {
   const businessLabel = productivityOverviewUser?.business_name || productivityOverviewUser?.business_code || "Verksamheten";
   const root = createProductivityOverviewNode("business", "root", businessLabel);
+  root.financeVisible = productivityOverviewFinanceVisible(report);
+  root.financeCurrency = report?.finance?.currency || "SEK";
   for (const dayReport of productivityOverviewReports(report)) {
     const reportDate = dayReport?.date || "";
     const cutoffMinute = completedProductivityOverviewCutoffMinute(reportDate);
@@ -471,6 +534,10 @@ function buildProductivityOverviewTree(report) {
         addProductivityOverviewPoints(areaNode, points, eventCount);
         addProductivityOverviewPoints(activityNode, points, eventCount);
         addProductivityOverviewPoints(personNode, points, eventCount);
+        addProductivityOverviewFinance(root, cell.finance);
+        addProductivityOverviewFinance(areaNode, cell.finance);
+        addProductivityOverviewFinance(activityNode, cell.finance);
+        addProductivityOverviewFinance(personNode, cell.finance);
       }
     }
   }
@@ -546,6 +613,34 @@ function renderProductivityOverviewNodeMetric(node) {
   `;
 }
 
+function productivityOverviewNodeHasFinance(node) {
+  if (!node?.financeVisible) return false;
+  return node.type === "business"
+    || Number(node.financeWorkMinutes || 0) > 0
+    || Math.abs(Number(node.financeRevenue || 0)) > 0.001
+    || Math.abs(Number(node.financeCost || 0)) > 0.001
+    || Math.abs(Number(node.financeResult || 0)) > 0.001;
+}
+
+function productivityOverviewFinanceResultClass(value) {
+  const number = Number(value || 0);
+  if (number > 0.001) return "good";
+  if (number < -0.001) return "low";
+  return "";
+}
+
+function renderProductivityOverviewFinance(node) {
+  if (!productivityOverviewNodeHasFinance(node)) return "";
+  const currency = node.financeCurrency || "SEK";
+  return `
+    <span class="productivity-overview-node-finance">
+      <span>Intäkt ${escapeHtml(formatProductivityOverviewMoney(node.financeRevenue, currency))}</span>
+      <span>Utgift ${escapeHtml(formatProductivityOverviewMoney(node.financeCost, currency))}</span>
+      <span class="${escapeHtml(productivityOverviewFinanceResultClass(node.financeResult))}">Resultat ${escapeHtml(formatProductivityOverviewMoney(node.financeResult, currency))}</span>
+    </span>
+  `;
+}
+
 function renderProductivityOverviewNodeButton(node, options = {}) {
   const canFocus = Boolean(node.children?.length) && !options.staticNode;
   const tag = canFocus ? "button" : "div";
@@ -555,6 +650,7 @@ function renderProductivityOverviewNodeButton(node, options = {}) {
       <span class="productivity-overview-node-type">${escapeHtml(productivityOverviewTypeLabel(node.type))}</span>
       <strong>${escapeHtml(node.label)}</strong>
       ${renderProductivityOverviewNodeMetric(node)}
+      ${renderProductivityOverviewFinance(node)}
       <small>${escapeHtml(productivityOverviewChildSummary(node))}</small>
     </${tag}>
   `;
@@ -620,12 +716,27 @@ function renderProductivityOverviewSummary(root, report) {
       for (const person of activity.children) personIds.add(person.personId || person.label);
     }
   }
+  const financeCards = root.financeVisible ? `
+    <div class="productivity-kpi">
+      <span>Intäkt</span>
+      <strong>${escapeHtml(formatProductivityOverviewMoney(root.financeRevenue, root.financeCurrency))}</strong>
+    </div>
+    <div class="productivity-kpi">
+      <span>Utgift</span>
+      <strong>${escapeHtml(formatProductivityOverviewMoney(root.financeCost, root.financeCurrency))}</strong>
+    </div>
+    <div class="productivity-kpi">
+      <span>Resultat</span>
+      <strong class="${escapeHtml(productivityOverviewFinanceResultClass(root.financeResult))}">${escapeHtml(formatProductivityOverviewMoney(root.financeResult, root.financeCurrency))}</strong>
+    </div>
+  ` : "";
   target.innerHTML = `
     <div class="productivity-kpi">
       <span>Poäng / timmar</span>
       <strong class="productivity-overview-summary-rate ${escapeHtml(rootScoreClass)}">${escapeHtml(formatProductivityOverviewRate(rootRate))}</strong>
       <small class="productivity-overview-summary-formula">${escapeHtml(formatProductivityOverviewPoints(root.points))} / ${escapeHtml(formatProductivityOverviewHours(root.workMinutes))}</small>
     </div>
+    ${financeCards}
     <div class="productivity-kpi">
       <span>Områden</span>
       <strong>${formatProductivityOverviewNumber(areaCount, 0)}</strong>
@@ -685,8 +796,11 @@ function productivityOverviewSourceWarnings(report) {
 
 function productivityOverviewExportLabel(node) {
   const rate = productivityOverviewPointsPerHour(node);
-  if (node?.type === "process") return formatProductivityOverviewPoints(node.points);
-  return `${formatProductivityOverviewPoints(node.points)} / ${formatProductivityOverviewHours(node.workMinutes)} = ${formatProductivityOverviewRate(rate)}`;
+  const finance = productivityOverviewNodeHasFinance(node)
+    ? ` · Resultat ${formatProductivityOverviewMoney(node.financeResult, node.financeCurrency)}`
+    : "";
+  if (node?.type === "process") return `${formatProductivityOverviewPoints(node.points)}${finance}`;
+  return `${formatProductivityOverviewPoints(node.points)} / ${formatProductivityOverviewHours(node.workMinutes)} = ${formatProductivityOverviewRate(rate)}${finance}`;
 }
 
 function productivityOverviewExportColor(node) {

@@ -7,6 +7,8 @@ testdata/
 private-data/
 local_media/
 data/external_data_catalog.local*.json
+data/productivity_finance_prices.local.json
+data/*.local.json
 tmp_screenshots/
 data/coredata/
 data/stigamo/

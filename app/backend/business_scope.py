@@ -12,10 +12,19 @@ DEFAULT_BUSINESS_CODE = "STIGAMO"
 DEFAULT_BUSINESS_NAME = "Stigamo"
 R3_BUSINESS_CODE = "R3"
 R3_BUSINESS_NAME = "R3"
+DEFAULT_BUSINESS_TENANTS = {
+    DEFAULT_BUSINESS_CODE: "frey",
+    R3_BUSINESS_CODE: "loki",
+    "T3": "itworks",
+}
 
 
 def normalize_business_code(value: str | None) -> str:
     return str(value or "").strip().upper()
+
+
+def default_business_tenant(code: str | None) -> str | None:
+    return DEFAULT_BUSINESS_TENANTS.get(normalize_business_code(code))
 
 
 def get_business_by_code(db: Session, code: str) -> Business | None:
@@ -87,8 +96,18 @@ def business_id_from_area_focus(db: Session, area_focus: object) -> int | None:
 
 def ensure_seed_businesses(db: Session) -> dict[str, Business]:
     specs = [
-        {"code": DEFAULT_BUSINESS_CODE, "name": DEFAULT_BUSINESS_NAME, "sort_order": 1},
-        {"code": R3_BUSINESS_CODE, "name": R3_BUSINESS_NAME, "sort_order": 2},
+        {
+            "code": DEFAULT_BUSINESS_CODE,
+            "name": DEFAULT_BUSINESS_NAME,
+            "tenant": default_business_tenant(DEFAULT_BUSINESS_CODE),
+            "sort_order": 1,
+        },
+        {
+            "code": R3_BUSINESS_CODE,
+            "name": R3_BUSINESS_NAME,
+            "tenant": default_business_tenant(R3_BUSINESS_CODE),
+            "sort_order": 2,
+        },
     ]
     result: dict[str, Business] = {}
     for spec in specs:
@@ -98,6 +117,7 @@ def ensure_seed_businesses(db: Session) -> dict[str, Business]:
             db.add(business)
         else:
             business.name = spec["name"]
+            business.tenant = spec["tenant"]
             business.sort_order = spec["sort_order"]
             business.is_active = True
         result[spec["code"]] = business

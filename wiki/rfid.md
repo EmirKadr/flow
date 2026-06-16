@@ -1,7 +1,7 @@
 ---
 title: RFID-stamplingar
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [rfid, bemanning, hardvara]
 ---
 
@@ -31,27 +31,31 @@ Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representer
 
 Flow har en firmware-mapp for ESP32/RDM6300. `rfid_esp32_flow.ino` ar lokal och
 git-ignorerad eftersom den innehaller WiFi, serveradress och eventuell token.
-`FLOW_BASE_URL` ska vara datorns LAN-adress, inte `localhost`, eftersom ESP32
-inte ligger pa samma process som browsern. Lokal server maste lyssna pa LAN;
-`start_local.bat` startar darfor uvicorn med `--host 0.0.0.0` men oppnar
-browsern pa `localhost`.
+ESP32 skickar direkt till `FLOW_BASE_URL`. Da ska `FLOW_BASE_URL` vara datorns
+LAN-adress, inte `localhost`, eftersom ESP32 inte ligger pa samma process som
+browsern. Lokal server maste lyssna pa LAN; `start_local.bat` startar darfor
+uvicorn med `--host 0.0.0.0` men oppnar browsern pa `localhost`.
+
+Den lokala sketchen har fyra WiFi-slots: `WIFI_SSID` samt `WIFI_SSID_2` till
+`WIFI_SSID_4`. Tomma slots hoppas over och naten provas i ordning tills ett
+ansluter.
 
 Bemanning pollar `GET /api/rfid/events` var 7:e sekund nar fliken ar synlig.
 Om en scan nar backend syns den forst som `POST /api/rfid/scans` i
 `start_local.bat`-fonstret och sedan som markering i ratt person/timme.
 
 Om datorn saknar adminrattigheter och Windows-brandvaggen stoppar ESP32 fran
-att posta over WiFi kan man kora `tools.rfid_serial_bridge` i stallet. Da ar
-ESP32 ansluten med USB, bryggan laser serialraden som Arduino Serial Monitor
-annars visar och postar scannen till `http://127.0.0.1:8000/api/rfid/scans`.
-Det kraver ingen inbound firewall-regel. Arduino Serial Monitor maste vara
-stangd medan bryggan kor, eftersom serieporten bara kan lasas av ett program i
-taget.
+att posta over WiFi kan man kora `tools.rfid_serial_bridge` via USB. Da laser
+bryggan serialraden som Arduino Serial Monitor annars visar och postar scannen
+till `http://127.0.0.1:8000/api/rfid/scans`. USB-laget kraver ingen inbound
+firewall-regel. Arduino Serial Monitor maste vara stangd medan USB-bryggan kor,
+eftersom serieporten bara kan lasas av ett program i taget.
 
 Aktuell testkonfiguration:
 
 - `MODULE_NAME`: `MG Plock`
 - `DEVICE_ID`: `esp32-mg-plock-01`
+- RDM6300 `TX` kopplas till ESP32 `GPIO16`
 - API: `POST /api/rfid/scans`
 
 ## Felsokningssvar for framtida chat
@@ -60,6 +64,7 @@ Aktuell testkonfiguration:
 | --- | --- |
 | "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
 | "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. `HTTP 201` betyder ny registrerad stampel; `HTTP 200` kan betyda att en direkt dubblett droppades utan ny rad. |
+| "Kan modulen ha flera WiFi?" | Ja. Fyll `WIFI_SSID` och vid behov `WIFI_SSID_2` till `WIFI_SSID_4`. Sketchen provar ifyllda nat i ordning och hoppar over tomma slots. |
 | "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan anda vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret och starta bryggan igen. |
 | "Maste jag ladda upp firmware igen for USB-bryggan?" | Nej, inte om Arduino redan skriver serialrader med `RFID HEX=... DEC=... count=...`. USB-bryggan ateranvander den signalen och postar lokalt fran datorn. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |

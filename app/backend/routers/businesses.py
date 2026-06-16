@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 
 from .. import allocation_bridge
 from ..audit import log as audit_log
+from ..business_scope import default_business_tenant
 from ..code_utils import code_part
 from ..coredata_service import business_coredata_dir
 from ..deps import get_db, require_super_user
+from ..external_data_client import clean_data_source_tenant
 from ..models import Business, User
 from ..schemas import BusinessCreate, BusinessOut, BusinessUpdate
 
@@ -25,6 +27,7 @@ def _business_snapshot(business: Business) -> dict:
         "code": business.code,
         "name": business.name,
         "company_codes": list(business.company_codes or []),
+        "tenant": business.tenant,
         "sort_order": business.sort_order,
         "is_active": business.is_active,
     }
@@ -55,6 +58,13 @@ def _clean_company_codes(values: list[str] | None) -> list[str]:
     if len(cleaned) > 50:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Max 50 bolag per verksamhet")
     return cleaned
+
+
+def _clean_tenant(value: str | None) -> str | None:
+    try:
+        return clean_data_source_tenant(value)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _unique_business_code(db: Session, base: str) -> str:
@@ -112,6 +122,7 @@ def create_business(
         code=code,
         name=payload.name.strip() or code,
         company_codes=_clean_company_codes(payload.company_codes),
+        tenant=_clean_tenant(payload.tenant) or default_business_tenant(code),
         sort_order=payload.sort_order,
         is_active=payload.is_active,
     )
@@ -151,10 +162,14 @@ def update_business(
         if existing:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Verksamhet med samma kod finns redan")
         business.code = code
+        if not business.tenant:
+            business.tenant = default_business_tenant(code)
     if "name" in data and data["name"] is not None:
         business.name = data["name"].strip() or business.code
     if "company_codes" in data and data["company_codes"] is not None:
         business.company_codes = _clean_company_codes(data["company_codes"])
+    if "tenant" in data:
+        business.tenant = _clean_tenant(data["tenant"])
     if "sort_order" in data and data["sort_order"] is not None:
         business.sort_order = data["sort_order"]
     if "is_active" in data and data["is_active"] is not None:

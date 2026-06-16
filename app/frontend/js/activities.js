@@ -3,6 +3,7 @@
 let areas = [];
 let activities = [];
 let businesses = [];
+let kpiProcessOptions = [];
 let currentUser = null;
 
 function escapeHtml(s) {
@@ -33,6 +34,116 @@ function activityLabel(id) {
 
 function activityWorkTypeLabel(value) {
   return String(value || "normal").toLowerCase() === "vas" ? "VAS" : "Normal";
+}
+
+function splitKpiProcessNames(value) {
+  const seen = new Set();
+  const names = [];
+  String(value || "").split(",").forEach((part) => {
+    const name = part.trim();
+    const key = name.toUpperCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    names.push(name);
+  });
+  return names;
+}
+
+function normalizeKpiProcessOptions(options) {
+  const byKey = new Map();
+  (Array.isArray(options) ? options : []).forEach((option) => {
+    const value = String(option?.value || option?.label || "").trim();
+    if (!value || value.includes(":")) return;
+    const key = value.toUpperCase();
+    if (!byKey.has(key)) byKey.set(key, { value, label: String(option?.label || value).trim() || value });
+  });
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label, "sv"));
+}
+
+function kpiProcessPickerOptions(selectedNames = []) {
+  const byKey = new Map();
+  kpiProcessOptions.forEach((option) => byKey.set(option.value.toUpperCase(), option));
+  selectedNames.forEach((name) => {
+    const value = String(name || "").trim();
+    if (value && !byKey.has(value.toUpperCase())) byKey.set(value.toUpperCase(), { value, label: value });
+  });
+  return Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label, "sv"));
+}
+
+function kpiProcessSummary(values) {
+  if (!values.length) return "Välj KPI-processer";
+  if (values.length <= 2) return values.join(", ");
+  return `${values.length} processer valda`;
+}
+
+function kpiProcessPickerHtml(value) {
+  const selectedNames = splitKpiProcessNames(value);
+  const selectedKeys = new Set(selectedNames.map((name) => name.toUpperCase()));
+  const options = kpiProcessPickerOptions(selectedNames);
+  const empty = !options.length;
+  return `
+      <label>KPI Mål</label>
+      <div class="kpi-process-picker" id="m-kpi-process-picker">
+        <button
+          type="button"
+          id="m-kpi-process-toggle"
+          class="kpi-process-picker-toggle"
+          aria-haspopup="true"
+          aria-expanded="false"
+          ${empty ? "disabled" : ""}
+        >
+          <span id="m-kpi-process-summary">${escapeHtml(empty ? "Inga KPI-processer hittades" : kpiProcessSummary(selectedNames))}</span>
+          <span aria-hidden="true">v</span>
+        </button>
+        <div class="kpi-process-picker-menu" id="m-kpi-process-menu" hidden>
+          ${options.map((option) => `
+            <label class="modal-checkbox kpi-process-option">
+              <input
+                type="checkbox"
+                data-kpi-process
+                value="${escapeHtml(option.value)}"
+                ${selectedKeys.has(option.value.toUpperCase()) ? "checked" : ""}
+              />
+              <span>${escapeHtml(option.label)}</span>
+            </label>
+          `).join("")}
+        </div>
+        <input id="m-kpi-process-name" type="hidden" value="${escapeHtml(selectedNames.join(", "))}" />
+      </div>
+  `;
+}
+
+function selectedKpiProcessNames(root = document) {
+  return Array.from(root.querySelectorAll("[data-kpi-process]:checked")).map((input) => input.value.trim()).filter(Boolean);
+}
+
+function syncKpiProcessPicker(root = document) {
+  const hidden = root.getElementById ? root.getElementById("m-kpi-process-name") : root.querySelector("#m-kpi-process-name");
+  const summary = root.getElementById ? root.getElementById("m-kpi-process-summary") : root.querySelector("#m-kpi-process-summary");
+  const values = selectedKpiProcessNames(root);
+  if (hidden) hidden.value = values.join(", ");
+  if (summary) summary.textContent = kpiProcessSummary(values);
+}
+
+function setupKpiProcessPicker(backdrop) {
+  const picker = backdrop.querySelector("#m-kpi-process-picker");
+  const toggle = backdrop.querySelector("#m-kpi-process-toggle");
+  const menu = backdrop.querySelector("#m-kpi-process-menu");
+  if (!picker || !toggle || !menu) return;
+  toggle.addEventListener("click", () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  picker.querySelectorAll("[data-kpi-process]").forEach((input) => {
+    input.addEventListener("change", () => syncKpiProcessPicker(backdrop));
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (picker.contains(event.target)) return;
+    menu.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  });
+  syncKpiProcessPicker(backdrop);
 }
 
 function canSeeCodes() {
@@ -154,8 +265,7 @@ function openModal(act) {
         <option value="">Egen rad</option>
         ${summaryOptions}
       </select>
-      <label>KPI Mål</label>
-      <input id="m-kpi-process-name" maxlength="255" placeholder="dekant, plock" value="${escapeHtml(act?.kpi_process_name || "")}" />
+      ${kpiProcessPickerHtml(act?.kpi_process_name || "")}
       <label>Färg (hex)</label>
       <input id="m-color" type="color" value="${act?.color || "#ffffff"}" />
       <label>Kategori</label>
@@ -186,6 +296,7 @@ function openModal(act) {
   };
   categorySelect.addEventListener("change", syncWorkTypeState);
   syncWorkTypeState();
+  setupKpiProcessPicker(backdrop);
 
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
@@ -210,6 +321,10 @@ function openModal(act) {
     }
     if (payload.kpi_process_name && payload.kpi_process_name.includes(":")) {
       showToast("KPI Mål ska bara vara processnamn, utan bolag", "error");
+      return;
+    }
+    if (payload.kpi_process_name && payload.kpi_process_name.length > 255) {
+      showToast("KPI Mål får vara max 255 tecken", "error");
       return;
     }
     try {
@@ -345,6 +460,17 @@ function setupImportControls() {
   });
 }
 
+async function loadKpiProcessOptions() {
+  try {
+    const payload = await api.get("/api/activities/kpi-process-options", { cacheTtlMs: 5 * 60 * 1000 });
+    kpiProcessOptions = normalizeKpiProcessOptions(payload);
+  } catch (error) {
+    kpiProcessOptions = [];
+    console.warn("Kunde inte läsa KPI-processer", error);
+    showToast("Kunde inte läsa KPI-processer", "warn", 4500);
+  }
+}
+
 (async () => {
   currentUser = await initPage("activities");
   if (!currentUser) return;
@@ -353,6 +479,7 @@ function setupImportControls() {
   const [loadedAreas, loadedBusinesses] = await Promise.all(requests);
   areas = loadedAreas;
   businesses = loadedBusinesses || [];
+  await loadKpiProcessOptions();
   await load();
   setupImportControls();
   const newActButton = document.getElementById("new-act");

@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from app.backend.database import Base
 from app.backend.models import Activity, Area, Person, ScheduleCell, User
 from app.backend.routers.activities import (
+    activity_kpi_process_options,
     build_activity_import_template_excel,
     create_activity,
     delete_activity,
@@ -362,6 +363,30 @@ def test_bemanningsansvarig_can_manage_activities(import_db):
     delete_activity(activity_id=created.id, db=import_db, admin=staffing)
 
     assert import_db.get(Activity, created.id) is None
+
+
+def test_activity_kpi_process_options_include_known_rules_and_activity_values(import_db):
+    gg, _mg, _summary, _admin, staffing = seed_activity_import_base(import_db)
+    activity = Activity(
+        code="GG_SPECIAL",
+        label="Special",
+        area_id=gg.id,
+        color="#ffffff",
+        category="work",
+        sort_order=50,
+        is_active=True,
+        kpi_process_name="Custom_Process, Manual_Pick",
+    )
+    import_db.add(activity)
+    import_db.commit()
+
+    options = activity_kpi_process_options(db=import_db, user=staffing)
+    values = [option.value for option in options]
+
+    assert "Custom_Process" in values
+    assert "Manual_Pick" in values
+    assert values.count("Manual_Pick") == 1
+    assert values == sorted(values, key=str.upper)
 
 
 def test_activity_delete_removes_inactive_legacy_activity_and_clears_references(import_db):

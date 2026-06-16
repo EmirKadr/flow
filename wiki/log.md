@@ -7,6 +7,18 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-15] change | GG far utlastade pallar-default
+
+Intakt/utgift-defaulten for `GG` har nu forifylld `Utrakning` for BUTIK-raden
+`Utlastade pallar`: Dispatchpallar med `parent_pick_pall_num <> ''`,
+maj-intervall och `company = 'GG'`.
+
+## [2026-06-15] change | GG far helpalls-default
+
+Intakt/utgift-defaulten for `GG` har nu forifylld `Utrakning` for BUTIK-raden
+`Antal helpallar`: plocklogg full, zon `H`, minst 1 i `qty_suf`, ordernummer
+som borjar pa `TO`, juni-intervall och `company = 'GG'`.
+
 ## [2026-06-15] change | GG far plockade rader-default
 
 Intakt/utgift-defaulten for `GG` har nu ocksa forifylld `Utrakning` for
@@ -1695,3 +1707,7 @@ Verifierade att `Hamta data` inte automatiskt valjer arkivvyn for perioder borto
 ## [2026-06-15] feature | Hamta data auto-dirigerar mellan live- och arkivvy
 
 Implementerade auto-byte/merge i `data_fetch_service.build_retention_segments` + `LIVE_ARCHIVE_PAIRS` (14 radniva-vyer med bade live- och `dblog_`-vy). Routern (`_apply_retention`, `_fetch_rows_with_segments`) lar planens Between-datumfilter avgora: helt inom retention -> live; helt aldre -> byt till `dblog_*`; spann -> hamta bada och sla ihop (split vid cutoff, union av kolumner, saknade falt tomma). Aven omvant: arkiv-fraga med datum i aktiv period hamtar aven live. `plan.notice`/`plan.fetched_views` sätts och visas som gul notisruta i planpanelen (`data_fetch.js` + CSS). 6 nya enhetstester i `test_data_fetch_service.py` (alla 39 passerar). Utelamnade par: `customs_dispatched_log`/`item_log` finns inte i archive="true"-blocket. Uppdaterade `ask-datalagring.md` och `data-fetch.md`.
+
+## [2026-06-15] refactor | Delad fetch_all (fonstring) for alla externa hamtningar
+
+Flyttade "hamta alla rader, dela upp i datumfonster nar API:t kapar svaret" fran routern `data_fetch.py` ned till `ExternalDataClient` (`fetch_all` + fri funktion `fetch_all_rows`, `response_row_cap` i konstruktorn). `data_fetch._fetch_external_rows` delegerar nu dit, och `workflow_data.fetch_source_to_temp` bytte fran `fetch_data` till `fetch_all` sa Produktivitet och Bearbeta ocksa fonstrar (tidigare kapades de tyst vid radtaket, t.ex. vid helar). Inställningar-uträkningen arver via `_fetch_rows`. En enda sanning for komplett resultatmangd. Tester: behöll fonstrings-testerna + 3 nya (fetch_all_rows utan cap, med cap, samt klientmetoden); workflow-fejkklienten fick `fetch_all`. Registrerade aven WIP-routen `POST /api/settings/productivity-finance/calculation/test` i `flow_cli.ROUTES` sa CLI-registertestet blir gront. Uppdaterade `data-fetch.md`, `productivity.md`, `warehouse-tools.md`.
