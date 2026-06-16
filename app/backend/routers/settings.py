@@ -12,16 +12,19 @@ from ..data_fetch_service import (
     DataFetchPlanError,
     calculation_query_text,
     execute_calculation,
+    execute_package_breakdown,
     load_catalog,
     plan_with_default_calculation,
 )
 from ..deps import get_current_user, get_db, require_view_access
 from ..models import Business, User
+from ..productivity_finance_process_check import build_productivity_finance_process_check
 from ..schemas import (
     AppSettingsOut,
     AppSettingsUpdate,
     ProductivityFinanceCalculationTestOut,
     ProductivityFinanceCalculationTestRequest,
+    ProductivityFinanceProcessCheckRequest,
     ProductivityFinanceSettingsOut,
     ProductivityFinanceSettingsUpdate,
     RoleViewAccessOut,
@@ -57,7 +60,7 @@ from ..settings_service import (
     set_staffing_history_hours,
 )
 from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, feature_registry_payload, normalize_role_view_id
-from .data_fetch import _business_tenant, _fetch_rows, _plan_from_prompt
+from .data_fetch import _business_tenant, _fetch_package_alias_rows, _fetch_rows, _plan_from_prompt
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -445,7 +448,11 @@ async def test_productivity_finance_calculation_route(
     plan = plan_with_default_calculation(plan, "count")
     tenant = _business_tenant(db, scoped_business_id)
     rows = await run_in_threadpool(_fetch_rows, plan, "financecalc", tenant)
-    calculation = execute_calculation(rows, plan)
+    if str((plan.get("calculation") or {}).get("metric") or "") == "package_breakdown":
+        alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, "financecalc", tenant)
+        calculation = execute_package_breakdown(rows, alias_rows, plan)
+    else:
+        calculation = execute_calculation(rows, plan)
     value = calculation.get("value") if calculation else len(rows)
     if not isinstance(value, (int, float)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Uträkningen måste ge ett numeriskt värde.")
@@ -459,6 +466,55 @@ async def test_productivity_finance_calculation_route(
         view=str(plan.get("view") or ""),
         view_label=str(plan.get("view_label") or plan.get("view") or ""),
     )
+
+
+@router.post("/productivity-finance/process-check")
+def check_productivity_finance_processes_route(
+    payload: ProductivityFinanceProcessCheckRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("productivityFinanceSettings", "view")),
+    business_id: int | None = Query(None),
+    area_focus: str | None = Query(None),
+) -> dict:
+    today = date.today()
+    year = int(payload.year or today.year)
+    if year > today.year or (year == today.year and payload.month > today.month):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Det går bara att kontrollera månader som har startat.",
+        )
+    scoped_business_id = _scoped_settings_business_id(db, user, business_id, area_focus)
+    company_code = clean_productivity_finance_company_code(payload.company_code)
+    allowed_company_codes = set(_productivity_finance_company_codes(db, scoped_business_id))
+    if company_code and company_code not in allowed_company_codes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bolaget ingår inte i vald verksamhet.")
+    business = db.get(Business, scoped_business_id) if scoped_business_id is not None else None
+    result = build_productivity_finance_process_check(
+        db,
+        business=business,
+        finance_settings=_productivity_finance_settings_out(db, scoped_business_id).model_dump(),
+        month=payload.month,
+        year=year,
+        company_code=company_code or None,
+        fetch_rows=_fetch_rows,
+        tenant=_business_tenant(db, scoped_business_id),
+    )
+    audit_log(
+        db,
+        entity_type="productivity_finance_process_check",
+        entity_id=0,
+        action="run",
+        old_value=None,
+        new_value={
+            "period": result.get("period"),
+            "company_codes": result.get("company_codes"),
+            "summary": result.get("summary"),
+        },
+        user_id=user.id,
+        business_id=scoped_business_id,
+    )
+    db.commit()
+    return result
 
 
 @router.get("/sidebar", response_model=SidebarLayoutOut)
