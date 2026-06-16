@@ -1,0 +1,44 @@
+#!/bin/sh
+# Skyddar mot att hemliga produktivitetspriser av misstag hamnar i repot.
+# Tva lager:
+#   (1) Blockera lokala hemlighetsfiler (data/*.local.json, .secret-patterns.local)
+#       aven om de tvingas in med `git add -f`.
+#   (2) Blockera kanda hemliga varden i staged innehall. Vardena ligger i den
+#       gitignore:ade filen .secret-patterns.local sa inga hemligheter finns i
+#       sjalva hooken eller i nagon spårad fil.
+#
+# Vill du medvetet kringga (mycket ovanligt): kor `git commit --no-verify`.
+
+fail() {
+    echo "" >&2
+    echo "  ✖ PRE-COMMIT BLOCKERAD" >&2
+    echo "  $1" >&2
+    echo "" >&2
+    exit 1
+}
+
+staged="$(git diff --cached --name-only --diff-filter=AM)"
+
+# (1) Lokala hemlighetsfiler far aldrig commitas.
+if printf '%s\n' "$staged" | grep -Eq '(^|/)data/.*\.local\.json$'; then
+    fail "data/*.local.json ar hemlig lokal data. Avstaga med: git restore --staged <fil>"
+fi
+if printf '%s\n' "$staged" | grep -Eq '(^|/)\.secret-patterns\.local$'; then
+    fail ".secret-patterns.local ar hemlig lokal data och far inte commitas."
+fi
+
+# (2) Scanna tillagda rader mot kanda hemliga varden (om monsterfilen finns).
+patterns=".secret-patterns.local"
+if [ -f "$patterns" ]; then
+    added="$(git diff --cached --no-color -U0 -- . | grep -E '^\+' | grep -vE '^\+\+\+')"
+    if [ -n "$added" ]; then
+        while IFS= read -r pat; do
+            case "$pat" in ''|\#*) continue ;; esac
+            if printf '%s\n' "$added" | grep -Fq -- "$pat"; then
+                fail "Ett kant hemligt varde ($pat) finns i det du forsoker committa. Flytta vardet till data/productivity_finance_prices.local.json i stallet."
+            fi
+        done < "$patterns"
+    fi
+fi
+
+exit 0
