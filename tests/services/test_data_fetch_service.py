@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 import pytest
 import requests
 
+from app.backend import external_data_client as external_data_client_module
 from app.backend import data_fetch_service as service
 from app.backend.config import settings
 from app.backend.external_data_client import (
@@ -912,6 +913,36 @@ def test_external_data_client_builds_path_and_passes_tls_verify():
     assert captured["verify"] is False
 
 
+def test_external_data_client_suppresses_insecure_tls_warning_once(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(external_data_client_module, "_INSECURE_TLS_WARNING_SUPPRESSED", False)
+    monkeypatch.setattr(
+        external_data_client_module.urllib3,
+        "disable_warnings",
+        lambda category: calls.append(category),
+    )
+
+    ExternalDataClient(
+        base_url="https://secret.example",
+        view_data_path_template="/api/integration/views/{view}/data",
+        verify_ssl=False,
+    )
+    ExternalDataClient(
+        base_url="https://secret.example",
+        view_data_path_template="/api/integration/views/{view}/data",
+        verify_ssl=False,
+    )
+    ExternalDataClient(
+        base_url="https://secret.example",
+        view_data_path_template="/api/integration/views/{view}/data",
+        verify_ssl=False,
+        ca_bundle="C:/certs/local.pem",
+    )
+
+    assert calls == [external_data_client_module.InsecureRequestWarning]
+
+
 def test_data_source_base_url_can_be_tenant_scoped():
     assert (
         data_source_base_url_for_tenant("https://data-frey.example.test/api/", "itworks")
@@ -1204,7 +1235,7 @@ def test_run_data_fetch_package_breakdown_fetches_alias_and_splits(monkeypatch):
 
         def fetch_data(self, view, filters=None, identifiers=None):
             calls.append((view, filters))
-            return alias_rows if view == "asw_item_alias" else pick_rows
+            return alias_rows if view == "item_alias" else pick_rows
 
     monkeypatch.setattr(settings, "DATA_SOURCE_CATALOG_JSON", json.dumps(PACKAGE_PICK_CATALOG))
     monkeypatch.setattr(settings, "DATA_SOURCE_API_BASE_URL", "https://secret.example/api/")
@@ -1239,7 +1270,7 @@ def test_run_data_fetch_package_breakdown_fetches_alias_and_splits(monkeypatch):
     assert result["calculation"]["value"] == 12
     assert result["calculation"]["unit_totals"] == {"ST": 10, "DFP": 2}
     # Alias-vyn hämtades, filtrerad på samma bolag som plockplanen.
-    alias_calls = [filters for view, filters in calls if view == "asw_item_alias"]
+    alias_calls = [filters for view, filters in calls if view == "item_alias"]
     assert alias_calls and {"id": "company", "operator": "EQ", "value": "GG"} in alias_calls[0]
     assert "package_breakdown" in result["calculation"]["metric"]
 

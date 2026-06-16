@@ -63,7 +63,7 @@ CALCULATION_METRIC_ALIASES = {
 # Förpacknings-uppdelning: slår upp omräkningsfaktorer per artikel i en alias-vy och
 # delar upp ett antal i förpackningar (störst först). Vy- och kolumnnamn är samlade
 # här så att samma logik kan peka mot en annan källa utan kodändring i övrigt.
-PACKAGE_ALIAS_VIEW = "asw_item_alias"
+PACKAGE_ALIAS_VIEW = "item_alias"
 PACKAGE_ALIAS_ITEM_FIELD = "item_num"
 PACKAGE_ALIAS_COMPANY_FIELD = "company"
 PACKAGE_ALIAS_UNIT_FIELD = "unit"
