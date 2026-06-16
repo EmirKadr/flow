@@ -415,6 +415,24 @@ def _fetch_package_alias_rows(plan: dict, error_id: str, tenant: str | None) -> 
     return _fetch_rows(alias_plan, error_id, tenant)
 
 
+async def compute_calculation(
+    plan: dict, rows: list[dict], error_id: str, tenant: str | None
+) -> dict | None:
+    """Kör planens beräkning på hämtade rader.
+
+    Delas av både Hämta data och finance-uträkningen så att förpacknings-
+    uppdelningen (som även hämtar item alias) körs på exakt samma sätt överallt.
+    """
+    calculation = plan.get("calculation")
+    if not calculation:
+        return None
+    if str(calculation.get("metric") or "") == "package_breakdown":
+        with start_span("data_fetch.package_alias_fetch", {"data_fetch.view": PACKAGE_ALIAS_VIEW}):
+            alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, error_id, tenant)
+        return execute_package_breakdown(rows, alias_rows, plan)
+    return execute_calculation(rows, plan)
+
+
 def _safe_cell(value) -> str | int | float | bool | None:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -591,12 +609,7 @@ async def run_data_fetch(
     max_rows = _max_rows(payload.max_rows)
     projected_rows = project_rows(rows, plan["output_columns"], max_rows)
     columns = columns_for_response(plan)
-    if str((plan.get("calculation") or {}).get("metric") or "") == "package_breakdown":
-        with start_span("data_fetch.package_alias_fetch", {"data_fetch.view": PACKAGE_ALIAS_VIEW}):
-            alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, error_id, tenant)
-        calculation = execute_package_breakdown(rows, alias_rows, plan)
-    else:
-        calculation = execute_calculation(rows, plan)
+    calculation = await compute_calculation(plan, rows, error_id, tenant)
     calculation_query = calculation_query_text(plan) if calculation else ""
     _cleanup_data_fetch_sessions()
     session_id = uuid4().hex

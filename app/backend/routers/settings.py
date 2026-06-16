@@ -11,8 +11,6 @@ from ..data_fetch_service import (
     DataFetchConfigError,
     DataFetchPlanError,
     calculation_query_text,
-    execute_calculation,
-    execute_package_breakdown,
     load_catalog,
     plan_with_default_calculation,
 )
@@ -60,7 +58,7 @@ from ..settings_service import (
     set_staffing_history_hours,
 )
 from ..user_access import ROLE_ACCESS_LEVEL_RANK, ROLE_VIEW_IDS, ROLE_VIEW_ROLES, feature_registry_payload, normalize_role_view_id
-from .data_fetch import _business_tenant, _fetch_package_alias_rows, _fetch_rows, _plan_from_prompt
+from .data_fetch import _business_tenant, _fetch_rows, _plan_from_prompt, compute_calculation
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -448,11 +446,7 @@ async def test_productivity_finance_calculation_route(
     plan = plan_with_default_calculation(plan, "count")
     tenant = _business_tenant(db, scoped_business_id)
     rows = await run_in_threadpool(_fetch_rows, plan, "financecalc", tenant)
-    if str((plan.get("calculation") or {}).get("metric") or "") == "package_breakdown":
-        alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, "financecalc", tenant)
-        calculation = execute_package_breakdown(rows, alias_rows, plan)
-    else:
-        calculation = execute_calculation(rows, plan)
+    calculation = await compute_calculation(plan, rows, "financecalc", tenant)
     value = calculation.get("value") if calculation else len(rows)
     if not isinstance(value, (int, float)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Uträkningen måste ge ett numeriskt värde.")
