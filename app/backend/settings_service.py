@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -20,6 +21,16 @@ STAFFING_HISTORY_HOURS_DEFAULT = 40.0
 STAFFING_HISTORY_HOURS_MIN = 1.0
 STAFFING_HISTORY_HOURS_MAX = 240.0
 PRODUCTIVITY_FINANCE_KEY = "productivity_finance"
+PRODUCTIVITY_FINANCE_PERIOD_FILTER_COLUMNS = {
+    "time_stamp_int",
+    "date",
+    "timestamp",
+    "order_date",
+    "order_date_time",
+    "created_at",
+    "changed_date",
+    "date_time",
+}
 PRODUCTIVITY_FINANCE_HOURLY_COST_DEFAULT = 0.0
 PRODUCTIVITY_FINANCE_AMOUNT_MIN = 0.0
 PRODUCTIVITY_FINANCE_AMOUNT_MAX = 10000000.0
@@ -103,12 +114,11 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
                 {"id": "type", "operator": "NE", "value": "45"},
                 {"id": "type", "operator": "NE", "value": "91"},
                 {"id": "type", "operator": "NE", "value": "100"},
-                {"id": "timestamp", "operator": "Between", "value": ["2026-05-01T00:00:00", "2026-05-31T23:59:59"]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS st_antal FROM v_ask_receive_log WHERE type <> '45' AND type <> '91' AND type <> '100' AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS st_antal FROM v_ask_receive_log WHERE type <> '45' AND type <> '91' AND type <> '100' AND company = 'GG';",
     },
     "store_picked_orders": {
         "calculation_prompt": "antal unika ordernummer i plocklogg full som börjar på TO",
@@ -119,12 +129,11 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
             "output_columns": ["order_num"],
             "filters": [
                 {"id": "order_num", "operator": "StartsWith", "value": "TO"},
-                {"id": "time_stamp_int", "operator": "Between", "value": [20260501, 20260531]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["order_num"], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND time_stamp_int BETWEEN 20260501 AND 20260531 AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND company = 'GG';",
     },
     "store_picked_rows": {
         "calculation_prompt": "antal poster i plocklogg full\ninkludera endast ordernummer som börjar på TO\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
@@ -137,12 +146,11 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
                 {"id": "order_num", "operator": "StartsWith", "value": "TO"},
                 {"id": "pick_zone", "operator": "NE", "value": "H"},
                 {"id": "qty_suf", "operator": "GTE", "value": 1},
-                {"id": "time_stamp_int", "operator": "Between", "value": [20260501, 20260531]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND time_stamp_int BETWEEN 20260501 AND 20260531 AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG';",
     },
     "store_full_pallets": {
         "calculation_prompt": "antal poster i plocklogg full med zon = H\nexkludera rader med <1 i kolumn plockat\ninkludera endast ordernummer som börjar på TO",
@@ -155,12 +163,11 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
                 {"id": "pick_zone", "operator": "EQ", "value": "H"},
                 {"id": "qty_suf", "operator": "GTE", "value": 1},
                 {"id": "order_num", "operator": "StartsWith", "value": "TO"},
-                {"id": "time_stamp_int", "operator": "Between", "value": [20260601, 20260630]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= '1' AND order_num LIKE 'TO%' AND time_stamp_int BETWEEN 20260601 AND 20260630 AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= '1' AND order_num LIKE 'TO%' AND company = 'GG';",
     },
     "store_loaded_pallets": {
         "calculation_prompt": "antal poster i dispatchpallar utan värde i kolumnen pappapallsnr",
@@ -171,12 +178,11 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
             "output_columns": ["parent_pick_pall_num"],
             "filters": [
                 {"id": "parent_pick_pall_num", "operator": "NE", "value": ""},
-                {"id": "timestamp", "operator": "Between", "value": ["2026-05-01T00:00:00", "2026-05-31T23:59:59"]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' AND company = 'GG';",
     },
     "inbound_article_rows": {
         "calculation_prompt": "kolla i varumottagningslogg\nexkludera typ 45, 91 & 100\nsedan ta antal rader om vi tar bort dubletter för artikelnummer per inköpsnummer",
@@ -189,12 +195,28 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
                 {"id": "type", "operator": "NE", "value": 45},
                 {"id": "type", "operator": "NE", "value": 91},
                 {"id": "type", "operator": "NE", "value": 100},
-                {"id": "timestamp", "operator": "Between", "value": ["2026-05-01T00:00:00", "2026-05-31T23:59:59"]},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["book_num", "item_num"], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 AND type <> 91 AND type <> 100 AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 AND type <> 91 AND type <> 100 AND company = 'GG';",
+    },
+    "store_picked_pcs": {
+        "calculation_prompt": "antal förpackningar i plocklogg full uppdelat på plockat per artikel\ninkludera endast ordernummer som börjar på TO\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["item_num", "qty_suf"],
+            "filters": [
+                {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+                {"id": "pick_zone", "operator": "NE", "value": "H"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "package_breakdown", "field": "qty_suf", "distinct_by": [], "group_by": ["item_num"], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "-- Förpacknings-uppdelning av qty_suf per rad.\n-- Hämtar v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG', joinar mot item_alias på item_num+company, delar upp qty_suf efter conversion_factor (störst först, faktor 1 = ST).\n-- Summerar antal förpackningar per item_num, unit.",
     },
 }
 
@@ -244,6 +266,19 @@ def _clean_money_amount(value: object) -> float:
         minimum=PRODUCTIVITY_FINANCE_AMOUNT_MIN,
         maximum=PRODUCTIVITY_FINANCE_AMOUNT_MAX,
     ), 2)
+
+
+def _clean_productivity_finance_process_key(value: object) -> str | None:
+    text = str(value or "").strip().upper()
+    cleaned = "".join(char for char in text if char.isalnum() or char in {"_", "-", " "}).strip()
+    return cleaned[:120] or None
+
+
+def _clean_productivity_finance_process_label(value: object, key: str | None) -> str | None:
+    label = str(value or "").strip()[:160]
+    if label:
+        return label
+    return key
 
 
 def normalize_productivity_finance_collar_type(value: object) -> str:
@@ -325,6 +360,8 @@ def _productivity_finance_invoice_row(
         "calculation_sql": "",
         "collar_type": collar_type,
         "vas_rate_type": vas_rate_type,
+        "linked_process_key": None,
+        "linked_process_label": None,
     }
 
 
@@ -395,6 +432,38 @@ def _merge_productivity_finance_default_calculation(row: dict, default_row: dict
     return merged
 
 
+def _clean_productivity_finance_calculation_plan(plan: object) -> dict | None:
+    if not isinstance(plan, dict):
+        return None
+    cleaned = json.loads(json.dumps(plan, ensure_ascii=False, default=str))
+    if "filters" not in cleaned:
+        return cleaned
+    filters = []
+    for item in cleaned.get("filters") or []:
+        if not isinstance(item, dict):
+            continue
+        column_id = str(item.get("id") or item.get("field") or "")
+        if column_id in PRODUCTIVITY_FINANCE_PERIOD_FILTER_COLUMNS and str(item.get("operator") or "") == "Between":
+            continue
+        filters.append(item)
+    cleaned["filters"] = filters
+    return cleaned
+
+
+def _clean_productivity_finance_calculation_sql(value: object) -> str:
+    text = str(value or "").strip()[:8000]
+    if not text:
+        return ""
+    literal = r"(?:'[^']*'|\"[^\"]*\"|\d+(?:\.\d+)?)"
+    for column in sorted(PRODUCTIVITY_FINANCE_PERIOD_FILTER_COLUMNS, key=len, reverse=True):
+        column_pattern = re.escape(column)
+        between = rf"{column_pattern}\s+BETWEEN\s+{literal}\s+AND\s+{literal}"
+        text = re.sub(rf"\s+AND\s+{between}", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"WHERE\s+{between}\s+AND\s+", "WHERE ", text, flags=re.IGNORECASE)
+        text = re.sub(rf"\s+WHERE\s+{between}", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
 def productivity_finance_default_invoice_rows(company_code: object) -> list[dict]:
     code = clean_productivity_finance_company_code(company_code)
     # Default-priser är 0.0 i koden; riktiga (hemliga) värden overlay:as från den
@@ -459,6 +528,7 @@ def _clean_productivity_finance_invoice_row(row: object) -> dict | None:
     vas_rate_type = row.get("vas_rate_type")
     cleaned_collar_type = normalize_productivity_finance_collar_type(collar_type) if collar_type else None
     cleaned_vas_rate_type = normalize_productivity_finance_vas_rate_type(vas_rate_type) if vas_rate_type else None
+    linked_process_key = _clean_productivity_finance_process_key(row.get("linked_process_key"))
     return {
         "id": row_id,
         "section": section,
@@ -468,10 +538,12 @@ def _clean_productivity_finance_invoice_row(row: object) -> dict | None:
         "price": _clean_money_amount(row.get("price")),
         "quantity": _clean_money_amount(row.get("quantity")),
         "calculation_prompt": str(row.get("calculation_prompt") or "").strip()[:4000],
-        "calculation_plan": row.get("calculation_plan") if isinstance(row.get("calculation_plan"), dict) else None,
-        "calculation_sql": str(row.get("calculation_sql") or "").strip()[:8000],
+        "calculation_plan": _clean_productivity_finance_calculation_plan(row.get("calculation_plan")),
+        "calculation_sql": _clean_productivity_finance_calculation_sql(row.get("calculation_sql")),
         "collar_type": cleaned_collar_type,
         "vas_rate_type": cleaned_vas_rate_type,
+        "linked_process_key": linked_process_key,
+        "linked_process_label": _clean_productivity_finance_process_label(row.get("linked_process_label"), linked_process_key),
     }
 
 
