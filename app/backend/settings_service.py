@@ -201,23 +201,6 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
         },
         "calculation_sql": "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 AND type <> 91 AND type <> 100 AND company = 'GG';",
     },
-    "store_picked_pcs": {
-        "calculation_prompt": "antal förpackningar i plocklogg full uppdelat på plockat per artikel\ninkludera endast ordernummer som börjar på TO\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
-        "calculation_plan": {
-            "status": "ok",
-            "view": "v_ask_pick_log_full",
-            "view_label": "Plocklogg Full",
-            "output_columns": ["item_num", "qty_suf"],
-            "filters": [
-                {"id": "order_num", "operator": "StartsWith", "value": "TO"},
-                {"id": "pick_zone", "operator": "NE", "value": "H"},
-                {"id": "qty_suf", "operator": "GTE", "value": 1},
-                {"id": "company", "operator": "EQ", "value": "GG"},
-            ],
-            "calculation": {"metric": "package_breakdown", "field": "qty_suf", "distinct_by": [], "group_by": ["item_num"], "sort_by": None, "limit": None},
-        },
-        "calculation_sql": "-- Förpacknings-uppdelning av qty_suf per rad.\n-- Hämtar v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG', joinar mot item_alias på item_num+company, delar upp qty_suf efter conversion_factor (störst först, faktor 1 = ST).\n-- Summerar antal förpackningar per item_num, unit.",
-    },
 }
 
 
