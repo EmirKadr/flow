@@ -3,8 +3,44 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+ENV_FILES = (".env", "app/.env")
+
+
+def _load_env_files_into_environ(paths: tuple[str, ...]) -> None:
+    """Skjut in .env-rader i os.environ for varden som inte ar deklarerade Settings-falt.
+
+    Pydantic-settings laser bara deklarerade falt ur env_file och skriver aldrig
+    tillbaka till os.environ. Dynamiskt namngivna nycklar (t.ex.
+    NOEFFECT_<TENANT>_TOKEN) lases med os.getenv och blir annars osynliga lokalt.
+    Riktiga OS-miljovariabler (t.ex. i Render) skrivs aldrig over.
+    """
+    for path in paths:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.readlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if not key or key in os.environ:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            os.environ[key] = value
+
+
+_load_env_files_into_environ(ENV_FILES)
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", "app/.env"), env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
 
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/flow"
     SECRET_KEY: str = "dev-only-change-me"
@@ -18,6 +54,9 @@ class Settings(BaseSettings):
     MINIMAX_MODEL: str = "MiniMax-M2.7"
     MINIMAX_MAX_TOKENS: int = 700
     MINIMAX_TIMEOUT_SECONDS: int = 30
+    NOEFFECT_MCP_URL_TEMPLATE: str = ""
+    NOEFFECT_MCP_TOKEN_ENV_TEMPLATE: str = "NOEFFECT_{tenant}_TOKEN"
+    NOEFFECT_MCP_TIMEOUT_SECONDS: float = 30
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-pro"
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
