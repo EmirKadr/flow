@@ -195,6 +195,7 @@ aktivitetstimmar.
 | `productivity.overview` | `GET` | `/api/productivity/overview` | Produktivitetsoversikt for dag/vecka/manad/ar/datumperiod |
 | `productivity.overview_business_summary` | `GET` | `/api/productivity/overview/business-summary` | Verksamhetssummering per bolag for samma periodurval som Produktivitet |
 | `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
+| `sankey.inbound` | `GET` | `/api/sankey/inbound` | Sankey - Inbound för mottagna etiketter, processintäkt och öppna/förverkade flöden |
 
 Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
 (`LOADING_LOG`), `receive`, `order_log`, `sort`, `base_pallet` och `kpi`.
@@ -226,6 +227,12 @@ fylla pa data.
 `period`, `start_date` och `end_date` och returnerar `companies[]` plus
 `totals` med intakt, kostnad, resultat och antal plockloggsrader dar
 `Plockat`/`qty_suf` ar `0`.
+
+`GET /api/sankey/inbound?period=day|week|month|year&date=YYYY-MM-DD`
+returnerar Sankey - Inbound för mottagningskohorten och följer raderna fram
+till dagens datum. Queryn accepterar valfri `company` och
+`only_consumed=true`. Svaret innehåller `summary`, `companies`, `nodes`,
+`links`, `processes`, `warnings` och `source_status`.
 
 | `public.hours` | `GET` | `/api/public/hours` | Publika timmar för dag |
 | `public.hours_week` | `GET` | `/api/public/hours/week` | Publika timmar för vecka |

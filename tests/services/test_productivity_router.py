@@ -1,3 +1,5 @@
+import asyncio
+import json
 from datetime import date
 from types import SimpleNamespace
 
@@ -6,6 +8,54 @@ from app.backend.routers import productivity as productivity_router
 
 def route_user():
     return SimpleNamespace(id=7, username="productivity-user", business_id=1)
+
+
+class _FakeSession:
+    def close(self):
+        pass
+
+
+async def _collect_sse(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk if isinstance(chunk, str) else chunk.decode("utf-8"))
+    events = []
+    for block in "".join(chunks).strip().split("\n\n"):
+        block = block.strip()
+        if block.startswith("data: "):
+            events.append(json.loads(block[len("data: "):]))
+    return events
+
+
+def test_productivity_overview_stream_emits_progress_then_done(monkeypatch):
+    def fake_run(request, db, user, *, period, date_filter, start_date, end_date, progress_callback=None):
+        if progress_callback:
+            progress_callback({"step": 1, "total": 2, "key": "2026-06-01", "label": "Hämtar 2026-06-01"})
+            progress_callback({"step": 1, "total": 2, "key": "2026-06-01", "label": "2026-06-01 klar", "done": True})
+        return {"summary": {"days_with_data": 1}, "period": {"type": "day"}}
+
+    monkeypatch.setattr(productivity_router, "_run_productivity_overview", fake_run)
+    monkeypatch.setattr(productivity_router, "SessionLocal", lambda: _FakeSession())
+
+    response = asyncio.run(
+        productivity_router.stream_productivity_overview(
+            request=SimpleNamespace(),
+            period="day",
+            date_filter=date(2026, 6, 1),
+            start_date=None,
+            end_date=None,
+            user=route_user(),
+            db=_FakeSession(),
+        )
+    )
+    events = asyncio.run(_collect_sse(response))
+    types = [event["type"] for event in events]
+
+    assert types[0] == "start"
+    assert events[0]["total"] == 2
+    assert "progress" in types
+    assert types[-1] == "done"
+    assert events[-1]["payload"]["summary"]["days_with_data"] == 1
 
 
 def test_productivity_router_no_longer_registers_file_upload_routes():

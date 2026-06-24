@@ -209,6 +209,7 @@ const ROLE_VIEW_IDS = [
   "schedule",
   "overview",
   "productivity",
+  "sankeyInbound",
   "productivityFinance",
   "dataFetch",
   "allocationUploads",

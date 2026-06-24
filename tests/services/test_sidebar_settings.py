@@ -427,10 +427,10 @@ def test_productivity_finance_settings_use_business_company_codes_only():
             "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' "
             "AND company = 'GG';"
         )
-        assert gg_rows["inbound_article_rows"]["calculation_plan"]["calculation"]["distinct_by"] == ["book_num", "item_num"]
+        assert gg_rows["inbound_article_rows"]["calculation_plan"]["calculation"]["distinct_by"] == ["book_num", "line_num"]
         assert gg_rows["inbound_article_rows"]["calculation_sql"] == (
-            "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 "
-            "AND type <> 91 AND type <> 100 AND company = 'GG';"
+            "SELECT COUNT(DISTINCT (book_num, line_num)) AS value FROM v_ask_receive_log WHERE type NOT IN "
+            "(23,45,46,47,63,81,91,100) AND qty_suf > 0 AND company = 'GG';"
         )
         mg_rows = {row["id"]: row for row in initial_payload["invoice_rows_by_company"]["MG"]}
         assert set(mg_rows) == {

@@ -489,9 +489,10 @@ function bindBusinessEvents(body) {
 }
 
 async function loadBusinesses() {
-  const includeInactive = document.getElementById("show-inactive").checked;
+  // Hämta alltid hela mängden (även inaktiva). "Visa inaktiva" är ett rent klientfilter
+  // i sortedBusinesses()/syncVisibleAreas(), så toggeln behöver inte hämta om.
   const [loadedBusinesses, loadedAreas] = await Promise.all([
-    api.get(`/api/businesses?include_inactive=${includeInactive}`),
+    api.get("/api/businesses?include_inactive=true"),
     api.get("/api/areas?include_inactive=true"),
   ]);
   businesses = loadedBusinesses;
@@ -595,7 +596,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   currentUser = await initPage("businesses", { requireSuperUser: true });
   if (!currentUser) return;
   document.getElementById("new-business").addEventListener("click", () => openBusinessModal());
-  document.getElementById("show-inactive").addEventListener("change", loadBusinesses);
+  document.getElementById("show-inactive").addEventListener("change", () => {
+    syncVisibleAreas();
+    renderBusinesses();
+  });
   document.querySelectorAll("[data-business-sort]").forEach((button) => {
     button.addEventListener("click", () => {
       toggleSort(businessSort, button.dataset.businessSort);

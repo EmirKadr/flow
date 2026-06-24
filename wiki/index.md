@@ -37,6 +37,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
 - [Meta-uppladdning](meta-upload.md) - publik fristaende mobilvy for att ladda upp bilder och videor till senare LLM-analys.
 - [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp.
+- [Sankey - Inbound](sankey-inbound.md) - bolagsindelat Sankeydiagram som foljer inbound-intakt fran mottagna etiketter till plock/oppna floden.
 - [Lagerverktyg](warehouse-tools.md) - Uppladdningar, Bearbeta, Dela och allokeringsfloden.
 
 ## Chat- och felsokningsstod

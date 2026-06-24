@@ -1,3 +1,6 @@
+import asyncio
+import json
+import queue
 from calendar import monthrange
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
@@ -7,10 +10,12 @@ import threading
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, scoped_get, user_business_id
+from ..database import SessionLocal
 from ..deps import get_db, require_view_access
 from ..models import Activity, Business, Person, User
 from ..productivity_service import (
@@ -1117,15 +1122,26 @@ def get_productivity_overview_business_summary(
     }
 
 
-@router.get("/overview")
-def get_productivity_overview(
+def _emit_overview_progress(callback, **event) -> None:
+    if callback is None:
+        return
+    try:
+        callback(event)
+    except Exception:
+        # Progressrapportering får aldrig fälla själva hämtningen.
+        pass
+
+
+def _run_productivity_overview(
     request: Request,
-    period: str = Query(default="day"),
-    date_filter: date | None = Query(default=None, alias="date"),
-    start_date: date | None = Query(default=None),
-    end_date: date | None = Query(default=None),
-    user: User = Depends(require_view_access("productivity", "view")),
-    db: Session = Depends(get_db),
+    db: Session,
+    user: User,
+    *,
+    period: str,
+    date_filter: date | None,
+    start_date: date | None,
+    end_date: date | None,
+    progress_callback=None,
 ) -> dict:
     normalized_period = str(period or "day").strip().lower()
     period_start, period_end, period_label = _overview_period_bounds(
@@ -1140,7 +1156,15 @@ def get_productivity_overview(
     errors: list[dict] = []
     reports: list[dict] = []
     source_status: list[dict] = []
-    for day in days:
+    total_steps = len(days) + 1
+    for index, day in enumerate(days, start=1):
+        _emit_overview_progress(
+            progress_callback,
+            step=index,
+            total=total_steps,
+            key=day.isoformat(),
+            label=f"Hämtar {day.isoformat()}",
+        )
         try:
             report, day_source_status = _build_productivity_report_for_date(
                 request,
@@ -1158,14 +1182,37 @@ def get_productivity_overview(
                 "source": (report.get("sync") or {}).get("source"),
                 "sources": day_source_status,
             })
+            _emit_overview_progress(
+                progress_callback,
+                step=index,
+                total=total_steps,
+                key=day.isoformat(),
+                label=f"{day.isoformat()} klar",
+                done=True,
+            )
         except (ProductivitySourceError, ProductivitySyncError) as exc:
             errors.append({"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)})
+            _emit_overview_progress(
+                progress_callback,
+                step=index,
+                total=total_steps,
+                key=day.isoformat(),
+                label=f"{day.isoformat()} saknas",
+                done=True,
+            )
 
     if not reports and errors:
         first_error = errors[0]
         status_code = status.HTTP_502_BAD_GATEWAY if first_error.get("error_type") == "ProductivitySyncError" else status.HTTP_404_NOT_FOUND
         raise HTTPException(status_code, detail=str(first_error.get("message") or "Produktivitetsperioden kunde inte hämtas."))
 
+    _emit_overview_progress(
+        progress_callback,
+        step=total_steps,
+        total=total_steps,
+        key="build",
+        label="Bygger översikt",
+    )
     available_dates = sorted({
         str(item)
         for report in reports
@@ -1204,6 +1251,101 @@ def get_productivity_overview(
         payload["finance"] = {"visible": False}
     _audit_productivity_report_sources(db, user, status_text="ok", source_status=source_status)
     return payload
+
+
+@router.get("/overview")
+def get_productivity_overview(
+    request: Request,
+    period: str = Query(default="day"),
+    date_filter: date | None = Query(default=None, alias="date"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(require_view_access("productivity", "view")),
+    db: Session = Depends(get_db),
+) -> dict:
+    return _run_productivity_overview(
+        request,
+        db,
+        user,
+        period=period,
+        date_filter=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+def _sse_event(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.get("/overview/stream")
+async def stream_productivity_overview(
+    request: Request,
+    period: str = Query(default="day"),
+    date_filter: date | None = Query(default=None, alias="date"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(require_view_access("productivity", "view")),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Bygger produktivitetsöversikten och strömmar äkta progress per dag via SSE."""
+    normalized_period = str(period or "day").strip().lower()
+    period_start, period_end, _label = _overview_period_bounds(
+        normalized_period,
+        anchor_date=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    total_steps = len(_date_span(period_start, period_end)) + 1
+
+    events: queue.Queue = queue.Queue()
+
+    def progress(event: dict) -> None:
+        events.put({"type": "progress", **event})
+
+    def worker() -> None:
+        worker_db = SessionLocal()
+        try:
+            payload = _run_productivity_overview(
+                request,
+                worker_db,
+                user,
+                period=period,
+                date_filter=date_filter,
+                start_date=start_date,
+                end_date=end_date,
+                progress_callback=progress,
+            )
+            events.put({"type": "done", "payload": payload})
+        except HTTPException as exc:
+            events.put({"type": "error", "status": exc.status_code, "message": str(exc.detail)})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Productivity overview stream failed")
+            events.put({"type": "error", "status": 500, "message": str(exc)})
+        finally:
+            worker_db.close()
+            events.put(None)
+
+    threading.Thread(target=worker, name="productivity-overview-stream", daemon=True).start()
+
+    async def event_source():
+        loop = asyncio.get_running_loop()
+        yield _sse_event({"type": "start", "total": total_steps})
+        while True:
+            item = await loop.run_in_executor(None, events.get)
+            if item is None:
+                break
+            yield _sse_event(item)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("")

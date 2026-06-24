@@ -17,7 +17,7 @@ retentionen tillåter, eller felsöker varför gammal data "saknas".
 
 ## Varför detta är viktigt för historisk data
 
-`Hämta data`, `Bearbeta` och `Produktivitet` läser `v_ask_*`-vyer som i sin tur
+`Hämta data`, `Bearbeta`, `Produktivitet` och `Sankey - Inbound` läser `v_ask_*`-vyer som i sin tur
 sitter ovanpå WManFrey-tabellerna. Jobbet sätter alltså ett tak för hur långt
 bak en fråga kan ge träffar:
 
@@ -113,6 +113,19 @@ Mappade par: `v_ask_pick_log_full`↔`dblog_pick_log` (40 d), `v_ask_trans_log`
 (90), `v_ask_login_log` (60), `v_ask_robot_pick_log` (30), `v_ask_pick_rest_log`
 (60), `v_ask_return_order_log` (60), `v_ask_trace_log` (60), `v_ask_fill_rate_log`
 (30), `v_ask_pallet_rent_log_raw` (3).
+
+## Gäller detta i Sankey - Inbound?
+
+Ja. `Sankey - Inbound` hämtar mottagningskohorten från `v_ask_receive_log` och
+följer sedan etiketter fram till idag via receive/trans/pick/loading live-vyer
+och deras `dblog_*`-arkiv när perioden går utanför operativ retention. Det gör
+att en gammal mottagningsperiod kan ge bättre bild än bara dagens live-vyer,
+men den kan fortfarande inte se längre bak än arkivretentionen.
+
+Viktigt undantag: `v_ask_pick_location_log` är fortfarande bara cirka 40 dagar
+och arkiveras inte. Eftersom plockplatser är saldobaserade markeras äldre
+plockplats-FIFO i Sankey med varning/lägre confidence när exakt platsägande inte
+kan rekonstrueras.
 
 ## Hur man läser konfigfilen
 

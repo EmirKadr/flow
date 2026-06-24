@@ -7,6 +7,30 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-06-24] feature | Sankey - Inbound vy och beräkningsregler
+
+Dokumenterade den nya separata vyn `Sankey - Inbound`, API:t
+`GET /api/sankey/inbound`, behörigheten `sankeyInbound`, auditposterna
+`sankey_inbound_report/run|run_failed`, mottagningsfilter för fakturerbara
+etiketter och begränsningar kring `dblog_*` samt plockplats-FIFO. Uppdaterade
+index, UI-karta, API-karta, Produktivitet, roller/behörighet,
+ASK-statuskoder och ASK-datalagring.
+
+Förtydligade även att Sankey-statusnoder bara visar flödespott/placering, inte
+processintäkt. Processintäkt visas bara på processnoder och saknade KPI-poäng
+hamnar i `Ofördelad intäkt`.
+
+Fixade därefter KPI-poängläsningen så Sankey använder Produktivitetens
+KPI-target-parser för `action_id`/`Processnamn` och `loaded_*`-kolumner.
+Processintäkten ska därför inte bli `0 kr` när KPI-målen finns i
+`v_ask_kpi_target`.
+
+Utökade inbound-intäkten med `inbound_article_rows`: efter samma mottagnings-
+filter räknas unika `company + book_num + line_num`, potten delas lika över de
+mottagningsrader som hör till inköpsraden och följer sedan samma branch- och
+processpoängsfördelning som etikettintäkten. API och UI visar nu breakdown för
+etikettintäkt respektive inköpsradsintäkt.
+
 ## [2026-06-24] docs | ASK-statuskoder far egen katalogplan
 
 Lade till `ask-statuskoder.md` som beskriver hur PDF-underlaget med

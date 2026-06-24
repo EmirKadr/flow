@@ -719,11 +719,10 @@ function renderRows() {
 
 
 async function loadPersons() {
-  const params = new URLSearchParams();
-  const areaId = focusedAreaId();
-  if (areaId != null) params.set("area_id", String(areaId));
-  const query = params.toString();
-  persons = await api.get(`/api/persons${query ? `?${query}` : ""}`);
+  // Hämta hela person­listan för aktuellt verksamhetsscope. Områdesfokus appliceras
+  // klientside i renderRows() via matchesAreaFocus, så vi behöver inte hämta om när
+  // fokus byts – bara rendera om.
+  persons = await api.get("/api/persons");
   renderRows();
 }
 
@@ -1060,7 +1059,7 @@ function updateRowDisabled(row) {
   const newPersonButton = document.getElementById("new-person");
   newPersonButton.hidden = !canEditPage(currentUser, "persons");
   if (canEditPage(currentUser, "persons")) newPersonButton.addEventListener("click", () => openModal(null));
-  window.addEventListener("flow:areaFocusChanged", () => loadPersons());
+  window.addEventListener("flow:areaFocusChanged", () => renderRows());
 
   document.querySelectorAll("tr.filter-row input").forEach((inp) => {
     inp.addEventListener("input", () => {

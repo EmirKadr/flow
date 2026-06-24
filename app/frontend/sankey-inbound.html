@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Produktivitet - flow</title>
+  <title>Sankey - Inbound - flow</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="alternate icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/app-icon-192.png" />
@@ -16,34 +16,46 @@
 <body class="with-sidebar">
   <header class="topbar"></header>
 
-  <section class="controls">
+  <section class="controls sankey-inbound-controls">
     <div class="productivity-overview-period-toggle" role="group" aria-label="Period">
-      <button type="button" class="active" data-period="day">Dag</button>
-      <button type="button" data-period="week">Vecka</button>
-      <button type="button" data-period="month">Månad</button>
-      <button type="button" data-period="year">År</button>
+      <button type="button" class="active" data-sankey-period="day">Dag</button>
+      <button type="button" data-sankey-period="week">Vecka</button>
+      <button type="button" data-sankey-period="month">Månad</button>
+      <button type="button" data-sankey-period="year">År</button>
     </div>
     <label class="productivity-date-field">Datum
       <span class="date-nav productivity-date-nav">
-        <button id="productivityOverviewPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum">‹</button>
+        <button id="sankeyInboundPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum">‹</button>
         <div class="date-display-wrap" title="Välj datum">
-          <span class="date-display-text" id="productivityOverviewDateDisplayText">YYYY-MM-DD</span>
-          <input id="productivityOverviewDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
+          <span class="date-display-text" id="sankeyInboundDateDisplayText">YYYY-MM-DD</span>
+          <input id="sankeyInboundDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
         </div>
-        <button id="productivityOverviewNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum">›</button>
+        <button id="sankeyInboundNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum">›</button>
       </span>
     </label>
-    <button id="productivityOverviewRootBtn" type="button">Helbild</button>
-    <button id="productivityOverviewExportFlowchart" type="button">Exportera flowchart</button>
+    <label>Bolag
+      <select id="sankeyInboundCompany">
+        <option value="ALL">Alla bolag</option>
+      </select>
+    </label>
+    <button id="sankeyInboundOnlyConsumed" type="button" aria-pressed="false">Visa endast förverkade</button>
+    <button id="sankeyInboundReset" type="button">Återställ vy</button>
+    <button id="sankeyInboundExport" type="button">Exportera SVG</button>
   </section>
 
-  <main class="productivity-page productivity-overview-page">
-    <div class="section-title">Produktivitet</div>
-    <div id="productivityOverviewStatus" class="productivity-status"></div>
-    <div id="productivityOverviewProgress" class="fetch-progress" hidden aria-live="polite"></div>
-    <div id="productivityOverviewSummary" class="productivity-overview-summary"></div>
-    <nav id="productivityOverviewBreadcrumbs" class="productivity-overview-breadcrumbs" aria-label="Produktivitetshierarki"></nav>
-    <div id="productivityOverviewTree" class="productivity-overview-tree-wrap"></div>
+  <main class="sankey-inbound-page">
+    <div class="section-title">Sankey - Inbound</div>
+    <div id="sankeyInboundStatus" class="productivity-status"></div>
+    <div id="sankeyInboundProgress" class="fetch-progress" hidden aria-live="polite"></div>
+    <section id="sankeyInboundSummary" class="sankey-inbound-summary"></section>
+    <section class="sankey-inbound-layout">
+      <div id="sankeyInboundChart" class="sankey-inbound-chart" aria-label="Sankeydiagram"></div>
+      <aside id="sankeyInboundDetail" class="sankey-inbound-detail" aria-live="polite"></aside>
+    </section>
+    <section class="sankey-inbound-bottom">
+      <div id="sankeyInboundProcessTable" class="sankey-inbound-table-wrap"></div>
+      <div id="sankeyInboundWarnings" class="sankey-inbound-warnings"></div>
+    </section>
   </main>
 
   <script src="/js/api.js"></script>
@@ -63,6 +75,6 @@
   <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
   <script src="/js/common/period_picker.js?v=20260624-period-picker"></script>
   <script src="/js/common.js?v=20260616-speed-common"></script>
-  <script src="/js/productivity_overview.js?v=20260624-productivity-sse-progress"></script>
+  <script src="/js/sankey_inbound.js?v=20260624-sankey-perf-timing"></script>
 </body>
 </html>

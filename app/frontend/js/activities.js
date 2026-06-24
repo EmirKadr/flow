@@ -191,6 +191,10 @@ function matchesAreaFocus(activity) {
 
 async function load() {
   activities = await api.get("/api/activities");
+  render();
+}
+
+function render() {
   const canEditActivities = canEditPage(currentUser, "activities");
   const acts = [...activities]
     .filter(matchesAreaFocus)
@@ -485,5 +489,7 @@ async function loadKpiProcessOptions() {
   const newActButton = document.getElementById("new-act");
   newActButton.hidden = !canEditPage(currentUser, "activities");
   if (canEditPage(currentUser, "activities")) newActButton.addEventListener("click", () => openModal(null));
-  window.addEventListener("flow:areaFocusChanged", () => load());
+  // Områdesfokus filtrerar bara redan hämtade aktiviteter – rendera om klientside
+  // istället för att hämta /api/activities på nytt (samma data).
+  window.addEventListener("flow:areaFocusChanged", () => render());
 })();

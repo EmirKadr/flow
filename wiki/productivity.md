@@ -40,6 +40,9 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   samma datum-/periodurval som vyn och visar intakt, kostnad, resultat och
   nollade plockrader per bolag. Nollade rader ar poster i plockloggen dar
   `Plockat`/`qty_suf` ar `0`.
+- Verksamhetsnoden har ocksa hogerklickskommandot `Sankey - Inbound` om rollen
+  har `sankeyInbound=view`. Kommandot oppnar en separat vy och skickar med
+  Produktivitetens period/datum som starturval.
 - Vyn renderar kontroller, sammanfattningsskal och tradyta direkt. Rapporten
   hamtas sedan i bakgrunden och statusraden visar forst hamtning och sedan
   berakning/ritning innan korten fylls pa. Detta ar medvetet read-only
@@ -245,6 +248,7 @@ serverdata for schema och KPI-snapshot.
 | Helbild | Klickar knappen | Fokuserar tradet tillbaka till verksamhetsroten |
 | Nod | Klickar verksamhet, omrade, aktivitet eller person | Flyttar fokus och visar nasta niva i hierarkin |
 | Summering | Hogerklickar verksamhetsnoden och valjer Summering | Oppnar bolagssummering for samma datum-/periodurval med intakt, kostnad, resultat och nollade plockrader |
+| Sankey - Inbound | Hogerklickar verksamhetsnoden och valjer Sankey - Inbound | Oppnar `sankey-inbound.html` med samma period/datum, dar inbound-intakt foljs fran mottagna etiketter till oppna eller forverkade floden |
 | Exportera flowchart | Klickar knappen, valjer nivaer och klickar Exportera | Laddar ner aktuell fokuserad vy som SVG med valda nivaer |
 | Kontrollera intakter/processer | Klickar knappen i Installningar -> Intakt/utgift, valjer manad/bolag i dialogen och klickar Kontrollera | Jamfor sparade intaktsutrakningar med KPI-processregler for vald manad/bolag och visar matchningar, processkombinationer, luckor, bredare processer och dubbelrakning i dialogen |
 | Utrakning | Hogerklickar en intaktsrad i Installningar -> Intakt/utgift och valjer Utrakning | Oppnar radens utrakningsdialog for test och sparning av prompt, plan och SQL/querytext |

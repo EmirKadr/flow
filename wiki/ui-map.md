@@ -47,6 +47,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera, Funktioner, Knappar, Kolumner, Floden, AI-analys | [Historik och audit](history-audit.md) |
 | Hamta data | `hamta-data.html` | Prompt, max rader, Tolka, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
 | Produktivitet | `produktivitet.html` | Periodval Dag/Vecka/Manad/Ar, datumankare, prev/next, Helbild, Exportera flowchart med nivaval, hierarkitrad for verksamhet, omrade, aktivitet, person, timme och processpoang | [Produktivitet](productivity.md) |
+| Sankey - Inbound | `sankey-inbound.html` | Periodval Dag/Vecka/Manad/Ar, datum, bolag, Visa endast forverkade, Aterstall vy, Exportera SVG, klickbara Sankey-noder och lankar | [Sankey - Inbound](sankey-inbound.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
 | Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |

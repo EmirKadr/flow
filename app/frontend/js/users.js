@@ -31,6 +31,7 @@ let VIEW_ACCESS_OPTIONS = [
   { id: "schedule", label: "Bemanning" },
   { id: "overview", label: "Översikt" },
   { id: "productivity", label: "Produktivitet" },
+  { id: "sankeyInbound", label: "Sankey - Inbound" },
   { id: "productivityFinance", label: "Intäkt/utgift" },
   { id: "dataFetch", label: "Hämta data" },
   { id: "allocationUploads", label: "Uppladdningar" },

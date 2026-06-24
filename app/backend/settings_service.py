@@ -185,21 +185,27 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
         "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' AND company = 'GG';",
     },
     "inbound_article_rows": {
-        "calculation_prompt": "kolla i varumottagningslogg\nexkludera typ 45, 91 & 100\nsedan ta antal rader om vi tar bort dubletter för artikelnummer per inköpsnummer",
+        "calculation_prompt": "kolla i varumottagningslogg\nexkludera typ 23, 45, 46, 47, 63, 81, 91 & 100\nexkludera mottaget = 0\nsedan ta antal rader om vi tar bort dubletter för radnummer per inköpsnummer",
         "calculation_plan": {
             "status": "ok",
             "view": "v_ask_receive_log",
             "view_label": "Varumottagningslogg",
-            "output_columns": ["book_num", "item_num"],
+            "output_columns": ["book_num", "line_num"],
             "filters": [
+                {"id": "type", "operator": "NE", "value": 23},
                 {"id": "type", "operator": "NE", "value": 45},
+                {"id": "type", "operator": "NE", "value": 46},
+                {"id": "type", "operator": "NE", "value": 47},
+                {"id": "type", "operator": "NE", "value": 63},
+                {"id": "type", "operator": "NE", "value": 81},
                 {"id": "type", "operator": "NE", "value": 91},
                 {"id": "type", "operator": "NE", "value": 100},
+                {"id": "qty_suf", "operator": "GT", "value": 0},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
-            "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["book_num", "item_num"], "group_by": [], "sort_by": None, "limit": None},
+            "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["book_num", "line_num"], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 AND type <> 91 AND type <> 100 AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(DISTINCT (book_num, line_num)) AS value FROM v_ask_receive_log WHERE type NOT IN (23,45,46,47,63,81,91,100) AND qty_suf > 0 AND company = 'GG';",
     },
 }
 

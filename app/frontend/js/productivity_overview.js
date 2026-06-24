@@ -6,6 +6,7 @@ let productivityOverviewFocusId = "root";
 let productivityOverviewPeriod = "day";
 let productivityOverviewLoadToken = 0;
 let productivityOverviewContextMenu = null;
+let productivityOverviewEventSource = null;
 const PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS = 2 * 60 * 1000;
 const PRODUCTIVITY_OVERVIEW_EXPORT_LEVELS_KEY = "flow-productivity-overview-export-levels";
 const PRODUCTIVITY_OVERVIEW_EXPORT_LEVELS = [
@@ -920,6 +921,7 @@ function positionProductivityOverviewContextMenu(menu, x, y) {
 function openProductivityOverviewContextMenu(event, node) {
   closeProductivityOverviewContextMenu();
   if (!node || node.type !== "business") return;
+  const canOpenSankeyInbound = typeof canViewPage === "function" && canViewPage(productivityOverviewUser, "sankeyInbound");
   const menu = document.createElement("div");
   menu.className = "productivity-overview-context-menu";
   menu.dataset.productivityOverviewContextMenu = "true";
@@ -927,10 +929,29 @@ function openProductivityOverviewContextMenu(event, node) {
     <button type="button" data-productivity-business-summary>
       Summering
     </button>
+    ${canOpenSankeyInbound ? `
+      <button type="button" data-productivity-sankey-inbound>
+        Sankey - Inbound
+      </button>
+    ` : ""}
   `;
   menu.querySelector("[data-productivity-business-summary]")?.addEventListener("click", () => {
     closeProductivityOverviewContextMenu();
     void openProductivityBusinessSummaryDialog(node);
+  });
+  menu.querySelector("[data-productivity-sankey-inbound]")?.addEventListener("click", () => {
+    closeProductivityOverviewContextMenu();
+    const params = productivityOverviewSelectionParams(productivityOverviewDateValue());
+    const query = params.toString() ? `?${params.toString()}` : "";
+    if (typeof flowTrack === "function") {
+      flowTrack("navigate", {
+        control_id: "productivity-context-sankey-inbound",
+        view: "productivity",
+        target_view: "sankeyInbound",
+        period: productivityOverviewPeriodValue(),
+      });
+    }
+    window.location.href = `/sankey-inbound.html${query}`;
   });
   document.body.appendChild(menu);
   positionProductivityOverviewContextMenu(menu, event.clientX, event.clientY);
@@ -1480,13 +1501,72 @@ async function shiftProductivityOverviewDate(direction) {
   await loadProductivityOverview();
 }
 
-async function loadProductivityOverview() {
-  const status = document.getElementById("productivityOverviewStatus");
+function productivityOverviewStreamParams(dateValue) {
+  const params = new URLSearchParams();
+  if (dateValue) params.set("date", dateValue);
+  params.set("period", productivityOverviewPeriodValue());
+  return params;
+}
+
+function renderProductivityOverviewProgress(state) {
+  const el = document.getElementById("productivityOverviewProgress");
+  if (!el) return;
+  if (!state) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const items = [...state.steps.values()].sort((a, b) => a.step - b.step);
+  const currentStep = items.reduce((max, item) => Math.max(max, item.step), 0);
+  // En månad = 30+ steg; visa bara de senaste raderna så loggen inte svämmar över.
+  const recent = items.slice(-6);
+  const rows = recent
+    .map((item) => {
+      const done = Boolean(item.done);
+      const icon = done ? "✓" : "⟳";
+      return `<li class="${done ? "is-done" : "is-active"}"><span class="fetch-progress-icon">${icon}</span>${escapeHtml(item.label)}</li>`;
+    })
+    .join("");
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="fetch-progress-head">Hämtar produktivitet… <strong>${Math.min(currentStep, state.total)}/${state.total}</strong></div>
+    <ul class="fetch-progress-list">${rows}</ul>
+  `;
+}
+
+function applyProductivityOverviewReport(report, loadToken, options = {}) {
+  if (loadToken !== productivityOverviewLoadToken) return;
+  if (options.cacheUrl) {
+    productivityOverviewReportCache.set(options.cacheUrl, {
+      data: report,
+      expiresAt: Date.now() + PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS,
+    });
+  }
+  renderProductivityOverviewProgress(null);
+  renderProductivityOverviewReport(report);
+}
+
+function handleProductivityOverviewError(error, loadToken) {
+  if (loadToken !== productivityOverviewLoadToken) return;
+  renderProductivityOverviewProgress(null);
+  productivityOverviewReport = null;
+  productivityOverviewRoot = null;
+  productivityOverviewNodeIndex = new Map();
   const summary = document.getElementById("productivityOverviewSummary");
   const tree = document.getElementById("productivityOverviewTree");
   const breadcrumbs = document.getElementById("productivityOverviewBreadcrumbs");
-  const loadToken = ++productivityOverviewLoadToken;
-  closeProductivityOverviewContextMenu();
+  const status = document.getElementById("productivityOverviewStatus");
+  if (summary) summary.innerHTML = "";
+  if (breadcrumbs) breadcrumbs.innerHTML = "";
+  if (tree) tree.innerHTML = '<div class="empty-state">Produktivitet kunde inte hämtas.</div>';
+  const detail = error?.message ? ` (${error.message})` : "";
+  if (status) status.textContent = `Produktivitet kunde inte hämtas${detail}`;
+  if (typeof showToast === "function") {
+    showToast(status?.textContent || "Produktivitet kunde inte hämtas", "error", 7000);
+  }
+}
+
+async function loadProductivityOverviewViaFetch(loadToken) {
   setProductivityOverviewLoading("Hämtar produktivitetsöversikt...");
   try {
     await waitForProductivityOverviewPaint();
@@ -1494,24 +1574,88 @@ async function loadProductivityOverview() {
     if (loadToken !== productivityOverviewLoadToken) return;
     setProductivityOverviewLoading("Beräknar och ritar produktivitet...");
     await waitForProductivityOverviewPaint();
-    if (loadToken !== productivityOverviewLoadToken) return;
-    renderProductivityOverviewReport(report);
+    applyProductivityOverviewReport(report, loadToken);
   } catch (error) {
-    if (loadToken !== productivityOverviewLoadToken) return;
-    productivityOverviewReport = null;
-    productivityOverviewRoot = null;
-    productivityOverviewNodeIndex = new Map();
-    if (summary) summary.innerHTML = "";
-    if (breadcrumbs) breadcrumbs.innerHTML = "";
-    if (tree) tree.innerHTML = '<div class="empty-state">Produktivitet kunde inte hämtas.</div>';
-    const detail = error?.message ? ` (${error.message})` : "";
-    if (status) status.textContent = `Produktivitet kunde inte hämtas${detail}`;
-    if (typeof showToast === "function") {
-      showToast(status?.textContent || "Produktivitet kunde inte hämtas", "error", 7000);
-    }
+    handleProductivityOverviewError(error, loadToken);
   } finally {
     if (loadToken === productivityOverviewLoadToken) clearProductivityOverviewLoading();
   }
+}
+
+function loadProductivityOverviewViaStream(loadToken) {
+  const dateValue = productivityOverviewDateValue();
+  const cacheUrl = `/api/productivity/overview?${productivityOverviewStreamParams(dateValue).toString()}`;
+  const cached = productivityOverviewReportCache.get(cacheUrl);
+  if (cached && cached.expiresAt > Date.now()) {
+    setProductivityOverviewLoading("Ritar produktivitet...");
+    applyProductivityOverviewReport(cached.data, loadToken);
+    clearProductivityOverviewLoading();
+    return;
+  }
+  setProductivityOverviewLoading("Hämtar produktivitetsöversikt...");
+  const progressState = { total: 2, steps: new Map() };
+  renderProductivityOverviewProgress(progressState);
+  const source = new EventSource(`/api/productivity/overview/stream?${productivityOverviewStreamParams(dateValue).toString()}`);
+  productivityOverviewEventSource = source;
+  let settled = false;
+  const detach = () => {
+    if (productivityOverviewEventSource === source) productivityOverviewEventSource = null;
+  };
+  source.onmessage = (event) => {
+    if (loadToken !== productivityOverviewLoadToken) {
+      settled = true;
+      source.close();
+      detach();
+      return;
+    }
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (data.type === "start") {
+      progressState.total = Number(data.total) || progressState.total;
+      renderProductivityOverviewProgress(progressState);
+    } else if (data.type === "progress") {
+      progressState.total = Number(data.total) || progressState.total;
+      progressState.steps.set(Number(data.step), data);
+      renderProductivityOverviewProgress(progressState);
+    } else if (data.type === "done") {
+      settled = true;
+      source.close();
+      detach();
+      applyProductivityOverviewReport(data.payload, loadToken, { cacheUrl });
+      clearProductivityOverviewLoading();
+    } else if (data.type === "error") {
+      settled = true;
+      source.close();
+      detach();
+      handleProductivityOverviewError(new Error(data.message || "Okänt fel"), loadToken);
+      clearProductivityOverviewLoading();
+    }
+  };
+  source.onerror = () => {
+    if (settled) return;
+    settled = true;
+    source.close();
+    detach();
+    // Strömmen gick inte att etablera – fall tillbaka på vanlig GET.
+    void loadProductivityOverviewViaFetch(loadToken);
+  };
+}
+
+function loadProductivityOverview() {
+  const loadToken = ++productivityOverviewLoadToken;
+  closeProductivityOverviewContextMenu();
+  if (productivityOverviewEventSource) {
+    productivityOverviewEventSource.close();
+    productivityOverviewEventSource = null;
+  }
+  if (typeof EventSource === "undefined") {
+    return loadProductivityOverviewViaFetch(loadToken);
+  }
+  return loadProductivityOverviewViaStream(loadToken);
 }
 
 async function initProductivityOverviewPage() {
@@ -1523,6 +1667,9 @@ async function initProductivityOverviewPage() {
   updateProductivityOverviewDateDisplay();
   updateProductivityOverviewPeriodControls();
   document.querySelectorAll(".productivity-overview-period-toggle button[data-period]").forEach((button) => {
+    if (["week", "month", "year"].includes(button.dataset.period)) {
+      button.title = "Vänsterklick: byt period · Högerklick: välj specifik";
+    }
     button.addEventListener("click", () => {
       const nextPeriod = button.dataset.period || "day";
       if (nextPeriod === productivityOverviewPeriod) return;
@@ -1530,6 +1677,25 @@ async function initProductivityOverviewPage() {
       updateProductivityOverviewPeriodControls();
       updateProductivityOverviewDateNav();
       void loadProductivityOverview();
+    });
+    button.addEventListener("contextmenu", (event) => {
+      const period = button.dataset.period || "day";
+      if (!["week", "month", "year"].includes(period)) return;
+      event.preventDefault();
+      const input = document.getElementById("productivityOverviewDate");
+      window.flowPeriodPicker?.open({
+        period,
+        anchorEl: button,
+        currentIso: productivityOverviewDateValue(),
+        onPick: (iso) => {
+          if (input) input.value = iso;
+          productivityOverviewPeriod = period;
+          updateProductivityOverviewDateDisplay();
+          updateProductivityOverviewPeriodControls();
+          updateProductivityOverviewDateNav();
+          void loadProductivityOverview();
+        },
+      });
     });
   });
   document.getElementById("productivityOverviewPrevDate")?.addEventListener("click", () => {

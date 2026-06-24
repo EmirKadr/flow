@@ -1,3 +1,6 @@
+let sidebarProductivityContextMenu = null;
+let sidebarProductivityContextMenuListenersInstalled = false;
+
 function renderSidebarLink(page, { active = false, subview = false } = {}) {
   const classes = [
     "sidebar-link",
@@ -8,11 +11,110 @@ function renderSidebarLink(page, { active = false, subview = false } = {}) {
   const idAttr = page.linkId ? ` id="${page.linkId}"` : "";
   const icon = page.iconHtml || escapeHtml(page.icon || "");
   return `
-    <a href="${page.href}"${idAttr} class="${classes}" title="${escapeHtml(page.label)}">
+    <a href="${page.href}"${idAttr} class="${classes}" title="${escapeHtml(page.label)}" data-sidebar-view-id="${escapeHtml(page.id || "")}">
       <span class="icon" aria-hidden="true">${icon}${page.trailingHtml || ""}</span>
       <span>${escapeHtml(page.label)}</span>
     </a>
   `;
+}
+
+function closeSidebarProductivityContextMenu() {
+  sidebarProductivityContextMenu?.remove();
+  sidebarProductivityContextMenu = null;
+}
+
+function positionSidebarProductivityContextMenu(menu, x, y) {
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
+  const top = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function sidebarTodayIsoDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function sidebarSankeyInboundPeriodValue() {
+  const params = new URLSearchParams(window.location.search || "");
+  const period = document.querySelector(".productivity-overview-period-toggle button.active")?.dataset?.period
+    || params.get("period")
+    || "day";
+  return ["day", "week", "month", "year"].includes(period) ? period : "day";
+}
+
+function sidebarSankeyInboundDateValue() {
+  const params = new URLSearchParams(window.location.search || "");
+  return document.getElementById("productivityOverviewDate")?.value
+    || params.get("date")
+    || sidebarTodayIsoDate();
+}
+
+function sidebarSankeyInboundUrl() {
+  const params = new URLSearchParams();
+  params.set("period", sidebarSankeyInboundPeriodValue());
+  const date = sidebarSankeyInboundDateValue();
+  if (date) params.set("date", date);
+  return `/sankey-inbound.html?${params.toString()}`;
+}
+
+function openSidebarProductivityContextMenu(event, user) {
+  if (!(typeof canViewPage === "function" && canViewPage(user, "sankeyInbound"))) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeSidebarProductivityContextMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "productivity-overview-context-menu";
+  menu.dataset.sidebarProductivityContextMenu = "true";
+  menu.innerHTML = `
+    <button type="button" data-sidebar-sankey-inbound>
+      Sankey - Inbound
+    </button>
+  `;
+  menu.querySelector("[data-sidebar-sankey-inbound]")?.addEventListener("click", () => {
+    closeSidebarProductivityContextMenu();
+    if (typeof flowTrack === "function") {
+      flowTrack("navigate", {
+        control_id: "sidebar-productivity-sankey-inbound",
+        view: "sidebar",
+        target_view: "sankeyInbound",
+        period: sidebarSankeyInboundPeriodValue(),
+      });
+    }
+    window.location.href = sidebarSankeyInboundUrl();
+  });
+
+  document.body.appendChild(menu);
+  positionSidebarProductivityContextMenu(menu, event.clientX, event.clientY);
+  sidebarProductivityContextMenu = menu;
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function ensureSidebarProductivityContextMenuListeners() {
+  if (sidebarProductivityContextMenuListenersInstalled) return;
+  document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-sidebar-productivity-context-menu]")) return;
+    closeSidebarProductivityContextMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebarProductivityContextMenu();
+  });
+  window.addEventListener("blur", closeSidebarProductivityContextMenu);
+  sidebarProductivityContextMenuListenersInstalled = true;
+}
+
+function initSidebarProductivityContextMenu(user) {
+  closeSidebarProductivityContextMenu();
+  if (!(typeof canViewPage === "function" && canViewPage(user, "sankeyInbound"))) return;
+  ensureSidebarProductivityContextMenuListeners();
+  const link = document.querySelector('[data-sidebar-view-id="productivity"]');
+  link?.addEventListener("contextmenu", (event) => openSidebarProductivityContextMenu(event, user));
 }
 
 function renderAllocationUploadUtility(user, activePage) {
@@ -668,6 +770,7 @@ function renderSidebar(user, activePage) {
   initAssistantChatToggle();
   updateAllocationUploadIndicator();
   document.body.classList.add("sidebar-hydrated");
+  initSidebarProductivityContextMenu(user);
   const allocationUploadLink = document.getElementById("allocation-upload-link");
   if (allocationUploadLink) {
     allocationUploadLink.addEventListener("click", () => clearAllocationUploadNotice());

@@ -35,6 +35,7 @@ from .routers import (
     productivity,
     public,
     rfid,
+    sankey,
     schedule,
     settings as app_settings,
     users,
@@ -233,6 +234,7 @@ app.include_router(healthcheck.router)
 app.include_router(meta_uploads.router)
 app.include_router(overview.router)
 app.include_router(productivity.router)
+app.include_router(sankey.router)
 app.include_router(app_settings.router)
 app.include_router(users.router)
 app.include_router(workflow_data.router)

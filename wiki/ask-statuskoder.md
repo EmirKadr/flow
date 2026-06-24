@@ -84,6 +84,24 @@ Konsekvens: pallspårningen ska inte bara filtrera bort eller rakna koder.
 Den ska klassificera dem: vanlig mottagning, specialmottagning, ny pall,
 omklassificering, copack, flytt, plock, packning och nollstallning.
 
+## Flow-regel for Sankey - Inbound
+
+`Sankey - Inbound` anvander en faktureringsregel for `Mottagna etiketter`.
+Den ar en Flow-tolkning av inboundintakt: diagrammet ska bara borja med det
+kunden faktiskt faktureras for.
+
+For `v_ask_receive_log.type` och `dblog_receive_log.type` galler:
+
+- exkludera `23`, `45`, `46`, `47`, `63`, `81`, `91` och `100`
+- exkludera rader dar `qty_suf` / `Mottaget` ar `0`
+- om samma `company + pall_num` senare har `type = 100`, exkluderas den
+  ursprungliga mottagningsraden eftersom typ 100 nollstaller mottaget och pallen
+  inte ska faktureras som mottagen etikett
+
+Typ `91` ar inte en vanlig mottagen etikett i Sankey-starten. Den kan daremot
+anvandas senare i sparningen som `Buffer Update`, eftersom den flyttar saldo
+fran plockplats till ny foljbar pall/buffertkontext.
+
 ## Dokumentationsregel for filter och undantag
 
 Nar Flow bygger logik som skippar, exkluderar, grupperar eller sarklassar en
