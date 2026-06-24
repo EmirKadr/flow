@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,6 +11,7 @@ from ..business_scope import business_id_from_area_focus, normalize_business_id_
 from ..data_fetch_service import (
     DataFetchConfigError,
     DataFetchPlanError,
+    _preferred_date_column,
     calculation_query_text,
     load_catalog,
     plan_with_default_calculation,
@@ -220,6 +222,26 @@ def _calculation_plan_with_company_filter(plan: dict, company_code: object) -> d
 
 def _calculation_sql_for_plan(plan: dict) -> str:
     return calculation_query_text(plan_with_default_calculation(plan, "count"))
+
+
+def _calculation_plan_without_period_filter(plan: dict) -> dict:
+    result = deepcopy(plan)
+    try:
+        view = load_catalog().view(str(result.get("view") or ""))
+        date_column = _preferred_date_column(view)
+    except (DataFetchConfigError, DataFetchPlanError):
+        return result
+    if date_column is None:
+        return result
+    result["filters"] = [
+        item
+        for item in (result.get("filters") or [])
+        if not (
+            (item.get("id") or item.get("field")) == date_column.id
+            and str(item.get("operator") or "") == "Between"
+        )
+    ]
+    return result
 
 
 def _clean_sidebar_layout(payload: SidebarLayoutUpdate) -> list[dict]:
@@ -444,18 +466,19 @@ async def test_productivity_finance_calculation_route(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=plan.get("question") or "Uträkningen behöver förtydligas.")
     plan = _calculation_plan_with_company_filter(plan, company_code)
     plan = plan_with_default_calculation(plan, "count")
+    saved_plan = _calculation_plan_without_period_filter(plan)
     tenant = _business_tenant(db, scoped_business_id)
     rows = await run_in_threadpool(_fetch_rows, plan, "financecalc", tenant)
     calculation = await compute_calculation(plan, rows, "financecalc", tenant)
     value = calculation.get("value") if calculation else len(rows)
     if not isinstance(value, (int, float)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Uträkningen måste ge ett numeriskt värde.")
-    calculation_sql = _calculation_sql_for_plan(plan)
+    calculation_sql = _calculation_sql_for_plan(saved_plan)
     return ProductivityFinanceCalculationTestOut(
         quantity=value,
         month=payload.month,
         year=today.year,
-        plan=json.loads(json.dumps(plan, ensure_ascii=False, default=str)),
+        plan=json.loads(json.dumps(saved_plan, ensure_ascii=False, default=str)),
         calculation_sql=calculation_sql,
         view=str(plan.get("view") or ""),
         view_label=str(plan.get("view_label") or plan.get("view") or ""),
@@ -492,6 +515,7 @@ def check_productivity_finance_processes_route(
         company_code=company_code or None,
         fetch_rows=_fetch_rows,
         tenant=_business_tenant(db, scoped_business_id),
+        row_id=payload.row_id,
     )
     audit_log(
         db,
@@ -502,6 +526,7 @@ def check_productivity_finance_processes_route(
         new_value={
             "period": result.get("period"),
             "company_codes": result.get("company_codes"),
+            "row_id": result.get("target_row_id"),
             "summary": result.get("summary"),
         },
         user_id=user.id,

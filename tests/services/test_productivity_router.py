@@ -153,6 +153,142 @@ def test_productivity_finance_uses_person_collar_from_context():
     assert finance["result"] == 550.0
 
 
+def test_productivity_finance_adds_linked_process_revenue_to_report_summary():
+    report = {
+        "people": [
+            {
+                "person_id": 4,
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "minutes": 60, "points": 50},
+                ],
+            }
+        ],
+    }
+    context = {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": 200,
+        "vas_hourly_revenue_by_company": {},
+        "company_codes": ["GG"],
+        "activity_meta": {1: {"is_vas": False, "company": "GG"}},
+        "process_revenue_rows": [
+            {
+                "company": "GG",
+                "row_id": "store_picked_rows",
+                "label": "Outbound | Plockade rader | Per rad",
+                "process_key": "MANUAL_PICK",
+                "process_label": "Manual Pick",
+                "quantity": 10,
+                "price": 6.5,
+                "revenue": 65.0,
+                "currency": "SEK",
+            }
+        ],
+    }
+
+    productivity_router._attach_productivity_finance(report, context)
+
+    assert report["finance"]["revenue"] == 65.0
+    assert report["finance"]["cost"] == 200.0
+    assert report["finance"]["result"] == -135.0
+    assert report["finance"]["process_revenues"][0]["process_key"] == "MANUAL_PICK"
+    assert report["people"][0]["finance"]["revenue"] == 0.0
+
+
+def test_productivity_overview_business_summary_groups_finance_and_zero_pick_rows(monkeypatch, tmp_path):
+    source_files = {
+        key: tmp_path / f"{key}.csv"
+        for key in ("pick", "trans", "pallet", "receive", "order_log", "sort", "base_pallet", "kpi")
+    }
+    source_files["pick"].write_text(
+        "company\tqty_suf\n"
+        "GG\t0\n"
+        "GG\t1\n"
+        "MG\t0\n",
+        encoding="utf-8",
+    )
+    for key, path in source_files.items():
+        if key != "pick":
+            path.write_text(f"{key}\n", encoding="utf-8")
+
+    report = {
+        "date": "2026-06-03",
+        "sync": {"source": "api_snapshot"},
+        "people": [
+            {
+                "person_id": 4,
+                "time_cells": [
+                    {"kind": "kpi", "activity_id": 1, "minutes": 60, "points": 50},
+                    {"kind": "support", "activity_id": 2, "minutes": 30, "points": 0},
+                ],
+            }
+        ],
+    }
+    finance_context = {
+        "visible": True,
+        "currency": "SEK",
+        "hourly_cost": 120,
+        "vas_hourly_revenue_by_company": {
+            "GG": {"blue_collar": 600, "white_collar": 600},
+            "MG": {"blue_collar": 500, "white_collar": 500},
+        },
+        "company_codes": ["GG", "MG"],
+        "activity_meta": {
+            1: {"is_vas": True, "company": "GG"},
+            2: {"is_vas": False, "company": "MG"},
+        },
+        "process_revenue_rows": [
+            {
+                "company": "MG",
+                "row_id": "store_picked_rows",
+                "label": "Outbound | Plockade rader | Per rad",
+                "process_key": "MANUAL_PICK",
+                "process_label": "Manual Pick",
+                "quantity": 10,
+                "price": 7.5,
+                "revenue": 75.0,
+                "currency": "SEK",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_router, "_productivity_business_code", lambda _db, _user: "STIGAMO")
+    monkeypatch.setattr(productivity_router, "_productivity_finance_context", lambda _db, _user, _business_id: finance_context)
+    monkeypatch.setattr(productivity_router, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
+    monkeypatch.setattr(
+        productivity_router,
+        "_build_productivity_report_for_date",
+        lambda *_args, **_kwargs: (report.copy(), [{"key": "pick", "status": "api"}]),
+    )
+
+    payload = productivity_router.get_productivity_overview_business_summary(
+        SimpleNamespace(session={}),
+        period="day",
+        date_filter=date(2026, 6, 3),
+        start_date=None,
+        end_date=None,
+        user=route_user(),
+        db=object(),
+    )
+
+    rows = {row["company"]: row for row in payload["companies"]}
+    assert payload["period"]["start_date"] == "2026-06-03"
+    assert payload["period"]["end_date"] == "2026-06-03"
+    assert rows["GG"]["revenue"] == 600.0
+    assert rows["GG"]["cost"] == 120.0
+    assert rows["GG"]["result"] == 480.0
+    assert rows["GG"]["zero_pick_rows"] == 1
+    assert rows["MG"]["revenue"] == 75.0
+    assert rows["MG"]["cost"] == 60.0
+    assert rows["MG"]["result"] == 15.0
+    assert rows["MG"]["zero_pick_rows"] == 1
+    assert payload["totals"]["revenue"] == 675.0
+    assert payload["totals"]["cost"] == 180.0
+    assert payload["totals"]["result"] == 495.0
+    assert payload["totals"]["zero_pick_rows"] == 2
+
+
 def test_productivity_report_uses_api_snapshot_and_audits(monkeypatch, tmp_path):
     source_files = {
         key: tmp_path / f"{key}.csv"

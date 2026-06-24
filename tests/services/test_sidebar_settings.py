@@ -20,6 +20,7 @@ from app.backend.settings_service import (
     SIDEBAR_LAYOUT_KEY,
     STAFFING_ACTIVITY_CAPACITY_ACTIVITY_IDS_KEY,
     STAFFING_HISTORY_HOURS_KEY,
+    clean_productivity_finance_invoice_rows,
     get_productivity_finance_settings,
     get_staffing_activity_capacity_activity_ids,
     get_staffing_history_hours,
@@ -372,7 +373,7 @@ def test_productivity_finance_settings_use_business_company_codes_only():
         assert gg_rows["inbound_labels"]["calculation_plan"]["filters"][-1] == {"id": "company", "operator": "EQ", "value": "GG"}
         assert gg_rows["inbound_labels"]["calculation_sql"] == (
             "SELECT COUNT(*) AS st_antal FROM v_ask_receive_log WHERE type <> '45' AND type <> '91' "
-            "AND type <> '100' AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' AND company = 'GG';"
+            "AND type <> '100' AND company = 'GG';"
         )
         assert gg_rows["store_picked_orders"]["calculation_plan"]["calculation"] == {
             "metric": "count_distinct",
@@ -384,7 +385,7 @@ def test_productivity_finance_settings_use_business_company_codes_only():
         }
         assert gg_rows["store_picked_orders"]["calculation_sql"] == (
             "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' "
-            "AND time_stamp_int BETWEEN 20260501 AND 20260531 AND company = 'GG';"
+            "AND company = 'GG';"
         )
         assert gg_rows["store_picked_rows"]["calculation_prompt"] == (
             "antal poster i plocklogg full\ninkludera endast ordernummer som börjar på TO\n"
@@ -394,13 +395,11 @@ def test_productivity_finance_settings_use_business_company_codes_only():
             {"id": "order_num", "operator": "StartsWith", "value": "TO"},
             {"id": "pick_zone", "operator": "NE", "value": "H"},
             {"id": "qty_suf", "operator": "GTE", "value": 1},
-            {"id": "time_stamp_int", "operator": "Between", "value": [20260501, 20260531]},
             {"id": "company", "operator": "EQ", "value": "GG"},
         ]
         assert gg_rows["store_picked_rows"]["calculation_sql"] == (
             "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' "
-            "AND pick_zone <> 'H' AND qty_suf >= 1 AND time_stamp_int BETWEEN 20260501 AND 20260531 "
-            "AND company = 'GG';"
+            "AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG';"
         )
         assert gg_rows["store_full_pallets"]["calculation_prompt"] == (
             "antal poster i plocklogg full med zon = H\n"
@@ -411,30 +410,27 @@ def test_productivity_finance_settings_use_business_company_codes_only():
             {"id": "pick_zone", "operator": "EQ", "value": "H"},
             {"id": "qty_suf", "operator": "GTE", "value": 1},
             {"id": "order_num", "operator": "StartsWith", "value": "TO"},
-            {"id": "time_stamp_int", "operator": "Between", "value": [20260601, 20260630]},
             {"id": "company", "operator": "EQ", "value": "GG"},
         ]
         assert gg_rows["store_full_pallets"]["calculation_sql"] == (
             "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= '1' "
-            "AND order_num LIKE 'TO%' AND time_stamp_int BETWEEN 20260601 AND 20260630 AND company = 'GG';"
+            "AND order_num LIKE 'TO%' AND company = 'GG';"
         )
         assert gg_rows["store_loaded_pallets"]["calculation_prompt"] == (
             "antal poster i dispatchpallar utan värde i kolumnen pappapallsnr"
         )
         assert gg_rows["store_loaded_pallets"]["calculation_plan"]["filters"] == [
             {"id": "parent_pick_pall_num", "operator": "NE", "value": ""},
-            {"id": "timestamp", "operator": "Between", "value": ["2026-05-01T00:00:00", "2026-05-31T23:59:59"]},
             {"id": "company", "operator": "EQ", "value": "GG"},
         ]
         assert gg_rows["store_loaded_pallets"]["calculation_sql"] == (
             "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' "
-            "AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' AND company = 'GG';"
+            "AND company = 'GG';"
         )
         assert gg_rows["inbound_article_rows"]["calculation_plan"]["calculation"]["distinct_by"] == ["book_num", "item_num"]
         assert gg_rows["inbound_article_rows"]["calculation_sql"] == (
             "SELECT COUNT(DISTINCT (book_num, item_num)) AS value FROM v_ask_receive_log WHERE type <> 45 "
-            "AND type <> 91 AND type <> 100 AND timestamp BETWEEN '2026-05-01T00:00:00' AND '2026-05-31T23:59:59' "
-            "AND company = 'GG';"
+            "AND type <> 91 AND type <> 100 AND company = 'GG';"
         )
         mg_rows = {row["id"]: row for row in initial_payload["invoice_rows_by_company"]["MG"]}
         assert set(mg_rows) == {
@@ -568,6 +564,8 @@ def test_productivity_finance_default_calculations_fill_empty_saved_rows():
             "calculation_prompt": "egen prompt",
             "calculation_plan": {"custom": True},
             "calculation_sql": "SELECT 1;",
+            "linked_process_key": "manual_pick!",
+            "linked_process_label": "Manual Pick",
         },
     ]
 
@@ -579,6 +577,43 @@ def test_productivity_finance_default_calculations_fill_empty_saved_rows():
     assert rows["store_picked_orders"]["calculation_prompt"] == "egen prompt"
     assert rows["store_picked_orders"]["calculation_plan"] == {"custom": True}
     assert rows["store_picked_orders"]["calculation_sql"] == "SELECT 1;"
+    assert rows["store_picked_orders"]["linked_process_key"] == "MANUAL_PICK"
+    assert rows["store_picked_orders"]["linked_process_label"] == "Manual Pick"
+
+
+def test_productivity_finance_invoice_row_cleaning_removes_period_filters():
+    rows = clean_productivity_finance_invoice_rows(
+        [
+            {
+                "id": "store_picked_rows",
+                "section": "BUTIK",
+                "service": "Outbound",
+                "description": "Plockade rader",
+                "unit": "Per rad",
+                "calculation_plan": {
+                    "status": "ok",
+                    "view": "v_ask_pick_log_full",
+                    "filters": [
+                        {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+                        {"id": "time_stamp_int", "operator": "Between", "value": [20260601, 20260630]},
+                        {"id": "company", "operator": "EQ", "value": "GG"},
+                    ],
+                },
+                "calculation_sql": (
+                    "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' "
+                    "AND time_stamp_int BETWEEN 20260601 AND 20260630 AND company = 'GG';"
+                ),
+            }
+        ]
+    )
+
+    assert rows[0]["calculation_plan"]["filters"] == [
+        {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+        {"id": "company", "operator": "EQ", "value": "GG"},
+    ]
+    assert rows[0]["calculation_sql"] == (
+        "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND company = 'GG';"
+    )
 
 
 def test_productivity_finance_calculation_test_uses_data_fetch_plan(monkeypatch):
@@ -608,7 +643,13 @@ def test_productivity_finance_calculation_test_uses_data_fetch_plan(monkeypatch)
         class FakeCatalog:
             def view(self, view_id):
                 assert view_id == "v_ask_receive_log"
-                return type("FakeView", (), {"column_by_id": {"company": object()}, "columns": ()})()
+                timestamp = type("FakeColumn", (), {"id": "timestamp", "label_en": "Timestamp", "label_sv": "Datum"})()
+                company = type("FakeColumn", (), {"id": "company", "label_en": "Company", "label_sv": "Bolag"})()
+                return type(
+                    "FakeView",
+                    (),
+                    {"column_by_id": {"timestamp": timestamp, "company": company}, "columns": (timestamp, company)},
+                )()
 
         monkeypatch.setattr(settings_router, "_plan_from_prompt", fake_plan)
         monkeypatch.setattr(settings_router, "_fetch_rows", fake_fetch_rows)
@@ -631,13 +672,15 @@ def test_productivity_finance_calculation_test_uses_data_fetch_plan(monkeypatch)
         assert "april" in captured["prompt"]
         assert captured["tenant"] == "frey"
         assert captured["plan"]["view"] == "v_ask_receive_log"
+        assert captured["plan"]["filters"][0] == {"id": "timestamp", "operator": "Between", "value": ["2026-04-01", "2026-04-30"]}
         assert captured["plan"]["filters"][-1] == {"id": "company", "operator": "EQ", "value": "GG"}
+        assert result.plan["filters"] == [{"id": "company", "operator": "EQ", "value": "GG"}]
         assert result.quantity == 3
         assert result.view == "v_ask_receive_log"
         assert result.view_label == "Varumottagningslogg"
         assert result.calculation_sql == (
             "SELECT COUNT(*) AS value FROM v_ask_receive_log "
-            "WHERE timestamp BETWEEN '2026-04-01' AND '2026-04-30' AND company = 'GG';"
+            "WHERE company = 'GG';"
         )
     finally:
         session.close()

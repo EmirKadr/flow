@@ -781,6 +781,8 @@ def schedule_productivity_summary(
         if planned <= 0:
             continue
         points = float(bucket["points"] or 0.0)
+        if points <= 0:
+            continue
         people[str(person_id)] = {
             "person_id": person_id,
             "percent": int((points / planned) * 100),

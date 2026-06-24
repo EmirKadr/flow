@@ -141,6 +141,7 @@ class KpiRule:
     value: Callable[[KpiLogEvent, dict[str, Any]], float] = lambda _event, _context: 1.0
     distinct_key: Callable[[KpiLogEvent, dict[str, Any]], str] | None = None
     company_override: str | None = None
+    criteria: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def process_key(self) -> str:
@@ -340,6 +341,19 @@ def _rule_value_getter(row: dict[str, str]) -> Callable[[KpiLogEvent, dict[str, 
     return _one
 
 
+def _rule_criteria(row: dict[str, str]) -> dict[str, tuple[str, ...]]:
+    criteria = {
+        "company": tuple(_upper_values(_row_config_value(row, "company", "Bolag"))),
+        "zone": tuple(_upper_values(_row_config_value(row, "zone", "Zon", "pick_zone"))),
+        "type": tuple(_upper_values(_row_config_value(row, "type", "Typ"))),
+        "status": tuple(_upper_values(_row_config_value(row, "status", "Status"))),
+        "loc_from_equals": tuple(_upper_values(_row_config_value(row, "loc_from_equals", "Från är", "Fran ar"))),
+        "loc_to_equals": tuple(_upper_values(_row_config_value(row, "loc_to_equals", "Till är", "Till ar"))),
+        "location_starts": tuple(_split_rule_values(_row_config_value(row, "location_starts", "Lokation startar med"))),
+    }
+    return {key: value for key, value in criteria.items() if value}
+
+
 def _rule_predicate(row: dict[str, str]) -> Callable[[KpiLogEvent, dict[str, Any]], bool]:
     company_values = _upper_values(_row_config_value(row, "company", "Bolag"))
     exclude_company_values = _upper_values(_row_config_value(row, "exclude_company", "Exkludera bolag"))
@@ -442,6 +456,7 @@ def parse_kpi_rule_rows(rows: list[dict[str, str]]) -> tuple[KpiRule, ...]:
                 predicate=_rule_predicate(row),
                 value=_rule_value_getter(row),
                 distinct_key=_distinct_key_getter(distinct_column) if distinct_column else None,
+                criteria=_rule_criteria(row),
             )
         )
     return tuple(rules)
@@ -908,9 +923,10 @@ def _build_time_cells(segments: list[dict[str, Any]], events: list[KpiPointEvent
         cell["points"] += event.points
         cell["event_count"] += 1
         process_label = event.process or "OkÃ¤nd process"
+        process_key = event.process_key or normalize_process(process_label)
         process_points = cell["_process_points"].setdefault(
-            process_label,
-            {"process": process_label, "points": 0.0, "event_count": 0},
+            process_key,
+            {"process": process_label, "process_key": process_key, "points": 0.0, "event_count": 0},
         )
         process_points["points"] += event.points
         process_points["event_count"] += 1
@@ -948,6 +964,7 @@ def _build_time_cells(segments: list[dict[str, Any]], events: list[KpiPointEvent
             "process_points": [
                 {
                     "process": payload["process"],
+                    "process_key": payload["process_key"],
                     "points": round(float(payload["points"]), 2),
                     "event_count": int(payload["event_count"]),
                 }

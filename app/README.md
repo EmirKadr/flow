@@ -98,10 +98,10 @@ Den skriver `data/external_data_catalog.json`, som commitas så Render får kata
 
 ## RFID-moduler
 
-Fysiska ESP32/RDM6300-moduler skickar stämplingar till `POST /api/rfid/scans`.
-Sätt `RFID_DEVICE_TOKEN` i driftmiljön om modulerna ska behöva skicka
-`X-Flow-RFID-Token`. Firmware i repo:t ska bara innehålla placeholders för WiFi,
-serveradress och token; riktiga värden fylls lokalt före uppladdning till ESP32.
+Fysiska ESP32/RDM6300-moduler kopplas via USB/COM. Sketchen skriver RFID-rader
+pa Serial, och Flow startar lokala bryggor som laser COM-portarna och postar
+till `POST /api/rfid/scans`. Lokalt ar standarden `COM9 -> MG Plock` och
+`COM10 -> MG VM`.
 
 ## Halsa
 
@@ -181,13 +181,13 @@ uvicorn backend.main:app --reload
 ### Lokal testmiljö med live-data
 
 `start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
-Scriptet startar backend på port `8000` för både `localhost` och lokalt
-WiFi/LAN. Det gör att ESP32/RFID-moduler på samma WiFi kan posta till datorns
-WiFi-IP, till exempel `http://192.168.x.x:8000`, medan browsern fortfarande
-öppnas på `http://localhost:8000`. Windows-brandväggen kan fråga första gången;
-tillåt privat nätverk om RFID-modulen ska nå servern.
+Scriptet startar backend pa port `8000` och startar RFID-bryggor for
+`COM9 -> MG Plock` och `COM10 -> MG VM`. ESP32-modulerna behover darfor inte
+WiFi; de ska bara sitta kvar i ratt USB-port medan Flow ar igang. Browsern
+oppnas pa `http://localhost:8000`.
 
-Vid schemaändringar kör starten en lätt lokal bootstrap som behåller befintliga
+Normal lokal start är ett snabbt användarläge utan `uvicorn --reload` och utan
+automatisk live-sync. Vid schemaändringar kör starten en lätt lokal bootstrap som behåller befintliga
 rader, lägger till saknade kolumner/tabeller och backfyller äldre lokal data till
 standardverksamheten `STIGAMO`. Om något ser fel ut lokalt, stäng den gamla
 servern med `stop_local.bat`, starta `start_local.bat` igen och ladda om
@@ -195,13 +195,20 @@ browsern hårt.
 Den lokala bootstrappen vägrar köra mot annat än SQLite, så den kan inte råka
 skriva seed/backfill till live-Postgres.
 
-Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa Render-URL som en lokal miljövariabel innan du kör `start_local.bat`:
+Om du utvecklar kod och vill att servern ska ladda om automatiskt använder du
+`start_dev.bat`. Den startar samma RFID-bryggor men kor backend med
+`uvicorn --reload`.
+
+Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa Render-URL som en lokal miljövariabel och kör den explicita syncen medan lokal server är stängd:
 
 ```powershell
 setx LIVE_DATABASE_URL "postgresql://..."
+sync_live_local.bat
 ```
 
-Nästa gång `start_local.bat` öppnas ersätts `app/flow_local.db` med en ny lokal kopia. Om `LIVE_DATABASE_URL` saknas används den vanliga lokala seed-databasen.
+`start_local.bat` försöker inte längre ersätta `app/flow_local.db` bara för att
+`LIVE_DATABASE_URL` råkar finnas i miljön. Det undviker långsam start och låsta
+SQLite-filer i vardagskörning.
 
 Kör `stop_local.bat` från projektroten om en gammal lokal server fortfarande håller `app/flow_local.db` eller port `8000` låst.
 

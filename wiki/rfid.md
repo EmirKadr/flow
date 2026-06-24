@@ -1,13 +1,13 @@
 ---
 title: RFID-stamplingar
 status: aktiv
-updated: 2026-06-15
+updated: 2026-06-17
 tags: [rfid, bemanning, hardvara]
 ---
 
 # RFID-stamplingar
 
-Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representerar en aktivitet, till exempel `MG Plock`. Bemanning visar stampeln som en markering pa personens timcell. En anvandare kan klicka `OK` for att andra cellen fran scannad minut, eller `Ignorera` for att lata stampeln ligga kvar utan schemaandring.
+Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representerar en aktivitet, till exempel `MG Plock` eller `MG VM`. Bemanning visar stampeln som en markering pa personens timcell. En anvandare kan klicka `OK` for att andra cellen fran scannad minut, eller `Ignorera` for att lata stampeln ligga kvar utan schemaandring.
 
 ## Anvandarflode
 
@@ -20,7 +20,7 @@ Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representer
 
 ## Regler
 
-- Modulnamn matchas mot aktivitetens `label` eller `code`. Testmodulen ar satt till `MG Plock`.
+- Modulnamn matchas mot aktivitetens `label` eller `code`. Lokala testmoduler finns for `MG Plock` och `MG VM`.
 - Person matchas med `Person.rfid_code`; hex/dec-koder normaliseras innan jamforelse.
 - Om samma person scannar samma aktivitet tva ganger i rad droppas den andra innan `rfid_scan_events`; den skapar ingen markering och ingen Historik-rad.
 - Okand bricka blir `unknown_person`; okand modul/aktivitet blir `unknown_activity`.
@@ -29,53 +29,54 @@ Kort svar: RFID-moduler kan posta scan events till Flow. Varje modul representer
 
 ## Hårdvara
 
-Flow har en firmware-mapp for ESP32/RDM6300. `rfid_esp32_flow.ino` ar lokal och
-git-ignorerad eftersom den innehaller WiFi, serveradress och eventuell token.
-ESP32 skickar direkt till `FLOW_BASE_URL`. Da ska `FLOW_BASE_URL` vara datorns
-LAN-adress, inte `localhost`, eftersom ESP32 inte ligger pa samma process som
-browsern. Lokal server maste lyssna pa LAN; `start_local.bat` startar darfor
-uvicorn med `--host 0.0.0.0` men oppnar browsern pa `localhost`.
+Flow har firmware-mappar for ESP32/RDM6300, till exempel `hardware/MG_Plock`
+och `hardware/MG_VM`. `.ino`-filerna ar lokala och git-ignorerade, men de
+innehaller ingen WiFi, serveradress eller token. Sketchen laser RDM6300 och
+skriver bara serialrader i formatet `[MG VM] RFID HEX=... DEC=... count=...`.
 
-Den lokala sketchen har fyra WiFi-slots: `WIFI_SSID` samt `WIFI_SSID_2` till
-`WIFI_SSID_4`. Tomma slots hoppas over och naten provas i ordning tills ett
-ansluter.
+`start_local.bat` och `start_dev.bat` startar automatiskt
+`tools/start_rfid_bridges.ps1`, som i sin tur startar serialbryggor for
+`COM9 -> MG Plock` och `COM10 -> MG VM`. Bryggorna laser ESP32:ornas USB/Serial
+och postar sedan lokalt till `http://127.0.0.1:8000/api/rfid/scans`. Samma tagg
+pa samma modul filtreras i bryggan inom ett kort debounce-fonster, sa en bricka
+som ligger kvar vid lasaren inte skapar ett regn av lokala POST-anrop. Om en
+COM-port ar upptagen vid start ligger bryggan kvar och provar igen tills porten
+slapps.
 
 Bemanning pollar `GET /api/rfid/events` var 7:e sekund nar fliken ar synlig.
 Om en scan nar backend syns den forst som `POST /api/rfid/scans` i
 `start_local.bat`-fonstret och sedan som markering i ratt person/timme.
 
-Om datorn saknar adminrattigheter och Windows-brandvaggen stoppar ESP32 fran
-att posta over WiFi kan man kora `tools.rfid_serial_bridge` via USB. Da laser
-bryggan serialraden som Arduino Serial Monitor annars visar och postar scannen
-till `http://127.0.0.1:8000/api/rfid/scans`. USB-laget kraver ingen inbound
-firewall-regel. Arduino Serial Monitor maste vara stangd medan USB-bryggan kor,
-eftersom serieporten bara kan lasas av ett program i taget.
+Arduino Serial Monitor maste vara stangd medan USB-bryggan kor, eftersom
+serieporten bara kan lasas av ett program i taget.
 
-Aktuell testkonfiguration:
+Aktuella lokala moduler:
 
-- `MODULE_NAME`: `MG Plock`
-- `DEVICE_ID`: `esp32-mg-plock-01`
-- RDM6300 `TX` kopplas till ESP32 `GPIO16`
-- API: `POST /api/rfid/scans`
+| Modul | Aktivitet | Device-id | USB-brygga |
+| --- | --- | --- | --- |
+| `MG Plock` | `MG Plock` / `MG_PLOCK` | `esp32-mg-plock-01` | autostart via `COM9` |
+| `MG VM` | `MG VM` / `MG_VM` | `esp32-mg-vm-01` | autostart via `COM10` |
+
+RDM6300 `TX` kopplas till ESP32 `GPIO16`. API:t ar `POST /api/rfid/scans`.
 
 ## Felsokningssvar for framtida chat
 
 | Fraga | Svar |
 | --- | --- |
-| "Varfor syns ingen stampel i Bemanning?" | Om `start_local.bat` inte visar `POST /api/rfid/scans` har scannen inte natt backend: kontrollera ESP32 WiFi, `FLOW_BASE_URL`, att servern startats om efter LAN-host-andringen och eventuell Windows-brandvagg. Om `POST` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
-| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Kor via USB-bryggan: `python -m pip install --user pyserial`, stang Arduino Serial Monitor och starta `python -m tools.rfid_serial_bridge --port COM5 --module-name "MG Plock"`. Byt `COM5` mot ESP32-porten. `HTTP 201` betyder ny registrerad stampel; `HTTP 200` kan betyda att en direkt dubblett droppades utan ny rad. |
-| "Kan modulen ha flera WiFi?" | Ja. Fyll `WIFI_SSID` och vid behov `WIFI_SSID_2` till `WIFI_SSID_4`. Sketchen provar ifyllda nat i ordning och hoppar over tomma slots. |
-| "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan anda vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret och starta bryggan igen. |
-| "Maste jag ladda upp firmware igen for USB-bryggan?" | Nej, inte om Arduino redan skriver serialrader med `RFID HEX=... DEC=... count=...`. USB-bryggan ateranvander den signalen och postar lokalt fran datorn. |
+| "Varfor syns ingen stampel i Bemanning?" | Kontrollera att ESP32 sitter i ratt USB-port (`COM9` for MG Plock, `COM10` for MG VM), att Arduino Serial Monitor ar stangd och att `artifacts/rfid_bridge/*.log` visar en RFID-rad eller ett portfel. Om `POST /api/rfid/scans` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
+| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Ingen brandvaggsregel behovs i USB-laget. Starta Flow med `start_local.bat`, hall ESP32 anslutna pa COM9/COM10 och titta i `artifacts/rfid_bridge/` vid felsokning. |
+| "Kan modulen ha flera WiFi?" | Nej, de lokala MG-sketcherna ar USB/Serial-only och anvander inte WiFi. |
+| "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret; autostartade bryggor ligger kvar och provar igen. |
+| "Maste jag ladda upp firmware igen for USB-bryggan?" | Ladda upp de nya USB-only-sketcherna om ESP32 fortfarande forsoker ansluta till WiFi. Efter det racker det att starta Flow. |
 | "Varfor ligger stampeln kvar efter Ignorera?" | Ignorera raderar inte handelsen. Den byter status sa stampeln fortsatt kan ses och granskas. |
 | "Varfor syns inte andra scannen?" | Senaste sparade RFID-aktiviteten for samma person var samma aktivitet. Backend droppar da andra scannen utan att skapa ny markering eller Historik-rad. |
 | "Varfor andrades bara sista delen av timmen?" | RFID-OK galler fran scannad minut till timslut. Tidigare minuter i samma timme bevaras. |
-| "Ska modulen ha riktiga WiFi-varden i git?" | Nej. `rfid_esp32_flow.ino` ar lokal och git-ignorerad, sa riktiga WiFi/server/token-varden ska bara finnas dar lokalt. |
+| "Ska modulen ha riktiga WiFi-varden i git?" | Nej. De lokala MG-sketcherna ska inte ha WiFi/server/token-varden alls. |
 
 ## Kallor
 
-- `../hardware/rfid_esp32_flow/rfid_esp32_flow.ino`
-- `../hardware/rfid_esp32_flow/README.md`
+- `../hardware/MG_Plock/README.md`
+- `../hardware/MG_VM/README.md`
 - `../tools/rfid_serial_bridge.py`
 - `../app/backend/routers/rfid.py`
 - `../app/backend/models.py`

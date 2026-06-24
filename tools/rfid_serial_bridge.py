@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
@@ -32,11 +33,20 @@ class RfidScan:
     scan_count: int
 
 
-def parse_scan_line(line: str, *, default_module_name: str) -> RfidScan | None:
+def console_text(value: str) -> str:
+    encoding = sys.stdout.encoding or "utf-8"
+    return str(value).encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
+def parse_scan_line(line: str, *, default_module_name: str, force_module_name: bool = False) -> RfidScan | None:
     match = SCAN_LINE_RE.search(line or "")
     if match is None:
         return None
-    module_name = (match.group("module") or default_module_name or "").strip()
+    module_name = (
+        default_module_name
+        if force_module_name
+        else match.group("module") or default_module_name or ""
+    ).strip()
     if not module_name:
         return None
     return RfidScan(
@@ -55,6 +65,35 @@ def scan_payload(scan: RfidScan, *, device_id: str) -> dict[str, Any]:
         "tag_dec": scan.tag_dec,
         "scan_count": scan.scan_count,
     }
+
+
+def scan_dedupe_key(scan: RfidScan, *, device_id: str) -> tuple[str, str, str]:
+    return (str(device_id or "").strip().lower(), scan.module_name.strip().lower(), scan.tag_hex.strip().upper())
+
+
+def should_post_scan(
+    scan: RfidScan,
+    *,
+    device_id: str,
+    now: float,
+    recent_scans: dict[tuple[str, str, str], float],
+    dedupe_window: float,
+) -> bool:
+    if dedupe_window <= 0:
+        return True
+    key = scan_dedupe_key(scan, device_id=device_id)
+    previous = recent_scans.get(key)
+    recent_scans[key] = now
+    return previous is None or now - previous >= dedupe_window
+
+
+def prune_scan_dedupe_cache(recent_scans: dict[tuple[str, str, str], float], *, now: float, dedupe_window: float) -> None:
+    if dedupe_window <= 0 or len(recent_scans) < 200:
+        return
+    cutoff = now - max(dedupe_window * 4, 30)
+    stale = [key for key, seen_at in recent_scans.items() if seen_at < cutoff]
+    for key in stale:
+        recent_scans.pop(key, None)
 
 
 def post_scan(base_url: str, payload: dict[str, Any], *, token: str = "", timeout: float = 8.0) -> int:
@@ -83,7 +122,7 @@ def _open_serial(port: str, baud: int):
     try:
         return serial.Serial(port, baudrate=baud, timeout=1)
     except serial.SerialException as exc:
-        raise SystemExit(serial_open_error_message(port, str(exc))) from exc
+        raise OSError(serial_open_error_message(port, str(exc))) from exc
 
 
 def serial_open_error_message(port: str, error_text: str) -> str:
@@ -123,26 +162,48 @@ def run(args: argparse.Namespace) -> int:
         f"Postar till {args.base_url.rstrip('/')}/api/rfid/scans. "
         "Stang Arduino Serial Monitor medan bryggan kor."
     )
-    with _open_serial(args.port, args.baud) as serial_port:
-        while True:
-            raw_line = serial_port.readline()
-            if not raw_line:
-                continue
-            line = raw_line.decode("utf-8", errors="replace").strip()
-            if args.echo:
-                print(line)
-            scan = parse_scan_line(line, default_module_name=args.module_name)
-            if scan is None:
-                continue
-            payload = scan_payload(scan, device_id=args.device_id)
-            if args.dry_run:
-                print(f"RFID {scan.module_name} #{scan.scan_count}: dry-run {json.dumps(payload, sort_keys=True)}")
-                continue
-            try:
-                status = post_scan(args.base_url, payload, token=token, timeout=args.timeout)
-                print(f"RFID {scan.module_name} #{scan.scan_count} -> HTTP {status}")
-            except OSError as exc:
-                print(f"RFID {scan.module_name} #{scan.scan_count} -> FEL {exc}", file=sys.stderr)
+    recent_scans: dict[tuple[str, str, str], float] = {}
+    while True:
+        try:
+            with _open_serial(args.port, args.baud) as serial_port:
+                while True:
+                    raw_line = serial_port.readline()
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if args.echo:
+                        print(console_text(line))
+                    scan = parse_scan_line(
+                        line,
+                        default_module_name=args.module_name,
+                        force_module_name=args.force_module_name,
+                    )
+                    if scan is None:
+                        continue
+                    now = time.monotonic()
+                    if not should_post_scan(
+                        scan,
+                        device_id=args.device_id,
+                        now=now,
+                        recent_scans=recent_scans,
+                        dedupe_window=args.dedupe_window,
+                    ):
+                        continue
+                    prune_scan_dedupe_cache(recent_scans, now=now, dedupe_window=args.dedupe_window)
+                    payload = scan_payload(scan, device_id=args.device_id)
+                    if args.dry_run:
+                        print(f"RFID {scan.module_name} #{scan.scan_count}: dry-run {json.dumps(payload, sort_keys=True)}")
+                        continue
+                    try:
+                        status = post_scan(args.base_url, payload, token=token, timeout=args.timeout)
+                        print(f"RFID {scan.module_name} #{scan.scan_count} -> HTTP {status}")
+                    except OSError as exc:
+                        print(f"RFID {scan.module_name} #{scan.scan_count} -> FEL {exc}", file=sys.stderr)
+        except OSError as exc:
+            if not args.retry_open:
+                raise SystemExit(str(exc)) from exc
+            print(f"{exc} Forsoker igen om {args.retry_delay} sekunder.", file=sys.stderr, flush=True)
+            time.sleep(args.retry_delay)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -153,8 +214,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Flow-backend, normalt localhost.")
     parser.add_argument("--device-id", default="usb-rfid-bridge", help="Device-id som sparas i Flow.")
     parser.add_argument("--module-name", default="MG Plock", help="Fallback-modul om serialraden saknar [modul].")
+    parser.add_argument("--force-module-name", action="store_true", help="Anvand --module-name aven om serialraden innehaller [modul].")
     parser.add_argument("--token", default="", help="RFID device-token. Kan ocksa lasas fran RFID_DEVICE_TOKEN.")
     parser.add_argument("--timeout", type=float, default=8.0, help="HTTP-timeout i sekunder.")
+    parser.add_argument("--retry-open", action="store_true", help="Forsok oppna serieporten igen om den ar upptagen.")
+    parser.add_argument("--retry-delay", type=float, default=5.0, help="Sekunder mellan forsok med --retry-open.")
+    parser.add_argument("--dedupe-window", type=float, default=3.0, help="Sekunder dar samma tagg pa samma modul filtreras bort innan POST.")
     parser.add_argument("--dry-run", action="store_true", help="Tolka serialrader utan att posta till Flow.")
     parser.add_argument("--echo", action="store_true", help="Skriv ut alla inkommande serialrader.")
     return parser

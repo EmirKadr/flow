@@ -215,7 +215,21 @@ def test_sync_from_env_skips_when_live_database_url_is_missing(monkeypatch):
 def test_prepare_local_database_bootstraps_after_live_sync(monkeypatch):
     calls: list[str] = []
 
+    monkeypatch.setenv("FLOW_SYNC_LIVE_ON_START", "1")
     monkeypatch.setattr(prepare_local_database, "sync_from_env", lambda: True)
+    monkeypatch.setattr(prepare_local_database, "bootstrap_local", lambda: calls.append("bootstrap"))
+
+    prepare_local_database.main()
+
+    assert calls == ["bootstrap"]
+
+
+def test_prepare_local_database_skips_live_sync_by_default(monkeypatch):
+    calls: list[str] = []
+
+    monkeypatch.setenv("LIVE_DATABASE_URL", "postgresql://live.example.invalid/flow")
+    monkeypatch.delenv("FLOW_SYNC_LIVE_ON_START", raising=False)
+    monkeypatch.setattr(prepare_local_database, "sync_from_env", lambda: calls.append("sync") or True)
     monkeypatch.setattr(prepare_local_database, "bootstrap_local", lambda: calls.append("bootstrap"))
 
     prepare_local_database.main()

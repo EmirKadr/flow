@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-15
+updated: 2026-06-17
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -36,6 +36,15 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
 - `Helbild`, som fokuserar tradet tillbaka till verksamhetsroten.
 - `Exportera flowchart`, som oppnar en dialog for val av exportnivaer och
   laddar ner aktuell fokuserad vy som SVG.
+- Verksamhetsnoden har hogerklickskommandot `Summering`. Dialogen anvander
+  samma datum-/periodurval som vyn och visar intakt, kostnad, resultat och
+  nollade plockrader per bolag. Nollade rader ar poster i plockloggen dar
+  `Plockat`/`qty_suf` ar `0`.
+- Vyn renderar kontroller, sammanfattningsskal och tradyta direkt. Rapporten
+  hamtas sedan i bakgrunden och statusraden visar forst hamtning och sedan
+  berakning/ritning innan korten fylls pa. Detta ar medvetet read-only
+  laddbeteende och skapar ingen ny audit-rad; befintlig produktivitetsrapport-
+  audit och vantetidsmatning fortsatter galla.
 - Noder for verksamhet, omrade, aktivitet, person, timme och processpoang.
 - Barnnoder visas som en sammanhangande horisontell tradgren. Nar det finns
   manga barn scrollas tradytan i sidled i stallet for att bryta upp grenlinjen.
@@ -63,6 +72,11 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   Timkort rullar upp exakt till person, aktivitet, omrade och verksamhet.
   Processkorten far en proportionell andel av timkortets belopp utifran
   processpoangens andel av timmens processpoang.
+  I Intakt/utgift kan en vanlig intaktsrad dessutom kopplas till en
+  KPI-process. Da laggs radens `pris * ST / Antal` till periodens intakt och
+  resultat, och Produktivitet fordelar beloppet till matchande processnoder
+  utifran deras processpoang. Om vald process inte finns i aktuell vy hamnar
+  intakten bara pa periodens total.
 
 Dagens datum raknas bara till och med senaste avslutade heltimme. Aldre datum i
 vald period raknar hela dagen. Innevarande vecka, manad och ar klipps vid dagens
@@ -131,8 +145,15 @@ Produktivitet.
   befintliga snapshots for perioden och triggar inte extern historikhamtning vid
   varje periodbyte.
   Med `productivityFinance=view` innehaller payloaden aven `finance` pa
-  periodniva, personniva och relevanta `time_cells`; utan behorighet ar
+  periodniva, personniva och relevanta `time_cells`; kopplade intaktsrader
+  visas som `finance.process_revenues` pa periodniva. Utan behorighet ar
   `finance.visible=false`.
+- `GET /api/productivity/overview/business-summary` anvander samma `date`,
+  `period`, `start_date` och `end_date` som overview-endpointen. Svaret
+  grupperar periodens intakt, kostnad, resultat och antal nollade plockrader
+  per bolag samt en totalrad. Intakter inkluderar VAS-intakt fran
+  produktivitetsceller och kopplade intaktsrader; kostnader kommer fran
+  arbetad tid per bolag.
 - `GET /api/productivity/persons/{person_id}` returnerar personens snitt per
   aktivitet for `period=week|month|year|custom`. Dagar som inte hunnit
   backfillas returneras i `missing_dates`.
@@ -145,7 +166,9 @@ Produktivitet.
 - `GET/PUT /api/settings/productivity-finance` laser/sparar
   produktivitetens ekonomiberakning per verksamhet. Den styr `hourly_cost`,
   `invoice_rows_by_company` och `vas_hourly_revenue_by_company`, dar varje
-  bolag far ett eget intaktsunderlag med rubriken som bolagskod. `GG` fylls
+  bolag far ett eget intaktsunderlag med rubriken som bolagskod. En
+  intaktsrad kan spara `linked_process_key` och `linked_process_label` for att
+  visa radens intakt i Produktivitetens processnoder. `GG` fylls
   forvalt med Grann-garden-priserna for Inbound, BUTIK, E-handel, VAS, IT och
   Ovrigt. `GG` har forifylld utrakningsprompt, plan och SQL/querytext for
   `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade
@@ -159,8 +182,42 @@ Produktivitet.
   utrakningstext, manad och aktuell bolagskod till MiniMax/Hamta data-planen.
   Nar den valda ASK-vyn har kolumnen `company`/Bolag lagger backend pa
   bolagsfiltret automatiskt innan planen kors mot extern datakalla. Svaret
-  returnerar `quantity`, plan och en sparbar SQL/querytext. Bara manader som har
-  startat i innevarande ar far testas.
+  returnerar `quantity`, plan och en sparbar SQL/querytext. Testmanaden anvands
+  bara for provhamtningen; sparad plan och SQL/querytext ar periodneutrala och
+  far periodfilter forst nar kontroll/rapport kors for vald period. Bara manader
+  som har startat i innevarande ar far testas.
+- `POST /api/settings/productivity-finance/process-check` kor knappen
+  `Kontrollera intakter/processer` i Intakt/utgift-installningarna. Den laser
+  sparade intaktsplaner for vald manad/bolag, hamtar samma Mammur-/ASK-kallor som
+  KPI-processerna anvander, kor KPI-reglernas filter mot raderna och jamfor
+  faktisk radtackning. Svaret visar foreslagna processmatchningar, intaktsrader
+  som har rader utan KPI-process, KPI-processer som saknar intaktsrad samt mojlig
+  dubbelrakning. En intaktsrad raknas som matchad nar alla rader, eller vid
+  `count_distinct` alla unika berakningsnycklar som `order_num`, traffar minst
+  en KPI-process, aven om flera KPI-processer tillsammans behovs. Om matchande
+  KPI-processer ocksa tacker rader eller nycklar utanfor den intaktsraden
+  returneras det som granskningsnotis, inte som underkand match. Radsvaret
+  innehaller `combined_process_coverage`, som visar foreslagen processkombination,
+  antal intaktsnycklar, tackta nycklar, saknade nycklar, extra nycklar och
+  tackningsprocent.
+  Body kan aven innehalla `row_id`. Da kors kontrollen bara for den
+  intaktsraden, och UI:ts radkommando `Kontroll` oppnar en dialog dar
+  anvandaren valjer kontrollmanad, ser resultatet och kan koppla intaktsraden
+  till en KPI-process via en sokbar rullista. Dialogen visar aven radens
+  prompt, intakts-SQL/querytext och process-SQL for vald KPI-process. Resultatet visar vilka KPI-processer som
+  anvander samma vy samt intaktsantal, processantal, overlapp och diff. Det
+  hjalper anvandaren se om skillnaden sitter i filtreringen, till exempel
+  status/zon/typ, utan att behova lasa hela globala kontrollen.
+  Kallor som `v_ask_pick_log_full` hamtas en gang per manad/bolag for kontrollen
+  och ateranvands sedan lokalt for flera intaktsutrakningar, sa lange planen inte
+  kraver API-identifiers.
+  Nar en intaktsrad bara ar delvis tackt visar resultatet aven vilket
+  KPI-villkor som faller for de saknade raderna, till exempel Receiving med
+  `Status` vantat `20/30` men hittat `0`.
+  Radexempel saneras till tekniska kontrollvarden som bolag, lager, zon, typ och
+  status; ordernummer, anvandare och hela radpayloads returneras inte. Endpointen skapar audit-raden
+  `productivity_finance_process_check/run` med period, bolag och summerade
+  raknetal.
 
 Produktivitetsfilroutes ar borttagna: det finns inte langre
 `/api/productivity/files`, `/api/productivity/files/raw`,
@@ -187,7 +244,19 @@ serverdata for schema och KPI-snapshot.
 | Foregaende/nasta datum | Klickar pilar | Hoppar inom tillgangliga datum eller kalenderdagar |
 | Helbild | Klickar knappen | Fokuserar tradet tillbaka till verksamhetsroten |
 | Nod | Klickar verksamhet, omrade, aktivitet eller person | Flyttar fokus och visar nasta niva i hierarkin |
+| Summering | Hogerklickar verksamhetsnoden och valjer Summering | Oppnar bolagssummering for samma datum-/periodurval med intakt, kostnad, resultat och nollade plockrader |
 | Exportera flowchart | Klickar knappen, valjer nivaer och klickar Exportera | Laddar ner aktuell fokuserad vy som SVG med valda nivaer |
+| Kontrollera intakter/processer | Klickar knappen i Installningar -> Intakt/utgift, valjer manad/bolag i dialogen och klickar Kontrollera | Jamfor sparade intaktsutrakningar med KPI-processregler for vald manad/bolag och visar matchningar, processkombinationer, luckor, bredare processer och dubbelrakning i dialogen |
+| Utrakning | Hogerklickar en intaktsrad i Installningar -> Intakt/utgift och valjer Utrakning | Oppnar radens utrakningsdialog for test och sparning av prompt, plan och SQL/querytext |
+| Kontroll | Hogerklickar en intaktsrad i Installningar -> Intakt/utgift, valjer Kontroll och valjer manad i dialogen | Kor samma kontroll bara for den radens sparade utrakning, visar processer pa samma vy, processkombinationens tackning och later anvandaren koppla radens intakt till en KPI-process |
+| Koppla process | Hogerklickar en intaktsrad i Installningar -> Intakt/utgift och valjer Koppla process | Oppnar processval med alla KPI-processer och sparar kopplingen sa radens intakt kan visas i Produktivitet |
+
+Produktivitet anvander ett progressivt laddmonster: `produktivitet.html`
+renderar statiskt skal och `productivity_overview.js` kor
+`renderProductivityOverviewShell()` fore API-svaret. `loadProductivityOverview`
+vantar in minst en browser-paint fore `/api/productivity/overview` hamtas och
+en till paint fore den tunga tradberakningen/ritningen, sa anvandaren ser vyn
+och statusen aven nar rapporten ar tung.
 
 ## Felsokningssvar for framtida chat
 

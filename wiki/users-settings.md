@@ -1,7 +1,7 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-06-15
+updated: 2026-06-17
 tags: [anvandare, settings, roller, ui]
 ---
 
@@ -23,7 +23,7 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
 | Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` med `business_id`/`area_focus` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
-| Intakt/utgift | Flik under `installningar.html` | Sparar kostnad per timme och intaktsunderlag per bolag fran Verksamheter-vyns `company_codes`; `GG` ar forifyllt med hela Grann-garden-underlaget och `MG` bara med VAS + IT | `GET/PUT /api/settings/productivity-finance` med `business_id`/`area_focus` | Kraver `productivityFinanceSettings`; utan edit kan rollen bara se vardena. Endast Super User har standardatkomst just nu. |
+| Intakt/utgift | Flik under `installningar.html` | Sparar kostnad per timme, intaktsunderlag per bolag fran Verksamheter-vyns `company_codes` och valfri processkoppling per intaktsrad; `GG` ar forifyllt med hela Grann-garden-underlaget och `MG` bara med VAS + IT | `GET/PUT /api/settings/productivity-finance` med `business_id`/`area_focus` | Kraver `productivityFinanceSettings`; utan edit kan rollen bara se vardena. Endast Super User har standardatkomst just nu. |
 | Bearbeta-matris | Flik under `installningar.html` | Styr vilka Bearbeta-funktioner som visas per toggle for vald verksamhet | `GET/PUT /api/allokering/process-matrix` med `business_id`/`area_focus` | Kraver `allocationProcessMatrix`; `view` kan lasa och `edit` kan spara. |
 | Tabellrubriker | Klickar pa t.ex. Anvandarnamn, Verksamhet, Roll, Omrade eller Skapad | Sorterar synliga anvandarrader stigande/fallande i klienten | `common.js` klienttabellsortering | Paverkar inte omradesfokus, roller eller serverdata. |
 | Redigera | Oppnar modal | Uppdaterar konto | `PUT /api/users/{id}` | Sista admin kan inte nedgraderas. |
@@ -74,7 +74,24 @@ Raden `Bemanningsinställningar` (`staffingSettings`) styr fliken Bemanning pa `
 
 Raden `Intakt/utgift` (`productivityFinance`) styr om Produktivitet visar belopp pa hierarkikorten. `view` racker for att se intakt, utgift och resultat. Inga vanliga roller har standardatkomst; Super User har alltid full atkomst.
 
-Raden `Intakt/utgift-installningar` (`productivityFinanceSettings`) styr fliken Intakt/utgift pa `installningar.html`. `view` far lasa kostnad per timme och intaktsunderlag per bolag. `Spara` ligger hogst upp i fliken sa man inte behover scrolla forbi hela intaktstabellen. Varje bolagsruta har rubriken som bolagskod, till exempel `GG`, och `GG` ar forifyllt med Grann-garden-rader for Inbound, BUTIK, E-handel, VAS, IT och Ovrigt. `GG` har ocksa forifyllda utrakningar for `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` far bara VAS-raderna, med samma VAS-varden som `GG`, och IT-raden med 445 kr per timme. VAS-raderna sparar Blue collar och White collar med Normal/OT/OB-rader. Varje rad har `ST / Antal` och knappen `Utrakning`; dar kan admin skriva hur antalet ska raknas, testa mot en startad manad i innevarande ar via samma MiniMax/Hamta data-plan som `hamta-data.html`, och spara prompt, validerad plan och SQL/querytext pa raden. Den sparade planen kan innehalla whitelistad `calculation` som `count`, `count_distinct`, `sum`, `avg`, `min` eller `max`; till exempel raknas "ta bort dubletter per inkop och artikel" som `count_distinct` pa `book_num` + `item_num`. Testet skickar alltid med bolagsrutans kod och backend lagger pa `company`/Bolag-filter nar den valda ASK-vyn har en bolagskolumn. Dialogen stangs med `Avbryt` eller efter sparning, inte av backdrop-klick, sa textmarkering i rutan inte stanger den. Bolagsraderna hamtas fran Verksamheter-vyns `company_codes`, inte fran omraden. `edit` far spara. Inga vanliga roller har standardatkomst; Super User har alltid full atkomst.
+Raden `Intakt/utgift-installningar` (`productivityFinanceSettings`) styr fliken Intakt/utgift pa `installningar.html`. `view` far lasa kostnad per timme och intaktsunderlag per bolag. `Spara` ligger hogst upp i fliken sa man inte behover scrolla forbi hela intaktstabellen. Varje bolagsruta har rubriken som bolagskod, till exempel `GG`, och `GG` ar forifyllt med Grann-garden-rader for Inbound, BUTIK, E-handel, VAS, IT och Ovrigt. `GG` har ocksa forifyllda utrakningar for `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` far bara VAS-raderna, med samma VAS-varden som `GG`, och IT-raden med 445 kr per timme. VAS-raderna sparar Blue collar och White collar med Normal/OT/OB-rader. Varje rad har `ST / Antal`; radkommandon oppnas med hogerklick pa raden. `Utrakning` later admin skriva hur antalet ska raknas, testa mot en startad manad i innevarande ar via samma MiniMax/Hamta data-plan som `hamta-data.html`, och spara prompt, validerad plan och SQL/querytext pa raden. `Kontroll` oppnar en dialog dar admin valjer kontrollmanad, kor radens processkontroll och ser resultatet utan inline-panel i installningsvyn. I samma kontroll-dialog kan admin ocksa koppla raden till en KPI-process via en sokbar rullista och se radens prompt, intakts-SQL samt vald process-SQL. Kontrollresultatet visar dessutom en processkombination: om utrakningen raknar `count_distinct`, till exempel unika `order_num`, jamfors KPI-processernas samlade nycklar mot samma intaktsnycklar i stallet for bara enskilda loggrader. `Koppla process` oppnar fortsatt en separat dialog med alla KPI-processer och sparar kopplingen sa radens intakt visas i Produktivitetens processnoder. Den sparade planen kan innehalla whitelistad `calculation` som `count`, `count_distinct`, `sum`, `avg`, `min` eller `max`; till exempel raknas "ta bort dubletter per inkop och artikel" som `count_distinct` pa `book_num` + `item_num`. Testet skickar alltid med bolagsrutans kod och backend lagger pa `company`/Bolag-filter nar den valda ASK-vyn har en bolagskolumn. Dialogen stangs med `Avbryt` eller efter sparning, inte av backdrop-klick, sa textmarkering i rutan inte stanger den. Bolagsraderna hamtas fran Verksamheter-vyns `company_codes`, inte fran omraden. `edit` far spara. Inga vanliga roller har standardatkomst; Super User har alltid full atkomst.
+
+Knappen `Kontrollera intakter/processer` ligger i samma flik och kraver
+`productivityFinanceSettings=view`. Den oppnar en dialog dar anvandaren valjer
+manad och bolag innan sparade intaktsplaner och KPI-processregler kors mot
+samma kallrader. Resultatet visas i dialogen och visar vilka intaktsrader som
+verkar matcha vilka KPI-processer, vilka
+intaktsrader som har rader utan KPI-process, vilka KPI-processrader som saknar
+intakt och var KPI eller intakt verkar dubbelrakna. Resultatet visar bara
+sanerade kontrollvarden som bolag, lager, zon, typ och status. En intaktsrad kan
+vara godkand nar flera KPI-processer tillsammans tacker den. Om en matchande
+KPI-process ocksa tacker fler rader an intaktsraden visas det som granskningsnotis.
+For `count_distinct`-utrakningar visar kontrollen ocksa hur manga unika
+berakningsnycklar, till exempel `order_num`, som tacks av processkombinationen,
+hur manga som saknas och hur manga extra nycklar processerna samlar.
+Backend skriver
+audit `productivity_finance_process_check/run` med period, bolag och summerade
+raknetal.
 
 Raden `Bearbeta-matris` (`allocationProcessMatrix`) styr fliken Bearbeta pa `installningar.html`. `view` far oppna matrisen lasande och `edit` far spara vilka Bearbeta-funktioner som ska synas per toggle i vald verksamhet. Admin och demo har `edit` som standard, Super User har alltid full atkomst. Bearbeta-vyn anvander fortsatt matrisen nar floden visas, men sjalva redigeringen ligger i Installningar.
 

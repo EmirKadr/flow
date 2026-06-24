@@ -4,6 +4,8 @@ let productivityOverviewRoot = null;
 let productivityOverviewNodeIndex = new Map();
 let productivityOverviewFocusId = "root";
 let productivityOverviewPeriod = "day";
+let productivityOverviewLoadToken = 0;
+let productivityOverviewContextMenu = null;
 const PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS = 2 * 60 * 1000;
 const PRODUCTIVITY_OVERVIEW_EXPORT_LEVELS_KEY = "flow-productivity-overview-export-levels";
 const PRODUCTIVITY_OVERVIEW_EXPORT_LEVELS = [
@@ -88,6 +90,16 @@ function localProductivityOverviewIsoDate(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function waitForProductivityOverviewPaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== "function") {
+      window.setTimeout(resolve, 0);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
 }
 
 function addProductivityOverviewDays(isoDate, days) {
@@ -248,6 +260,13 @@ function productivityOverviewKey(value) {
   return String(value ?? "").trim().toLowerCase() || "unknown";
 }
 
+function normalizeProductivityOverviewProcessKey(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_ -]/g, "");
+}
+
 function createProductivityOverviewNode(type, id, label, parentId = null) {
   return {
     id,
@@ -308,6 +327,14 @@ function addProductivityOverviewFinance(node, finance) {
   node.financeResult = roundProductivityOverviewMoney(Number(node.financeResult || 0) + Number(finance.result || 0));
   node.financeWorkMinutes = Math.round((Number(node.financeWorkMinutes || 0) + Number(finance.work_minutes || 0)) * 100) / 100;
   node.financeVasMinutes = Math.round((Number(node.financeVasMinutes || 0) + Number(finance.vas_minutes || 0)) * 100) / 100;
+}
+
+function addProductivityOverviewFinanceToAncestors(node, finance, index) {
+  let current = node;
+  while (current) {
+    addProductivityOverviewFinance(current, finance);
+    current = index.get(current.parentId);
+  }
 }
 
 function productivityOverviewFinanceVisible(report) {
@@ -386,6 +413,7 @@ function productivityOverviewUnscheduledDiffCells(person, cutoffMinute, reportDa
       if (hourEnd > cutoffMinute) return null;
       const process = diff.actual_process || "Okänd process";
       const points = Number(diff.points || 0);
+      const processKey = normalizeProductivityOverviewProcessKey(process);
       return {
         hour: Math.floor(hourStart / 60),
         start: timeLabelFromProductivityOverviewMinute(hourStart),
@@ -400,7 +428,7 @@ function productivityOverviewUnscheduledDiffCells(person, cutoffMinute, reportDa
         expected_points: 0,
         points,
         event_count: 1,
-        process_points: [{ process, points, event_count: 1 }],
+        process_points: [{ process, process_key: processKey, points, event_count: 1 }],
       };
     })
     .filter(Boolean);
@@ -411,6 +439,7 @@ function processPointsForProductivityOverviewCell(cell) {
   const filtered = rows
     .map((item) => ({
       process: item?.process || "Okänd process",
+      processKey: normalizeProductivityOverviewProcessKey(item?.process_key || item?.process || "Okänd process"),
       points: Number(item?.points || 0),
       eventCount: Number(item?.event_count || 0),
     }))
@@ -418,7 +447,7 @@ function processPointsForProductivityOverviewCell(cell) {
   if (filtered.length) return filtered;
   const points = Number(cell?.points || 0);
   return points
-    ? [{ process: "Poäng", points, eventCount: Number(cell?.event_count || 0) }]
+    ? [{ process: "Poäng", processKey: "POANG", points, eventCount: Number(cell?.event_count || 0) }]
     : [];
 }
 
@@ -454,9 +483,10 @@ function buildProductivityOverviewPersonHours(personNode) {
       const processNode = ensureProductivityOverviewChild(
         hourNode,
         "process",
-        processPoint.process,
+        processPoint.processKey || processPoint.process,
         processPoint.process
       );
+      processNode.processKey = processPoint.processKey || normalizeProductivityOverviewProcessKey(processPoint.process);
       addProductivityOverviewPoints(processNode, processPoint.points, processPoint.eventCount);
       if (cell.finance?.visible && processPointTotal > 0) {
         addProductivityOverviewFinance(
@@ -466,6 +496,50 @@ function buildProductivityOverviewPersonHours(personNode) {
       }
     }
   }
+}
+
+function productivityOverviewProcessRevenueRows(report) {
+  const rows = Array.isArray(report?.finance?.process_revenues) ? report.finance.process_revenues : [];
+  return rows
+    .map((row) => ({
+      ...row,
+      processKey: normalizeProductivityOverviewProcessKey(row?.process_key || row?.process_label),
+      revenue: Number(row?.revenue || 0),
+      currency: row?.currency || report?.finance?.currency || "SEK",
+    }))
+    .filter((row) => row.processKey && Math.abs(row.revenue) > 0.001);
+}
+
+function applyProductivityOverviewProcessRevenues(root, report) {
+  const rows = productivityOverviewProcessRevenueRows(report);
+  if (!rows.length) return;
+  const index = indexProductivityOverviewTree(root, new Map());
+  const processNodes = Array.from(index.values()).filter((node) => node.type === "process");
+  rows.forEach((row) => {
+    const matches = processNodes.filter((node) => normalizeProductivityOverviewProcessKey(node.processKey || node.label) === row.processKey);
+    if (!matches.length) {
+      addProductivityOverviewFinance(root, {
+        visible: true,
+        currency: row.currency,
+        revenue: row.revenue,
+        cost: 0,
+        result: row.revenue,
+      });
+      return;
+    }
+    const totalPoints = matches.reduce((sum, node) => sum + Math.abs(Number(node.points || 0)), 0);
+    matches.forEach((node) => {
+      const share = totalPoints > 0 ? Math.abs(Number(node.points || 0)) / totalPoints : 1 / matches.length;
+      const revenue = roundProductivityOverviewMoney(row.revenue * share);
+      addProductivityOverviewFinanceToAncestors(node, {
+        visible: true,
+        currency: row.currency,
+        revenue,
+        cost: 0,
+        result: revenue,
+      }, index);
+    });
+  });
 }
 
 function sortProductivityOverviewTree(node) {
@@ -547,6 +621,7 @@ function buildProductivityOverviewTree(report) {
       for (const person of activity.children) buildProductivityOverviewPersonHours(person);
     }
   }
+  applyProductivityOverviewProcessRevenues(root, report);
   sortProductivityOverviewTree(root);
   return root;
 }
@@ -644,7 +719,9 @@ function renderProductivityOverviewFinance(node) {
 function renderProductivityOverviewNodeButton(node, options = {}) {
   const canFocus = Boolean(node.children?.length) && !options.staticNode;
   const tag = canFocus ? "button" : "div";
-  const attrs = canFocus ? `type="button" data-node-id="${escapeHtml(node.id)}"` : "";
+  const attrs = canFocus
+    ? `type="button" data-node-id="${escapeHtml(node.id)}"`
+    : (options.staticNode ? `data-node-id="${escapeHtml(node.id)}"` : "");
   return `
     <${tag} class="productivity-overview-node ${escapeHtml(node.type)}${canFocus ? " is-clickable" : ""}" ${attrs}>
       <span class="productivity-overview-node-type">${escapeHtml(productivityOverviewTypeLabel(node.type))}</span>
@@ -756,6 +833,58 @@ function renderProductivityOverviewSummary(root, report) {
   `;
 }
 
+function renderProductivityOverviewShell() {
+  const input = document.getElementById("productivityOverviewDate");
+  if (input && !input.value) input.value = localProductivityOverviewIsoDate();
+  updateProductivityOverviewDateDisplay();
+  updateProductivityOverviewPeriodControls();
+  updateProductivityOverviewDateNav();
+
+  const summary = document.getElementById("productivityOverviewSummary");
+  if (summary && !summary.innerHTML.trim()) {
+    summary.innerHTML = `
+      <div class="productivity-kpi"><span>Poäng / timmar</span><strong>-</strong></div>
+      <div class="productivity-kpi"><span>Områden</span><strong>-</strong></div>
+      <div class="productivity-kpi"><span>Aktiviteter</span><strong>-</strong></div>
+      <div class="productivity-kpi"><span>Personer</span><strong>-</strong></div>
+      <div class="productivity-kpi"><span>Period</span><strong>${escapeHtml(productivityOverviewPeriodDisplayLabel(input?.value || ""))}</strong></div>
+    `;
+  }
+
+  const tree = document.getElementById("productivityOverviewTree");
+  if (tree && !tree.innerHTML.trim()) {
+    tree.innerHTML = '<div class="empty-state">Produktivitet hämtas i bakgrunden.</div>';
+  }
+
+  const status = document.getElementById("productivityOverviewStatus");
+  if (status && !status.textContent.trim()) status.textContent = "Redo att hämta produktivitet.";
+}
+
+function setProductivityOverviewLoading(message) {
+  const status = document.getElementById("productivityOverviewStatus");
+  const summary = document.getElementById("productivityOverviewSummary");
+  const tree = document.getElementById("productivityOverviewTree");
+  const breadcrumbs = document.getElementById("productivityOverviewBreadcrumbs");
+  if (status) status.textContent = message;
+  summary?.setAttribute("aria-busy", "true");
+  tree?.setAttribute("aria-busy", "true");
+  if (tree) {
+    if (productivityOverviewRoot) {
+      tree.classList.add("is-changing");
+    } else {
+      tree.innerHTML = '<div class="empty-state">Produktivitet hämtas i bakgrunden.</div>';
+    }
+  }
+  if (breadcrumbs && !productivityOverviewRoot) breadcrumbs.innerHTML = "";
+}
+
+function clearProductivityOverviewLoading() {
+  document.getElementById("productivityOverviewSummary")?.removeAttribute("aria-busy");
+  const tree = document.getElementById("productivityOverviewTree");
+  tree?.removeAttribute("aria-busy");
+  tree?.classList.remove("is-changing");
+}
+
 function renderProductivityOverviewTree() {
   const target = document.getElementById("productivityOverviewTree");
   if (!target || !productivityOverviewRoot) return;
@@ -772,6 +901,181 @@ function renderProductivityOverviewTree() {
     </section>
   `;
   window.requestAnimationFrame?.(() => target.classList.remove("is-changing"));
+}
+
+function closeProductivityOverviewContextMenu() {
+  productivityOverviewContextMenu?.remove();
+  productivityOverviewContextMenu = null;
+}
+
+function positionProductivityOverviewContextMenu(menu, x, y) {
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
+  const top = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function openProductivityOverviewContextMenu(event, node) {
+  closeProductivityOverviewContextMenu();
+  if (!node || node.type !== "business") return;
+  const menu = document.createElement("div");
+  menu.className = "productivity-overview-context-menu";
+  menu.dataset.productivityOverviewContextMenu = "true";
+  menu.innerHTML = `
+    <button type="button" data-productivity-business-summary>
+      Summering
+    </button>
+  `;
+  menu.querySelector("[data-productivity-business-summary]")?.addEventListener("click", () => {
+    closeProductivityOverviewContextMenu();
+    void openProductivityBusinessSummaryDialog(node);
+  });
+  document.body.appendChild(menu);
+  positionProductivityOverviewContextMenu(menu, event.clientX, event.clientY);
+  productivityOverviewContextMenu = menu;
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function productivityOverviewSelectionParams(dateValue = productivityOverviewDateValue()) {
+  const params = new URLSearchParams();
+  if (dateValue) params.set("date", dateValue);
+  params.set("period", productivityOverviewPeriodValue());
+  if (productivityOverviewReport?.period?.type === "custom") {
+    if (productivityOverviewReport.period.start_date) params.set("start_date", productivityOverviewReport.period.start_date);
+    if (productivityOverviewReport.period.end_date) params.set("end_date", productivityOverviewReport.period.end_date);
+  }
+  return params;
+}
+
+async function fetchProductivityBusinessSummary() {
+  const params = productivityOverviewSelectionParams(productivityOverviewDateValue());
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return api.get(`/api/productivity/overview/business-summary${query}`, {
+    cacheTtlMs: PRODUCTIVITY_OVERVIEW_CACHE_TTL_MS,
+  });
+}
+
+function productivityBusinessSummaryPeriodText(payload) {
+  const period = payload?.period || productivityOverviewReport?.period || {};
+  const label = period.label || productivityOverviewPeriodDisplayLabel(productivityOverviewDateValue());
+  const start = period.start_date || productivityOverviewDateValue();
+  const end = period.end_date || start;
+  return start && end && start !== end ? `${label} ${start} - ${end}` : `${label} ${start || ""}`.trim();
+}
+
+function productivityBusinessSummaryMoney(value, currency, visible) {
+  return visible ? formatProductivityOverviewMoney(value, currency) : "-";
+}
+
+function renderProductivityBusinessSummaryDialogContent(backdrop, payload) {
+  const body = backdrop.querySelector("[data-productivity-business-summary-body]");
+  if (!body) return;
+  const rows = Array.isArray(payload?.companies) ? payload.companies : [];
+  const totals = payload?.totals || {};
+  const currency = payload?.currency || totals.currency || "SEK";
+  const financeVisible = payload?.finance_visible !== false;
+  const periodText = productivityBusinessSummaryPeriodText(payload);
+  const moneyClass = (value) => escapeHtml(productivityOverviewFinanceResultClass(value));
+  const financeNote = financeVisible ? "" : `
+    <p class="productivity-overview-summary-note">Ekonomi visas inte för din behörighet.</p>
+  `;
+  const rowHtml = rows.length ? rows.map((row) => `
+    <tr>
+      <th scope="row">${escapeHtml(row.company_label || row.company || "Okänt bolag")}</th>
+      <td>${escapeHtml(productivityBusinessSummaryMoney(row.revenue, currency, financeVisible))}</td>
+      <td>${escapeHtml(productivityBusinessSummaryMoney(row.cost, currency, financeVisible))}</td>
+      <td class="${moneyClass(row.result)}">${escapeHtml(productivityBusinessSummaryMoney(row.result, currency, financeVisible))}</td>
+      <td>${escapeHtml(formatProductivityOverviewNumber(row.zero_pick_rows || 0, 0))}</td>
+    </tr>
+  `).join("") : `
+    <tr>
+      <td colspan="5" class="empty-cell">Inga rader för valt urval.</td>
+    </tr>
+  `;
+  body.innerHTML = `
+    <div class="productivity-overview-summary-meta">
+      <span>${escapeHtml(periodText)}</span>
+      <span>${escapeHtml(formatProductivityOverviewNumber(payload?.period?.days_with_data || 0, 0))}/${escapeHtml(formatProductivityOverviewNumber(payload?.period?.requested_days || 0, 0))} dagar</span>
+    </div>
+    ${financeNote}
+    <div class="productivity-overview-summary-table-wrap">
+      <table class="productivity-overview-summary-table">
+        <thead>
+          <tr>
+            <th scope="col">Bolag</th>
+            <th scope="col">Intäkt</th>
+            <th scope="col">Kostnad</th>
+            <th scope="col">Resultat</th>
+            <th scope="col">Nollade rader</th>
+          </tr>
+        </thead>
+        <tbody>${rowHtml}</tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Totalt</th>
+            <td>${escapeHtml(productivityBusinessSummaryMoney(totals.revenue, currency, financeVisible))}</td>
+            <td>${escapeHtml(productivityBusinessSummaryMoney(totals.cost, currency, financeVisible))}</td>
+            <td class="${moneyClass(totals.result)}">${escapeHtml(productivityBusinessSummaryMoney(totals.result, currency, financeVisible))}</td>
+            <td>${escapeHtml(formatProductivityOverviewNumber(totals.zero_pick_rows || 0, 0))}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function renderProductivityBusinessSummaryDialogError(backdrop, error) {
+  const body = backdrop.querySelector("[data-productivity-business-summary-body]");
+  if (!body) return;
+  const detail = error?.message ? ` (${error.message})` : "";
+  body.innerHTML = `<div class="empty-state">Summering kunde inte hämtas${escapeHtml(detail)}.</div>`;
+}
+
+function closeProductivityBusinessSummaryDialog(backdrop, onKeydown) {
+  document.removeEventListener("keydown", onKeydown);
+  backdrop?.remove();
+}
+
+async function openProductivityBusinessSummaryDialog(node) {
+  document.querySelector("[data-productivity-business-summary-dialog]")?.remove();
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.dataset.productivityBusinessSummaryDialog = "true";
+  backdrop.innerHTML = `
+    <div class="modal productivity-overview-summary-modal" role="dialog" aria-modal="true" aria-labelledby="productivityBusinessSummaryTitle">
+      <div class="productivity-overview-summary-modal-head">
+        <div>
+          <h2 id="productivityBusinessSummaryTitle">Summering</h2>
+          <p>${escapeHtml(node?.label || productivityOverviewRoot?.label || "Verksamhet")}</p>
+        </div>
+        <button type="button" class="productivity-overview-summary-close" aria-label="Stäng" title="Stäng" data-productivity-business-summary-close>×</button>
+      </div>
+      <div data-productivity-business-summary-body>
+        <div class="empty-state">Hämtar summering...</div>
+      </div>
+      <div class="actions">
+        <button type="button" data-productivity-business-summary-close>Stäng</button>
+      </div>
+    </div>
+  `;
+  const onKeydown = (event) => {
+    if (event.key === "Escape") closeProductivityBusinessSummaryDialog(backdrop, onKeydown);
+  };
+  document.addEventListener("keydown", onKeydown);
+  backdrop.querySelectorAll("[data-productivity-business-summary-close]").forEach((button) => {
+    button.addEventListener("click", () => closeProductivityBusinessSummaryDialog(backdrop, onKeydown));
+  });
+  document.body.appendChild(backdrop);
+  backdrop.querySelector("[data-productivity-business-summary-close]")?.focus({ preventScroll: true });
+  try {
+    const payload = await fetchProductivityBusinessSummary();
+    renderProductivityBusinessSummaryDialogContent(backdrop, payload);
+  } catch (error) {
+    renderProductivityBusinessSummaryDialogError(backdrop, error);
+    if (typeof showToast === "function") showToast("Summering kunde inte hämtas.", "error", 5000);
+  }
 }
 
 function productivityOverviewSourceWarnings(report) {
@@ -1144,8 +1448,8 @@ function renderProductivityOverviewReport(report) {
   const sync = report?.sync || {};
   const syncText = sync?.last_sync_at ? ` · API-sync ${formatProductivityOverviewTimestamp(sync.last_sync_at)}` : "";
   if (status) status.textContent = `${periodText}${daysText}${updated ? ` · uppdaterad ${updated}` : ""}${syncText}`;
-  const warningText = productivityOverviewSourceWarnings(report).join(" Â· ");
-  if (status && warningText) status.textContent = `${status.textContent} Â· ${warningText}`;
+  const warningText = productivityOverviewSourceWarnings(report).join(" · ");
+  if (status && warningText) status.textContent = `${status.textContent} · ${warningText}`;
 }
 
 async function fetchProductivityOverviewReport(dateValue = "") {
@@ -1181,11 +1485,19 @@ async function loadProductivityOverview() {
   const summary = document.getElementById("productivityOverviewSummary");
   const tree = document.getElementById("productivityOverviewTree");
   const breadcrumbs = document.getElementById("productivityOverviewBreadcrumbs");
-  if (status) status.textContent = "Hämtar produktivitetsöversikt...";
+  const loadToken = ++productivityOverviewLoadToken;
+  closeProductivityOverviewContextMenu();
+  setProductivityOverviewLoading("Hämtar produktivitetsöversikt...");
   try {
+    await waitForProductivityOverviewPaint();
     const report = await fetchProductivityOverviewReport(productivityOverviewDateValue());
+    if (loadToken !== productivityOverviewLoadToken) return;
+    setProductivityOverviewLoading("Beräknar och ritar produktivitet...");
+    await waitForProductivityOverviewPaint();
+    if (loadToken !== productivityOverviewLoadToken) return;
     renderProductivityOverviewReport(report);
   } catch (error) {
+    if (loadToken !== productivityOverviewLoadToken) return;
     productivityOverviewReport = null;
     productivityOverviewRoot = null;
     productivityOverviewNodeIndex = new Map();
@@ -1197,10 +1509,13 @@ async function loadProductivityOverview() {
     if (typeof showToast === "function") {
       showToast(status?.textContent || "Produktivitet kunde inte hämtas", "error", 7000);
     }
+  } finally {
+    if (loadToken === productivityOverviewLoadToken) clearProductivityOverviewLoading();
   }
 }
 
 async function initProductivityOverviewPage() {
+  renderProductivityOverviewShell();
   productivityOverviewUser = await initPage("productivity");
   if (!productivityOverviewUser) return;
   const input = document.getElementById("productivityOverviewDate");
@@ -1231,17 +1546,33 @@ async function initProductivityOverviewPage() {
     updateProductivityOverviewDateDisplay();
     void loadProductivityOverview();
   });
-  document.getElementById("productivityOverviewTree")?.addEventListener("click", (event) => {
+  const overviewTree = document.getElementById("productivityOverviewTree");
+  overviewTree?.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-node-id]");
     if (!button) return;
     focusProductivityOverviewNode(button.getAttribute("data-node-id"));
+  });
+  overviewTree?.addEventListener("contextmenu", (event) => {
+    const target = event.target.closest?.("[data-node-id]");
+    if (!target) return;
+    const node = productivityOverviewNodeIndex.get(target.getAttribute("data-node-id"));
+    if (!node || node.type !== "business") return;
+    event.preventDefault();
+    openProductivityOverviewContextMenu(event, node);
+  });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-productivity-overview-context-menu]")) return;
+    closeProductivityOverviewContextMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeProductivityOverviewContextMenu();
   });
   document.getElementById("productivityOverviewBreadcrumbs")?.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-node-id]");
     if (!button) return;
     focusProductivityOverviewNode(button.getAttribute("data-node-id"));
   });
-  await loadProductivityOverview();
+  void loadProductivityOverview();
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -3,6 +3,7 @@ from tools import performance_benchmark
 
 def test_performance_benchmark_covers_navigation_uploads_imports_and_interactions():
     page_names = {page.name for page in performance_benchmark.BENCHMARK_PAGES}
+    selectors = {page.name: page.ready_selector for page in performance_benchmark.BENCHMARK_PAGES}
 
     assert {
         "bemanning",
@@ -18,6 +19,7 @@ def test_performance_benchmark_covers_navigation_uploads_imports_and_interaction
         "bearbeta",
         "dela",
     } <= page_names
+    assert selectors["produktivitet"] == "#productivityOverviewStatus"
 
     source = performance_benchmark.PerformanceRun
     assert hasattr(source, "wait_for_background_prefetch")

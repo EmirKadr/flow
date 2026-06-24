@@ -691,7 +691,7 @@ def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_al
                                 "locations": [
                                     {"location": "UTL100", "x": 0, "y": 0, "w": 120, "h": 80, "maxPall": 2},
                                     {"location": "UTL101", "x": 140, "y": 0, "w": 120, "h": 80, "maxPall": 3},
-                                    {"location": "UTL102", "x": 280, "y": 0, "w": 120, "h": 80, "maxPall": 2},
+                                    {"location": "UTL102", "x": 280, "y": 0, "w": 60, "h": 180, "maxPall": 2},
                                 ],
                                 "assignments": [
                                     {
@@ -754,6 +754,25 @@ def test_ytgenerering_runs_forecast_and_surface_generation_in_one_click(local_al
         expect(page.locator("[data-map-metrics]")).to_contain_text("5")
         expect(page.locator("[data-map-metrics]")).to_contain_text("Lediga ytor")
         expect(page.locator("[data-map-metrics]")).to_contain_text("2")
+        map_text_contract = page.evaluate(
+            """() => {
+              const assigned = document.querySelector('[data-map-location-group="UTL100"] .allocation-map-label-main');
+              const unused = document.querySelector('[data-map-location-group="UTL101"] .allocation-map-label');
+              const verticalUnused = document.querySelector('[data-map-location-group="UTL102"] .allocation-map-label');
+              if (!assigned || !unused || !verticalUnused) throw new Error("Missing ytgenerering map labels");
+              return {
+                assignedFont: Number.parseFloat(getComputedStyle(assigned).fontSize),
+                unusedFont: Number.parseFloat(getComputedStyle(unused).fontSize),
+                unusedText: unused.textContent.trim(),
+                verticalUnusedFont: Number.parseFloat(getComputedStyle(verticalUnused).fontSize),
+                verticalUnusedTransform: verticalUnused.getAttribute("transform") || "",
+              };
+            }"""
+        )
+        assert map_text_contract["unusedText"] == "101"
+        assert map_text_contract["unusedFont"] == pytest.approx(map_text_contract["assignedFont"])
+        assert map_text_contract["verticalUnusedFont"] == pytest.approx(map_text_contract["assignedFont"])
+        assert "rotate(-90" in map_text_contract["verticalUnusedTransform"]
         page.wait_for_function(
             """() => document.querySelector("[data-map-canvas]")?.getAttribute("transform")?.includes("scale")"""
         )

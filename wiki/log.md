@@ -1,11 +1,96 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-15
+updated: 2026-06-24
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-24] docs | ASK-statuskoder far egen katalogplan
+
+Lade till `ask-statuskoder.md` som beskriver hur PDF-underlaget med
+Nowaste/ASK-statuskoder bor hanteras som en separat kodkatalog bredvid
+`data/external_data_catalog.json`. Sidan forklarar skillnaden mellan
+vy-/kolumnkatalog och kodbetydelser samt lyfter centrala pallspårningskoder
+som `RECEIVE_LOG` type `45`, `81`, `91` och `100`. Kallunderlaget ligger som
+projektkopia under `referens/ask-statuskoder/` sa wikin inte pekar pa filer
+utanfor projektet.
+
+Kompletterade ocksa wiki-regeln: nar Flow i framtiden skippar, exkluderar eller
+sarklassar ASK-koder ska dokumentationen beskriva varfor, inte bara vilken kod
+som filtreras.
+
+## [2026-06-17] feature | Produktivitet far verksamhetssummering
+
+Verksamhetsnoden i Produktivitet har nu hogerklickskommandot `Summering`.
+Dialogen anvander samma datum-/periodurval som produktivitetsvyn och visar
+intakt, kostnad, resultat och antal nollade plockrader per bolag. Nollade
+plockrader raknas fran plockloggens poster dar `Plockat`/`qty_suf` ar `0`.
+
+## [2026-06-17] feature | Kontroll visar processkombination per intaktsnyckel
+
+Intakt/utgiftens processkontroll jamfor nu `count_distinct`-utrakningar pa
+intaktsradens berakningsnyckel, till exempel `order_num`, i stallet for bara
+enskilda loggrader. Kontrollmodalen visar en egen processkombination med antal
+intaktsnycklar, tackta nycklar, saknade nycklar, extra nycklar och
+tackningsprocent, sa anvandaren kan se om flera KPI-processer tillsammans kan
+samla posterna bakom en intakt.
+
+## [2026-06-17] ux | Kontrollmodal visar prompt och process-SQL
+
+Processkopplingen i Intakt/utgiftens kontrollmodal ar nu en sokbar rullista i
+stallet for en lang radiolista. Samma modal visar radens prompt, intakts-SQL och
+process-SQL for vald KPI-process, och bottenknappen `Stang` ar borttagen eftersom
+dialogen har X i topphuvudet.
+
+## [2026-06-17] ux | Intakt/process-kontroll flyttar in i dialog
+
+`Kontrollera intakter/processer` och radkommandot `Kontroll` oppnar nu en
+dialog med manadsval innan kontrollen kors. Resultatet renderas i dialogen i
+stallet for inline i Intakt/utgift-fliken, och radkontrollen kan samtidigt
+koppla intaktsraden till en KPI-process.
+
+## [2026-06-17] fix | RFID-brygga filtrerar upprepade taggar
+
+USB-bryggan for RFID har nu ett 3-sekunders debounce-fonster per device,
+modul och tagg innan den postar till `/api/rfid/scans`. Autostartkommandot
+anvander `--dedupe-window 3` och skriver inte langre alla ra serialrader med
+`--echo`, sa en bricka som ligger kvar vid lasaren inte fyller loggen eller
+backend med upprepade lokala POST-anrop. Backendens dubblettskydd finns kvar som
+sista skydd om en upprepning anda nar API:t.
+
+## [2026-06-17] change | Intaktsrader far hogerklick och processkoppling
+
+Intakt/utgift-tabellen har inte langre en egen kolumn for radknappar.
+`Utrakning`, `Kontroll` och nya `Koppla process` ligger i stallet som
+hogerklickskommandon pa intaktsraden. Processkopplingen sparas pa raden och
+Produktivitet visar radens intakt pa matchande KPI-processer nar rollen har
+`productivityFinance=view`.
+
+## [2026-06-17] fix | RFID-bryggor vantar pa upptagen COM-port
+
+USB-bryggorna for RFID startas nu med `--retry-open`, sa COM9/COM10-processerna
+ligger kvar och provar igen om Arduino Serial Monitor, Serial Plotter eller
+Arduino IDE tillfalligt haller porten last. Serial-eko sanerar ocksa
+oskrivbara uppstartsbytes fran ESP32 sa bryggan inte kraschar pa Windows-loggen.
+
+## [2026-06-17] change | RFID gar via USB/COM utan WiFi
+
+MG Plock- och MG VM-sketcherna ar nu USB/Serial-only: de laser RDM6300 och
+skriver RFID-rader pa Serial utan WiFi, HTTP eller lokal serveradress.
+`start_local.bat` och `start_dev.bat` startar automatiskt COM-bryggor for
+`COM9 -> MG Plock` och `COM10 -> MG VM`, sa anvandaren normalt bara behover
+starta Flow och ha ESP32-modulerna anslutna pa ratt USB-port.
+
+## [2026-06-17] change | MG VM far egen RFID-modul
+
+RFID-hardvaran har nu en lokal `MG_VM`-sketch med unikt device-id
+`esp32-mg-vm-01` och modulnamn `MG VM`, vilket matchas mot aktiviteten
+`MG_VM`/`MG VM` i Bemanning. USB-bryggans dokumenterade COM10-kommando tvingar
+modulnamnet till MG VM via `--force-module-name`, och de lokala `.ino`-filerna
+for MG Plock/MG VM ar git-ignorerade eftersom de innehaller
+WiFi/server/token-konfiguration.
 
 ## [2026-06-15] change | GG far utlastade pallar-default
 
@@ -1711,3 +1796,82 @@ Implementerade auto-byte/merge i `data_fetch_service.build_retention_segments` +
 ## [2026-06-15] refactor | Delad fetch_all (fonstring) for alla externa hamtningar
 
 Flyttade "hamta alla rader, dela upp i datumfonster nar API:t kapar svaret" fran routern `data_fetch.py` ned till `ExternalDataClient` (`fetch_all` + fri funktion `fetch_all_rows`, `response_row_cap` i konstruktorn). `data_fetch._fetch_external_rows` delegerar nu dit, och `workflow_data.fetch_source_to_temp` bytte fran `fetch_data` till `fetch_all` sa Produktivitet och Bearbeta ocksa fonstrar (tidigare kapades de tyst vid radtaket, t.ex. vid helar). Inställningar-uträkningen arver via `_fetch_rows`. En enda sanning for komplett resultatmangd. Tester: behöll fonstrings-testerna + 3 nya (fetch_all_rows utan cap, med cap, samt klientmetoden); workflow-fejkklienten fick `fetch_all`. Registrerade aven WIP-routen `POST /api/settings/productivity-finance/calculation/test` i `flow_cli.ROUTES` sa CLI-registertestet blir gront. Uppdaterade `data-fetch.md`, `productivity.md`, `warehouse-tools.md`.
+
+## [2026-06-16] perf | Lokal start blir snabbare
+
+`start_local.bat` ar nu snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync. Live-till-SQLite-kopia flyttades till `sync_live_local.bat` och kraver `FLOW_SYNC_LIVE_ON_START=1`, sa en kvarliggande `LIVE_DATABASE_URL` inte langre gor vanlig lokal start langsam eller forsoker ersatta en last `flow_local.db`. `start_dev.bat` finns kvar for kodlage med reload.
+
+## [2026-06-16] perf | Bemanning och vybyte laddar snabbare
+
+Gemensam sidinit anvander nu cachad roll-/menydata for snabbare vybyte och friska upp serverdata i bakgrunden. Bemanning bygger aktiviteternas cell-dropdowns lazy: cellerna renderas med tomval och aktuell aktivitet, och hela aktivitetslistan fylls forst nar anvandaren oppnar en cell. Lokal Playwright-matning pa 173 personer/79 aktiviteter gick fran cirka 4,7 s till cirka 0,9 s for Bemanningens forsta anvandbara rader.
+
+## [2026-06-16] perf | Produktivitet renderar skal fore rapportdata
+
+Produktivitet visar nu kontroller, sammanfattningsskal och tradyta direkt och
+hamtar `/api/productivity/overview` efter forsta paint. Nar payloaden kommit
+vantar vyn en ny paint innan tradet beraknas och ritas, sa tunga
+periodrapporter inte blockerar forsta anvandbara sidan. Benchmark/smoke-
+verktygen vantar pa `#productivityOverviewStatus`, inte det borttagna
+`#productivityStatus`.
+
+## [2026-06-16] change | Bemanning doljer 0% produktivitet
+
+Bemanning visar inte langre `0%` i produktivitetskolumnen. Backendens
+`/api/schedule/productivity-summary` filtrerar bort personer som har planerad
+KPI-tid men 0 faktisk KPI-poang/process den dagen, och frontend har samma
+skydd om ett gammalt/cachat svar anda innehaller `0`.
+
+## [2026-06-16] feature | Intakt/process-kontroll
+
+Intakt/utgift-installningarna har nu knappen `Kontrollera intakter/processer`.
+Den kor `POST /api/settings/productivity-finance/process-check` for vald
+manad/bolag, hamtar de Mammur-/ASK-kallor som sparade intaktsplaner och
+KPI-processregler anvander, och jamfor faktisk radtackning. Resultatet visar
+foreslagna processmatchningar, intaktsrader som saknar KPI-process, KPI-processer
+som saknar intakt samt mojlig dubbelrakning. Radexempel ar sanerade till
+kontrollvarden som bolag/lager/zon/typ/status. Backend auditloggar
+`productivity_finance_process_check/run` med period, bolag och summerade
+raknetal. Matchningen godkanner aven intaktsrader som tacks av flera
+KPI-processer tillsammans och markerar bredare KPI-processer som granskningsnotis
+i stallet for att underkanna intaktsraden. Kallfel fran Mammur/ASK visas nu per
+kalla med sanerad feltext och utan falsk "ingen tydlig process"-matchning.
+
+## [2026-06-16] observability | Lokal TLS-varning tystas per process
+
+Nar `DATA_SOURCE_VERIFY_SSL=false` anvands lokalt dampar `ExternalDataClient`
+upprepade `urllib3 InsecureRequestWarning`-rader och skriver bara en Flow-loggrad
+om att TLS-verifiering ar avstangd. Sjalva requests-anropen fortsatter anvanda
+`verify=False`; CA-bundle-laget paverkas inte.
+
+## [2026-06-16] polish | Intakt/process-kontroll forklarar delvisa matcher
+
+KPI-reglerna bar nu med sina filtervillkor som metadata sa
+Intakt/process-kontrollen kan forklara varfor en intaktsrad bara ar delvis
+tackt. Exempel: en rad kan matcha processen `Receiving`, men saknade
+receive-rader visar nu att KPI-regeln vantade `Status` 20/30 medan raderna hade
+status 0. KPI-berakningens predicate-logik ar oforandrad.
+
+## [2026-06-16] fix | Intaktsutrakning sparar inte testmanad
+
+`POST /api/settings/productivity-finance/calculation/test` anvander fortfarande
+vald manad nar utrakningen provkors, men svaret som sparas pa raden tar bort
+testmanadens datumfilter fran plan och SQL/querytext. Standardraderna for GG och
+rensningen av befintliga sparade intaktsrader tar ocksa bort gamla
+`timestamp`/`time_stamp_int BETWEEN ...`-filter sa utrakningarna ar
+periodneutrala tills kontroll/rapport lagger pa vald period.
+
+## [2026-06-16] ux | Radvis Intakt/process-kontroll
+
+Intakt/utgift-rader med sparad utrakningsplan har nu en egen `Kontroll`-knapp.
+Knappen kor `/api/settings/productivity-finance/process-check` med `row_id`, sa
+backend bara kontrollerar den intaktsraden och hamtar radens relevanta
+Mammur-/ASK-vy. Resultatet visar KPI-processer som anvander samma vy med
+intaktsantal, processantal, overlapp och diff, vilket gor filteravvikelsen
+lattare att granska utan att kora igenom hela bolagets kontroll.
+
+## [2026-06-17] ux | Tomma Ytgenerering-ytor far storre text
+
+Ytgenereringens interaktiva resultatkarta visar nu ytkoden pa lediga ytor med
+samma dynamiska textstorlek som kundnamn pa placerade ytor. Staende lediga ytor
+roterar ytkoden langs ytan, sa platsnumret forblir tydligt vid utzoomad karta.
+Skyddas av riktat Playwright-test i `test_allocation_split_browser.py`.

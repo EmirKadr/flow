@@ -15,8 +15,11 @@ from ..deps import get_db, require_view_access
 from ..models import Activity, Business, Person, User
 from ..productivity_service import (
     ProductivitySourceError,
+    _number,
+    _read_csv_rows_with_headers,
+    _row_value,
 )
-from ..productivity_kpi_rules import build_person_productivity_report_from_files
+from ..productivity_kpi_rules import build_person_productivity_report_from_files, normalize_process
 from ..productivity_sync import (
     LOCAL_TZ,
     ProductivitySyncError,
@@ -87,6 +90,53 @@ def _productivity_finance_business_company_codes(business: Business | None) -> l
         if code and code not in codes:
             codes.append(code)
     return codes
+
+
+def _productivity_finance_row_label(row: dict) -> str:
+    return " | ".join(
+        part
+        for part in (
+            str(row.get("service") or "").strip(),
+            str(row.get("description") or "").strip(),
+            str(row.get("unit") or "").strip(),
+        )
+        if part
+    ) or str(row.get("id") or "Intaktsrad")
+
+
+def _productivity_finance_process_revenue_rows(settings_payload: dict, company_codes: list[str]) -> list[dict]:
+    allowed_company_codes = set(company_codes)
+    rows_by_company = settings_payload.get("invoice_rows_by_company") or {}
+    revenue_rows: list[dict] = []
+    for company, rows in rows_by_company.items():
+        company_code = clean_productivity_finance_company_code(company)
+        if company_code not in allowed_company_codes:
+            continue
+        for row in rows or []:
+            if row.get("collar_type") or row.get("vas_rate_type"):
+                continue
+            process_key = normalize_process(row.get("linked_process_key"))
+            if not process_key:
+                continue
+            price = float(row.get("price") or 0.0)
+            quantity = float(row.get("quantity") or 0.0)
+            revenue = _round_money(price * quantity)
+            if abs(revenue) <= 0.001:
+                continue
+            revenue_rows.append(
+                {
+                    "company": company_code,
+                    "row_id": str(row.get("id") or ""),
+                    "label": _productivity_finance_row_label(row),
+                    "process_key": process_key,
+                    "process_label": str(row.get("linked_process_label") or process_key),
+                    "quantity": quantity,
+                    "price": price,
+                    "revenue": revenue,
+                    "currency": "SEK",
+                }
+            )
+    return revenue_rows
 
 
 def _productivity_finance_company_for_activity(
@@ -183,6 +233,7 @@ def _productivity_finance_context(db: Session, user: User, business_id: int | No
         "currency": "SEK",
         "hourly_cost": float(settings_payload.get("hourly_cost") or 0.0),
         "vas_hourly_revenue_by_company": rates,
+        "process_revenue_rows": _productivity_finance_process_revenue_rows(settings_payload, company_codes),
         "company_codes": company_codes,
         "activity_meta": activity_meta,
         "person_collar_by_id": _productivity_finance_person_collars(db, business_id),
@@ -215,6 +266,17 @@ def _add_productivity_finance_summary(target: dict, source: dict) -> None:
     target["result"] = _round_money(float(target.get("result") or 0) + float(source.get("result") or 0))
     target["work_minutes"] = int(target.get("work_minutes") or 0) + int(source.get("work_minutes") or 0)
     target["vas_minutes"] = int(target.get("vas_minutes") or 0) + int(source.get("vas_minutes") or 0)
+
+
+def _add_productivity_finance_process_revenues(target: dict, rows: list[dict] | None) -> None:
+    cleaned_rows = [row for row in (rows or []) if abs(float(row.get("revenue") or 0.0)) > 0.001]
+    if not cleaned_rows:
+        return
+    target["process_revenues"] = cleaned_rows
+    for row in cleaned_rows:
+        revenue = float(row.get("revenue") or 0.0)
+        target["revenue"] = _round_money(float(target.get("revenue") or 0.0) + revenue)
+        target["result"] = _round_money(float(target.get("result") or 0.0) + revenue)
 
 
 def _productivity_finance_rate_for_company(context: dict, company: str, collar_type: str) -> float:
@@ -274,7 +336,7 @@ def _productivity_finance_person_collar(person: dict, context: dict) -> str:
     return normalize_productivity_finance_collar_type(raw_collar_type)
 
 
-def _attach_productivity_finance(report: dict, context: dict) -> dict:
+def _attach_productivity_finance(report: dict, context: dict, *, include_process_revenues: bool = True) -> dict:
     if not context.get("visible"):
         report["finance"] = {"visible": False}
         return report
@@ -291,8 +353,248 @@ def _attach_productivity_finance(report: dict, context: dict) -> dict:
         if person_finance["work_minutes"] > 0:
             person["finance"] = person_finance
             _add_productivity_finance_summary(report_finance, person_finance)
+    if include_process_revenues:
+        _add_productivity_finance_process_revenues(report_finance, context.get("process_revenue_rows") or [])
     report["finance"] = report_finance
     return report
+
+
+def _productivity_business_summary_company_label(company: str) -> str:
+    return company or "Okänt bolag"
+
+
+def _empty_productivity_business_company_summary(
+    company: str,
+    *,
+    currency: str = "SEK",
+    finance_visible: bool = True,
+) -> dict:
+    return {
+        "company": company,
+        "company_label": _productivity_business_summary_company_label(company),
+        "finance_visible": finance_visible,
+        "currency": currency,
+        "revenue": 0.0,
+        "vas_revenue": 0.0,
+        "process_revenue": 0.0,
+        "cost": 0.0,
+        "result": 0.0,
+        "work_minutes": 0,
+        "vas_minutes": 0,
+        "zero_pick_rows": 0,
+    }
+
+
+def _ensure_productivity_business_company_summary(
+    summaries: dict[str, dict],
+    company: str,
+    *,
+    currency: str,
+    finance_visible: bool,
+) -> dict:
+    company_code = clean_productivity_finance_company_code(company)
+    if company_code not in summaries:
+        summaries[company_code] = _empty_productivity_business_company_summary(
+            company_code,
+            currency=currency,
+            finance_visible=finance_visible,
+        )
+    return summaries[company_code]
+
+
+def _productivity_activity_meta_for_cell(cell: dict, context: dict) -> dict:
+    activity_id = cell.get("activity_id")
+    try:
+        activity_key = int(activity_id) if activity_id is not None else None
+    except (TypeError, ValueError):
+        activity_key = None
+    if activity_key is None:
+        return {}
+    return (context.get("activity_meta") or {}).get(activity_key, {}) or {}
+
+
+def _productivity_business_summary_company_for_cell(cell: dict, context: dict) -> str:
+    allowed_company_codes = set(context.get("company_codes") or [])
+    finance = cell.get("finance") or {}
+    meta = _productivity_activity_meta_for_cell(cell, context)
+    for candidate in (finance.get("company"), meta.get("company")):
+        company = clean_productivity_finance_company_code(candidate)
+        if company and (not allowed_company_codes or company in allowed_company_codes):
+            return company
+    area_company = clean_productivity_finance_company_code(cell.get("activity_area_code"))
+    if area_company and area_company in allowed_company_codes:
+        return area_company
+    return ""
+
+
+def _add_productivity_business_company_cell_finance(
+    summaries: dict[str, dict],
+    cell: dict,
+    context: dict,
+    *,
+    currency: str,
+    finance_visible: bool,
+) -> None:
+    finance = cell.get("finance") or {}
+    if not finance.get("visible"):
+        return
+    summary = _ensure_productivity_business_company_summary(
+        summaries,
+        _productivity_business_summary_company_for_cell(cell, context),
+        currency=currency,
+        finance_visible=finance_visible,
+    )
+    revenue = float(finance.get("revenue") or 0.0)
+    cost = float(finance.get("cost") or 0.0)
+    summary["revenue"] = _round_money(float(summary.get("revenue") or 0.0) + revenue)
+    summary["cost"] = _round_money(float(summary.get("cost") or 0.0) + cost)
+    summary["work_minutes"] = int(summary.get("work_minutes") or 0) + int(finance.get("work_minutes") or 0)
+    summary["vas_minutes"] = int(summary.get("vas_minutes") or 0) + int(finance.get("vas_minutes") or 0)
+    if finance.get("is_vas"):
+        summary["vas_revenue"] = _round_money(float(summary.get("vas_revenue") or 0.0) + revenue)
+
+
+def _add_productivity_business_company_report_finance(
+    summaries: dict[str, dict],
+    report: dict,
+    context: dict,
+    *,
+    currency: str,
+    finance_visible: bool,
+) -> None:
+    for person in report.get("people") or []:
+        for cell in person.get("time_cells") or []:
+            _add_productivity_business_company_cell_finance(
+                summaries,
+                cell,
+                context,
+                currency=currency,
+                finance_visible=finance_visible,
+            )
+
+
+def _add_productivity_business_company_process_revenues(
+    summaries: dict[str, dict],
+    rows: list[dict] | None,
+    *,
+    currency: str,
+    finance_visible: bool,
+) -> None:
+    for row in rows or []:
+        revenue = float(row.get("revenue") or 0.0)
+        if abs(revenue) <= 0.001:
+            continue
+        summary = _ensure_productivity_business_company_summary(
+            summaries,
+            str(row.get("company") or ""),
+            currency=currency,
+            finance_visible=finance_visible,
+        )
+        summary["revenue"] = _round_money(float(summary.get("revenue") or 0.0) + revenue)
+        summary["process_revenue"] = _round_money(float(summary.get("process_revenue") or 0.0) + revenue)
+
+
+def _productivity_zero_pick_rows_by_company(files: dict[str, Path]) -> dict[str, int]:
+    path = files.get("pick")
+    if path is None:
+        return {}
+    try:
+        _headers, rows = _read_csv_rows_with_headers(Path(path), compressed=str(path).lower().endswith(".gz"))
+    except Exception:
+        logger.warning("Kunde inte läsa plocklogg för nollade rader i produktivitetssummering.", exc_info=True)
+        return {}
+
+    counts: dict[str, int] = {}
+    for row in rows:
+        picked_raw = _row_value(row, "qty_suf", "Plockat", "plockat", "Picked", "picked")
+        if not str(picked_raw or "").strip():
+            continue
+        if abs(_number(picked_raw)) > 0.001:
+            continue
+        company = clean_productivity_finance_company_code(_row_value(row, "company", "Company", "Bolag", "bolag"))
+        counts[company] = counts.get(company, 0) + 1
+    return counts
+
+
+def _add_productivity_zero_pick_rows(
+    summaries: dict[str, dict],
+    counts: dict[str, int],
+    *,
+    currency: str,
+    finance_visible: bool,
+) -> None:
+    for company, count in counts.items():
+        if int(count or 0) <= 0:
+            continue
+        summary = _ensure_productivity_business_company_summary(
+            summaries,
+            company,
+            currency=currency,
+            finance_visible=finance_visible,
+        )
+        summary["zero_pick_rows"] = int(summary.get("zero_pick_rows") or 0) + int(count or 0)
+
+
+def _productivity_business_company_summary_has_values(summary: dict) -> bool:
+    return (
+        abs(float(summary.get("revenue") or 0.0)) > 0.001
+        or abs(float(summary.get("cost") or 0.0)) > 0.001
+        or int(summary.get("work_minutes") or 0) > 0
+        or int(summary.get("zero_pick_rows") or 0) > 0
+    )
+
+
+def _finalize_productivity_business_company_summaries(
+    summaries: dict[str, dict],
+    *,
+    company_codes: list[str],
+    currency: str,
+    finance_visible: bool,
+) -> tuple[list[dict], dict]:
+    company_order = {company: index for index, company in enumerate(company_codes or [])}
+    rows = [
+        summary
+        for summary in summaries.values()
+        if _productivity_business_company_summary_has_values(summary)
+    ]
+    for row in rows:
+        row["revenue"] = _round_money(row.get("revenue") or 0.0)
+        row["vas_revenue"] = _round_money(row.get("vas_revenue") or 0.0)
+        row["process_revenue"] = _round_money(row.get("process_revenue") or 0.0)
+        row["cost"] = _round_money(row.get("cost") or 0.0)
+        row["result"] = _round_money(float(row.get("revenue") or 0.0) - float(row.get("cost") or 0.0))
+
+    rows.sort(
+        key=lambda item: (
+            company_order.get(str(item.get("company") or ""), len(company_order)),
+            str(item.get("company_label") or ""),
+        )
+    )
+    totals = _empty_productivity_business_company_summary("", currency=currency, finance_visible=finance_visible)
+    totals["company_label"] = "Totalt"
+    for row in rows:
+        totals["revenue"] = _round_money(float(totals.get("revenue") or 0.0) + float(row.get("revenue") or 0.0))
+        totals["vas_revenue"] = _round_money(float(totals.get("vas_revenue") or 0.0) + float(row.get("vas_revenue") or 0.0))
+        totals["process_revenue"] = _round_money(float(totals.get("process_revenue") or 0.0) + float(row.get("process_revenue") or 0.0))
+        totals["cost"] = _round_money(float(totals.get("cost") or 0.0) + float(row.get("cost") or 0.0))
+        totals["work_minutes"] = int(totals.get("work_minutes") or 0) + int(row.get("work_minutes") or 0)
+        totals["vas_minutes"] = int(totals.get("vas_minutes") or 0) + int(row.get("vas_minutes") or 0)
+        totals["zero_pick_rows"] = int(totals.get("zero_pick_rows") or 0) + int(row.get("zero_pick_rows") or 0)
+    totals["result"] = _round_money(float(totals.get("revenue") or 0.0) - float(totals.get("cost") or 0.0))
+    return rows, totals
+
+
+def _productivity_business_payload(db: Session, user: User, business_id: int | None) -> dict:
+    business = None
+    try:
+        business = db.get(Business, business_id) if business_id is not None else None
+    except Exception:
+        business = None
+    return {
+        "id": business_id,
+        "code": _productivity_business_code(db, user),
+        "name": getattr(business, "name", None) or getattr(user, "business_name", None),
+    }
 
 
 def _audit_productivity_report_sources(
@@ -701,6 +1003,120 @@ def _overview_period_summary(reports: list[dict], requested_days: int) -> dict:
     }
 
 
+@router.get("/overview/business-summary")
+def get_productivity_overview_business_summary(
+    request: Request,
+    period: str = Query(default="day"),
+    date_filter: date | None = Query(default=None, alias="date"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(require_view_access("productivity", "view")),
+    db: Session = Depends(get_db),
+) -> dict:
+    normalized_period = str(period or "day").strip().lower()
+    period_start, period_end, period_label = _overview_period_bounds(
+        normalized_period,
+        anchor_date=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    days = _date_span(period_start, period_end)
+    business_id = _productivity_business_id(db, user)
+    finance_context = _productivity_finance_context(db, user, business_id)
+    finance_visible = bool(finance_context.get("visible"))
+    currency = str(finance_context.get("currency") or "SEK")
+    summaries: dict[str, dict] = {}
+    errors: list[dict] = []
+    reports: list[dict] = []
+    source_status: list[dict] = []
+
+    for day in days:
+        try:
+            report, day_source_status = _build_productivity_report_for_date(
+                request,
+                db,
+                user,
+                day,
+                ensure_snapshot=False,
+                wait_seconds=0,
+            )
+            if finance_visible:
+                _attach_productivity_finance(report, finance_context, include_process_revenues=False)
+                _add_productivity_business_company_report_finance(
+                    summaries,
+                    report,
+                    finance_context,
+                    currency=currency,
+                    finance_visible=finance_visible,
+                )
+            _add_productivity_zero_pick_rows(
+                summaries,
+                _productivity_zero_pick_rows_by_company(productivity_snapshot_files(day)),
+                currency=currency,
+                finance_visible=finance_visible,
+            )
+            reports.append(report)
+            source_status.append({
+                "date": day.isoformat(),
+                "status": "ok",
+                "source": (report.get("sync") or {}).get("source"),
+                "sources": day_source_status,
+            })
+        except (ProductivitySourceError, ProductivitySyncError) as exc:
+            errors.append({"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)})
+
+    if not reports and errors:
+        first_error = errors[0]
+        status_code = (
+            status.HTTP_502_BAD_GATEWAY
+            if first_error.get("error_type") == "ProductivitySyncError"
+            else status.HTTP_404_NOT_FOUND
+        )
+        raise HTTPException(
+            status_code,
+            detail=str(first_error.get("message") or "Produktivitetsperioden kunde inte hämtas."),
+        )
+
+    if finance_visible:
+        _add_productivity_business_company_process_revenues(
+            summaries,
+            finance_context.get("process_revenue_rows") or [],
+            currency=currency,
+            finance_visible=finance_visible,
+        )
+
+    companies, totals = _finalize_productivity_business_company_summaries(
+        summaries,
+        company_codes=list(finance_context.get("company_codes") or []),
+        currency=currency,
+        finance_visible=finance_visible,
+    )
+    missing_dates = [
+        day.isoformat()
+        for day in days
+        if not any(str(report.get("date") or "") == day.isoformat() for report in reports)
+    ]
+    return {
+        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "business": _productivity_business_payload(db, user, business_id),
+        "period": {
+            "type": normalized_period,
+            "label": period_label,
+            "start_date": period_start.isoformat(),
+            "end_date": period_end.isoformat(),
+            "requested_days": len(days),
+            "days_with_data": len(reports),
+        },
+        "finance_visible": finance_visible,
+        "currency": currency,
+        "companies": companies,
+        "totals": totals,
+        "source_status": source_status,
+        "missing_dates": missing_dates,
+        "errors": errors[:20],
+    }
+
+
 @router.get("/overview")
 def get_productivity_overview(
     request: Request,
@@ -734,7 +1150,7 @@ def get_productivity_overview(
                 ensure_snapshot=False,
                 wait_seconds=0,
             )
-            _attach_productivity_finance(report, finance_context)
+            _attach_productivity_finance(report, finance_context, include_process_revenues=False)
             reports.append(report)
             source_status.append({
                 "date": day.isoformat(),
@@ -782,6 +1198,7 @@ def get_productivity_overview(
         finance_summary = _empty_productivity_finance_summary(currency=str(finance_context.get("currency") or "SEK"))
         for report in reports:
             _add_productivity_finance_summary(finance_summary, report.get("finance") or {})
+        _add_productivity_finance_process_revenues(finance_summary, finance_context.get("process_revenue_rows") or [])
         payload["finance"] = finance_summary
     else:
         payload["finance"] = {"visible": False}

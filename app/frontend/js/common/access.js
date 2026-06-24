@@ -58,6 +58,14 @@ function readCachedRoleViewAccess() {
   }
 }
 
+function hasCachedRoleViewAccess() {
+  try {
+    return Boolean(localStorage.getItem(ROLE_VIEW_ACCESS_CACHE_KEY));
+  } catch (e) {
+    return false;
+  }
+}
+
 function cacheRoleViewAccess(access) {
   const normalized = normalizeRoleViewAccess(access);
   try { localStorage.setItem(ROLE_VIEW_ACCESS_CACHE_KEY, JSON.stringify(normalized)); } catch (e) {}
@@ -348,7 +356,7 @@ function sidebarLayoutPayload(layout) {
 async function refreshSidebarLayout(user, activePage) {
   const before = sidebarLayoutSignature(sidebarLayoutForRender());
   try {
-    const response = await api.get("/api/settings/sidebar");
+    const response = await api.get("/api/settings/sidebar", { cacheTtlMs: 5 * 60 * 1000 });
     const next = cacheSidebarLayout(response?.items || []);
     if (sidebarLayoutSignature(next) !== before) renderSidebar(user, activePage);
   } catch (e) {
@@ -359,7 +367,7 @@ async function refreshSidebarLayout(user, activePage) {
 async function refreshRoleViewAccess(user, activePage) {
   const before = JSON.stringify(roleViewAccessForRender());
   try {
-    const response = await api.get("/api/settings/role-access");
+    const response = await api.get("/api/settings/role-access", { cacheTtlMs: 5 * 60 * 1000 });
     const next = cacheRoleViewAccess(response?.access || {});
     if (JSON.stringify(next) !== before) renderSidebar(user, activePage);
   } catch (e) {
@@ -369,7 +377,7 @@ async function refreshRoleViewAccess(user, activePage) {
 
 async function refreshRoleViewAccessForRouting() {
   try {
-    const response = await api.get("/api/settings/role-access");
+    const response = await api.get("/api/settings/role-access", { cacheTtlMs: 5 * 60 * 1000 });
     cacheRoleViewAccess(response?.access || {});
     return true;
   } catch (e) {

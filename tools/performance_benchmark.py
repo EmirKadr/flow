@@ -43,7 +43,7 @@ class Measurement:
 BENCHMARK_PAGES: tuple[BenchPage, ...] = (
     BenchPage("bemanning", "/index.html", "#scheduleBody tr"),
     BenchPage("oversikt", "/overblick.html", "#overviewBody tr"),
-    BenchPage("produktivitet", "/produktivitet.html", "#productivityStatus"),
+    BenchPage("produktivitet", "/produktivitet.html", "#productivityOverviewStatus"),
     BenchPage("personer", "/personer.html", "#persons-body tr"),
     BenchPage("aktiviteter", "/aktiviteter.html", "#acts-body tr"),
     BenchPage("historik", "/historik.html", "#auditBody"),

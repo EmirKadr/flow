@@ -273,6 +273,13 @@ const allocationState = {
   productivityFinanceSettingsLoading: false,
   productivityFinanceSettingsSaving: false,
   productivityFinanceSettingsError: "",
+  productivityFinanceProcessCheck: null,
+  productivityFinanceProcessCheckLoading: false,
+  productivityFinanceProcessCheckRowId: "",
+  productivityFinanceProcessCheckError: "",
+  productivityFinanceProcessOptions: [],
+  productivityFinanceProcessOptionsLoaded: false,
+  productivityFinanceContextMenu: null,
 };
 
 let allocationPopoverDismissBound = false;
@@ -534,6 +541,13 @@ function resetAllocationBusinessScopedState(options = {}) {
     allocationState.productivityFinanceSettingsError = "";
     allocationState.productivityFinanceSettingsLoading = false;
     allocationState.productivityFinanceSettingsSaving = false;
+    allocationState.productivityFinanceProcessCheck = null;
+    allocationState.productivityFinanceProcessCheckError = "";
+    allocationState.productivityFinanceProcessCheckLoading = false;
+    allocationState.productivityFinanceProcessCheckRowId = "";
+    allocationState.productivityFinanceProcessOptions = [];
+    allocationState.productivityFinanceProcessOptionsLoaded = false;
+    allocationState.productivityFinanceContextMenu = null;
   }
 }
 

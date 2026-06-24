@@ -142,18 +142,21 @@
     }
     openCopyModal();
   });
+  const getSchedulePrintSelection = () => ({
+    year: state.year,
+    week: state.week,
+    weekday: state.weekday,
+    date: selectedScheduleYmdString(),
+    areaId: state.areaId,
+    areaName: state.areaId == null
+      ? "Alla områden"
+      : (state.areas.find((area) => area.id === state.areaId)?.name || "Nuvarande område"),
+  });
   if (typeof setupPresencePrintButton === "function") {
-    setupPresencePrintButton("presenceBtn", {
-      getSelection: () => ({
-        year: state.year,
-        week: state.week,
-        weekday: state.weekday,
-        areaId: state.areaId,
-        areaName: state.areaId == null
-          ? "Alla områden"
-          : (state.areas.find((area) => area.id === state.areaId)?.name || "Nuvarande område"),
-      }),
-    });
+    setupPresencePrintButton("presenceBtn", { getSelection: getSchedulePrintSelection });
+  }
+  if (typeof setupSchedulePrintButton === "function") {
+    setupSchedulePrintButton("printBtn", { getSelection: getSchedulePrintSelection });
   }
   document.getElementById("undoBtn").addEventListener("click", () => undoLastScheduleAction());
   document.getElementById("redoBtn").addEventListener("click", () => redoLastScheduleAction());

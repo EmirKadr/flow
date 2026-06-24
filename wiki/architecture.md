@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-06-10
+updated: 2026-06-16
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -47,11 +47,14 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `localStorage`: tema, sidebar-collapse, sidebar-layout-cache, role-view-access-cache.
 - `sessionStorage`: vald datumkontext, sidebar-user-cache, upload notice, dokumentlogg och kortlivad GET-/vycache for snabb navigation.
 - IndexedDB `flow-allokering-files`: lokala filer for lagerverktyg.
+- Sidinit anvander cachad roll-/menylayout for att rita sidebar och kontrollera vyatkomst utan att blockera varje sidbyte pa `/api/settings/role-access` och `/api/settings/sidebar`. Servern friskas fortfarande upp i bakgrunden och mutationer rensar GET-cachen via `api.js`.
 
 ## Deployment och lokal drift
 
 - `render.yaml` beskriver Render-drift.
-- `start_local.bat` startar lokal SQLite-baserad testmiljo och kan kopiera live-data till lokal DB om `LIVE_DATABASE_URL` finns.
+- `start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
+- `start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
+- `sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.
 - `tools.visual_smoke`, `tools.interactive_e2e` och desktop-prober skapar temporara databaser for tester.
 
 ## Kallor

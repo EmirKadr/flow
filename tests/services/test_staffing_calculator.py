@@ -556,6 +556,54 @@ def test_schedule_productivity_summary_reads_materialized_cell_cache(db_session,
     assert result["people"][str(person.id)]["kpi_minutes"] == 60
 
 
+def test_schedule_productivity_summary_skips_zero_point_people(db_session, monkeypatch):
+    business, _area, _activity, person, user = seed_staffing_data(db_session)
+    db_session.add(
+        PersonProductivityDaily(
+            business_id=business.id,
+            snapshot_date=date(2026, 6, 9),
+            person_id=person.id,
+            row_type="cell",
+            item_key="cell:600:660:1",
+            metric="points",
+            unit="poang",
+            kind="kpi",
+            start_minute=600,
+            end_minute=660,
+            kpi_points=0.0,
+            planned_kpi_points=100.0,
+            kpi_minutes=60,
+            units=0.0,
+            source_snapshot_at="2026-06-09T11:30:00",
+            schedule_signature="test",
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.ensure_productivity_snapshot",
+        lambda *_args, **_kwargs: {"ready": True, "last_sync_at": "2026-06-09T11:30:00"},
+    )
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.productivity_snapshot_files",
+        lambda day: {},
+    )
+    monkeypatch.setattr(
+        "app.backend.staffing_calculator_service.ensure_person_productivity_daily_cache",
+        lambda *_args, **_kwargs: {"status": "current"},
+    )
+
+    result = schedule_productivity_summary(
+        db_session,
+        user,
+        year=2026,
+        week=24,
+        weekday=2,
+        now=datetime(2026, 6, 9, 11, 17, tzinfo=LOCAL_TZ),
+    )
+
+    assert str(person.id) not in result["people"]
+
+
 def test_schedule_productivity_summary_keeps_cached_rows_when_snapshot_sync_fails(db_session, monkeypatch):
     business, _area, _activity, person, user = seed_staffing_data(db_session)
     db_session.add(

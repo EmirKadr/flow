@@ -100,6 +100,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("settings.productivity_finance_get", "GET", "/api/settings/productivity-finance", "Hämta produktivitetens intäkt/utgift"),
     ApiRoute("settings.productivity_finance_update", "PUT", "/api/settings/productivity-finance", "Uppdatera produktivitetens intäkt/utgift"),
     ApiRoute("settings.productivity_finance_calculation_test", "POST", "/api/settings/productivity-finance/calculation/test", "Testa uträkning för produktivitetens intäkt/utgift"),
+    ApiRoute("settings.productivity_finance_process_check", "POST", "/api/settings/productivity-finance/process-check", "Kontrollera intäktsrader mot KPI-processer"),
     ApiRoute("settings.sidebar_get", "GET", "/api/settings/sidebar", "Hämta verksamhetens sidomeny"),
     ApiRoute("settings.sidebar_update", "PUT", "/api/settings/sidebar", "Uppdatera verksamhetens sidomeny"),
     ApiRoute("settings.role_access_get", "GET", "/api/settings/role-access", "Hämta verksamhetens vyåtkomst"),

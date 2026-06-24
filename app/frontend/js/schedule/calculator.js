@@ -472,10 +472,34 @@ function buildActivitySelect(includeActivityIds = []) {
   const select = document.createElement("select");
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = "–";
+  empty.textContent = "-";
   select.appendChild(empty);
-  appendActivityOptions(select, includeActivityIds);
+  includeActivityIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id))
+    .forEach((id) => ensureSelectHasActivityOption(select, id));
+  select.dataset.activityOptionsLoaded = "0";
+  select.dataset.includeActivityIds = includeActivityIds.join(",");
   return select;
+}
+
+function ensureActivitySelectOptionsLoaded(select) {
+  if (!select || select.dataset.activityOptionsLoaded === "1") return;
+  const value = select.value;
+  const includeIds = String(select.dataset.includeActivityIds || "")
+    .split(",")
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id));
+  if (value) includeIds.push(Number(value));
+
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "-";
+  select.appendChild(empty);
+  appendActivityOptions(select, includeIds);
+  select.dataset.activityOptionsLoaded = "1";
+  select.value = value || "";
 }
 
 function ensureSelectHasActivityOption(select, activityId) {

@@ -234,6 +234,7 @@ function openFullHourSelect(e, td) {
   }
   focusSegment(td, td, 0, 60);
   const select = td.querySelector("select.cell-select");
+  if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
   setTimeout(() => openSelectPicker(select), 0);
 }
 
@@ -251,6 +252,7 @@ function openSplitSegmentSelect(e, td, part, minuteStart, minuteEnd) {
   }
   focusSegment(td, part, minuteStart, minuteEnd);
   const select = part.querySelector("select.half-select");
+  if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
   setTimeout(() => openSelectPicker(select), 0);
 }
 
@@ -403,8 +405,12 @@ function renderFullHourCell(td, segment, isScheduled) {
   select.disabled = locked || scheduleIsReadOnly();
 
   select.addEventListener("change", () => onSegmentChange(td, 0, 60));
-  select.addEventListener("focus", () => focusSegment(td, td, 0, 60));
+  select.addEventListener("focus", () => {
+    if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
+    focusSegment(td, td, 0, 60);
+  });
   select.addEventListener("mousedown", (e) => {
+    if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
     armFullHourDrag(td, e);
     e.stopPropagation();
     if (e.button === 0) e.preventDefault();
@@ -495,8 +501,12 @@ function renderSplitHourCell(td, segments, isScheduled) {
     select.disabled = locked || scheduleIsReadOnly();
 
     select.addEventListener("change", () => onSegmentChange(td, minute_start, minute_end));
-    select.addEventListener("focus", () => focusSegment(td, part, minute_start, minute_end));
+    select.addEventListener("focus", () => {
+      if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
+      focusSegment(td, part, minute_start, minute_end);
+    });
     select.addEventListener("mousedown", (e) => {
+      if (typeof ensureActivitySelectOptionsLoaded === "function") ensureActivitySelectOptionsLoaded(select);
       armHalfHourDrag(td, minute_start, minute_end, e);
       e.stopPropagation();
       if (e.button === 0) e.preventDefault();
@@ -574,18 +584,24 @@ function selectPersonRow(personId) {
   applySelectedPersonRow();
 }
 
+function shouldShowScheduleProductivityValue(value) {
+  const percent = Math.round(Number(value?.percent));
+  return Number.isFinite(percent) && percent > 0;
+}
+
 function renderScheduleProductivityCell(td, person) {
   td.textContent = "";
   td.className = "schedule-productivity";
   td.dataset.personId = String(person?.id || td.dataset.personId || "");
   const value = state.productivityByPersonId.get(Number(person?.id));
-  if (!value) {
+  if (!value || !shouldShowScheduleProductivityValue(value)) {
     td.title = "Ingen avslutad KPI-tid";
     return;
   }
+  const displayPercent = Math.round(Number(value.percent));
   const span = document.createElement("span");
   span.className = `schedule-productivity-value ${value.status}`;
-  span.textContent = `${value.percent}%`;
+  span.textContent = `${displayPercent}%`;
   td.title = `${Math.round(value.points)} p / ${value.hours.toFixed(1).replace(".", ",")} avslutade KPI-timmar`;
   td.appendChild(span);
 }

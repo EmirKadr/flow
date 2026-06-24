@@ -699,7 +699,9 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "refreshRoleViewAccess" in common
     assert '{ value: "super_user", label: "Super User", lockedLevel: "edit" }' in common
     assert '{ value: "demo", label: "Demo" }' in common
-    assert 'api.get("/api/settings/role-access")' in common
+    assert 'api.get("/api/settings/role-access", { cacheTtlMs: 5 * 60 * 1000 })' in common
+    assert "function hasCachedRoleViewAccess" in common
+    assert "shouldBlockForRoleAccess" in common
     assert 'api.put("/api/settings/role-access"' in users
     assert "readCachedSidebarUser" in common
     assert "sidebar-initializing" in common
@@ -720,7 +722,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert 'id="assistant-chat-input"' in common
     assert "event.shiftKey" in common
     assert "requestSubmit()" in common
-    assert 'api.get("/api/settings/sidebar")' in common
+    assert 'api.get("/api/settings/sidebar", { cacheTtlMs: 5 * 60 * 1000 })' in common
     assert 'api.put("/api/settings/sidebar"' in common
     assert "renderSidebarNav" in common
     assert "function sidebarRoleLabel" in common
@@ -892,12 +894,29 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "hourNode.startMinute" in productivity_overview
     assert "formatProductivityOverviewHours" in productivity_overview
     assert "process_points" in productivity_overview
+    assert "process_key" in productivity_overview
+    assert "normalizeProductivityOverviewProcessKey" in productivity_overview
+    assert "applyProductivityOverviewProcessRevenues" in productivity_overview
+    assert "finance?.process_revenues" in productivity_overview
     assert "buildProductivityOverviewTree" in productivity_overview
     assert "focusProductivityOverviewNode" in productivity_overview
+    assert "openProductivityOverviewContextMenu" in productivity_overview
+    assert 'addEventListener("contextmenu"' in productivity_overview
+    assert "data-productivity-business-summary" in productivity_overview
+    assert "`/api/productivity/overview/business-summary${query}`" in productivity_overview
     assert "productivity-overview-branch" in productivity_overview
+    assert "renderProductivityOverviewShell" in productivity_overview
+    assert "waitForProductivityOverviewPaint" in productivity_overview
+    assert "  void loadProductivityOverview();\n}\n\ndocument.addEventListener" in productivity_overview
+    assert "Beräknar och ritar produktivitet" in productivity_overview
+    assert 'setAttribute("aria-busy", "true")' in productivity_overview
+    assert 'src="/js/productivity_overview.js?v=20260616-productivity-progressive"' in productivity_html
     assert "productivity-overview-tree-wrap" in styles
     assert ".productivity-overview-export-modal" in styles
     assert ".productivity-overview-export-levels" in styles
+    assert ".productivity-overview-context-menu" in styles
+    assert ".productivity-overview-summary-modal" in styles
+    assert ".productivity-overview-summary-table" in styles
     assert ".productivity-overview-period-toggle" in styles
     assert "grid-auto-flow: column" in styles
     assert ".productivity-overview-branch::before" in styles
@@ -915,7 +934,7 @@ def test_frontend_theme_toggle_is_wired_globally():
             continue
         html = html_path.read_text(encoding="utf-8")
         assert "/js/common.js" in html
-        assert 'src="/js/common.js?v=20260614-common-modules"' in html
+        assert 'src="/js/common.js?v=20260616-speed-common"' in html
         common_script_order = [
             "/js/common/foundation.js",
             "/js/common/theme.js",
@@ -1085,6 +1104,9 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "`/api/schedule/productivity-summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}`" in schedule
     assert "function buildScheduleProductivityMapFromSummary" in schedule
     assert "scheduleProductivityStatusClass(percent)" in schedule
+    assert "function shouldShowScheduleProductivityValue" in schedule
+    assert "percent > 0" in schedule
+    assert "!value || !shouldShowScheduleProductivityValue(value)" in schedule
     assert ".schedule-productivity-value.low" in styles
     assert ".schedule-productivity-value.warn" in styles
     assert ".schedule-productivity-value.good" in styles
@@ -1266,9 +1288,53 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-productivity-finance-invoice-row" in allocation
     assert "data-productivity-finance-row-price" in allocation
     assert "data-productivity-finance-row-quantity" in allocation
-    assert "data-productivity-finance-calculation" in allocation
+    assert "openProductivityFinanceContextMenu" in allocation
+    assert "data-action=\"calculation\"" in allocation
+    assert "data-action=\"check\"" in allocation
+    assert "data-action=\"link-process\"" in allocation
+    assert "openProductivityFinanceProcessLinkDialog" in allocation
+    assert "openProductivityFinanceProcessCheckDialog" in allocation
+    assert "requestProductivityFinanceProcessCheck" in allocation
+    assert "data-linked-process-key" in allocation
+    assert "linked_process_key" in allocation
+    assert "productivityFinanceProcessCheckSameView" in allocation
     assert "data-productivity-finance-calculation-month" in allocation
     assert "company_code: companyCode" in allocation
+    assert "data-productivity-finance-process-check" in allocation
+    assert "data-productivity-finance-process-check-dialog-month" in allocation
+    assert "data-productivity-finance-process-check-dialog-company" in allocation
+    assert "data-productivity-finance-process-check-dialog-result" in allocation
+    assert "data-productivity-finance-process-check-link-save" in allocation
+    assert "data-productivity-finance-check-link-process" in allocation
+    assert "data-productivity-finance-process-combobox" in allocation
+    assert "renderProductivityFinanceProcessDatalist" in allocation
+    assert "data-productivity-finance-process-check-sql-details" in allocation
+    assert "renderProductivityFinanceProcessCheckSqlDetails" in allocation
+    assert "productivityFinanceProcessCheckCombinedCoverage" in allocation
+    assert "Processkombination" in allocation
+    assert "combined_process_coverage" in allocation
+    assert "Process-SQL" in allocation
+    assert "Intäkts-SQL" in allocation
+    assert "productivity-finance-process-check-modal-head" in allocation
+    assert "productivity-finance-process-check-x" in allocation
+    assert 'aria-label="Stäng"' in allocation
+    assert 'class="secondary" data-productivity-finance-process-check-close>Stäng</button>' not in allocation
+    assert "${PRODUCTIVITY_FINANCE_SETTINGS_API}/process-check" in allocation
+    assert "productivity-finance-process-check-result" in styles
+    assert "productivity-finance-process-check-modal" in styles
+    assert "productivity-finance-process-check-modal-head" in styles
+    assert "productivity-finance-process-check-modal-tools" in styles
+    assert "productivity-finance-process-check-x" in styles
+    assert "productivity-finance-process-check-link-panel" in styles
+    assert "productivity-finance-process-check-link-chip" in styles
+    assert "productivity-finance-process-check-sql-panel" in styles
+    assert "productivity-finance-process-check-combination" in styles
+    assert "productivity-finance-row-context-menu" in styles
+    assert "productivity-finance-process-link-modal" in styles
+    assert "productivity-finance-row-check-button" not in styles
+    assert "data-productivity-finance-row-process-check" not in allocation
+    assert "${renderProductivityFinanceProcessCheckResult()}" not in allocation
+    assert "productivity-finance-process-check-same-view" in styles
     finance_calculation_dialog = allocation.split("function openProductivityFinanceCalculationDialog", 1)[1].split(
         "function renderProductivityFinanceSettingsPanel",
         1,
@@ -1516,8 +1582,10 @@ def test_presence_print_is_wired_to_both_planning_views():
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert '<button id="presenceBtn" type="button">Närvarande</button>' in schedule_html
+    assert '<button id="printBtn" type="button">Skriv ut</button>' in schedule_html
     assert '<button id="presenceBtn" type="button">Närvarande</button>' in overview_html
     assert schedule_html.index('id="presenceBtn"') < schedule_html.index('id="undoBtn"')
+    assert schedule_html.index('id="presenceBtn"') < schedule_html.index('id="printBtn"') < schedule_html.index('id="undoBtn"')
     assert overview_html.index('id="presenceBtn"') < overview_html.index('id="undoBtn"')
     assert '<script src="/js/presence_print.js"></script>' in schedule_html
     assert '<script src="/js/presence_print.js"></script>' in overview_html
@@ -1543,6 +1611,14 @@ def test_presence_print_is_wired_to_both_planning_views():
     positions = [schedule_html.index(script) for script in schedule_script_order]
     assert positions == sorted(positions)
     assert "setupPresencePrintButton(\"presenceBtn\"" in schedule
+    assert "setupSchedulePrintButton(\"printBtn\"" in schedule
+    assert "getSchedulePrintSelection" in schedule
+    assert "ensureActivitySelectOptionsLoaded" in schedule
+    assert 'select.dataset.activityOptionsLoaded = "0"' in schedule
+    assert 'select.dataset.activityOptionsLoaded === "1"' in schedule
+    assert 'empty.textContent = "-";' in schedule
+    assert "â€“" not in schedule
+    assert "appendActivityOptions(select, includeIds)" in schedule
     assert "setupPresencePrintButton(\"presenceBtn\"" in overview
     assert "function overviewPresenceSelection" in overview
     assert "writeOverviewSelectedDate(selectedDate)" in overview
@@ -1552,13 +1628,28 @@ def test_presence_print_is_wired_to_both_planning_views():
     assert 'params.set("area_id"' in presence
     assert 'params.set("business_id"' in presence
     assert "api.get(presenceQuery(selection, scope)" in presence
+    assert "function setupSchedulePrintButton" in presence
+    assert 'value="staffing" checked' in presence
+    assert 'value="evacuation"' in presence
+    assert "Bemanning" in presence
+    assert "Utrymning" in presence
+    assert "schedulePrintIsInferredLunch" in presence
+    assert "schedule-print-cell-text" in presence
+    assert "includeSplitTimes: false" in presence
+    assert "schedule-print-evacuation-table" in presence
+    assert "window.setupSchedulePrintButton = setupSchedulePrintButton;" in presence
     assert "Alla områden" in presence
     assert "groups.map((group)" in presence
     assert "presence-print-group" in presence
     assert "group.business_name" in presence
     assert "window.print()" in presence
     assert "@media print" in styles
+    assert "size: A4 landscape" in styles
     assert "body.presence-printing" in styles
+    assert ".schedule-print-staffing .schedule-print-matrix" in styles
+    assert "white-space: nowrap" in styles
+    assert ".schedule-print-summary" in styles
+    assert ".schedule-print-status.sick" in styles
 
 
 def test_super_user_business_fields_are_wired_in_register_ui():

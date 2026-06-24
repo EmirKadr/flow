@@ -119,6 +119,7 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
     overview = read_frontend("js/overview.js")
+    productivity_overview = read_frontend("js/productivity_overview.js")
 
     assert "requestIdleCallback" in common
     assert "BACKGROUND_PREFETCH_INITIAL_DELAY_MS" in common
@@ -138,6 +139,13 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
 
     assert "document.createDocumentFragment()" in overview
     assert "AbortController" in overview
+
+    assert "renderProductivityOverviewShell" in productivity_overview
+    assert "waitForProductivityOverviewPaint" in productivity_overview
+    assert "productivityOverviewLoadToken" in productivity_overview
+    assert "setProductivityOverviewLoading(\"Hämtar produktivitetsöversikt" in productivity_overview
+    assert "setProductivityOverviewLoading(\"Beräknar och ritar produktivitet" in productivity_overview
+    assert "  void loadProductivityOverview();\n}" in productivity_overview
 
 
 def test_same_server_heavy_external_work_is_offloaded_from_async_routes():

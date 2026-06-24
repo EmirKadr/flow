@@ -809,6 +809,8 @@ class ProductivityFinanceInvoiceRow(BaseModel):
     calculation_sql: str = ""
     collar_type: PersonCollarType | None = None
     vas_rate_type: str | None = None
+    linked_process_key: str | None = None
+    linked_process_label: str | None = None
 
 
 class ProductivityFinanceSettingsOut(BaseModel):
@@ -841,6 +843,13 @@ class ProductivityFinanceCalculationTestOut(BaseModel):
     calculation_sql: str
     view: str
     view_label: str
+
+
+class ProductivityFinanceProcessCheckRequest(BaseModel):
+    month: int = Field(ge=1, le=12)
+    year: int | None = Field(default=None, ge=2000, le=2100)
+    company_code: str | None = Field(default=None, max_length=40)
+    row_id: str | None = Field(default=None, max_length=120)
 
 
 class SidebarLayoutItem(BaseModel):

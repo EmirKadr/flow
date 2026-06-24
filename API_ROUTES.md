@@ -115,6 +115,7 @@ verksamheter.
 | `settings.productivity_finance_get` | `GET` | `/api/settings/productivity-finance` | Hämta produktivitetens intäkt/utgift |
 | `settings.productivity_finance_update` | `PUT` | `/api/settings/productivity-finance` | Uppdatera produktivitetens intäkt/utgift |
 | `settings.productivity_finance_calculation_test` | `POST` | `/api/settings/productivity-finance/calculation/test` | Testa uträkning för produktivitetens intäkt/utgift |
+| `settings.productivity_finance_process_check` | `POST` | `/api/settings/productivity-finance/process-check` | Kontrollera intäktsrader eller vald `row_id` mot KPI-processer |
 | `settings.sidebar_get` | `GET` | `/api/settings/sidebar` | Hämta verksamhetens sidomeny |
 | `settings.sidebar_update` | `PUT` | `/api/settings/sidebar` | Uppdatera verksamhetens sidomeny |
 | `settings.role_access_get` | `GET` | `/api/settings/role-access` | Hämta verksamhetens roll-vyåtkomst |
@@ -192,6 +193,7 @@ aktivitetstimmar.
 | `productivity.sync` | `POST` | `/api/productivity/sync` | Synka valt datum, eller dagens produktivitetsdata om datum saknas |
 | `productivity.person` | `GET` | `/api/productivity/persons/{person_id}` | Personens produktivitetssnitt per aktivitet for vecka/manad/ar/datumperiod |
 | `productivity.overview` | `GET` | `/api/productivity/overview` | Produktivitetsoversikt for dag/vecka/manad/ar/datumperiod |
+| `productivity.overview_business_summary` | `GET` | `/api/productivity/overview/business-summary` | Verksamhetssummering per bolag for samma periodurval som Produktivitet |
 | `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
 
 Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
@@ -219,6 +221,11 @@ vecka/manad/ar vid dagens datum och returnerar `missing_dates` om en dag saknar
 snapshot/fallback. Periodvyn laser befintliga snapshots och triggar inte extern
 historikhamtning vid varje periodbyte; schemalagd sync/backfill ansvarar for att
 fylla pa data.
+
+`GET /api/productivity/overview/business-summary` accepterar samma `date`,
+`period`, `start_date` och `end_date` och returnerar `companies[]` plus
+`totals` med intakt, kostnad, resultat och antal plockloggsrader dar
+`Plockat`/`qty_suf` ar `0`.
 
 | `public.hours` | `GET` | `/api/public/hours` | Publika timmar för dag |
 | `public.hours_week` | `GET` | `/api/public/hours/week` | Publika timmar för vecka |

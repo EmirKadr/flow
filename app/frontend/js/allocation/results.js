@@ -810,11 +810,9 @@ function setupAllocationWarehouseMap(host, entry) {
     const contentY = contentRect.y + contentRect.h / 2;
     const contentWidth = Math.max(18, horizontal ? contentRect.w - 10 : contentRect.h - 10);
     const contentHeight = Math.max(18, horizontal ? contentRect.h - 10 : contentRect.w - 10);
-    const mainFont = assignment
-      ? allocationMapClamp(contentHeight / (labelLines.length > 1 ? 2.45 : 1.85), 13, 22)
-      : allocationMapClamp(shortSide * 0.24, 11, 15);
+    const mainFont = allocationMapClamp(contentHeight / (labelLines.length > 1 ? 2.45 : 1.85), 13, 22);
     const lineHeight = mainFont * 1.1;
-    const firstLineY = assignment ? contentY - ((labelLines.length - 1) * lineHeight) / 2 : center.y;
+    const firstLineY = contentY - ((labelLines.length - 1) * lineHeight) / 2;
 
     elements.edgeText.textContent = shortLocation;
     elements.edgeText.style.display = assignment ? "" : "none";
@@ -849,21 +847,21 @@ function setupAllocationWarehouseMap(host, entry) {
     }
 
     elements.mainText.textContent = "";
-    elements.mainText.setAttribute("x", assignment ? contentX : center.x);
+    elements.mainText.setAttribute("x", contentX);
     elements.mainText.setAttribute("y", firstLineY);
     elements.mainText.setAttribute("class", assignment ? "allocation-map-label-main" : "allocation-map-label");
     elements.mainText.style.fontSize = `${mainFont}px`;
     elements.mainText.removeAttribute("transform");
     elements.mainText.removeAttribute("textLength");
     elements.mainText.removeAttribute("lengthAdjust");
-    if (assignment && !horizontal) {
+    if (!horizontal) {
       elements.mainText.setAttribute("transform", `rotate(-90, ${contentX}, ${contentY})`);
     }
     labelLines.forEach((line, index) => {
       const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
-      span.setAttribute("x", assignment ? contentX : center.x);
-      span.setAttribute("y", assignment ? firstLineY + index * lineHeight : center.y);
-      if (assignment && allocationMapEstimatedTextWidth(line, mainFont) > contentWidth) {
+      span.setAttribute("x", contentX);
+      span.setAttribute("y", firstLineY + index * lineHeight);
+      if (allocationMapEstimatedTextWidth(line, mainFont) > contentWidth) {
         span.setAttribute("textLength", String(Math.round(contentWidth)));
         span.setAttribute("lengthAdjust", "spacingAndGlyphs");
       }

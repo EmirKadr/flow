@@ -14,11 +14,14 @@ from typing import Any, Optional, Union
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
 
 from .observability import add_span_attributes, start_span
 
 
 logger = logging.getLogger(__name__)
+_INSECURE_TLS_WARNING_SUPPRESSED = False
 
 
 class ExternalDataClientError(Exception):
@@ -62,6 +65,17 @@ def data_source_base_url_for_tenant(base_url: str, tenant: object) -> str:
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
 
+def _suppress_insecure_tls_warning_once() -> None:
+    global _INSECURE_TLS_WARNING_SUPPRESSED
+    if _INSECURE_TLS_WARNING_SUPPRESSED:
+        return
+    urllib3.disable_warnings(InsecureRequestWarning)
+    logger.warning(
+        "External data TLS certificate verification is disabled; suppressing repeated urllib3 InsecureRequestWarning messages."
+    )
+    _INSECURE_TLS_WARNING_SUPPRESSED = True
+
+
 class ExternalDataClient:
     """Fetch-only client for the configured external data endpoint."""
 
@@ -82,6 +96,8 @@ class ExternalDataClient:
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
         self.verify = ca_bundle.strip() if ca_bundle else verify_ssl
+        if self.verify is False:
+            _suppress_insecure_tls_warning_once()
         self.view_data_path_template = view_data_path_template.strip()
         self.response_row_cap = max(0, int(response_row_cap or 0))
         self.session = session or requests.Session()

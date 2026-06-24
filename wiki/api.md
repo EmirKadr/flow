@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-15
+updated: 2026-06-17
 tags: [api, backend]
 ---
 
@@ -69,6 +69,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET/PUT /api/settings` - appsettings per verksamhet.
 - `GET/PUT /api/settings/sidebar` - sidebar per verksamhet.
 - `GET/PUT /api/settings/role-access` - global roll-vyatkomst for alla verksamheter.
+- `GET/PUT /api/settings/productivity-finance` - Produktivitetens Intakt/utgift-installningar per verksamhet: kostnad per timme, VAS-intakt per bolag, intaktsrader per bolag, sparade utrakningsplaner och valfri `linked_process_key`/`linked_process_label` per rad for att visa intakt pa KPI-processer.
 
 Alla registerlistor ovan ar verksamhetsscopeade. Icke-Super Users far bara egen
 verksamhet. Super User kan anvanda `business_id` dar API:t accepterar filter
@@ -90,9 +91,11 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/healthcheck/wait-metrics/summary` - Super User-summering for Historik-fliken `Vantetider` och CLI-verktyget `tools.healthcheck`; accepterar `business_id`.
 - `GET /api/productivity` - produktivitet, kraver `productivity=view` for lasning. Rapporten anvander serverns globala personbaserade API-snapshot for pick/trans/pallet/receive/order_log/sort/base_pallet/kpi och returnerar `backfill` for historikhamtning.
 - `GET /api/productivity/persons/{person_id}` - personens aktivitetssnitt for `period=week|month|year|custom`. `date` styr vecka/manad/ar och `start_date`/`end_date` styr custom. Svaret innehaller `activities[]`, totalsummering, `missing_dates` och `backfill`.
-- `GET /api/productivity/overview` - periodpayload for Produktivitet med dag/vecka/manad/ar/custom, underliggande dagsrapporter, periodsummary, saknade datum och global backfillstatus.
+- `GET /api/productivity/overview` - periodpayload for Produktivitet med dag/vecka/manad/ar/custom, underliggande dagsrapporter, periodsummary, saknade datum och global backfillstatus. Med `productivityFinance=view` innehaller periodens `finance` aven `process_revenues` for intaktsrader som kopplats till KPI-processer i Intakt/utgift.
+- `GET /api/productivity/overview/business-summary` - verksamhetssummering for samma `date`/`period`/`start_date`/`end_date` som Produktivitet. Svaret grupperar intakt, kostnad, resultat och antal plockloggsrader med `Plockat`/`qty_suf = 0` per bolag och total.
 - `POST /api/productivity/sync` - manuell sync av Produktivitetens API-snapshot for valt datum eller dagens datum, kraver `productivity=edit`.
-- `POST /api/settings/productivity-finance/calculation/test` - testar en Intakt/utgift-rads utrakning for vald startad manad i innevarande ar. Endpointen kraver `productivityFinanceSettings=edit`, tolkar prompten via MiniMax/Hamta data, lagger automatiskt pa aktuell `company_code` som `company`/Bolag-filter nar vald ASK-vy har bolagskolumn, kor validerad plan mot extern datakalla, applicerar lokala exkluderingar/jamforelser/textfilter, beraknar eventuell `calculation` lokalt pa raderna och returnerar `quantity`, plan och sparbar SQL/querytext.
+- `POST /api/settings/productivity-finance/calculation/test` - testar en Intakt/utgift-rads utrakning for vald startad manad i innevarande ar. Endpointen kraver `productivityFinanceSettings=edit`, tolkar prompten via MiniMax/Hamta data, lagger automatiskt pa aktuell `company_code` som `company`/Bolag-filter nar vald ASK-vy har bolagskolumn, kor validerad plan mot extern datakalla, applicerar lokala exkluderingar/jamforelser/textfilter, beraknar eventuell `calculation` lokalt pa raderna och returnerar `quantity`, periodneutral plan och sparbar SQL/querytext utan testmanadens datumfilter.
+- `POST /api/settings/productivity-finance/process-check` - jamfor sparade Intakt/utgift-utrakningar med KPI-processregler for vald manad. Body accepterar `month`, valfri `year`, valfri `company_code` och valfri `row_id`. Med `row_id` kontrolleras bara den intaktsraden och backend hamtar bara radens relevanta Mammur-/ASK-vy. Svaret listar matchade KPI-processer, processer pa samma vy med intaktsantal/processantal/overlapp/diff, saknade rader eller unika berakningsnycklar, bredare processer och mojlig dubbelrakning. Vid `count_distinct`, till exempel unika `order_num`, jamfor kontrollen processernas samlade nycklar mot intaktens nycklar och returnerar `comparison_key_columns`, `comparison_key_label`, `comparison_key_count` samt `combined_process_coverage` med foreslagen processkombination, tackta/saknade/extra nycklar och tackningsprocent. Radsvaret innehaller aven `calculation_prompt`, sparad/periodiserad intakts-SQL och `process_sql` pa processerna i samma vy, sa UI:t kan visa prompt, intakts-SQL och vald process-SQL i kontroll-dialogen. Endpointen kraver `productivityFinanceSettings=view` och auditloggar sanerad period/bolag/rad/summering.
 - Produktivitetsfilroutes ar borttagna: `/api/productivity/files`, `/api/productivity/files/raw`, `/api/productivity/files/{file_type}` och `/api/productivity/targets` finns inte langre.
 - `POST /api/rfid/scans`, `GET /api/rfid/events`, `POST /api/rfid/events/{id}/apply|ignore` - RFID-flodet for Bemanning. Device-endpointen ar avsiktligt separat fran inloggad UI, men kan skyddas med `RFID_DEVICE_TOKEN`; inloggade apply/ignore kraver `schedule=edit`.
 - `GET /api/coredata/files` - listar verksamhetens permanenta coredata-karnfiler fran Postgres-tabellen `coredata_files` med filbaserad fallback, samt sammanstalld data som `artikel_max.csv`. Bearbeta anropar den bara for Uppladdningar eller synliga floden dar kallvalet kraver `Uppladdning`; API-installda kallor behover inte uppladdningsstatus.

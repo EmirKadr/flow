@@ -139,7 +139,7 @@ STATES: tuple[VisualState, ...] = (
     VisualState("viewer-nekad-uppladdningar", "/uppladdningar.html", "#scheduleTable", "noop", ("viewer",)),
     VisualState("flow-fokus-mestergruppen", "/index.html", "#scheduleTable", "area_focus_mg", ("admin", "leader", "staffing")),
     VisualState("oversikt-fokus-mestergruppen", "/overblick.html", "#overviewTable", "area_focus_mg", ("admin", "leader", "staffing")),
-    VisualState("produktivitet-fokus-mestergruppen", "/produktivitet.html", "#productivityStatus", "area_focus_mg", ("admin",)),
+    VisualState("produktivitet-fokus-mestergruppen", "/produktivitet.html", "#productivityOverviewStatus", "area_focus_mg", ("admin",)),
     VisualState("personer-fokus-mestergruppen", "/personer.html", "#persons-table", "area_focus_mg", ("admin", "leader", "staffing")),
     VisualState("aktiviteter-fokus-mestergruppen", "/aktiviteter.html", "#acts-body", "area_focus_mg", ("admin", "leader", "staffing")),
 )

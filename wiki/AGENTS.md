@@ -47,6 +47,14 @@ trackade anvandarinteraktioner och bara nar backend-flaggan
 API-nycklar, privata URL:er, filnamn, filvagar, request bodies och
 provider-detaljer far aldrig sparas som trackingpayload.
 
+Nar en andring ror ASK-/Nowaste-koder, till exempel `status`, `type`,
+`depart_code` eller andra kodfalt, ska wikin beskriva varfor koder exkluderas,
+skippas, grupperas eller visas separat. Skriv inte bara regeln; dokumentera
+affarsorsaken sa gott det gar, till exempel nollstallt mottag, angerrad,
+saldojustering, buffertuppdatering eller att raden inte motsvarar en fysisk
+pallrorelse. Om orsaken kommer fran `ask-statuskoder.md`, statuskods-PDF:en,
+befintlig Nowaste-kod eller en Flow-tolkning ska det framga.
+
 Nar du lagger till eller andrar ett Bearbeta-flode ska du ocksa uppdatera
 `warehouse-tools.md`, `testing-release.md` och `log.md`. Dokumentera vilka
 lokala filer, karnfiler, sessioner/artifacts och knappar som kravs, samt hur en

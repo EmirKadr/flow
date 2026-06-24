@@ -46,6 +46,8 @@ env/
 
 # Lokal RFID-firmware med WiFi/server/token-varden
 hardware/rfid_esp32_flow/rfid_esp32_flow.ino
+hardware/MG_Plock/MG_Plock.ino
+hardware/MG_VM/MG_VM.ino
 
 # Lokala databasfiler
 *.db

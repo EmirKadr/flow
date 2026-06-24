@@ -517,8 +517,13 @@ async function initPage(activePage, options = {}) {
     window.location.href = "/set-password.html";
     return null;
   }
-  if (activePage !== "passwordSetup") {
+  const shouldBlockForRoleAccess = activePage !== "passwordSetup"
+    && typeof hasCachedRoleViewAccess === "function"
+    && !hasCachedRoleViewAccess();
+  if (shouldBlockForRoleAccess) {
     await refreshRoleViewAccessForRouting();
+  } else if (activePage !== "passwordSetup") {
+    void refreshRoleViewAccessForRouting();
   }
   if (options.requireAdmin && !isAdminUser(user)) {
     queueToast("Sidan kräver administratörsbehörighet", "error");

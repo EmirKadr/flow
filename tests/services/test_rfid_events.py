@@ -53,6 +53,16 @@ def seed_rfid_data(session):
         sort_order=2,
         is_active=True,
     )
+    mg_vm = Activity(
+        business_id=business.id,
+        code="MG_VM",
+        label="MG VM",
+        area_id=area.id,
+        color="#ffffff",
+        category="work",
+        sort_order=3,
+        is_active=True,
+    )
     person = Person(
         business_id=business.id,
         name="Emir Kadric",
@@ -64,13 +74,14 @@ def seed_rfid_data(session):
         sort_order=1,
     )
     user = User(username="admin", role="admin", roles=["admin"], business_id=business.id, is_active=True)
-    session.add_all([old_activity, mg_plock, person, user])
+    session.add_all([old_activity, mg_plock, mg_vm, person, user])
     session.commit()
     return {
         "business": business,
         "area": area,
         "old_activity": old_activity,
         "mg_plock": mg_plock,
+        "mg_vm": mg_vm,
         "person": person,
         "user": user,
     }
@@ -141,6 +152,37 @@ def test_rfid_scan_requires_device_token_when_configured(monkeypatch):
         assert accepted["status"] == "pending"
     finally:
         monkeypatch.setattr(rfid.settings, "RFID_DEVICE_TOKEN", "")
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_rfid_scan_can_register_mg_vm_activity(monkeypatch):
+    engine, session = make_session()
+    try:
+        data = seed_rfid_data(session)
+        monkeypatch.setattr(rfid, "_now_utc", lambda: datetime(2026, 6, 14, 8, 5, tzinfo=timezone.utc))
+
+        event = receive_rfid_scan(
+            RfidScanIn(
+                device_id="esp32-mg-vm-01",
+                module_name="MG VM",
+                tag_hex="00A1B2C3",
+                tag_dec="10597059",
+                scan_count=1,
+            ),
+            request=SimpleNamespace(headers={}),
+            response=Response(),
+            db=session,
+        )["event"]
+
+        assert event["status"] == "pending"
+        assert event["device_id"] == "esp32-mg-vm-01"
+        assert event["module_name"] == "MG VM"
+        assert event["activity_id"] == data["mg_vm"].id
+        assert event["activity_code"] == "MG_VM"
+        assert event["activity_label"] == "MG VM"
+    finally:
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
