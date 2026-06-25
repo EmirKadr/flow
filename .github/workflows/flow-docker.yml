@@ -27,5 +27,8 @@ jobs:
       docker_server_url: ${{ secrets.DOCKER_GITHUB_URL }}
       docker_server_username: ${{ github.repository_owner }}
       docker_server_password: ${{ secrets.GITHUB_TOKEN }}
+      nuget_github_server_url: ${{ secrets.NUGET_GITHUB_URL }}
+      nuget_github_server_username: ${{ secrets.NUGET_GITHUB_USERNAME }}
+      nuget_github_server_password: ${{ secrets.NUGET_GITHUB_PASSWORD }}
       octopus_server_url: ${{ secrets.OCTOPUS_URL }}
       octopus_server_apikey: ${{ secrets.OCTOPUS_APIKEY }}
