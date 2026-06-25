@@ -1,5 +1,7 @@
 import asyncio
 import json
+import threading
+import time
 from datetime import date
 from types import SimpleNamespace
 
@@ -449,6 +451,99 @@ def test_productivity_overview_period_reads_existing_snapshots_without_history_s
     assert payload["summary"]["points_per_hour"] == 10
     assert history_calls == []
     assert audits and audits[0]["status"] == "ok"
+
+
+def test_productivity_overview_period_uses_limited_parallel_day_workers(monkeypatch):
+    class WorkerSession:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    root_db = object()
+    opened_sessions = []
+    active_state = {"active": 0, "max": 0}
+    active_lock = threading.Lock()
+
+    def fake_session_factory(_db):
+        def create_session():
+            session = WorkerSession()
+            opened_sessions.append(session)
+            return session
+
+        return create_session
+
+    def fake_build(_request, db, _user, report_date, *, ensure_snapshot=True, wait_seconds=10):
+        assert db is not root_db
+        assert ensure_snapshot is False
+        assert wait_seconds == 0
+        with active_lock:
+            active_state["active"] += 1
+            active_state["max"] = max(active_state["max"], active_state["active"])
+        try:
+            time.sleep(0.03)
+        finally:
+            with active_lock:
+                active_state["active"] -= 1
+        return (
+            {
+                "date": report_date.isoformat(),
+                "available_dates": [report_date.isoformat()],
+                "summary": {
+                    "people": 1,
+                    "kpi_points": 1,
+                    "planned_kpi_points": 2,
+                    "kpi_minutes": 60,
+                    "diff_count": 0,
+                    "unmatched_event_count": 0,
+                },
+                "people": [{"person_id": report_date.day}],
+                "sync": {"source": "api_snapshot"},
+            },
+            [{"status": "ok"}],
+        )
+
+    monkeypatch.setattr(productivity_router, "_productivity_overview_day_worker_count", lambda _count, _db: 2)
+    monkeypatch.setattr(productivity_router, "_productivity_overview_day_session_factory", fake_session_factory)
+    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_router, "_productivity_finance_context", lambda _db, _user, _business_id: {"visible": False})
+    monkeypatch.setattr(productivity_router, "_build_productivity_report_for_date", fake_build)
+    monkeypatch.setattr(productivity_router, "productivity_snapshot_status", lambda *_args, **_kwargs: {"ready": True})
+    monkeypatch.setattr(productivity_router, "productivity_backfill_status", lambda: {})
+    monkeypatch.setattr(productivity_router, "_audit_productivity_report_sources", lambda *_args, **_kwargs: None)
+
+    progress = []
+    payload = productivity_router._run_productivity_overview(
+        SimpleNamespace(session={}),
+        root_db,
+        route_user(),
+        period="custom",
+        date_filter=None,
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 4),
+        progress_callback=progress.append,
+    )
+
+    assert active_state["max"] == 2
+    assert len(opened_sessions) == 4
+    assert all(session.closed for session in opened_sessions)
+    assert [report["date"] for report in payload["reports"]] == [
+        "2026-06-01",
+        "2026-06-02",
+        "2026-06-03",
+        "2026-06-04",
+    ]
+    assert [entry["date"] for entry in payload["source_status"]] == [
+        "2026-06-01",
+        "2026-06-02",
+        "2026-06-03",
+        "2026-06-04",
+    ]
+    assert payload["summary"]["kpi_points"] == 4
+    done_progress = [event for event in progress if event.get("done")]
+    assert sorted(event["completed"] for event in done_progress) == [1, 2, 3, 4]
+    assert any(event.get("key") == "build" and event.get("completed") == 4 for event in progress)
 
 
 def test_person_productivity_aggregates_activity_cells_for_period(monkeypatch):

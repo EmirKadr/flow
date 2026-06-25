@@ -34,6 +34,7 @@ let VIEW_ACCESS_OPTIONS = [
   { id: "sankeyInbound", label: "Sankey - Inbound" },
   { id: "productivityFinance", label: "Intäkt/utgift" },
   { id: "dataFetch", label: "Hämta data" },
+  { id: "mcp", label: "MCP" },
   { id: "allocationUploads", label: "Uppladdningar" },
   { id: "allocationProcess", label: "Bearbeta" },
   { id: "allocationProcessMatrix", label: "Bearbeta-matris" },

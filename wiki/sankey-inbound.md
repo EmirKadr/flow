@@ -1,7 +1,7 @@
 ---
 title: Sankey - Inbound
 status: aktiv
-updated: 2026-06-24
+updated: 2026-06-25
 tags: [sankey, inbound, produktivitet, ask, ekonomi]
 ---
 
@@ -26,11 +26,24 @@ Kontroller:
 - datum med föregående/nästa
 - bolagsval med `Alla bolag`
 - `Visa endast förverkade`, som filtrerar bort öppna etikettgrenar
-- `Återställ vy` och `Exportera SVG`
+- `Återställ vy`, `Exportera SVG` och `Exportera spårning`
 
 Diagrammet visar noder och flöden per bolag. Klick på nod eller länk visar
-detaljer om intäkt, etiketter, poäng och processandel. Processintäkt visas också
-i tabellen under diagrammet.
+detaljer om intäkt, etiketter, poäng, processandel och de pallgrenar som ligger
+bakom urvalet. `Exportera urval` i detaljpanelen laddar ner just de
+bakomliggande spårningsraderna; toppknappen `Exportera spårning` laddar ner
+hela rapportens spårningsunderlag. Processintäkt visas också i tabellen under
+diagrammet.
+
+Sankey försöker återanvända redan hämtad data innan den startar en ny hämtning.
+`Visa endast förverkade` gör ingen ny API-hämtning. Om användaren först har
+hämtat `Alla bolag` kan bolagsväljaren växla till ett enskilt bolag lokalt. Om
+en månad eller vecka är hämtad kan en dag i samma period visas lokalt, och om ett
+år är hämtat kan en månad i året visas lokalt. Saknas den begärda klientvyn
+faller frontend tillbaka till vanlig API/SSE-hämtning.
+
+Varningsrutan normaliserar även äldre mojibake-strängar för vanliga svenska
+tecken, så varningar som kommit in som `Ã¥/Ã¤/Ã¶` visas som `å/ä/ö`.
 
 ## API
 
@@ -45,13 +58,24 @@ Query:
 
 Perioden väljer mottagningskohorten. Backend följer sedan samma etiketter från
 periodstart fram till dagens datum via live-vyer och `dblog_*`-arkiv. Svaret
-innehåller `summary`, `companies`, `nodes`, `links`, `processes`, `warnings`,
-`source_status`, `period`, `filters`, `business` och `cache`.
+innehåller `summary`, `companies`, `nodes`, `links`, `processes`,
+`trace_rows`, `warnings`, `source_status`, `period`, `filters`, `business` och
+`cache`.
 `summary` innehåller bland annat `gross_income`, `gross_income_labels`,
 `gross_income_purchase_lines`, `labels_received` och
 `purchase_lines_received`. Noder, länkar och processrader har motsvarande
 `label_revenue` och `purchase_line_revenue` så UI:t kan visa breakdown utan att
 behöva räkna om.
+När `only_consumed=false` innehåller svaret även `client_filters.only_consumed`
+med `summary`, `companies`, `nodes`, `links`, `processes` och `trace_rows` för
+förverkad-vyn. Vid direkt `only_consumed=true` finns motsvarande
+`client_filters.all` för att kunna växla tillbaka lokalt.
+Nyare svar innehåller dessutom `client_filters.views`, en karta med
+färdigräknade klientvyer från samma branchunderlag. Nyckeln har formatet
+`period|periodstart|bolag|0/1`, till exempel `day|2026-06-25|GG|0`.
+All-bolag-payloads får vyer för `ALL` och varje bolag i underlaget. Månad och
+vecka får dagsvyer; år får månadsvyer. `0/1` anger om vyn är standard eller
+`Visa endast förverkade`.
 
 Varje lyckad körning auditloggas som
 `sankey_inbound_report/run`. Misslyckad källhämtning auditloggas som
@@ -118,13 +142,34 @@ Backend följer:
 - mottagning: `v_ask_receive_log` / `dblog_receive_log`
 - transaktioner: `v_ask_trans_log` / `dblog_trans_log`
 - plock: `v_ask_pick_log_full` / `dblog_pick_log`
-- pallastning: `v_ask_palletloading_log` / `dblog_loading_log`
 - aktuell buffert: `v_ask_article_buffertpallet`
-- aktuell saldokontroll: `v_ask_item_summary_stock_automation`
-- KPI-poäng: `v_ask_kpi_target`
+- KPI-poäng: Produktivitetens coredata-/fallbackfil för `v_ask_kpi_target`
 
 AutoStore-normalisering: transloggen kan visa `loc_to = AS1000160101`, medan
 buffertpall-vyn visar `1000160101`. Sankey matchar båda formerna.
+
+Varje aktiv branch skickas också som en rad i `trace_rows`. Raden innehåller
+bland annat `origin_pall`, `current_pall`, eventuell `current_location`,
+`purchase_number`, `purchase_line`, `source_row_id`, status, intäktsdelar,
+`received_date`, `path` och dynamiska `step_1`, `step_2` osv. `node_ids` och
+`link_keys` anger vilka diagramnoder/länkar branchen passerar, så frontend kan filtrera
+spårningslistan när användaren klickar på en misstänkt nod eller länk.
+CSV-exporten använder samma rader och är avsedd för snabb felsökning i Excel.
+Pallid och rad-id ligger i API-svaret/exporten men sparas inte i auditloggen.
+
+Datakällejämförelse 2026-06-24 visade att `v_ask_palletloading_log` och
+`v_ask_item_summary_stock_automation` inte påverkade Sankey-resultatet och inte
+lästes av beräkningsmodellen; de hämtas därför inte längre för denna vy.
+`pick_stock` innehåller bara artikel/kvantitet och saknar pallid/plats, så den
+kan inte ersätta pallspårning. `v_ask_item_balance_list` innehåller pallid,
+plats och saldo, men var större/långsammare, slog i radtaket för GG och saknade
+cirka 12 % av pallid som fanns i `v_ask_article_buffertpallet`. Därför behålls
+buffertpall som aktuell pall-/platskälla tills balance-list kan hämtas komplett
+och valideras över fler perioder.
+
+`v_ask_kpi_target` hämtas inte via extern API i Sankey. KPI-steget använder
+Produktivitetens redan hanterade coredatafil som förstahandskälla, eftersom
+API-vyn inte är tillgänglig för detta flöde.
 
 Plockplats är saldobaserad, inte pallbaserad. När pallid läggs på plockplats
 dör pallidet och Flow använder en FIFO-liknande ägarkö per
@@ -141,6 +186,20 @@ confidence i stället för att dölja denna begränsning.
 
 `dblog_*`-arkiven ger djupare historik för receive/trans/pick/loading, men inte
 obegränsad historik. Analyser längre bak än arkivretentionen kan sakna rader.
+Om `dblog_pick_log` nekar ett äldre segment, till exempel HTTP 403, fortsätter
+rapporten med tillgängliga plocksegment i stället för att stoppa hela diagrammet.
+Det ger varningen `degraded_source_segment_unavailable`; antal förverkade/plockade
+grenar kan då vara underskattat och öppna grenar kan i praktiken redan vara
+plockade.
+
+Felsökning 2026-06-24 mot Stigamo/Frey visade att nuvarande integrationnyckel
+kan läsa `dblog_trans_log`, men får HTTP 403 redan på metadata/dataroute för
+`dblog_pick_log`, `dblog_receive_log`, `dblog_pick_list_log`,
+`dblog_pick_rest_log` och `dblog_robot_pick_log`, även helt utan filter. Det är
+därför inte ett datumkolumn- eller formatfel i Flow utan en extern
+vybehörighet/nyckelexponering. Äldre mottagningskohorter kräver åtkomst till
+`dblog_receive_log`; utan den kan Flow inte bygga fakturerbara inbound-etiketter
+för perioden.
 
 Första versionen är read/report-only: inga nya databastabeller, inga migreringar
 och ingen persistent materialisering. Endast en kort in-memory cache används för

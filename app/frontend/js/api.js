@@ -440,6 +440,8 @@ function apiActionLabel(path, method = "GET") {
   if (safePath.startsWith("/api/query-data/plan")) return "Hämta data: plan";
   if (safePath.startsWith("/api/query-data/run")) return "Hämta data: körning";
   if (safePath.startsWith("/api/query-data/export/")) return "Hämta data: Excel";
+  if (safePath.startsWith("/api/mcp/status")) return "MCP-status";
+  if (safePath.startsWith("/api/mcp/query")) return "MCP-fråga";
   if (safePath.startsWith("/api/allokering/flow/")) return `Bearbeta: ${flowName || "flöde"}`;
   if (safePath.startsWith("/api/allokering/download/")) return "Bearbeta: CSV";
   if (safePath.startsWith("/api/allokering/open-excel/")) return "Bearbeta: Excel";

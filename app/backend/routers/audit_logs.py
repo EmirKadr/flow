@@ -107,6 +107,7 @@ KNOWN_INTERACTION_CONTROLS = [
     {"view_id": "dataFetch", "control_id": "dataFetchPlan", "label": "Tolka"},
     {"view_id": "dataFetch", "control_id": "dataFetchRun", "label": "Hamta data"},
     {"view_id": "dataFetch", "control_id": "dataFetchExport", "label": "Exportera Excel"},
+    {"view_id": "mcp", "control_id": "mcp-query-send", "label": "Skicka MCP-fraga"},
     {"view_id": "allocationUploads", "control_id": "allocation-upload-all", "label": "Valj filer"},
     {"view_id": "allocationUploads", "control_id": "allocation-clear-all-files", "label": "Rensa alla"},
     {"view_id": "allocationProcess", "control_id": "allocation-flow-run", "label": "Kor flode"},
@@ -123,6 +124,7 @@ KNOWN_INTERACTION_CONTROLS = [
 
 AUDIT_ENTITY_LABELS = {
     "coredata_file": "Karnfil",
+    "mcp_query": "MCP-fraga",
     "meta_media_upload": "Meta-uppladdning",
     "rfid_scan_event": "RFID-stämpel",
     "workflow_source": "Workflow-underlag",

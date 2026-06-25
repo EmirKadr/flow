@@ -1,7 +1,7 @@
 ---
 title: Historik och audit
 status: aktiv
-updated: 2026-06-14
+updated: 2026-06-25
 tags: [historik, audit, ui]
 ---
 
@@ -17,7 +17,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 | Period | Valjer 24h, 7d, 30d, all | Raknar `start_at` for query | `periodStartIso`, `/api/audit*` | "All historik" kan bli tung om mycket data finns. |
 | Verksamhet | Valjer Alla eller en verksamhet | Skickar `business_id` till audit-, felkods- och vantetidsendpoints och filtrerar anvandarlistan i klienten | `businessFilter`, `/api/businesses`, `business_id` | Galler inte Halsa-fliken, som visar global driftstatus. Systemrader utan verksamhet syns bara i Alla. |
 | Anvandare | Filtrerar pa user | Skickar user-filter | `userFilter` | Listan laddas fran `/api/users` och smalnas av nar verksamhet valjs. |
-| Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `app_setting`, `productivity_file`, `allocation_flow`. |
+| Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `app_setting`, `productivity_file`, `allocation_flow`, `mcp_query`. |
 | Atgard | Skriver action | Skickar action-filter | `actionFilter` | Exempel: `update`, `clear`, `drag_fill`. |
 | Objekt-id | Skriver id | Skickar `entity_id` | `entityIdFilter` | Maste vara numeriskt. |
 | Uppdatera | Klickar knapp | Hamter summary, rader och felkodsdashboard igen | `GET /api/audit/summary`, `GET /api/audit`, `GET /api/audit/errors` | Nekas om saknar Super User. |
@@ -43,6 +43,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - Misslyckade filuppladdningar som hinner na backend loggas som `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
 - Publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_success` eller `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar misslyckade forsok som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
 - Workflow-kallor som hamtas via `/api/workflow-data/source` loggas som `workflow_source/source_fetch` eller `workflow_source/source_fetch_failed` med feature, flow-id, kallnyckel, status, radantal och sanerat felmeddelande.
+- MCP-fragor loggas som `mcp_query/query_success` eller `mcp_query/query_failed` med status, hjarna/tool, modell, antal tool-anrop och teckenantal. Fragan, svaret, token, privat serveradress, provider-nycklar och request body sparas inte.
 - Coredata-handelser visas som `Karnfil` i Historik/Analys via `coredata_file`, sa permanenta karnfilsuppladdningar inte faller tillbaka till tekniskt entity-namn.
 - Runtime-OTel kompletterar audit med tekniska spans for `workflow_data.source`, `data_fetch.plan`, `data_fetch.external_fetch`, `data_fetch.export`, `meta.shipment_observations.export` och `meta.upload.analyze`. Span-attribut ska bara vara status, vy/kalla, radantal, feltyp och durationsignal; prompts, filnamn, sokvagar, URL:er och request bodies filtreras bort.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
@@ -107,6 +108,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `../app/backend/models.py`
 - `../app/alembic/versions/0032_user_interaction_events.py`
 - `../app/backend/routers/healthcheck.py`
+- `../app/backend/routers/mcp.py`
 - `../app/backend/audit.py`
 - `../desktop/app.py`
 - `../tools/healthcheck.py`

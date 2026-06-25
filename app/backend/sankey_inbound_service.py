@@ -53,14 +53,13 @@ SANKEY_SOURCE_VIEWS = {
     "receive": "v_ask_receive_log",
     "trans": "v_ask_trans_log",
     "pick": "v_ask_pick_log_full",
-    "pallet": "v_ask_palletloading_log",
     "buffer": "v_ask_article_buffertpallet",
-    "saldo": "v_ask_item_summary_stock_automation",
     "kpi": "v_ask_kpi_target",
 }
 
 REQUIRED_SOURCE_KEYS = {"receive", "trans", "pick"}
-CURRENT_STATE_SOURCE_KEYS = {"buffer", "saldo", "kpi"}
+DEGRADABLE_SOURCE_KEYS = {"pick"}
+CURRENT_STATE_SOURCE_KEYS = {"buffer", "kpi"}
 
 # Naturliga steg i SSE-progressloggen: en hämtning per källa + ett bygg-steg.
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -78,9 +77,7 @@ SOURCE_LABELS = {
     "receive": "Varumottagningslogg",
     "trans": "Translogg",
     "pick": "Plocklogg Full",
-    "pallet": "Pallastningslogg",
     "buffer": "Buffertpall",
-    "saldo": "Saldo Ink. Automation",
     "kpi": "KPI-mål",
 }
 
@@ -150,6 +147,12 @@ class TraceBranch:
     label_fraction: float
     label_revenue: float = 0.0
     purchase_line_revenue: float = 0.0
+    origin_pall: str = ""
+    source_row_id: str = ""
+    purchase_number: str = ""
+    purchase_line: str = ""
+    received_date: date | None = None
+    trace_steps: list[str] = field(default_factory=list)
     processes: list[ProcessVisit] = field(default_factory=list)
     status: str = "open_not_putaway"
     location: str = ""
@@ -168,6 +171,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE_TTL_SECONDS = 15 * 60 if settings.is_production else 0
 _CACHE_MAX_ITEMS = 64
 _CACHE: dict[tuple[Any, ...], tuple[float, dict]] = {}
+SANKEY_INBOUND_PAYLOAD_SCHEMA = "client_filters_v3"
 
 # Källrads-cache (oberoende av only_consumed). only_consumed är bara ett efterfilter
 # i bygget – samma rader hämtas oavsett – så vi cachar de dyra hämtningarna separat
@@ -193,6 +197,48 @@ def sankey_period_bounds(period: str, anchor: date | None = None) -> tuple[date,
     if normalized == "year":
         return selected.replace(month=1, day=1), selected.replace(month=12, day=31), "År"
     raise ValueError("Okänd period")
+
+
+def _period_label(period: str) -> str:
+    return {
+        "day": "Dag",
+        "week": "Vecka",
+        "month": "Månad",
+        "year": "År",
+    }.get(str(period or "").strip().lower(), "Period")
+
+
+def _client_filter_view_key(period: str, period_start: date, company: str | None, only_consumed: bool) -> str:
+    company_key = clean_productivity_finance_company_code(company) or "ALL"
+    return f"{str(period or 'day').strip().lower()}|{period_start.isoformat()}|{company_key}|{1 if only_consumed else 0}"
+
+
+def _client_filter_period_specs(period: str, period_start: date, period_end: date) -> list[tuple[str, date, date]]:
+    normalized = str(period or "day").strip().lower()
+    specs: list[tuple[str, date, date]] = [(normalized, period_start, period_end)]
+    if normalized == "year":
+        cursor = period_start.replace(day=1)
+        while cursor <= period_end:
+            month_end = cursor.replace(day=monthrange(cursor.year, cursor.month)[1])
+            specs.append(("month", cursor, min(month_end, period_end)))
+            if cursor.month == 12:
+                cursor = cursor.replace(year=cursor.year + 1, month=1, day=1)
+            else:
+                cursor = cursor.replace(month=cursor.month + 1, day=1)
+    elif normalized in {"week", "month"}:
+        cursor = period_start
+        while cursor <= period_end:
+            specs.append(("day", cursor, cursor))
+            cursor += timedelta(days=1)
+
+    unique: list[tuple[str, date, date]] = []
+    seen: set[tuple[str, date, date]] = set()
+    for item in specs:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
 
 
 def _round_money(value: float) -> float:
@@ -485,7 +531,9 @@ def _append_process(
                 "message": f"Saknar KPI-poäng för {PROCESS_LABELS.get(key, key)}.",
             }
         )
-    branch.processes.append(ProcessVisit(key=key, label=PROCESS_LABELS.get(key, key), points=points, source=source))
+    label = PROCESS_LABELS.get(key, key)
+    branch.processes.append(ProcessVisit(key=key, label=label, points=points, source=source))
+    branch.trace_steps.append(label)
 
 
 def _classify_trans(row: dict[str, Any]) -> tuple[str | None, str]:
@@ -638,16 +686,72 @@ def _add_link(
     link["labels"] += labels
 
 
+def _trace_path_steps(branch: TraceBranch, terminal_label: str) -> list[str]:
+    steps = [f"Mottagning {branch.origin_pall or branch.current_pall}".strip()]
+    steps.extend(branch.trace_steps or [visit.label for visit in branch.processes])
+    steps.append(terminal_label)
+    deduped: list[str] = []
+    for step in steps:
+        text = _clean_text(step)
+        if text and (not deduped or deduped[-1] != text):
+            deduped.append(text)
+    return deduped
+
+
+def _trace_row_for_branch(
+    branch: TraceBranch,
+    *,
+    terminal_key: str,
+    terminal_label: str,
+    current_locations: dict[tuple[str, str], str],
+    node_ids: list[str],
+    link_keys: list[str],
+) -> dict[str, Any]:
+    current_location = current_locations.get((branch.company, _normalize_pall(branch.current_pall)), "") or branch.location
+    path_steps = _trace_path_steps(branch, terminal_label)
+    row: dict[str, Any] = {
+        "branch_id": branch.id,
+        "origin_id": branch.origin_id,
+        "company": branch.company,
+        "warehouse": branch.warehouse,
+        "item": branch.item,
+        "origin_pall": branch.origin_pall or branch.current_pall,
+        "current_pall": branch.current_pall,
+        "current_location": current_location,
+        "purchase_number": branch.purchase_number,
+        "purchase_line": branch.purchase_line,
+        "received_date": branch.received_date.isoformat() if branch.received_date else "",
+        "source_row_id": branch.source_row_id,
+        "qty_remaining": _round_qty(branch.qty),
+        "revenue": _round_money(branch.revenue),
+        "label_revenue": _round_money(branch.label_revenue),
+        "purchase_line_revenue": _round_money(branch.purchase_line_revenue),
+        "label_fraction": _round_qty(branch.label_fraction),
+        "status": terminal_key,
+        "status_label": terminal_label,
+        "consumed": bool(branch.consumed),
+        "confidence": branch.confidence,
+        "path": " -> ".join(path_steps),
+        "node_ids": list(node_ids),
+        "link_keys": list(link_keys),
+    }
+    for index, step in enumerate(path_steps, start=1):
+        row[f"step_{index}"] = step
+    return row
+
+
 def _finalize_sankey(
     branches: list[TraceBranch],
     *,
     only_consumed: bool,
     warnings: list[dict],
     current_locations: dict[tuple[str, str], str],
-) -> tuple[list[dict], list[dict], list[dict], dict]:
+    branch_predicate: Callable[[TraceBranch], bool] | None = None,
+) -> tuple[list[dict], list[dict], list[dict], dict, list[dict]]:
     nodes: dict[str, dict] = {}
     links: dict[tuple[str, str, str], dict] = {}
     process_rows: dict[tuple[str, str], dict] = {}
+    trace_rows: list[dict] = []
     summary = {
         "gross_income": 0.0,
         "gross_income_labels": 0.0,
@@ -661,6 +765,8 @@ def _finalize_sankey(
 
     for branch in branches:
         if not branch.active or branch.revenue <= 0:
+            continue
+        if branch_predicate is not None and not branch_predicate(branch):
             continue
         if only_consumed and not branch.consumed:
             continue
@@ -685,6 +791,8 @@ def _finalize_sankey(
         start_node["labels"] += branch.label_fraction
 
         previous_node_id = start_node["id"]
+        path_node_ids = [previous_node_id]
+        path_link_keys: list[str] = []
         total_points = sum(max(0.0, visit.points) for visit in branch.processes)
         if total_points <= 0 and branch.processes:
             summary["unallocated_revenue"] += branch.revenue
@@ -731,6 +839,7 @@ def _finalize_sankey(
             process["label_revenue"] += allocated_label_revenue
             process["purchase_line_revenue"] += allocated_purchase_line_revenue
             process["labels"] += branch.label_fraction
+            link_key = f'{previous_node_id}->{node["id"]}'
             _add_link(
                 links,
                 previous_node_id,
@@ -741,7 +850,9 @@ def _finalize_sankey(
                 label_revenue=branch.label_revenue,
                 purchase_line_revenue=branch.purchase_line_revenue,
             )
+            path_link_keys.append(link_key)
             previous_node_id = node["id"]
+            path_node_ids.append(previous_node_id)
 
         terminal = _add_node(nodes, company, f"terminal:{terminal_key}", terminal_label, "terminal", 99)
         terminal["value"] += branch.revenue
@@ -750,6 +861,7 @@ def _finalize_sankey(
         terminal["labels"] += branch.label_fraction
         if branch.confidence != "high":
             terminal["confidence"] = branch.confidence
+        terminal_link_key = f'{previous_node_id}->{terminal["id"]}'
         _add_link(
             links,
             previous_node_id,
@@ -759,6 +871,18 @@ def _finalize_sankey(
             branch.label_fraction,
             label_revenue=branch.label_revenue,
             purchase_line_revenue=branch.purchase_line_revenue,
+        )
+        path_link_keys.append(terminal_link_key)
+        path_node_ids.append(terminal["id"])
+        trace_rows.append(
+            _trace_row_for_branch(
+                branch,
+                terminal_key=terminal_key,
+                terminal_label=terminal_label,
+                current_locations=current_locations,
+                node_ids=path_node_ids,
+                link_keys=path_link_keys,
+            )
         )
 
     gross = summary["gross_income"]
@@ -793,7 +917,7 @@ def _finalize_sankey(
 
     for key in list(summary):
         summary[key] = _round_money(summary[key]) if "revenue" in key or "income" in key else _round_qty(summary[key])
-    return node_rows, link_rows, sorted(process_rows.values(), key=lambda item: (item["company"], item["label"])), summary
+    return node_rows, link_rows, sorted(process_rows.values(), key=lambda item: (item["company"], item["label"])), summary, trace_rows
 
 
 def build_sankey_inbound_payload(
@@ -804,6 +928,8 @@ def build_sankey_inbound_payload(
     period_start: date,
     period_end: date,
     follow_until: date,
+    period_type: str = "cohort",
+    period_label: str | None = None,
     company_filter: str | None = None,
     only_consumed: bool = False,
     process_points: dict[str, float] | None = None,
@@ -909,6 +1035,7 @@ def build_sankey_inbound_payload(
             "pall": pall,
             "qty": qty,
             "origin_id": origin_id,
+            "received_date": stamp.date() if stamp else None,
         }
         filtered_receives.append(entry)
         purchase_line_key = _purchase_line_key(row)
@@ -917,8 +1044,6 @@ def build_sankey_inbound_payload(
         else:
             missing_purchase_line_rows += 1
 
-    counted_receive_rows = len(filtered_receives)
-    counted_purchase_lines = len(purchase_line_groups)
     purchase_line_revenue_by_origin: dict[str, float] = {}
     for key, entries in purchase_line_groups.items():
         if not entries:
@@ -958,6 +1083,11 @@ def build_sankey_inbound_payload(
             label_fraction=1.0,
             label_revenue=label_revenue,
             purchase_line_revenue=purchase_line_revenue,
+            origin_pall=str(entry["pall"]),
+            source_row_id=_row_text(row, "rowid", "Rowid", "Radid", "radid", "id") or origin_id,
+            purchase_number=_row_purchase_number(row),
+            purchase_line=_row_purchase_line(row),
+            received_date=entry["received_date"],
         )
         _append_process(branch, "RECEIVING", point_map, warnings_out, source="receive")
         _index_branch(branch)
@@ -1048,6 +1178,12 @@ def build_sankey_inbound_payload(
                             label_fraction=share_label,
                             label_revenue=share_label_revenue,
                             purchase_line_revenue=share_purchase_line_revenue,
+                            origin_pall=branch.origin_pall,
+                            source_row_id=branch.source_row_id,
+                            purchase_number=branch.purchase_number,
+                            purchase_line=branch.purchase_line,
+                            received_date=branch.received_date,
+                            trace_steps=list(branch.trace_steps),
                             processes=list(branch.processes),
                             status="open_autostore",
                         )
@@ -1133,6 +1269,12 @@ def build_sankey_inbound_payload(
                         label_fraction=child_label,
                         label_revenue=child_label_revenue,
                         purchase_line_revenue=child_purchase_line_revenue,
+                        origin_pall=branch.origin_pall,
+                        source_row_id=branch.source_row_id,
+                        purchase_number=branch.purchase_number,
+                        purchase_line=branch.purchase_line,
+                        received_date=branch.received_date,
+                        trace_steps=list(branch.trace_steps),
                         processes=list(branch.processes),
                         status="open_buffer",
                         confidence=branch.confidence,
@@ -1180,74 +1322,191 @@ def build_sankey_inbound_payload(
                 _consume_pick_queue(pick_queues, branch_map, key, qty, mark_consumed=True)
 
     current_locations = _build_current_pallet_locations(buffer_rows)
-    nodes, links, processes, traced_summary = _finalize_sankey(
-        branches,
-        only_consumed=only_consumed,
-        warnings=warnings_out,
-        current_locations=current_locations,
+    requested_period_type = str(period_type or "cohort").strip().lower()
+    requested_period_label = period_label or _period_label(requested_period_type)
+
+    def _view_period(period_name: str, start: date, end: date) -> dict[str, Any]:
+        return {
+            "type": period_name,
+            "label": requested_period_label if period_name == requested_period_type else _period_label(period_name),
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "follow_until": follow_until.isoformat(),
+        }
+
+    def _matches_view_company(company: str, view_company: str) -> bool:
+        return view_company == "ALL" or company == view_company
+
+    def _entry_matches_view(entry: dict[str, Any], view_company: str, view_start: date, view_end: date) -> bool:
+        received_date = entry.get("received_date")
+        return (
+            isinstance(received_date, date)
+            and view_start <= received_date <= view_end
+            and _matches_view_company(str(entry.get("company") or ""), view_company)
+        )
+
+    def _build_view_payload(
+        view_only_consumed: bool,
+        view_warnings: list[dict],
+        *,
+        view_company_filter: str,
+        view_period_type: str,
+        view_period_start: date,
+        view_period_end: date,
+    ) -> dict:
+        def _branch_matches_view(branch: TraceBranch) -> bool:
+            return (
+                branch.received_date is not None
+                and view_period_start <= branch.received_date <= view_period_end
+                and _matches_view_company(branch.company, view_company_filter)
+            )
+
+        nodes, links, processes, traced_summary, trace_rows = _finalize_sankey(
+            branches,
+            only_consumed=view_only_consumed,
+            warnings=view_warnings,
+            current_locations=current_locations,
+            branch_predicate=_branch_matches_view,
+        )
+
+        view_receive_entries = [
+            entry
+            for entry in filtered_receives
+            if _entry_matches_view(entry, view_company_filter, view_period_start, view_period_end)
+        ]
+        view_purchase_keys = {
+            key
+            for key in (_purchase_line_key(entry["row"]) for entry in view_receive_entries)
+            if key is not None
+        }
+        view_purchase_lines_by_company: dict[str, int] = {}
+        for company, _purchase, _line in view_purchase_keys:
+            view_purchase_lines_by_company[company] = view_purchase_lines_by_company.get(company, 0) + 1
+
+        company_summaries: dict[str, dict] = {}
+        for branch in branches:
+            if not branch.active or branch.revenue <= 0:
+                continue
+            if not _branch_matches_view(branch):
+                continue
+            if view_only_consumed and not branch.consumed:
+                continue
+            company = branch.company or "OKANT"
+            row = company_summaries.setdefault(
+                company,
+                {
+                    "company": company,
+                    "gross_income": 0.0,
+                    "gross_income_labels": 0.0,
+                    "gross_income_purchase_lines": 0.0,
+                    "labels": 0.0,
+                    "purchase_lines": 0.0,
+                    "consumed_labels": 0.0,
+                    "open_labels": 0.0,
+                },
+            )
+            row["gross_income"] += branch.revenue
+            row["gross_income_labels"] += branch.label_revenue
+            row["gross_income_purchase_lines"] += branch.purchase_line_revenue
+            row["labels"] += branch.label_fraction
+            if branch.consumed:
+                row["consumed_labels"] += branch.label_fraction
+            else:
+                row["open_labels"] += branch.label_fraction
+
+        for company, count in view_purchase_lines_by_company.items():
+            if company not in company_summaries:
+                continue
+            company_summaries[company]["purchase_lines"] = count
+
+        summary = {
+            "gross_income": _round_money(traced_summary["gross_income"]),
+            "gross_income_labels": _round_money(traced_summary["gross_income_labels"]),
+            "gross_income_purchase_lines": _round_money(traced_summary["gross_income_purchase_lines"]),
+            "labels_received": len(view_receive_entries),
+            "purchase_lines_received": len(view_purchase_keys),
+            "labels_traced": _round_qty(traced_summary["labels_traced"]),
+            "labels_consumed": _round_qty(traced_summary["labels_consumed"]),
+            "labels_open": _round_qty(traced_summary["labels_open"]),
+            "branches": len([
+                branch
+                for branch in branches
+                if branch.active
+                and branch.revenue > 0
+                and _branch_matches_view(branch)
+                and (not view_only_consumed or branch.consumed)
+            ]),
+            "unallocated_revenue": _round_money(traced_summary["unallocated_revenue"]),
+            "only_consumed": bool(view_only_consumed),
+        }
+        companies = []
+        for row in company_summaries.values():
+            row["gross_income"] = _round_money(row["gross_income"])
+            row["gross_income_labels"] = _round_money(row["gross_income_labels"])
+            row["gross_income_purchase_lines"] = _round_money(row["gross_income_purchase_lines"])
+            row["labels"] = _round_qty(row["labels"])
+            row["purchase_lines"] = _round_qty(row["purchase_lines"])
+            row["consumed_labels"] = _round_qty(row["consumed_labels"])
+            row["open_labels"] = _round_qty(row["open_labels"])
+            companies.append(row)
+        companies.sort(key=lambda item: item["company"])
+        return {
+            "summary": summary,
+            "companies": companies,
+            "nodes": nodes,
+            "links": links,
+            "processes": processes,
+            "trace_rows": trace_rows,
+            "period": _view_period(view_period_type, view_period_start, view_period_end),
+            "filters": {
+                "company": view_company_filter,
+                "only_consumed": bool(view_only_consumed),
+            },
+        }
+
+    current_view_company = normalized_company_filter if normalized_company_filter and normalized_company_filter != "ALL" else "ALL"
+    view_payload = _build_view_payload(
+        bool(only_consumed),
+        warnings_out,
+        view_company_filter=current_view_company,
+        view_period_type=requested_period_type,
+        view_period_start=period_start,
+        view_period_end=period_end,
+    )
+    alternate_key = "all" if only_consumed else "only_consumed"
+    alternate_payload = _build_view_payload(
+        not bool(only_consumed),
+        list(warnings_out),
+        view_company_filter=current_view_company,
+        view_period_type=requested_period_type,
+        view_period_start=period_start,
+        view_period_end=period_end,
     )
 
-    company_summaries: dict[str, dict] = {}
-    for branch in branches:
-        if not branch.active or branch.revenue <= 0:
-            continue
-        if only_consumed and not branch.consumed:
-            continue
-        company = branch.company or "OKANT"
-        row = company_summaries.setdefault(
-            company,
-            {
-                "company": company,
-                "gross_income": 0.0,
-                "gross_income_labels": 0.0,
-                "gross_income_purchase_lines": 0.0,
-                "labels": 0.0,
-                "purchase_lines": 0.0,
-                "consumed_labels": 0.0,
-                "open_labels": 0.0,
-            },
-        )
-        row["gross_income"] += branch.revenue
-        row["gross_income_labels"] += branch.label_revenue
-        row["gross_income_purchase_lines"] += branch.purchase_line_revenue
-        row["labels"] += branch.label_fraction
-        if branch.consumed:
-            row["consumed_labels"] += branch.label_fraction
-        else:
-            row["open_labels"] += branch.label_fraction
-
-    purchase_lines_by_company: dict[str, int] = {}
-    for company, _purchase, _line in purchase_line_groups:
-        purchase_lines_by_company[company] = purchase_lines_by_company.get(company, 0) + 1
-    for company, count in purchase_lines_by_company.items():
-        if company not in company_summaries:
-            continue
-        company_summaries[company]["purchase_lines"] = count
-
-    summary = {
-        "gross_income": _round_money(traced_summary["gross_income"]),
-        "gross_income_labels": _round_money(traced_summary["gross_income_labels"]),
-        "gross_income_purchase_lines": _round_money(traced_summary["gross_income_purchase_lines"]),
-        "labels_received": counted_receive_rows,
-        "purchase_lines_received": counted_purchase_lines,
-        "labels_traced": _round_qty(traced_summary["labels_traced"]),
-        "labels_consumed": _round_qty(traced_summary["labels_consumed"]),
-        "labels_open": _round_qty(traced_summary["labels_open"]),
-        "branches": len([branch for branch in branches if branch.active and branch.revenue > 0 and (not only_consumed or branch.consumed)]),
-        "unallocated_revenue": _round_money(traced_summary["unallocated_revenue"]),
-        "only_consumed": bool(only_consumed),
-    }
-    companies = []
-    for row in company_summaries.values():
-        row["gross_income"] = _round_money(row["gross_income"])
-        row["gross_income_labels"] = _round_money(row["gross_income_labels"])
-        row["gross_income_purchase_lines"] = _round_money(row["gross_income_purchase_lines"])
-        row["labels"] = _round_qty(row["labels"])
-        row["purchase_lines"] = _round_qty(row["purchase_lines"])
-        row["consumed_labels"] = _round_qty(row["consumed_labels"])
-        row["open_labels"] = _round_qty(row["open_labels"])
-        companies.append(row)
-    companies.sort(key=lambda item: item["company"])
+    available_companies = sorted({branch.company for branch in branches if branch.company} | set(all_company_codes))
+    if current_view_company != "ALL":
+        client_companies = [current_view_company]
+    else:
+        client_companies = ["ALL", *available_companies]
+    client_views: dict[str, dict] = {}
+    for view_period_type, view_period_start, view_period_end in _client_filter_period_specs(
+        requested_period_type,
+        period_start,
+        period_end,
+    ):
+        for view_company in client_companies:
+            for view_only_consumed in (False, True):
+                key = _client_filter_view_key(view_period_type, view_period_start, view_company, view_only_consumed)
+                if key in client_views:
+                    continue
+                client_views[key] = _build_view_payload(
+                    view_only_consumed,
+                    list(warnings_out),
+                    view_company_filter=view_company,
+                    view_period_type=view_period_type,
+                    view_period_start=view_period_start,
+                    view_period_end=view_period_end,
+                )
 
     unique_warnings: list[dict] = []
     seen_warnings: set[tuple] = set()
@@ -1266,22 +1525,19 @@ def build_sankey_inbound_payload(
 
     return {
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "period": {
-            "type": "cohort",
-            "start_date": period_start.isoformat(),
-            "end_date": period_end.isoformat(),
-            "follow_until": follow_until.isoformat(),
-        },
+        "period": _view_period(requested_period_type, period_start, period_end),
         "filters": {
-            "company": normalized_company_filter or "ALL",
+            "company": current_view_company,
             "only_consumed": bool(only_consumed),
         },
+        "schema_version": SANKEY_INBOUND_PAYLOAD_SCHEMA,
         "currency": "SEK",
-        "summary": summary,
-        "companies": companies,
-        "nodes": nodes,
-        "links": links,
-        "processes": processes,
+        **view_payload,
+        "client_filters": {
+            "schema": "views_v1",
+            "views": client_views,
+            alternate_key: alternate_payload,
+        },
         "warnings": unique_warnings[:100],
         "source_status": list(source_status or []),
     }
@@ -1413,6 +1669,18 @@ def _source_failure_message(
     if archive_view is not None and archive_exc is not None:
         detail += f" · arkivet {archive_view} svarade också: {archive_exc}"
     return detail
+
+
+def _degraded_source_warning(*, key: str, view: str, message: str) -> dict[str, Any]:
+    return {
+        "code": "degraded_source_segment_unavailable",
+        "source": key,
+        "view": view,
+        "message": (
+            f"{message}. Rapporten fortsätter med tillgängliga segment, "
+            "men förverkade/plockade grenar kan vara underskattade."
+        ),
+    }
 
 
 def _fetch_snapshot_rows(
@@ -1551,6 +1819,9 @@ def _fetch_view_rows(
                     })
                     logger.error("Sankey-källa misslyckades (även arkiv): %s", message)
                     if key in REQUIRED_SOURCE_KEYS:
+                        if key in DEGRADABLE_SOURCE_KEYS:
+                            warnings.append(_degraded_source_warning(key=key, view=segment_view, message=message))
+                            continue
                         raise SankeyInboundError(message, status_code=502, source_status=statuses) from archive_exc
                     warnings.append({"code": "optional_source_unavailable", "source": key, "view": segment_view, "message": message})
                     continue
@@ -1580,6 +1851,9 @@ def _fetch_view_rows(
             })
             logger.error("Sankey-källa misslyckades: %s", message)
             if key in REQUIRED_SOURCE_KEYS:
+                if key in DEGRADABLE_SOURCE_KEYS:
+                    warnings.append(_degraded_source_warning(key=key, view=segment_view, message=message))
+                    continue
                 raise SankeyInboundError(message, status_code=502, source_status=statuses) from exc
             warnings.append({"code": "optional_source_unavailable", "source": key, "view": segment_view, "message": message})
             continue
@@ -1596,10 +1870,11 @@ def _load_kpi_fallback_rows(
     business_code: str | None,
     db: Any = None,
 ) -> tuple[list[dict[str, Any]], list[dict], list[dict]]:
-    """Läs KPI-mål från coredata-fil när live-vyn v_ask_kpi_target inte svarar.
+    """Läs KPI-mål från Produktivitetens coredata-fil.
 
-    Speglar produktivitetsvyns fallback (productivity_sync) så att Sankey-inbound
-    får KPI-poäng även när API-vyn är otillgänglig.
+    Sankey använder coredata som förstahandskälla eftersom v_ask_kpi_target inte
+    är en tillgänglig API-källa i detta flöde. Det speglar Produktivitetens
+    fallbackfil så processpoängen hålls gemensamma.
     """
     try:
         path = find_kpi_file(None, business_code or DEFAULT_BUSINESS_CODE, db=db)
@@ -1612,7 +1887,7 @@ def _load_kpi_fallback_rows(
         {
             "key": "kpi",
             "view": SANKEY_SOURCE_VIEWS["kpi"],
-            "status": "coredata_fallback",
+            "status": "coredata_primary",
             "rows": len(rows),
         }
     ]
@@ -1620,7 +1895,7 @@ def _load_kpi_fallback_rows(
         {
             "code": "kpi_coredata_fallback",
             "source": "kpi",
-            "message": f"{SOURCE_LABELS['kpi']} hämtades från coredata-fil (live-vy ej tillgänglig).",
+            "message": f"{SOURCE_LABELS['kpi']} hämtades från Produktivitetens coredata-fil.",
         }
     ]
     return rows, status, warning
@@ -1655,6 +1930,22 @@ def fetch_sankey_inbound_sources(
         is_current = key in CURRENT_STATE_SOURCE_KEYS
         _emit_progress(progress_callback, step=steps[key], total=total, key=key, label=f"Hämtar {SOURCE_LABELS.get(key, key)}")
         started = time.perf_counter()
+        if key == "kpi":
+            rows, statuses, source_warnings = _load_kpi_fallback_rows(business_code=business_code, db=db)
+            if not statuses:
+                statuses = [{"key": key, "view": view_id, "status": "coredata_missing", "rows": 0}]
+                source_warnings = [
+                    {
+                        "code": "kpi_coredata_missing",
+                        "source": "kpi",
+                        "message": f"{SOURCE_LABELS['kpi']} saknas i Produktivitetens coredata-fil.",
+                    }
+                ]
+            elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+            for status in statuses:
+                status.setdefault("ms", elapsed_ms)
+            _emit_progress(progress_callback, step=steps[key], total=total, key=key, label=f"{SOURCE_LABELS.get(key, key)} klar", rows=len(rows), done=True, ms=elapsed_ms)
+            return key, rows, statuses, source_warnings
         client = _api_client(tenant=tenant)
         rows, statuses, source_warnings = _fetch_view_rows(
             client,
@@ -1666,24 +1957,14 @@ def fetch_sankey_inbound_sources(
             company_filter=company_filter,
             today=today,
         )
-        if key == "kpi" and not rows and any(status.get("status") == "error" for status in statuses):
-            fallback_rows, fallback_status, fallback_warnings = _load_kpi_fallback_rows(business_code=business_code, db=db)
-            if fallback_rows:
-                rows = fallback_rows
-                statuses.extend(fallback_status)
-                source_warnings = [
-                    warning for warning in source_warnings
-                    if not (warning.get("code") == "optional_source_unavailable" and warning.get("source") == "kpi")
-                ]
-                source_warnings.extend(fallback_warnings)
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         for status in statuses:
             status.setdefault("ms", elapsed_ms)
         _emit_progress(progress_callback, step=steps[key], total=total, key=key, label=f"{SOURCE_LABELS.get(key, key)} klar", rows=len(rows), done=True, ms=elapsed_ms)
         return key, rows, statuses, source_warnings
 
-    # Loggkällorna (receive/trans/pick/pallet) är oberoende och tunga – hämta dem parallellt.
-    # Nulägeskällorna (buffer/saldo/kpi) körs sekventiellt eftersom kpi-fallbacken rör DB-sessionen.
+    # Loggkällorna (receive/trans/pick) är oberoende och tunga – hämta dem parallellt.
+    # Nulägeskällorna (buffer/kpi) körs sekventiellt eftersom kpi-fallbacken rör DB-sessionen.
     parallel_views = [(k, v) for k, v in SANKEY_SOURCE_VIEWS.items() if k not in CURRENT_STATE_SOURCE_KEYS]
     sequential_views = [(k, v) for k, v in SANKEY_SOURCE_VIEWS.items() if k in CURRENT_STATE_SOURCE_KEYS]
     results: dict[str, tuple[list[dict[str, Any]], list[dict], list[dict]]] = {}
@@ -1731,6 +2012,7 @@ def _cache_key(
     tenant: str | None,
 ) -> tuple[Any, ...]:
     return (
+        SANKEY_INBOUND_PAYLOAD_SCHEMA,
         business_id,
         str(period or "day").lower(),
         selected_date.isoformat(),
@@ -1885,6 +2167,8 @@ def load_sankey_inbound_payload(
         period_start=period_start,
         period_end=period_end,
         follow_until=today,
+        period_type=str(period or "day").strip().lower(),
+        period_label=period_label,
         company_filter=company_filter,
         only_consumed=only_consumed,
         source_status=source_status,

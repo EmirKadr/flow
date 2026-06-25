@@ -159,6 +159,16 @@ const MY_PRODUCTIVITY_ICON = `
   </svg>
 `;
 
+const MCP_ICON = `
+  <svg class="sidebar-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="6" cy="12" r="2.4"></circle>
+    <circle cx="18" cy="6.5" r="2.4"></circle>
+    <circle cx="18" cy="17.5" r="2.4"></circle>
+    <path d="M8.2 11.1 15.8 7.4"></path>
+    <path d="M8.2 12.9 15.8 16.6"></path>
+  </svg>
+`;
+
 const ASSISTANT_CHAT_STORAGE_KEY = "flow-assistant-chat";
 const ASSISTANT_CHAT_OPEN_KEY = "flow-assistant-chat-open";
 const ASSISTANT_CHAT_COUNT_KEY = "flow-assistant-chat-count";
@@ -187,6 +197,7 @@ const SIDEBAR_DEFAULT_LAYOUT = [
   { id: "overview" },
   { id: "productivity" },
   { id: "dataFetch" },
+  { id: "mcp" },
   { id: "allocationProcess" },
   { id: "allocationSettings" },
   { id: "allocationSplit" },
@@ -212,6 +223,7 @@ const ROLE_VIEW_IDS = [
   "sankeyInbound",
   "productivityFinance",
   "dataFetch",
+  "mcp",
   "allocationUploads",
   "allocationProcess",
   "allocationProcessMatrix",
@@ -278,6 +290,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     areas: "edit",
     users: "edit",
     appSettings: "edit",
+    mcp: "edit",
     staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",
@@ -293,6 +306,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     areas: "edit",
     users: "edit",
     appSettings: "edit",
+    mcp: "edit",
     staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",

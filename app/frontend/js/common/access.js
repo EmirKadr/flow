@@ -198,6 +198,14 @@ function sidebarPageDefinitions(user, activePage) {
       active: activePage === "dataFetch",
     },
     {
+      id: "mcp",
+      label: "MCP",
+      href: "/mcp.html",
+      iconHtml: MCP_ICON,
+      visible: canViewPage(user, "mcp"),
+      active: activePage === "mcp",
+    },
+    {
       id: "allocationProcess",
       label: "Bearbeta",
       href: "/bearbeta.html",

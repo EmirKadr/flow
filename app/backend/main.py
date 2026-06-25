@@ -28,6 +28,7 @@ from .routers import (
     data_fetch,
     healthcheck,
     meta_uploads,
+    mcp,
     overview,
     person_schedules,
     persons,
@@ -232,6 +233,7 @@ app.include_router(coredata.router)
 app.include_router(data_fetch.router)
 app.include_router(healthcheck.router)
 app.include_router(meta_uploads.router)
+app.include_router(mcp.router)
 app.include_router(overview.router)
 app.include_router(productivity.router)
 app.include_router(sankey.router)

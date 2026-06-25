@@ -2596,6 +2596,71 @@ table.productivity-matrix td.productivity-hour-empty {
   text-align: right;
 }
 
+.sankey-trace-preview {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.sankey-trace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sankey-trace-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.sankey-trace-head button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.sankey-trace-head button:hover {
+  border-color: #0f172a;
+}
+
+.sankey-trace-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.sankey-trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sankey-trace-table th,
+.sankey-trace-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 7px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.sankey-trace-table th {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.sankey-trace-path {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sankey-inbound-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
@@ -5612,6 +5677,210 @@ tr.filter-row input {
   .data-fetch-actions input,
   .data-fetch-actions button {
     width: 100%;
+  }
+}
+
+/* ============================================================
+   MCP
+   ============================================================ */
+
+.mcp-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mcp-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-1);
+  padding: 18px;
+}
+
+.mcp-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mcp-panel-head h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.mcp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mcp-status-pill.ok {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
+}
+
+.mcp-status-pill.warn {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: var(--warning);
+}
+
+.mcp-status-pill.error {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}
+
+.mcp-question-form {
+  display: grid;
+  gap: 10px;
+}
+
+.mcp-question-form label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.mcp-question-form textarea,
+.mcp-question-form select {
+  width: 100%;
+}
+
+.mcp-question-form textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.mcp-brain-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  align-items: end;
+}
+
+.mcp-brain-grid label {
+  min-width: 0;
+}
+
+.mcp-brain-grid select {
+  min-width: 0;
+}
+
+.mcp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mcp-answer {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.mcp-answer > :first-child {
+  margin-top: 0;
+}
+
+.mcp-answer > :last-child {
+  margin-bottom: 0;
+}
+
+.mcp-tools-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.mcp-tool {
+  display: grid;
+  gap: 7px;
+  min-height: 104px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  padding: 12px;
+}
+
+.mcp-tool.is-ready {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
+}
+
+.mcp-tool > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mcp-tool strong,
+.mcp-tool code,
+.mcp-tool p,
+.mcp-tool small {
+  min-width: 0;
+}
+
+.mcp-tool code,
+.mcp-tool small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mcp-tool span {
+  justify-self: start;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mcp-tool.is-ready span {
+  color: var(--success);
+}
+
+.mcp-tool p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 700px) {
+  .mcp-panel-head {
+    flex-direction: column;
+  }
+
+  .mcp-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mcp-actions button {
+    width: 100%;
+  }
+
+  .mcp-brain-grid {
+    grid-template-columns: 1fr;
   }
 }
 

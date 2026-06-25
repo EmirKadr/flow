@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-17
+updated: 2026-06-25
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -48,6 +48,12 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   berakning/ritning innan korten fylls pa. Detta ar medvetet read-only
   laddbeteende och skapar ingen ny audit-rad; befintlig produktivitetsrapport-
   audit och vantetidsmatning fortsatter galla.
+- Periodoversikten bygger dagrapporter fran befintliga snapshots med
+  begransad parallellism pa Postgres, hogst fyra dagar samtidigt. Varje dagjobb
+  anvander en egen kort DB-session och svaret sorteras fortfarande per datum.
+  SQLite och fake-sessioner faller tillbaka till seriell byggning. Progressen
+  raknar fardiga dagar, sa dagar kan bli klara i annan ordning utan att
+  slutresultatet andrar ordning.
 - Noder for verksamhet, omrade, aktivitet, person, timme och processpoang.
 - Barnnoder visas som en sammanhangande horisontell tradgren. Nar det finns
   manga barn scrollas tradytan i sidled i stallet for att bryta upp grenlinjen.
@@ -146,7 +152,9 @@ Produktivitet.
   `produktivitet.html` anvander: `reports[]`, `period`, `summary`,
   `missing_dates`, `source_status`, `sync` och `backfill`. Endpointen laser
   befintliga snapshots for perioden och triggar inte extern historikhamtning vid
-  varje periodbyte.
+  varje periodbyte. Nar databasen stodjer det byggs dagrapporterna med max fyra
+  parallella dagjobb; varje jobb har egen session och payloaden ordnas per
+  datum innan den returneras.
   Med `productivityFinance=view` innehaller payloaden aven `finance` pa
   periodniva, personniva och relevanta `time_cells`; kopplade intaktsrader
   visas som `finance.process_revenues` pa periodniva. Utan behorighet ar

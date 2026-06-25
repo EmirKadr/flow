@@ -127,6 +127,26 @@ def test_required_source_failure_raises_detailed_message(monkeypatch):
     assert excinfo.value.source_status[-1].get("message")
 
 
+def test_pick_archive_failure_degrades_instead_of_failing(monkeypatch):
+    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    client = _FakeClient(fail_views={"dblog_pick_log"})
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="pick",
+        view_id="v_ask_pick_log_full",
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 5, 14),
+        company_codes=["GG"],
+        company_filter=None,
+        today=date(2026, 6, 24),
+    )
+
+    assert rows == []
+    assert any(s.get("view") == "dblog_pick_log" and s.get("status") == "error" for s in statuses)
+    assert any(w.get("code") == "degraded_source_segment_unavailable" and w.get("source") == "pick" for w in warnings)
+
+
 def finance(price=10, purchase_line_price=0):
     return {
         "invoice_rows_by_company": {
@@ -140,6 +160,18 @@ def finance(price=10, purchase_line_price=0):
                     "price": purchase_line_price,
                 },
             ]
+        }
+    }
+
+
+def finance_for_companies(*companies, price=10, purchase_line_price=0):
+    return {
+        "invoice_rows_by_company": {
+            company: [
+                {"id": "inbound_labels", "price": price},
+                {"id": "inbound_article_rows", "price": purchase_line_price},
+            ]
+            for company in companies
         }
     }
 
@@ -365,6 +397,53 @@ def test_terminal_labels_use_swedish_characters():
     assert labels["terminal:open_not_putaway"] == "Ej inlagrad / okänd"
 
 
+def test_trace_rows_include_pallet_ids_purchase_key_and_path_membership():
+    payload = build(
+        {
+            "receive": [receive("pick", "P1", book="PO77", line="9")],
+            "trans": [trans("P1", "21", "A101", timestamp="2026-06-01T09:00:00")],
+        }
+    )
+
+    trace = payload["trace_rows"][0]
+
+    assert trace["origin_pall"] == "P1"
+    assert trace["current_pall"] == "P1"
+    assert trace["purchase_number"] == "PO77"
+    assert trace["purchase_line"] == "9"
+    assert trace["received_date"] == "2026-06-01"
+    assert trace["source_row_id"] == "pick"
+    assert trace["status_label"] == "Kvar på plockplats"
+    assert trace["step_1"] == "Mottagning P1"
+    assert trace["step_2"] == "Receiving"
+    assert trace["step_3"] == "Plockplats"
+    assert trace["step_4"] == "Kvar på plockplats"
+    assert trace["path"] == "Mottagning P1 -> Receiving -> Plockplats -> Kvar på plockplats"
+    assert "GG:start" in trace["node_ids"]
+    assert "GG:process:PUTAWAY_PICK" in trace["node_ids"]
+    assert "GG:terminal:open_pick_location" in trace["node_ids"]
+    assert "GG:process:RECEIVING->GG:process:PUTAWAY_PICK" in trace["link_keys"]
+
+
+def test_trace_rows_show_current_location_status_from_buffer_snapshot():
+    payload = build(
+        {
+            "receive": [receive("hbw", "P1", book="PO88", line="2")],
+            "buffer": [{"company": "GG", "pall_num": "P1", "location": "HBW99"}],
+        }
+    )
+
+    trace = payload["trace_rows"][0]
+
+    assert trace["origin_pall"] == "P1"
+    assert trace["current_location"] == "HBW99"
+    assert trace["status"] == "open_hbw"
+    assert trace["status_label"] == "Kvar i HBW"
+    assert trace["path"] == "Mottagning P1 -> Receiving -> Kvar i HBW"
+    assert "GG:terminal:open_hbw" in trace["node_ids"]
+    assert "GG:process:RECEIVING->GG:terminal:open_hbw" in trace["link_keys"]
+
+
 def test_only_consumed_filters_open_branches():
     rows = {
         "receive": [
@@ -382,9 +461,76 @@ def test_only_consumed_filters_open_branches():
 
     assert all_payload["summary"]["gross_income"] == 20
     assert all_payload["summary"]["labels_open"] == 1
+    assert all_payload["client_filters"]["only_consumed"]["summary"]["gross_income"] == 10
+    assert all_payload["client_filters"]["only_consumed"]["summary"] == consumed_payload["summary"]
+    assert all_payload["client_filters"]["only_consumed"]["nodes"] == consumed_payload["nodes"]
+    assert all_payload["client_filters"]["only_consumed"]["links"] == consumed_payload["links"]
     assert consumed_payload["summary"]["gross_income"] == 10
+    assert consumed_payload["client_filters"]["all"]["summary"] == all_payload["summary"]
     assert consumed_payload["summary"]["labels_open"] == 0
     assert consumed_payload["summary"]["labels_consumed"] == 1
+
+
+def test_client_filter_views_include_company_and_day_variants():
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [
+                receive("gg-day1", "P1", company="GG", timestamp="2026-06-01T08:00:00"),
+                receive("mg-day2", "P2", company="MG", timestamp="2026-06-02T08:00:00"),
+            ],
+            "kpi": [],
+        },
+        finance_settings=finance_for_companies("GG", "MG", price=10),
+        company_codes=["GG", "MG"],
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 30),
+        follow_until=date(2026, 6, 24),
+        period_type="month",
+        period_label="Månad",
+        process_points={"RECEIVING": 2.5},
+    )
+
+    views = payload["client_filters"]["views"]
+    month_mg_key = sis._client_filter_view_key("month", date(2026, 6, 1), "MG", False)
+    day_gg_key = sis._client_filter_view_key("day", date(2026, 6, 1), "GG", False)
+    day_mg_key = sis._client_filter_view_key("day", date(2026, 6, 2), "MG", False)
+
+    assert payload["summary"]["gross_income"] == 20
+    assert views[month_mg_key]["summary"]["gross_income"] == 10
+    assert views[month_mg_key]["filters"]["company"] == "MG"
+    assert views[day_gg_key]["summary"]["labels_received"] == 1
+    assert views[day_gg_key]["period"]["type"] == "day"
+    assert views[day_gg_key]["trace_rows"][0]["received_date"] == "2026-06-01"
+    assert views[day_mg_key]["companies"][0]["company"] == "MG"
+
+
+def test_client_filter_views_include_month_variants_for_year_payload():
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [
+                receive("june", "P1", timestamp="2026-06-15T08:00:00"),
+                receive("july", "P2", timestamp="2026-07-02T08:00:00"),
+            ],
+            "kpi": [],
+        },
+        finance_settings=finance_for_companies("GG", price=10),
+        company_codes=["GG"],
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 12, 31),
+        follow_until=date(2026, 12, 31),
+        period_type="year",
+        period_label="År",
+        process_points={"RECEIVING": 2.5},
+    )
+
+    views = payload["client_filters"]["views"]
+    june_key = sis._client_filter_view_key("month", date(2026, 6, 1), "ALL", False)
+    july_key = sis._client_filter_view_key("month", date(2026, 7, 1), "ALL", False)
+
+    assert views[june_key]["summary"]["labels_received"] == 1
+    assert views[june_key]["trace_rows"][0]["source_row_id"] == "june"
+    assert views[july_key]["summary"]["labels_received"] == 1
+    assert views[july_key]["period"]["type"] == "month"
 
 
 def test_pick_location_fifo_consumes_prior_unknown_balance_before_owned_branch():
@@ -414,12 +560,45 @@ def test_kpi_coredata_fallback_reads_targets_when_live_view_unavailable(tmp_path
     rows, status, warnings = _load_kpi_fallback_rows(business_code="GG", db=None)
 
     assert len(rows) == 2
-    assert status[0]["status"] == "coredata_fallback"
+    assert status[0]["status"] == "coredata_primary"
     assert warnings[0]["code"] == "kpi_coredata_fallback"
 
     points = _process_points_from_kpi(rows)
     assert points[("GG", "RECEIVING")] == 2.5
     assert points[("GG", "HBW")] == 1.25
+
+
+def test_sankey_kpi_fetch_uses_coredata_without_external_api(monkeypatch):
+    progress = []
+
+    def fail_external_fetch(*args, **kwargs):
+        raise AssertionError("KPI ska inte hämtas via extern API-vy")
+
+    monkeypatch.setattr(sis, "SANKEY_SOURCE_VIEWS", {"kpi": "v_ask_kpi_target"})
+    monkeypatch.setattr(sis, "CURRENT_STATE_SOURCE_KEYS", {"kpi"})
+    monkeypatch.setattr(sis, "_fetch_view_rows", fail_external_fetch)
+    monkeypatch.setattr(
+        sis,
+        "_load_kpi_fallback_rows",
+        lambda **_kwargs: (
+            [{"company": "GG", "action_id": "Receiving", "loaded_rows": "2.5"}],
+            [{"key": "kpi", "view": "v_ask_kpi_target", "status": "coredata_primary", "rows": 1}],
+            [{"code": "kpi_coredata_fallback", "source": "kpi", "message": "fallback"}],
+        ),
+    )
+
+    rows, status, warnings = sis.fetch_sankey_inbound_sources(
+        period_start=date(2026, 6, 1),
+        follow_until=date(2026, 6, 24),
+        company_codes=["GG"],
+        progress_callback=progress.append,
+    )
+
+    assert rows["kpi"][0]["action_id"] == "Receiving"
+    assert status[0]["status"] == "coredata_primary"
+    assert warnings[0]["code"] == "kpi_coredata_fallback"
+    assert progress[-1]["key"] == "kpi"
+    assert progress[-1]["done"] is True
 
 
 def test_only_consumed_toggle_reuses_cached_sources(monkeypatch):

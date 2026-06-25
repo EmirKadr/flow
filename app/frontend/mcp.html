@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCP - flow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <main class="mcp-page">
+    <div class="section-title">MCP</div>
+
+    <section class="mcp-panel">
+      <div class="mcp-panel-head">
+        <div>
+          <h2>Noeffect</h2>
+          <p id="mcpStatusText" class="note">Kontrollerar MCP...</p>
+        </div>
+        <span id="mcpStatusPill" class="mcp-status-pill">...</span>
+      </div>
+
+      <form id="mcpQuestionForm" class="mcp-question-form">
+        <div class="mcp-brain-grid">
+          <label for="mcpProviderSelect">Företag</label>
+          <label for="mcpModelSelect">Modell</label>
+          <label for="mcpThinkingSelect">Thinking mode</label>
+          <select id="mcpProviderSelect"></select>
+          <select id="mcpModelSelect"></select>
+          <select id="mcpThinkingSelect"></select>
+        </div>
+
+        <label for="mcpQuestion">Fråga</label>
+        <textarea id="mcpQuestion" rows="6" maxlength="4000" spellcheck="true" placeholder="Skriv fråga till MCP..."></textarea>
+
+        <div class="mcp-actions">
+          <button id="mcpRefresh" type="button">Uppdatera</button>
+          <button id="mcpClear" type="button">Rensa</button>
+          <button id="mcpSend" type="submit" class="primary" data-control-id="mcp-query-send">Skicka</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="mcpAnswerPanel" class="mcp-panel" hidden>
+      <div class="mcp-panel-head">
+        <div>
+          <h2>Svar</h2>
+          <p id="mcpAnswerMeta" class="note"></p>
+        </div>
+      </div>
+      <div id="mcpAnswer" class="mcp-answer"></div>
+    </section>
+
+    <section id="mcpToolsPanel" class="mcp-panel" hidden>
+      <div class="mcp-panel-head">
+        <div>
+          <h2>MCP-kontext</h2>
+          <p id="mcpToolsMeta" class="note"></p>
+        </div>
+      </div>
+      <div id="mcpToolsList" class="mcp-tools-list"></div>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/common/foundation.js?v=20260616-speed-common"></script>
+  <script src="/js/common/theme.js?v=20260616-speed-common"></script>
+  <script src="/js/common/area_focus.js?v=20260616-speed-common"></script>
+  <script src="/js/common/runtime.js?v=20260616-speed-common"></script>
+  <script src="/js/common/app_log.js?v=20260616-speed-common"></script>
+  <script src="/js/common/telemetry.js?v=20260616-speed-common"></script>
+  <script src="/js/common/access.js?v=20260616-speed-common"></script>
+  <script src="/js/common/sidebar.js?v=20260616-speed-common"></script>
+  <script src="/js/common/uploads.js?v=20260616-speed-common"></script>
+  <script src="/js/common/demo_prefetch_init.js?v=20260616-speed-common"></script>
+  <script src="/js/common/import_tools.js?v=20260616-speed-common"></script>
+  <script src="/js/common/table_sort.js?v=20260616-speed-common"></script>
+  <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
+  <script src="/js/common.js?v=20260616-speed-common"></script>
+  <script src="/js/mcp.js?v=20260625-mcp-brain-select"></script>
+</body>
+</html>

@@ -1,11 +1,73 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-24
+updated: 2026-06-25
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-06-25] fix | Produktivitet bygger perioddagar parallellt
+
+Produktivitetens periodoversikt bygger nu dagrapporter fran befintliga
+snapshots med begransad parallellism pa Postgres, max fyra dagar samtidigt.
+Varje dagjobb far en egen kort DB-session och slutpayloaden sorteras fortfarande
+per datum. SQLite och fake-sessioner faller tillbaka till seriell byggning, och
+SSE-progressen raknar fardiga dagar via `completed` sa UI:t inte overdriver
+framdriften nar flera dagar ar aktiva samtidigt.
+
+## [2026-06-25] feature | MCP kan använda DeepSeek som hjärna
+
+MCP-vyn väljer nu LLM-hjärna via `MCP_LLM_PROVIDER`. Default `auto` använder
+DeepSeek när `DEEPSEEK_API_KEY` finns och faller annars tillbaka till Gemini.
+Backend skickar read-only MCP-tools som function declarations till DeepSeek,
+bevarar `reasoning_content` mellan tool-anrop när thinking mode är aktivt och
+returnerar bara sanerad provider/modell/tool-metadata till frontend och audit.
+Efter långsamma MCP-frågor och ett läckt pseudo-tool-svar är
+`DEEPSEEK_THINKING_ENABLED=false` default. `DEEPSEEK_REASONING_EFFORT=high` gäller
+när thinking slås på, och `max` finns kvar för tyngre fler-stegsfrågor.
+
+Utökade därefter MCP-vyn med separata rullistor för `Företag`, `Modell` och
+`Thinking mode`. Backend exponerar bara providers med konfigurerad API-nyckel
+och stöder DeepSeek, OpenAI, Gemini och MiniMax. Modellistorna styrs via
+`MCP_DEEPSEEK_MODELS`, `MCP_OPENAI_MODELS`, `MCP_GEMINI_MODELS` och
+`MCP_MINIMAX_MODELS`, medan thinking-val bara visas för providers där backend
+har explicit stöd.
+
+## [2026-06-25] fix | Sankey återanvänder bredare urval lokalt
+
+Sankey - Inbound skickar nu `client_filters.views` med färdigräknade lokala
+vyer från samma branchunderlag. När `Alla bolag` är hämtat kan frontend byta
+bolag utan ny hämtning. När månad/vecka är hämtad kan en dag i samma period
+visas lokalt, och när år är hämtat kan en månad i året visas lokalt. Spårningen
+har fått `received_date` så mottagningskohorten kan filtreras korrekt, och
+varningsrutan normaliserar äldre mojibake för svenska tecken.
+
+## [2026-06-24] feature | MCP använder Gemini som hjärna
+
+MCP-vyn kräver inte längre ett MCP-tool för frågor. Backend hämtar i stället
+tenant-baserad MCP-kontext via resources/prompts och skickar användarens fråga
+till Gemini `generateContent` med modellen från `GEMINI_MODEL`. Status-API:t
+visar nu MCP- och Gemini-konfiguration, UI:t visar `Hjärna` i stället för
+verktygsval och audit fortsätter spara bara sanerad metadata med modell,
+status och teckenantal.
+
+Utökade därefter samma flöde med Gemini function calling mot MCP-tools.
+Read-only tools som `get_views`, `search_views`, `get_view_schema`,
+`get_view_columns`, `query_view` och `aggregate_view` kan nu anropas av Gemini
+via backend. Svaret och auditpayloaden innehåller `tool_calls`, och backend kan
+läsa dynamiska tenant-tokenvärden från lokal `.env`/`app/.env` utan att de
+exponeras i frontend.
+
+## [2026-06-24] feature | MCP-vy for tenant-fragor
+
+Lade till MCP-vyn i wikin: anvandarflode, kontroller, backendproxy,
+behorigheten `mcp`, API-rutterna `GET /api/mcp/status` och
+`POST /api/mcp/query`, samt Historik/Analys-sparet `mcp_query` med sanerad
+payload. Dokumentationen beskriver ocksa att URL/token inte ska exponeras i
+frontend eller wiki, och att lokal utveckling kan lasa tenant-baserad
+serveradress-template fran ignorerad Codex-konfiguration medan token kommer
+fran miljo via `NOEFFECT_<TENANT>_TOKEN`.
 
 ## [2026-06-24] feature | Sankey - Inbound vy och beräkningsregler
 
@@ -30,6 +92,42 @@ filter räknas unika `company + book_num + line_num`, potten delas lika över de
 mottagningsrader som hör till inköpsraden och följer sedan samma branch- och
 processpoängsfördelning som etikettintäkten. API och UI visar nu breakdown för
 etikettintäkt respektive inköpsradsintäkt.
+
+Lade till felsökningsunderlag för pallgrenar i Sankey - Inbound. API:t returnerar
+nu `trace_rows` med ursprungspallid, nuvarande pallid, inköp/rad, status,
+diagrammedlemskap och `step_1..N` för spårad väg. UI:t visar matchande
+pallgrenar när användaren klickar på nod eller länk och kan exportera hela
+underlaget eller bara urvalet som CSV. Auditloggen fortsätter vara sanerad utan
+pallid/order/radpayload.
+
+Testade även Sankey-källorna mot `pick_stock` och `v_ask_item_balance_list`.
+`pick_stock` saknade pallid/plats. `v_ask_item_balance_list` matchade
+buffertpall på gemensamma pallid men saknade 6 995 buffertpall-pallid i dagens
+prov och slog i radtaket för GG. Sankey behåller därför
+`v_ask_article_buffertpallet`, men slutar hämta de oanvända källorna
+`v_ask_palletloading_log` och `v_ask_item_summary_stock_automation`.
+
+Ändrade KPI-steget i Sankey så `v_ask_kpi_target` inte längre provas via extern
+API. KPI-poäng läses direkt från Produktivitetens coredata-/fallbackfil som
+förstahandskälla, vilket tar bort den återkommande 403-kostnaden och varningen.
+
+Gjorde `Visa endast förverkade` till en ren klientväxling. API:t skickar nu med
+en färdigräknad `client_filters.only_consumed`-vy i standardpayloaden, byggd
+från samma branchunderlag, så frontend inte gör en ny GET/SSE-hämtning när
+användaren bara filtrerar bort öppna grenar.
+
+Ändrade även felhanteringen för `dblog_pick_log`: om ett äldre plocksegment
+nekas av extern datakälla, till exempel HTTP 403, stoppar inte Sankey hela
+rapporten. Den fortsätter med tillgängliga segment och skickar varningen
+`degraded_source_segment_unavailable`, eftersom förverkade/plockade grenar då kan
+vara underskattade.
+
+Felsökte Stigamo/Frey-arkiven direkt mot extern API med samma integrationnyckel.
+`dblog_trans_log` svarar 200, men `dblog_pick_log`, `dblog_receive_log` och
+närliggande plockarkiv svarar 403 även utan filter och syns inte i API:ts
+tillgängliga vylista. Det är alltså extern vybehörighet/nyckelexponering, inte
+fel datumkolumn eller datumformat. Sankey-UI rensar nu gamla KPI-kort/spårning
+när en källhämtning failar, så en misslyckad äldre period inte visar stale data.
 
 ## [2026-06-24] docs | ASK-statuskoder far egen katalogplan
 

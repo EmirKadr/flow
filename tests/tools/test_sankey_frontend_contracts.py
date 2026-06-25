@@ -21,9 +21,23 @@ def test_sankey_inbound_frontend_contract():
     assert "purchase_lines_received" in script
     assert "gross_income_purchase_lines" in script
     assert "purchase_line_revenue" in script
+    assert "trace_rows" in script
+    assert "client_filters" in script
+    assert "client-filter-v3" in script
+    assert "sankeyClientViewKey" in script
+    assert "sankeyPayloadForClientState" in script
+    assert "sankeyPayloadForConsumedState" in script
+    assert "renderSankeyCurrentView" in script
+    assert "sankeyDisplayText" in script
+    assert '["Ã¥", "å"]' in script
+    assert "origin_pall" in script
+    assert "received_date" in script
+    assert "sankeyTraceRowsToCsv" in script
+    assert "data-sankey-export-traces" in script
     assert "Mottagna inköpsrader" in script
     assert "Inköpsradsintäkt" in script
     assert "Visa endast förverkade" in html
+    assert "Exportera spårning" in html
     assert "Sankey - Inbound" in productivity
     assert 'canViewPage(productivityOverviewUser, "sankeyInbound")' in productivity
     assert "/sankey-inbound.html" in productivity

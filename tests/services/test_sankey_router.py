@@ -116,8 +116,8 @@ def test_sankey_inbound_stream_emits_progress_then_done(monkeypatch):
     def fake_load(**kwargs):
         callback = kwargs.get("progress_callback")
         if callback:
-            callback({"step": 1, "total": 8, "key": "receive", "label": "Hämtar Varumottagningslogg"})
-            callback({"step": 1, "total": 8, "key": "receive", "label": "Varumottagningslogg klar", "rows": 3, "done": True})
+            callback({"step": 1, "total": 6, "key": "receive", "label": "Hämtar Varumottagningslogg"})
+            callback({"step": 1, "total": 6, "key": "receive", "label": "Varumottagningslogg klar", "rows": 3, "done": True})
         return {"summary": {"gross_income": 5}, "period": {}, "warnings": [], "source_status": []}
 
     monkeypatch.setattr(sankey_router, "get_productivity_finance_settings", lambda *_a, **_k: {})
@@ -139,7 +139,7 @@ def test_sankey_inbound_stream_emits_progress_then_done(monkeypatch):
     types = [event["type"] for event in events]
 
     assert types[0] == "start"
-    assert events[0]["total"] == 8
+    assert events[0]["total"] == 6
     assert "progress" in types
     assert types[-1] == "done"
     assert events[-1]["payload"]["summary"]["gross_income"] == 5

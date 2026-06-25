@@ -99,6 +99,7 @@ def test_visual_smoke_covers_expected_routes():
         "anvandare",
         "verksamheter",
         "hamta-data",
+        "mcp",
         "uppladdningar",
         "bearbeta",
         "dela",
@@ -111,6 +112,7 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["anvandare"].roles == ("admin",)
     assert pages_by_name["verksamheter"].roles == ("admin",)
     assert pages_by_name["hamta-data"].roles == ("admin",)
+    assert pages_by_name["mcp"].roles == ("admin",)
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
@@ -172,10 +174,12 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'coredata_file: "Kärnfil"' in analytics
     assert 'meta_media_upload: "Meta-uppladdning"' in analytics
     assert 'rfid_scan_event: "RFID-stämpel"' in analytics
+    assert 'mcp_query: "MCP-fråga"' in analytics
     assert 'workflow_source: "Workflow-underlag"' in analytics
     assert 'entry.entity_type === "coredata_file"' in analytics
     assert 'entry.entity_type === "meta_media_upload"' in analytics
     assert 'entry.entity_type === "rfid_scan_event"' in analytics
+    assert 'entry.entity_type === "mcp_query"' in analytics
     assert 'entry.entity_type === "workflow_source"' in analytics
     assert "Tagg:" in analytics
     assert "TRACKING_HISTORY_MODES" in analytics
@@ -910,7 +914,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "  void loadProductivityOverview();\n}\n\ndocument.addEventListener" in productivity_overview
     assert "Beräknar och ritar produktivitet" in productivity_overview
     assert 'setAttribute("aria-busy", "true")' in productivity_overview
-    assert 'src="/js/productivity_overview.js?v=20260616-productivity-progressive"' in productivity_html
+    assert 'src="/js/productivity_overview.js?v=20260625-productivity-parallel-days"' in productivity_html
     assert "productivity-overview-tree-wrap" in styles
     assert ".productivity-overview-export-modal" in styles
     assert ".productivity-overview-export-levels" in styles

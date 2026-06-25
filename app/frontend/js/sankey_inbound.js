@@ -1,4 +1,5 @@
 const SANKEY_INBOUND_CACHE_TTL_MS = 5 * 60 * 1000;
+const SANKEY_INBOUND_CLIENT_SCHEMA = "client-filter-v3";
 const SANKEY_INBOUND_COLORS = {
   source: "#2563eb",
   RECEIVING: "#0f766e",
@@ -15,13 +16,35 @@ const SANKEY_INBOUND_COLORS = {
 let sankeyInboundUser = null;
 let sankeyInboundPeriod = "day";
 let sankeyInboundOnlyConsumed = false;
+let sankeyInboundBasePayload = null;
 let sankeyInboundPayload = null;
 let sankeyInboundSelected = null;
+let sankeyInboundClientFilterRefreshInFlight = false;
+let sankeyInboundTriedClientFilterRefresh = false;
+
+function sankeyNormalizeCompany(value) {
+  const text = String(value || "").trim().toUpperCase();
+  return text && text !== "ALL" ? text : "ALL";
+}
 
 function sankeyEscapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]
   );
+}
+
+function sankeyDisplayText(value) {
+  let text = String(value ?? "");
+  const replacements = [
+    ["Ã¥", "å"], ["Ã¤", "ä"], ["Ã¶", "ö"],
+    ["Ã…", "Å"], ["Ã„", "Ä"], ["Ã–", "Ö"],
+    ["â€“", "–"], ["â€”", "—"], ["â€¦", "…"],
+    ["â€¹", "‹"], ["â€º", "›"], ["Â·", "·"], ["Â ", " "],
+  ];
+  for (const [broken, fixed] of replacements) {
+    text = text.split(broken).join(fixed);
+  }
+  return text;
 }
 
 function sankeyLocalIsoDate(date = new Date()) {
@@ -37,6 +60,30 @@ function sankeyParseIsoDate(value) {
 
 function sankeyFormatDate(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function sankeyPeriodStartDate(period, value) {
+  const date = sankeyParseIsoDate(value) || sankeyParseIsoDate(sankeyLocalIsoDate());
+  if (!date) return value || "";
+  const normalized = String(period || "day").toLowerCase();
+  if (normalized === "year") {
+    date.setUTCMonth(0, 1);
+  } else if (normalized === "month") {
+    date.setUTCDate(1);
+  } else if (normalized === "week") {
+    const weekday = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() - (weekday - 1));
+  }
+  return sankeyFormatDate(date);
+}
+
+function sankeyClientViewKey(period, dateValue, company, onlyConsumed) {
+  return [
+    String(period || "day").toLowerCase(),
+    sankeyPeriodStartDate(period, dateValue),
+    sankeyNormalizeCompany(company),
+    onlyConsumed ? "1" : "0",
+  ].join("|");
 }
 
 function sankeyShiftDate(value, direction, period) {
@@ -69,7 +116,7 @@ function sankeyDateValue() {
 }
 
 function sankeyCompanyValue() {
-  return document.getElementById("sankeyInboundCompany")?.value || "ALL";
+  return sankeyNormalizeCompany(document.getElementById("sankeyInboundCompany")?.value || "ALL");
 }
 
 function updateSankeyDateDisplay() {
@@ -117,15 +164,154 @@ function updateSankeyCompanyOptions(payload) {
   select.value = unique.includes(current) ? current : "ALL";
 }
 
-async function fetchSankeyInboundPayload() {
+function sankeyPayloadMatchesClientState(basePayload, period, dateValue, company, onlyConsumed) {
+  if (!basePayload) return false;
+  const filters = basePayload.filters || {};
+  const payloadPeriod = basePayload.period || {};
+  return (
+    String(payloadPeriod.type || "").toLowerCase() === String(period || "").toLowerCase()
+    && String(payloadPeriod.start_date || "") === sankeyPeriodStartDate(period, dateValue)
+    && sankeyNormalizeCompany(filters.company) === sankeyNormalizeCompany(company)
+    && Boolean(filters.only_consumed) === Boolean(onlyConsumed)
+  );
+}
+
+function sankeyHydrateClientPayload(basePayload, viewPayload, period, dateValue, company, onlyConsumed) {
+  const variant = viewPayload || {};
+  return {
+    ...basePayload,
+    ...variant,
+    period: variant.period || basePayload.period,
+    filters: {
+      ...(basePayload.filters || {}),
+      ...(variant.filters || {}),
+      company: sankeyNormalizeCompany(company),
+      only_consumed: Boolean(onlyConsumed),
+    },
+    client_filters: basePayload.client_filters || {},
+    warnings: basePayload.warnings || [],
+    source_status: basePayload.source_status || [],
+    cache: {
+      ...(basePayload.cache || {}),
+      client_filter: !sankeyPayloadMatchesClientState(basePayload, period, dateValue, company, onlyConsumed),
+    },
+    timing: basePayload.timing,
+  };
+}
+
+function sankeyPayloadForClientState(basePayload, options = {}) {
+  if (!basePayload) return null;
+  const period = options.period || sankeyInboundPeriod;
+  const dateValue = options.date || sankeyDateValue();
+  const company = sankeyNormalizeCompany(options.company || sankeyCompanyValue());
+  const onlyConsumed = Boolean(options.onlyConsumed ?? sankeyInboundOnlyConsumed);
+  if (sankeyPayloadMatchesClientState(basePayload, period, dateValue, company, onlyConsumed)) {
+    return sankeyHydrateClientPayload(basePayload, basePayload, period, dateValue, company, onlyConsumed);
+  }
+
+  const viewKey = sankeyClientViewKey(period, dateValue, company, onlyConsumed);
+  const view = basePayload.client_filters?.views?.[viewKey];
+  if (view) {
+    return sankeyHydrateClientPayload(basePayload, view, period, dateValue, company, onlyConsumed);
+  }
+
+  const samePeriodAndCompany = sankeyPayloadMatchesClientState(
+    {
+      ...basePayload,
+      filters: {
+        ...(basePayload.filters || {}),
+        only_consumed: Boolean(basePayload.filters?.only_consumed),
+      },
+    },
+    period,
+    dateValue,
+    company,
+    Boolean(basePayload.filters?.only_consumed),
+  );
+  if (!samePeriodAndCompany) return null;
+
+  const baseOnlyConsumed = Boolean(basePayload.filters?.only_consumed);
+  if (baseOnlyConsumed === Boolean(onlyConsumed)) {
+    return sankeyHydrateClientPayload(basePayload, basePayload, period, dateValue, company, onlyConsumed);
+  }
+  const variants = basePayload.client_filters || {};
+  const variant = onlyConsumed ? variants.only_consumed : variants.all;
+  if (!variant) return null;
+  return sankeyHydrateClientPayload(basePayload, variant, period, dateValue, company, onlyConsumed);
+}
+
+function sankeyPayloadForConsumedState(basePayload, onlyConsumed) {
+  return sankeyPayloadForClientState(basePayload, { onlyConsumed });
+}
+
+function renderSankeyCurrentView(options = {}) {
+  const payload = sankeyPayloadForClientState(sankeyInboundBasePayload);
+  if (!payload) {
+    if (options.fetchIfMissing !== false) {
+      void loadSankeyInbound();
+    }
+    return false;
+  }
+  renderSankeyPayload(payload, { updateCompanyOptions: false });
+  return true;
+}
+
+function applySankeyFilterChange(controlId) {
+  const renderedLocally = renderSankeyCurrentView();
+  if (renderedLocally && typeof flowTrack === "function") {
+    flowTrack("filter", {
+      control_id: controlId,
+      view: "sankeyInbound",
+      period: sankeyInboundPeriod,
+      company: sankeyCompanyValue(),
+      only_consumed: sankeyInboundOnlyConsumed,
+      local_client_filter: Boolean(sankeyInboundPayload?.cache?.client_filter),
+    });
+  }
+}
+
+function clearSankeyInboundGetCache() {
+  const predicate = (key) => String(key || "").includes("/api/sankey/inbound");
+  if (typeof api !== "undefined" && typeof api.clearGetCache === "function") {
+    api.clearGetCache(predicate);
+  } else if (typeof clearApiGetCache === "function") {
+    clearApiGetCache(predicate);
+  }
+}
+
+async function refreshSankeyPayloadForClientFilters() {
+  if (!sankeyInboundBasePayload || sankeyInboundClientFilterRefreshInFlight) return;
+  if (sankeyInboundTriedClientFilterRefresh) {
+    if (typeof showToast === "function") showToast("Förverkad-vyn saknas fortfarande i hämtad Sankey-data. Ladda om sidan en gång.", "warn", 5000);
+    return;
+  }
+  sankeyInboundTriedClientFilterRefresh = true;
+  sankeyInboundClientFilterRefreshInFlight = true;
+  clearSankeyInboundGetCache();
+  setSankeyStatus("Uppdaterar Sankey-filter...", true);
+  try {
+    const payload = await fetchSankeyInboundPayload({ cacheBust: true });
+    sankeyInboundClientFilterRefreshInFlight = false;
+    handleSankeyLoaded(payload);
+  } catch (error) {
+    handleSankeyLoadError(error);
+  } finally {
+    sankeyInboundClientFilterRefreshInFlight = false;
+    document.getElementById("sankeyInboundChart")?.removeAttribute("aria-busy");
+  }
+}
+
+async function fetchSankeyInboundPayload(options = {}) {
   const params = new URLSearchParams();
   params.set("period", sankeyInboundPeriod);
   params.set("date", sankeyDateValue());
+  params.set("client_schema", SANKEY_INBOUND_CLIENT_SCHEMA);
+  if (options.cacheBust) params.set("_", String(Date.now()));
   const company = sankeyCompanyValue();
   if (company && company !== "ALL") params.set("company", company);
   if (sankeyInboundOnlyConsumed) params.set("only_consumed", "true");
   const query = `?${params.toString()}`;
-  return api.get("/api/sankey/inbound" + query, { cacheTtlMs: SANKEY_INBOUND_CACHE_TTL_MS });
+  return api.get("/api/sankey/inbound" + query, { cacheTtlMs: options.cacheBust ? 0 : SANKEY_INBOUND_CACHE_TTL_MS });
 }
 
 function renderSankeySummary(payload) {
@@ -191,6 +377,174 @@ function sankeyRevenueBreakdownRows(item, currency) {
   return `
     <div><dt>Etikettintäkt</dt><dd>${sankeyEscapeHtml(sankeyFormatMoney(item?.label_revenue, currency))}</dd></div>
     <div><dt>Inköpsradsintäkt</dt><dd>${sankeyEscapeHtml(sankeyFormatMoney(item?.purchase_line_revenue, currency))}</dd></div>
+  `;
+}
+
+function sankeyLinkKey(link) {
+  return `${link?.source || ""}->${link?.target || ""}`;
+}
+
+function selectedSankeyTraceRows() {
+  const rows = Array.isArray(sankeyInboundPayload?.trace_rows) ? sankeyInboundPayload.trace_rows : [];
+  if (sankeyInboundSelected?.type === "node") {
+    return rows.filter((row) => Array.isArray(row.node_ids) && row.node_ids.includes(sankeyInboundSelected.id));
+  }
+  if (sankeyInboundSelected?.type === "link") {
+    const link = (sankeyInboundPayload?.links || [])[sankeyInboundSelected.index];
+    const key = sankeyLinkKey(link);
+    return rows.filter((row) => Array.isArray(row.link_keys) && row.link_keys.includes(key));
+  }
+  return rows;
+}
+
+function sankeyTraceScopeLabel() {
+  const payload = sankeyInboundPayload || {};
+  if (sankeyInboundSelected?.type === "node") {
+    const node = (payload.nodes || []).find((item) => item.id === sankeyInboundSelected.id);
+    return node?.label || "nod";
+  }
+  if (sankeyInboundSelected?.type === "link") {
+    const link = (payload.links || [])[sankeyInboundSelected.index];
+    const nodes = new Map((payload.nodes || []).map((node) => [node.id, node]));
+    const source = nodes.get(link?.source)?.label || link?.source || "flode";
+    const target = nodes.get(link?.target)?.label || link?.target || "urval";
+    return `${source}-${target}`;
+  }
+  return "alla";
+}
+
+function sankeySafeFilePart(value) {
+  return String(value || "urval")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "urval";
+}
+
+function sankeyCsvValue(value) {
+  let text = value == null ? "" : value;
+  if (Array.isArray(text)) text = text.join(" | ");
+  else if (typeof text === "object") text = JSON.stringify(text);
+  text = String(text).replace(/\r?\n/g, " ").replace(/"/g, '""');
+  return /[;"\r\n]/.test(text) ? `"${text}"` : text;
+}
+
+function sankeyTraceRowsToCsv(rows) {
+  const maxStep = rows.reduce((max, row) => {
+    const rowMax = Object.keys(row || {}).reduce((innerMax, key) => {
+      const match = key.match(/^step_(\d+)$/);
+      return match ? Math.max(innerMax, Number(match[1])) : innerMax;
+    }, 0);
+    return Math.max(max, rowMax);
+  }, 0);
+  const headers = [
+    "company",
+    "received_date",
+    "origin_pall",
+    "current_pall",
+    "current_location",
+    "item",
+    "purchase_number",
+    "purchase_line",
+    "source_row_id",
+    "status_label",
+    "qty_remaining",
+    "revenue",
+    "label_revenue",
+    "purchase_line_revenue",
+    "label_fraction",
+    "confidence",
+    "path",
+  ];
+  for (let index = 1; index <= maxStep; index += 1) headers.push(`step_${index}`);
+  const labels = {
+    company: "Bolag",
+    received_date: "Mottagningsdatum",
+    origin_pall: "Ursprungspallid",
+    current_pall: "Nuvarande pallid",
+    current_location: "Nuvarande plats",
+    item: "Artikel",
+    purchase_number: "Inköpsnummer",
+    purchase_line: "Radnummer",
+    source_row_id: "Mottagningsrad",
+    status_label: "Status",
+    qty_remaining: "Kolli kvar",
+    revenue: "Intäkt",
+    label_revenue: "Etikettintäkt",
+    purchase_line_revenue: "Inköpsradsintäkt",
+    label_fraction: "Etikettandel",
+    confidence: "Spårningssäkerhet",
+    path: "Väg",
+  };
+  for (let index = 1; index <= maxStep; index += 1) labels[`step_${index}`] = `Steg ${index}`;
+  const lines = [headers.map((header) => sankeyCsvValue(labels[header] || header)).join(";")];
+  for (const row of rows) {
+    lines.push(headers.map((header) => sankeyCsvValue(row?.[header])).join(";"));
+  }
+  return lines.join("\r\n");
+}
+
+function exportSankeyTraceRows(rows = selectedSankeyTraceRows(), scope = sankeyTraceScopeLabel()) {
+  if (!rows.length) {
+    if (typeof showToast === "function") showToast("Det finns inga spårade pallgrenar att exportera i urvalet.", "warn", 4000);
+    return;
+  }
+  const csv = sankeyTraceRowsToCsv(rows);
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `sankey-inbound-sparning-${sankeyInboundPeriod}-${sankeyDateValue()}-${sankeySafeFilePart(scope)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  if (typeof showToast === "function") showToast(`${sankeyFormatNumber(rows.length)} spårade pallgrenar exporterade.`, "success", 3000);
+  if (typeof flowTrack === "function") {
+    flowTrack("download", {
+      control_id: "sankey-inbound-export-trace",
+      view: "sankeyInbound",
+      period: sankeyInboundPeriod,
+      rows: rows.length,
+    });
+  }
+}
+
+function renderSankeyTracePreview(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const previewRows = safeRows.slice(0, 8);
+  const body = previewRows.length ? previewRows.map((row) => `
+    <tr>
+      <td>${sankeyEscapeHtml(row.origin_pall || row.current_pall || "")}</td>
+      <td>${sankeyEscapeHtml(row.current_pall || "")}</td>
+      <td>${sankeyEscapeHtml(row.item || "")}</td>
+      <td>${sankeyEscapeHtml(row.status_label || "")}</td>
+      <td class="sankey-trace-path" title="${sankeyEscapeHtml(row.path || "")}">${sankeyEscapeHtml(row.path || "")}</td>
+    </tr>
+  `).join("") : '<tr><td colspan="5" class="empty-cell">Inga spårade pallgrenar i urvalet.</td></tr>';
+  return `
+    <div class="sankey-trace-preview">
+      <div class="sankey-trace-head">
+        <h3>Spårade pallgrenar</h3>
+        <button type="button" data-sankey-export-traces>Exportera urval</button>
+      </div>
+      <p>${sankeyEscapeHtml(sankeyFormatNumber(safeRows.length))} pallgrenar matchar urvalet. Tabellen visar max 8 rader.</p>
+      <div class="sankey-trace-table-wrap">
+        <table class="sankey-trace-table">
+          <thead>
+            <tr>
+              <th scope="col">Ursprung</th>
+              <th scope="col">Nu</th>
+              <th scope="col">Artikel</th>
+              <th scope="col">Status</th>
+              <th scope="col">Väg</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
@@ -312,6 +666,7 @@ function renderSankeyDetail() {
   if (!target) return;
   const payload = sankeyInboundPayload || {};
   const currency = payload.currency || "SEK";
+  const traceRows = selectedSankeyTraceRows();
   if (sankeyInboundSelected?.type === "node") {
     const node = (payload.nodes || []).find((item) => item.id === sankeyInboundSelected.id);
     if (node) {
@@ -324,6 +679,7 @@ function renderSankeyDetail() {
             ${sankeyRevenueBreakdownRows(node, currency)}
             <div><dt>Etiketter</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(node.labels, 2))}</dd></div>
           </dl>
+          ${renderSankeyTracePreview(traceRows)}
         `;
         return;
       }
@@ -336,6 +692,7 @@ function renderSankeyDetail() {
             ${sankeyRevenueBreakdownRows(node, currency)}
             <div><dt>Etiketter</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(node.labels, 2))}</dd></div>
           </dl>
+          ${renderSankeyTracePreview(traceRows)}
         `;
         return;
       }
@@ -349,6 +706,7 @@ function renderSankeyDetail() {
           <div><dt>Etiketter</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(node.labels, 2))}</dd></div>
           <div><dt>Poäng</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(node.points, 2))}</dd></div>
         </dl>
+        ${renderSankeyTracePreview(traceRows)}
       `;
       return;
     }
@@ -366,6 +724,7 @@ function renderSankeyDetail() {
           ${sankeyRevenueBreakdownRows(link, currency)}
           <div><dt>Etiketter</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(link.labels, 2))}</dd></div>
         </dl>
+        ${renderSankeyTracePreview(traceRows)}
       `;
       return;
     }
@@ -382,6 +741,7 @@ function renderSankeyDetail() {
       <div><dt>Grenar</dt><dd>${sankeyEscapeHtml(sankeyFormatNumber(summary.branches))}</dd></div>
       <div><dt>Ofördelad intäkt</dt><dd>${sankeyEscapeHtml(sankeyFormatMoney(summary.unallocated_revenue, currency))}</dd></div>
     </dl>
+    ${renderSankeyTracePreview(traceRows)}
   `;
 }
 
@@ -433,14 +793,14 @@ function renderSankeyWarnings(payload) {
   target.innerHTML = `
     <h2>Varningar</h2>
     <ul>
-      ${warnings.slice(0, 12).map((warning) => `<li>${sankeyEscapeHtml(warning.message || warning.code || "Varning")}</li>`).join("")}
+      ${warnings.slice(0, 12).map((warning) => `<li>${sankeyEscapeHtml(sankeyDisplayText(warning.message || warning.code || "Varning"))}</li>`).join("")}
     </ul>
   `;
 }
 
-function renderSankeyPayload(payload) {
+function renderSankeyPayload(payload, options = {}) {
   sankeyInboundPayload = payload;
-  updateSankeyCompanyOptions(payload);
+  if (options.updateCompanyOptions !== false) updateSankeyCompanyOptions(payload);
   renderSankeySummary(payload);
   renderSankeyChart(payload);
   renderSankeyDetail();
@@ -449,12 +809,13 @@ function renderSankeyPayload(payload) {
   const status = document.getElementById("sankeyInboundStatus");
   const period = payload?.period || {};
   const cache = payload?.cache?.status === "hit" ? " · cache" : "";
+  const clientFilter = payload?.cache?.client_filter ? " · lokalt filter" : "";
   const warnings = Array.isArray(payload?.warnings) && payload.warnings.length ? ` · ${payload.warnings.length} varningar` : "";
   const timing = payload?.timing
     ? ` · hämtning ${sankeyFormatNumber(payload.timing.fetch_ms)} ms · bygge ${sankeyFormatNumber(payload.timing.build_ms)} ms`
     : "";
   if (status) {
-    status.textContent = `${period.label || ""} ${period.start_date || ""} - ${period.end_date || ""} · följer till ${period.follow_until || ""}${cache}${timing}${warnings}`.trim();
+    status.textContent = `${period.label || ""} ${period.start_date || ""} - ${period.end_date || ""} · följer till ${period.follow_until || ""}${cache}${clientFilter}${timing}${warnings}`.trim();
   }
 }
 
@@ -462,6 +823,7 @@ function sankeyStreamParams() {
   const params = new URLSearchParams();
   params.set("period", sankeyInboundPeriod);
   params.set("date", sankeyDateValue());
+  params.set("client_schema", SANKEY_INBOUND_CLIENT_SCHEMA);
   const company = sankeyCompanyValue();
   if (company && company !== "ALL") params.set("company", company);
   if (sankeyInboundOnlyConsumed) params.set("only_consumed", "true");
@@ -497,7 +859,9 @@ function renderSankeyProgress(state) {
 
 function handleSankeyLoaded(payload) {
   renderSankeyProgress(null);
-  renderSankeyPayload(payload);
+  sankeyInboundBasePayload = payload;
+  updateSankeyCompanyOptions(payload);
+  renderSankeyCurrentView();
   if (typeof flowTrack === "function") {
     flowTrack("filter", {
       control_id: "sankey-inbound-load",
@@ -521,12 +885,36 @@ function sankeySourceStatusSummary(sourceStatus) {
     .join("; ");
 }
 
+function clearSankeyReportAfterError(detail, sourceStatus) {
+  sankeyInboundBasePayload = null;
+  sankeyInboundPayload = null;
+  sankeyInboundSelected = null;
+  const summary = document.getElementById("sankeyInboundSummary");
+  if (summary) summary.innerHTML = "";
+  const chart = document.getElementById("sankeyInboundChart");
+  if (chart) chart.innerHTML = '<div class="empty-state">Sankey - Inbound kunde inte hämtas.</div>';
+  const detailEl = document.getElementById("sankeyInboundDetail");
+  if (detailEl) {
+    detailEl.innerHTML = `
+      <h2>Urval</h2>
+      <div class="empty-state">Ingen rapport laddad.</div>
+    `;
+  }
+  const processTable = document.getElementById("sankeyInboundProcessTable");
+  if (processTable) processTable.innerHTML = "";
+  const warnings = Array.isArray(sourceStatus) && sourceStatus.length
+    ? sourceStatus
+        .filter((item) => item?.status === "error")
+        .map((item) => ({ message: item.message || `${item.key || "Källa"} / ${item.view || "vy"} kunde inte hämtas.` }))
+    : [{ message: detail }];
+  renderSankeyWarnings({ warnings });
+}
+
 function handleSankeyLoadError(error, sourceStatus) {
   renderSankeyProgress(null);
   const detail = error?.message || "Okänt fel";
   setSankeyStatus(`Sankey - Inbound kunde inte hämtas (${detail})`, false);
-  const chart = document.getElementById("sankeyInboundChart");
-  if (chart) chart.innerHTML = '<div class="empty-state">Sankey - Inbound kunde inte hämtas.</div>';
+  clearSankeyReportAfterError(detail, sourceStatus);
   // Logga full detalj (vilken källa/vy/period som failade) till app-loggen.
   if (typeof appendAppLog === "function") {
     const sources = sankeySourceStatusSummary(sourceStatus);
@@ -540,6 +928,7 @@ function handleSankeyLoadError(error, sourceStatus) {
 }
 
 async function loadSankeyInboundFallback() {
+  sankeyInboundTriedClientFilterRefresh = false;
   setSankeyStatus("Hämtar Sankey - Inbound...", true);
   try {
     const payload = await fetchSankeyInboundPayload();
@@ -552,12 +941,13 @@ async function loadSankeyInboundFallback() {
 }
 
 function loadSankeyInbound() {
+  sankeyInboundTriedClientFilterRefresh = false;
   if (typeof EventSource === "undefined") {
     void loadSankeyInboundFallback();
     return;
   }
   setSankeyStatus("Hämtar Sankey - Inbound...", true);
-  const progressState = { total: 8, steps: new Map() };
+  const progressState = { total: 6, steps: new Map() };
   renderSankeyProgress(progressState);
   const source = new EventSource(`/api/sankey/inbound/stream?${sankeyStreamParams().toString()}`);
   let settled = false;
@@ -645,7 +1035,7 @@ async function initSankeyInboundPage() {
       sankeyInboundPeriod = next;
       sankeyInboundSelected = null;
       updateSankeyControls();
-      void loadSankeyInbound();
+      applySankeyFilterChange("sankey-inbound-period");
     });
     button.addEventListener("contextmenu", (event) => {
       const period = button.dataset.sankeyPeriod || "day";
@@ -661,7 +1051,7 @@ async function initSankeyInboundPage() {
           sankeyInboundSelected = null;
           updateSankeyDateDisplay();
           updateSankeyControls();
-          void loadSankeyInbound();
+          applySankeyFilterChange("sankey-inbound-period-picker");
         },
       });
     });
@@ -669,34 +1059,31 @@ async function initSankeyInboundPage() {
   input?.addEventListener("change", () => {
     sankeyInboundSelected = null;
     updateSankeyDateDisplay();
-    void loadSankeyInbound();
+    applySankeyFilterChange("sankey-inbound-date");
   });
   document.getElementById("sankeyInboundPrevDate")?.addEventListener("click", () => {
     if (!input) return;
     input.value = sankeyShiftDate(input.value, -1, sankeyInboundPeriod);
     sankeyInboundSelected = null;
     updateSankeyDateDisplay();
-    void loadSankeyInbound();
+    applySankeyFilterChange("sankey-inbound-prev-date");
   });
   document.getElementById("sankeyInboundNextDate")?.addEventListener("click", () => {
     if (!input) return;
     input.value = sankeyShiftDate(input.value, 1, sankeyInboundPeriod);
     sankeyInboundSelected = null;
     updateSankeyDateDisplay();
-    void loadSankeyInbound();
+    applySankeyFilterChange("sankey-inbound-next-date");
   });
   document.getElementById("sankeyInboundCompany")?.addEventListener("change", () => {
     sankeyInboundSelected = null;
-    void loadSankeyInbound();
+    applySankeyFilterChange("sankey-inbound-company");
   });
   document.getElementById("sankeyInboundOnlyConsumed")?.addEventListener("click", () => {
     sankeyInboundOnlyConsumed = !sankeyInboundOnlyConsumed;
     sankeyInboundSelected = null;
     updateSankeyControls();
-    // "Visa endast förverkade" är bara ett efterfilter – samma data. Använd den
-    // tysta GET-vägen (server-cachad källdata + klientcache) istället för SSE-
-    // strömmen, så det går snabbt utan stegglogg-flimmer.
-    void loadSankeyInboundFallback();
+    applySankeyFilterChange("sankey-inbound-only-consumed");
   });
   document.getElementById("sankeyInboundReset")?.addEventListener("click", () => {
     sankeyInboundSelected = null;
@@ -704,6 +1091,16 @@ async function initSankeyInboundPage() {
     renderSankeyDetail();
   });
   document.getElementById("sankeyInboundExport")?.addEventListener("click", exportSankeySvg);
+  document.getElementById("sankeyInboundExportTraceAll")?.addEventListener("click", () => {
+    const rows = Array.isArray(sankeyInboundPayload?.trace_rows) ? sankeyInboundPayload.trace_rows : [];
+    exportSankeyTraceRows(rows, "alla");
+  });
+  document.getElementById("sankeyInboundDetail")?.addEventListener("click", (event) => {
+    const targetEl = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const button = targetEl?.closest("[data-sankey-export-traces]");
+    if (!button) return;
+    exportSankeyTraceRows();
+  });
   window.addEventListener("resize", () => {
     if (sankeyInboundPayload) renderSankeyChart(sankeyInboundPayload);
   });

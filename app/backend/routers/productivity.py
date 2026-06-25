@@ -2,6 +2,7 @@ import asyncio
 import json
 import queue
 from calendar import monthrange
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 import logging
@@ -11,7 +12,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from .. import audit
 from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, scoped_get, user_business_id
@@ -53,6 +54,7 @@ router = APIRouter(prefix="/api/productivity", tags=["productivity"])
 logger = logging.getLogger(__name__)
 _PERSON_REPORT_CACHE_TTL_SECONDS = 2 * 60
 _PERSON_REPORT_CACHE_MAX_ITEMS = 256
+_PRODUCTIVITY_OVERVIEW_DAY_WORKERS = 4
 _PERSON_REPORT_CACHE_LOCK = threading.Lock()
 _PERSON_REPORT_CACHE: dict[tuple, tuple[float, dict]] = {}
 
@@ -1132,6 +1134,48 @@ def _emit_overview_progress(callback, **event) -> None:
         pass
 
 
+def _productivity_overview_day_worker_count(day_count: int, db: Session) -> int:
+    if day_count < 2 or not isinstance(db, Session):
+        return 1
+    try:
+        dialect_name = str(db.get_bind().dialect.name or "").lower()
+    except Exception:
+        return 1
+    if dialect_name == "sqlite":
+        return 1
+    return min(_PRODUCTIVITY_OVERVIEW_DAY_WORKERS, day_count)
+
+
+def _productivity_overview_day_session_factory(db: Session):
+    bind = db.get_bind()
+    return sessionmaker(bind=bind, autoflush=False, autocommit=False)
+
+
+def _build_productivity_overview_day(
+    request: Request,
+    db: Session,
+    user: User,
+    day: date,
+    finance_context: dict,
+) -> tuple[dict, dict]:
+    report, day_source_status = _build_productivity_report_for_date(
+        request,
+        db,
+        user,
+        day,
+        ensure_snapshot=False,
+        wait_seconds=0,
+    )
+    _attach_productivity_finance(report, finance_context, include_process_revenues=False)
+    source_entry = {
+        "date": day.isoformat(),
+        "status": "ok",
+        "source": (report.get("sync") or {}).get("source"),
+        "sources": day_source_status,
+    }
+    return report, source_entry
+
+
 def _run_productivity_overview(
     request: Request,
     db: Session,
@@ -1153,53 +1197,100 @@ def _run_productivity_overview(
     days = _date_span(period_start, period_end)
     business_id = _productivity_business_id(db, user)
     finance_context = _productivity_finance_context(db, user, business_id)
-    errors: list[dict] = []
-    reports: list[dict] = []
-    source_status: list[dict] = []
+    errors_by_day: dict[date, dict] = {}
+    reports_by_day: dict[date, dict] = {}
+    source_status_by_day: dict[date, dict] = {}
     total_steps = len(days) + 1
-    for index, day in enumerate(days, start=1):
+    completed_steps = 0
+    progress_lock = threading.Lock()
+    day_steps = {day: index for index, day in enumerate(days, start=1)}
+
+    def emit_day_started(day: date) -> None:
+        with progress_lock:
+            completed = completed_steps
         _emit_overview_progress(
             progress_callback,
-            step=index,
+            step=day_steps[day],
             total=total_steps,
             key=day.isoformat(),
             label=f"Hämtar {day.isoformat()}",
+            completed=completed,
         )
+
+    def emit_day_done(day: date, *, missing: bool = False) -> None:
+        nonlocal completed_steps
+        with progress_lock:
+            completed_steps += 1
+            completed = completed_steps
+        _emit_overview_progress(
+            progress_callback,
+            step=day_steps[day],
+            total=total_steps,
+            key=day.isoformat(),
+            label=f"{day.isoformat()} {'saknas' if missing else 'klar'}",
+            done=True,
+            completed=completed,
+        )
+
+    def record_day_result(day: date, report: dict, source_entry: dict) -> None:
+        reports_by_day[day] = report
+        source_status_by_day[day] = source_entry
+
+    def record_day_error(day: date, exc: Exception) -> None:
+        errors_by_day[day] = {"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)}
+
+    day_workers = _productivity_overview_day_worker_count(len(days), db)
+    if day_workers <= 1:
+        for day in days:
+            emit_day_started(day)
+            try:
+                report, source_entry = _build_productivity_overview_day(request, db, user, day, finance_context)
+                record_day_result(day, report, source_entry)
+                emit_day_done(day)
+            except (ProductivitySourceError, ProductivitySyncError) as exc:
+                record_day_error(day, exc)
+                emit_day_done(day, missing=True)
+    else:
         try:
-            report, day_source_status = _build_productivity_report_for_date(
-                request,
-                db,
-                user,
-                day,
-                ensure_snapshot=False,
-                wait_seconds=0,
-            )
-            _attach_productivity_finance(report, finance_context, include_process_revenues=False)
-            reports.append(report)
-            source_status.append({
-                "date": day.isoformat(),
-                "status": "ok",
-                "source": (report.get("sync") or {}).get("source"),
-                "sources": day_source_status,
-            })
-            _emit_overview_progress(
-                progress_callback,
-                step=index,
-                total=total_steps,
-                key=day.isoformat(),
-                label=f"{day.isoformat()} klar",
-                done=True,
-            )
-        except (ProductivitySourceError, ProductivitySyncError) as exc:
-            errors.append({"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)})
-            _emit_overview_progress(
-                progress_callback,
-                step=index,
-                total=total_steps,
-                key=day.isoformat(),
-                label=f"{day.isoformat()} saknas",
-                done=True,
-            )
+            session_factory = _productivity_overview_day_session_factory(db)
+        except Exception:
+            session_factory = None
+
+        if session_factory is None:
+            for day in days:
+                emit_day_started(day)
+                try:
+                    report, source_entry = _build_productivity_overview_day(request, db, user, day, finance_context)
+                    record_day_result(day, report, source_entry)
+                    emit_day_done(day)
+                except (ProductivitySourceError, ProductivitySyncError) as exc:
+                    record_day_error(day, exc)
+                    emit_day_done(day, missing=True)
+        else:
+            def build_day_in_worker(day: date) -> tuple[date, dict, dict]:
+                emit_day_started(day)
+                worker_db = session_factory()
+                try:
+                    report, source_entry = _build_productivity_overview_day(request, worker_db, user, day, finance_context)
+                    return day, report, source_entry
+                finally:
+                    worker_db.close()
+
+            with ThreadPoolExecutor(max_workers=day_workers, thread_name_prefix="productivity-overview-day") as executor:
+                future_by_day = {executor.submit(build_day_in_worker, day): day for day in days}
+                for future in as_completed(future_by_day):
+                    day = future_by_day[future]
+                    try:
+                        result_day, report, source_entry = future.result()
+                        record_day_result(result_day, report, source_entry)
+                        emit_day_done(result_day)
+                    except (ProductivitySourceError, ProductivitySyncError) as exc:
+                        record_day_error(day, exc)
+                        emit_day_done(day, missing=True)
+
+    reports = [reports_by_day[day] for day in days if day in reports_by_day]
+    source_status = [source_status_by_day[day] for day in days if day in source_status_by_day]
+    errors = [errors_by_day[day] for day in days if day in errors_by_day]
 
     if not reports and errors:
         first_error = errors[0]
@@ -1212,6 +1303,7 @@ def _run_productivity_overview(
         total=total_steps,
         key="build",
         label="Bygger översikt",
+        completed=len(days),
     )
     available_dates = sorted({
         str(item)

@@ -18,6 +18,7 @@ const ENTITY_LABELS = {
   user: "Användare",
   app_setting: "Inställning",
   client_error: "Felkod",
+  mcp_query: "MCP-fråga",
   coredata_file: "Kärnfil",
   data_fetch: "Hämta data",
   meta_media_upload: "Meta-uppladdning",
@@ -142,6 +143,9 @@ function objectSummary(entry) {
   if (entry.entity_type === "workflow_source") {
     return snapshot.flow_id || snapshot.source_key || "Workflow-underlag";
   }
+  if (entry.entity_type === "mcp_query") {
+    return snapshot.model || snapshot.tool || snapshot.server || "MCP-fråga";
+  }
   if (entry.entity_type === "client_error") {
     return snapshot.path || snapshot.page_path || "Felkod";
   }
@@ -186,6 +190,20 @@ function detailSummary(entry) {
     if (snapshot.error_id) parts.push(`Fel-id ${snapshot.error_id}`);
     if (snapshot.total_rows != null) parts.push(`${snapshot.total_rows} rader`);
     return parts.join(" | ") || "Hämta data";
+  }
+  if (entry.entity_type === "mcp_query") {
+    const parts = [];
+    if (snapshot.status) parts.push(`Status: ${snapshot.status}`);
+    if (snapshot.tool) parts.push(`Verktyg: ${snapshot.tool}`);
+    if (snapshot.model) parts.push(`Modell: ${snapshot.model}`);
+    if (snapshot.question_chars != null) parts.push(`${snapshot.question_chars} tecken fråga`);
+    if (snapshot.answer_chars != null) parts.push(`${snapshot.answer_chars} tecken svar`);
+    if (snapshot.content_items != null) parts.push(`${snapshot.content_items} delar`);
+    if (snapshot.tool_calls != null) parts.push(`${snapshot.tool_calls} tool-anrop`);
+    if (Array.isArray(snapshot.tools_used) && snapshot.tools_used.length) parts.push(`Tools: ${snapshot.tools_used.join(", ")}`);
+    if (Array.isArray(snapshot.missing) && snapshot.missing.length) parts.push(`Saknar: ${snapshot.missing.join(", ")}`);
+    if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
+    return parts.join(" | ") || "MCP-fråga";
   }
   if (entry.entity_type === "workflow_source") {
     const parts = [];

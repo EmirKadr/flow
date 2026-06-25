@@ -74,6 +74,8 @@ verksamheter.
 | `query_data.plan` | `POST` | `/api/query-data/plan` | Tolka datafråga med MiniMax |
 | `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla med tenant per verksamhet, lokala exkluderingar/jämförelser/textfilter och validerad beräkning |
 | `query_data.export` | `GET` | `/api/query-data/export/{session_id}` | Exportera datahämtning till Excel |
+| `mcp.status` | `GET` | `/api/mcp/status` | MCP- och LLM-status |
+| `mcp.query` | `POST` | `/api/mcp/query` | Skicka fråga till MCP via vald LLM-hjärna |
 | `allocation.health` | `GET` | `/api/allokering/health` | Lagerverktyg health |
 | `allocation.flows` | `GET` | `/api/allokering/flows` | Lista lagerverktygsflöden |
 | `allocation.pool` | `GET` | `/api/allokering/pool` | Lista lagerverktygens uppladdningsslots |
@@ -193,9 +195,11 @@ aktivitetstimmar.
 | `productivity.sync` | `POST` | `/api/productivity/sync` | Synka valt datum, eller dagens produktivitetsdata om datum saknas |
 | `productivity.person` | `GET` | `/api/productivity/persons/{person_id}` | Personens produktivitetssnitt per aktivitet for vecka/manad/ar/datumperiod |
 | `productivity.overview` | `GET` | `/api/productivity/overview` | Produktivitetsoversikt for dag/vecka/manad/ar/datumperiod |
+| `productivity.overview_stream` | `GET` | `/api/productivity/overview/stream` | Streama produktivitetsoversikt med progress |
 | `productivity.overview_business_summary` | `GET` | `/api/productivity/overview/business-summary` | Verksamhetssummering per bolag for samma periodurval som Produktivitet |
 | `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
 | `sankey.inbound` | `GET` | `/api/sankey/inbound` | Sankey - Inbound för mottagna etiketter, processintäkt och öppna/förverkade flöden |
+| `sankey.inbound_stream` | `GET` | `/api/sankey/inbound/stream` | Streama Sankey - Inbound med progress |
 
 Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
 (`LOADING_LOG`), `receive`, `order_log`, `sort`, `base_pallet` och `kpi`.
@@ -221,7 +225,11 @@ till senaste avslutade heltimme i klienten; servern klipper innevarande
 vecka/manad/ar vid dagens datum och returnerar `missing_dates` om en dag saknar
 snapshot/fallback. Periodvyn laser befintliga snapshots och triggar inte extern
 historikhamtning vid varje periodbyte; schemalagd sync/backfill ansvarar for att
-fylla pa data.
+fylla pa data. Pa Postgres byggs dagsrapporterna med hogst fyra parallella
+dagjobb, var och en med egen DB-session, och payloaden sorteras per datum innan
+den returneras. `GET /api/productivity/overview/stream` skickar samma slutpayload
+som `done`-event; progress-event kan innehalla `completed` som antal fardiga
+dagar sa klienten kan visa ratt framdrift nar flera dagar ar aktiva samtidigt.
 
 `GET /api/productivity/overview/business-summary` accepterar samma `date`,
 `period`, `start_date` och `end_date` och returnerar `companies[]` plus
@@ -232,7 +240,9 @@ fylla pa data.
 returnerar Sankey - Inbound för mottagningskohorten och följer raderna fram
 till dagens datum. Queryn accepterar valfri `company` och
 `only_consumed=true`. Svaret innehåller `summary`, `companies`, `nodes`,
-`links`, `processes`, `warnings` och `source_status`.
+`links`, `processes`, `trace_rows`, `warnings`, `source_status` och
+`client_filters.views` för lokala bolags-/periodväxlingar när bredare data redan
+är hämtad.
 
 | `public.hours` | `GET` | `/api/public/hours` | Publika timmar för dag |
 | `public.hours_week` | `GET` | `/api/public/hours/week` | Publika timmar för vecka |

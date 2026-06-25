@@ -1517,7 +1517,12 @@ function renderProductivityOverviewProgress(state) {
     return;
   }
   const items = [...state.steps.values()].sort((a, b) => a.step - b.step);
-  const currentStep = items.reduce((max, item) => Math.max(max, item.step), 0);
+  const completedValues = items
+    .map((item) => Number(item.completed))
+    .filter((value) => Number.isFinite(value));
+  const currentStep = completedValues.length
+    ? Math.max(...completedValues)
+    : items.reduce((max, item) => Math.max(max, item.step), 0);
   // En månad = 30+ steg; visa bara de senaste raderna så loggen inte svämmar över.
   const recent = items.slice(-6);
   const rows = recent
