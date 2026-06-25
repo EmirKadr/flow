@@ -16,6 +16,10 @@ on:
       - 'data/**'
       - 'warehouse_tools/**'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   flow:
     uses: nowastelogistics/procedures/.github/workflows/docker.yml@master
