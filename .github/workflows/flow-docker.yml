@@ -17,8 +17,11 @@ on:
       - 'warehouse_tools/**'
 
 permissions:
-  contents: read
+  checks: write
+  contents: write
   id-token: write
+  packages: write
+  pull-requests: write
 
 jobs:
   flow:
