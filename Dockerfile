@@ -1,5 +1,8 @@
 FROM python:3.12-slim-bookworm AS base
 
+LABEL org.opencontainers.image.source="https://github.com/nowastelogistics/Flow" \
+      org.opencontainers.image.description="Flow planning and warehouse web application"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

@@ -16,6 +16,7 @@ databasmigrering från Render, resurser m.m.).
 | `service.yaml` | ClusterIP på port 80 → 8000 |
 | `ingress.yaml` | HTTPS-exponering (kräver ingress-controller + cert) |
 | `kustomization.yaml` | Samlar allt utom secret för `kubectl apply -k` |
+| `flow.yml` | Octopus-manifest för Kubernetes-release med digest-image, PVC, Deployment, Service och Ingress |
 
 ## Innan ni applicerar — fyll i tre saker
 
@@ -29,6 +30,14 @@ databasmigrering från Render, resurser m.m.).
 2. **Hostname.** I `ingress.yaml` byt `flow.example.com` till er URL.
 3. **StorageClass.** Om klustret saknar en default-storageClass, avkommentera
    och sätt `storageClassName` i `pvc.yaml`.
+
+
+## Octopus-release
+
+`flow.yml` är avsedd för Octopus och använder Octopus-variabler för namespace,
+image digest och hemliga runtime-värden. Den skapar varken Namespace eller Secret:
+Development deployas till `dev-common`, Production till `prod-common`, och ingressen
+blir `flow-development.nowastelogistics.com` respektive `flow.nowastelogistics.com`.
 
 ## Deploy
 

@@ -15,6 +15,7 @@ on:
       - 'app/**'
       - 'data/**'
       - 'warehouse_tools/**'
+      - 'k8s/**'
 
 permissions:
   checks: write
