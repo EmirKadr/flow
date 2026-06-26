@@ -3,6 +3,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: flow-data
   namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # flow-data mounts at /repo/data. Add storageClassName only if the cluster has no default.
   labels:
     app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
     app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
@@ -21,6 +22,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: flow-media
   namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # flow-media mounts at /var/flow-media. Add storageClassName only if the cluster has no default.
   labels:
     app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
     app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
@@ -39,6 +41,7 @@ kind: Deployment
 metadata:
   name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
   namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # One replica + Recreate because the PVCs are ReadWriteOnce.
   labels:
     app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
     app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
@@ -70,6 +73,7 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       initContainers:
+        # Seed bundled reference data on first start; cp -rn never overwrites uploads.
         - name: seed-data
           image: "ghcr.io/nowastelogistics/flow@#{Octopus.Release.CustomFields[ImageDigest]}"
           imagePullPolicy: IfNotPresent
@@ -84,6 +88,7 @@ spec:
           ports:
             - name: http
               containerPort: 8000
+          # The image's CMD runs backend.prestart before uvicorn.
           env:
             - name: ENVIRONMENT
               value: "production"
@@ -155,6 +160,7 @@ spec:
               value: "15"
             - name: META_LABEL_STILL_TIME_SECONDS
               value: "1.0"
+            # HTTPS is required in production because session cookies are Secure.
             - name: OTEL_ENABLED
               value: "false"
             - name: OTEL_SERVICE_NAME
