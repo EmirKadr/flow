@@ -110,8 +110,6 @@ spec:
               value: "true"
             - name: DATA_SOURCE_CA_BUNDLE
               value: "#{DATA_SOURCE_CA_BUNDLE}"
-            - name: DATA_SOURCE_CATALOG_JSON
-              value: "#{DATA_SOURCE_CATALOG_JSON}"
             - name: DATA_SOURCE_MAX_ROWS
               value: "1000"
             - name: DATA_SOURCE_RESPONSE_ROW_CAP
