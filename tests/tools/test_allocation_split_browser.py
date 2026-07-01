@@ -1005,20 +1005,8 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         )
         assert snap_result["lineCount"] > 0, snap_result
         page.locator('[data-map-setting-rect="UTL206"]').click()
-        page.evaluate(
-            """
-            () => {
-                const rect = document.querySelector('[data-map-setting-rect="UTL207"]');
-                if (!rect) throw new Error("Missing UTL207 rect");
-                rect.dispatchEvent(new MouseEvent("click", {
-                    bubbles: true,
-                    cancelable: true,
-                    button: 0,
-                    ctrlKey: true,
-                }));
-            }
-            """
-        )
+        if page.locator("[data-map-selection-count]").text_content().strip() != "2 valda":
+            page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
         page.locator('[data-map-setting-rect="UTL206"]').click(button="right")
         page.get_by_role("button", name="Byt riktning").click()
