@@ -184,7 +184,7 @@ Produktivitet.
   Ovrigt. `GG` har forifylld utrakningsprompt, plan och SQL/querytext for
   `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade
   orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` fylls bara med VAS-raderna, med samma VAS-priser som `GG`, plus
-  IT-raden med 445 kr per timme. VAS-raderna har separata `blue_collar`- och `white_collar`-varden for
+  IT-raden som defaultar till 0 kr i repot och kan overlayas fran lokal/secret prisfil. VAS-raderna har separata `blue_collar`- och `white_collar`-varden for
   `normal`, `ot_50`, `ob1_40`, `ob2_70` och `ob3_100`. Endpointen kraver
   `productivityFinanceSettings=view|edit` och foljer samma `business_id` /
   `area_focus`-scope som Bemanningens installningar.

@@ -250,7 +250,9 @@ Typ\tTill\tAntal\tAnvÃ¤ndare\tTimestamp\tBolag\tLager
     assert status_by_cell["10:00-11:00"] is None
     support_cell = next(cell for cell in alvin["time_cells"] if cell["start"] == "10:00")
     assert support_cell["diff_count"] == 0
-    assert support_cell["process_points"] == [{"process": "Manual_Pick", "points": 100.0, "event_count": 1}]
+    assert support_cell["process_points"] == [
+        {"process": "Manual_Pick", "process_key": "MANUAL_PICK", "points": 100.0, "event_count": 1}
+    ]
     support_only = next(person for person in report["people"] if person["name"] == "StÃ¶d Hela Dagen")
     assert support_only["kpi_points"] == 0
     assert support_only["planned_kpi_points"] == 0

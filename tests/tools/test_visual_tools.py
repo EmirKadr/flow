@@ -1680,7 +1680,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert "businessName(a.business_id)" in activities
     assert "businessName(user)" in users
     assert 'initPage("businesses", { requireSuperUser: true })' in businesses
-    assert 'api.get(`/api/businesses?include_inactive=${includeInactive}`)' in businesses
+    assert 'api.get("/api/businesses?include_inactive=true")' in businesses
     assert 'api.get("/api/areas?include_inactive=true")' in businesses
     assert 'api.post("/api/businesses", payload)' in businesses
     assert 'api.put(`/api/businesses/${record.id}`, payload)' in businesses
@@ -1704,7 +1704,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert "normalizeTenant" in businesses
     assert 'company_codes: companyCodes' in businesses
     assert 'tenant: tenant || null' in businesses
-    assert '/js/businesses.js?v=20260615-tenant' in businesses_html
+    assert '/js/businesses.js?v=20260624-showinactive-clientfilter' in businesses_html
     assert 'data-new-area="${business.id}"' in businesses
     assert 'api.post("/api/areas", payload)' in businesses
     assert 'api.put(`/api/areas/${record.id}`, payload)' in businesses
@@ -1843,7 +1843,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="activity-import-help"' in activities_html
     assert "<th>KPI Mål</th>" in activities_html
     assert "<th>Arbetstyp</th>" in activities_html
-    assert '/js/activities.js?v=20260615-kpi-process-picker' in activities_html
+    assert '/js/activities.js?v=20260624-areafocus-clientfilter' in activities_html
     assert "/api/activities/kpi-process-options" in activities_js
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js

@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-01] fix | CI-kontrakt for Personer och Produktivitet
+
+Personer-vyn hamtar ater om listan med `area_id` nar omradesfokus andras, sa
+Super User inte ser personer fran fel verksamhet nar fokus star pa ett specifikt
+omrade. Wikin markerar ocksa att Produktivitetens MG/IT-rad defaultar till 0 kr
+i repot och far riktiga priser via lokal/secret overlay.
+
 ## [2026-06-25] fix | Produktivitet bygger perioddagar parallellt
 
 Produktivitetens periodoversikt bygger nu dagrapporter fran befintliga

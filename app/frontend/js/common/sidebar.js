@@ -50,7 +50,7 @@ function sidebarSankeyInboundPeriodValue() {
 
 function sidebarSankeyInboundDateValue() {
   const params = new URLSearchParams(window.location.search || "");
-  return document.getElementById("productivityOverviewDate")?.value
+  return document.querySelector("[data-flow-context-date]")?.value
     || params.get("date")
     || sidebarTodayIsoDate();
 }

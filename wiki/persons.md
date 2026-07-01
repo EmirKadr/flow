@@ -20,6 +20,7 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 | Hjalp med import | Oppnar hjalpmodal | Visar generell importhjalp | `setupImportHelpButton` | Ingen serverkoppling. |
 | Sorteringsrubriker | Klick pa rubrik | Sorterar tabellen | `sortKey/sortAsc` | Bara klient-side. |
 | Filterrad | Skriver soktext | Filtrerar tabellen | `passesFilter` | Kombinerar flera filter. |
+| Omradesfokus | Vaxlar omrade i sidebar | Hamter om personlistan med valt `area_id` och filtrerar aven klient-side | `GET /api/persons?area_id=...`, `flow:areaFocusChanged` | Skyddar Super User fran att se personer i fel verksamhet nar fokus star pa ett specifikt omrade. |
 | Kolumnen Verksamhet | Laser, sorterar eller filtrerar personens verksamhet | Visar namn fran personens `business_id`, verksamhetslistan eller aktuell anvandares verksamhet | `businessName`, `PersonOut.business_id` | Gamla rader utan verksamhet visas som `Utan verksamhet`. |
 | Klick pa Namn | Inline-redigera namn | Sparar vid blur/Enter | `PUT /api/persons/{id}` | Escape avbryter; tomt/dubblett kan nekas. |
 | Klick pa NoMan | Inline-redigera WMS-anvandarnamn | Sparar obligatoriskt textfalt vid blur/Enter | `PUT /api/persons/{id}` | Tomt varde stoppas med `NoMan kravs`. Faltet anvands inte i planering eller forecast annu. |
@@ -106,6 +107,7 @@ successivt av Produktivitetens globala historik-backfill.
 | "Vad betyder Arbetstyp?" | Det ar personens `Blue collar`/`White collar`-klassning. Alla gamla och nya personer far `Blue collar` som standard och kan andras inline i Personer. |
 | "Varfor kan jag inte spara ny person?" | Kontrollera att bade Namn och NoMan ar ifyllda. NoMan ar obligatoriskt i ny person, direktimport och Excelimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
+| "Varfor syns inte en person i Personer?" | Kontrollera omradesfokus i sidebar. Nar fokus star pa ett omrade hamtar sidan bara personer med det hemomradet; `∞` visar alla synliga personer i anvandarens scope. |
 | "Varfor far den nya personen inga timmar i gamla veckor?" | Implicita malltimmar borjar pa personens skapandedatum. Gamla datum visar bara explicita celler som lagts in manuellt. |
 | "Varfor ar schemat tomt fast personen ar schemalagd?" | Personen saknar huvudaktivitet. Veckomallen markerar tiden som schemalagd, men aktivitet maste valjas i Personer eller direkt i Bemanning. |
 | "Varfor forsvann personen?" | Ta bort inaktiverar personen. Hamta med `include_inactive=true` for att se den. |
