@@ -1,7 +1,7 @@
 ---
 title: Bemanning
 status: aktiv
-updated: 2026-06-16
+updated: 2026-07-01
 tags: [bemanning, schema, ui, knappar]
 ---
 
@@ -69,12 +69,12 @@ Falt:
 - Varje explicit cell/segment har `version`.
 - Klienten skickar aktuell version som `expected_version`.
 - Vid konflikt returnerar API `409`; klienten visar toast och laddar om dagen.
-- Om en person har fast veckomall visas standardaktivitet aven utan explicit cell.
+- Om en person har fast veckomall och vald huvudaktivitet visas huvudaktiviteten som standard i malltimmar utan explicit cell. Om huvudaktivitet saknas visas cellen tom med diskret schemalagd-markering; Bemanning hittar inte langre pa en aktivitet fran personens hemomrade.
 - Implicita malltimmar galler bara fran personens skapandedatum och framat. Gamla datum fore `persons.created_at` visar inga standardtimmar for personen, men explicita schemaceller visas fortfarande.
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
-- Bemanning bygger cellernas aktivitetsval lazy. Vid forsta render innehaller varje cell bara tomval och eventuell aktuell/schemalagd aktivitet; `ensureActivitySelectOptionsLoaded` fyller hela aktiva aktivitetslistan nar anvandaren fokuserar eller oppnar cellen. Det minskar DOM-storleken kraftigt for stora dagar utan att andra spar-API:t.
+- Bemanning bygger cellernas aktivitetsval lazy. Vid forsta render innehaller varje cell bara tomval och eventuell explicit aktivitet eller explicit huvudaktivitet for schemalagd timme; `ensureActivitySelectOptionsLoaded` fyller hela aktiva aktivitetslistan nar anvandaren fokuserar eller oppnar cellen. Det minskar DOM-storleken kraftigt for stora dagar utan att andra spar-API:t.
 - RFID-stamplingar sparas separat fran schemaceller i `rfid_scan_events`. Bemanning hamtar dem med en kort bakgrundspoll och ritar markorer ovanpa timcellerna. `Ignorera` ar en sparad status, inte borttagning, sa markeringen ligger kvar for sparbarhet.
 - Nar en RFID-stampling appliceras skapar backend schemasegment fran scannad minut till timslut. Tidigare minuter i samma timme bevaras som befintlig aktivitet eller tomt implicit segment. Klienten ogiltigforklarar schema-cache och lagger en undo-snapshot efter lyckad applicering.
 - Dubblettregeln ligger pa backend: om samma person senast stampade samma aktivitet droppas nasta scan innan `rfid_scan_events`. Den skapar ingen ny markering och ingen ny Historik-rad. Gamla `duplicate_ignored`-rader kan fortfarande visas som legacy, men nya dubbletter registreras inte.
@@ -121,7 +121,8 @@ Falt:
 | "Varfor syns inga standardtimmar for en ny person bakat i tiden?" | Personen far implicit veckomall forst fran sitt skapandedatum. Det hindrar att nyanstallda raknas som schemalagda innan de lades till. |
 | "Varfor sag Bemanning tom ut efter att ett omrade togs bort?" | Browsern kan ha haft ett gammalt omradesfokus sparat. Nu faller sidan tillbaka till Alla nar det sparade omradet inte langre finns. Kontrollera Historik efter 404 `Omrade hittades inte` om felet hande innan fixen. |
 | "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet eller tom lanemarkering som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker eller ska planeras och dar personen hor hemma. |
-| "Varfor ar Produktivitet tom i Bemanning?" | Personen har ingen avslutad KPI-timme i vald period, har bara STOD/absence hittills, saknar faktisk KPI-process/poang den dagen, saknar materialiserad produktivitetscache for dagen eller sa ar extern snapshot-sync nere och ingen lokal cache finns. |
+| "Varfor ar Produktivitet tom i Bemanning?" | Personen har ingen avslutad KPI-timme i vald period, har bara STOD/absence hittills, saknar huvudaktivitet/explicit KPI-aktivitet, saknar faktisk KPI-process/poang den dagen, saknar materialiserad produktivitetscache for dagen eller sa ar extern snapshot-sync nere och ingen lokal cache finns. |
+| "Varfor ar en schemalagd cell tom?" | Personen har fast veckomall men ingen huvudaktivitet i Personer och ingen explicit aktivitet i cellen. Cellen visas diskret som schemalagd, men systemet tilldelar inte automatiskt en aktivitet fran hemomradet. |
 | "Varfor ligger RFID-markeringen kvar efter Ignorera?" | Ignorera sparar status pa stamplingen men raderar den inte. Det ar avsiktligt sa stampeln gar att se och felsoka i efterhand. |
 | "Varfor fick jag ingen OK-knapp pa RFID-stamplingen?" | Statusen ar inte `pending`: brickan kan vara okand, modulnamnet matchar ingen aktivitet eller tiden ligger utanfor Bemanningens timmar. Direkta dubbletter sparas inte langre som nya stamplingar. |
 | "Varfor blev cellen delad pa minuten?" | RFID-OK satter aktiviteten fran scannad minut till timslut. Minuten fore stampeln bevaras, sa en stampel 09:37 ger segment 09:00-09:37 och 09:37-10:00. |

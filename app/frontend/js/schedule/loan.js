@@ -1,20 +1,5 @@
-function defaultHomeActivityId(person) {
-  if (!person?.home_area_id) return null;
-  const homeArea = areaById(person.home_area_id);
-  const preferred = homeArea?.code ? activityByCode(`${homeArea.code}_VM`) : null;
-  if (preferred) return preferred.id;
-
-  const fallback = state.activities
-    .filter((activity) =>
-      activity.area_id === person.home_area_id
-      && activity.category !== "absence"
-    )
-    .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))[0];
-  return fallback?.id || null;
-}
-
 function homeActivityIdForPerson(person) {
-  return person?.home_activity_id || defaultHomeActivityId(person);
+  return person?.home_activity_id || null;
 }
 
 function scheduleSameBusiness(leftBusinessId, rightBusinessId) {

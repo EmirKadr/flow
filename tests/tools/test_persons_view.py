@@ -188,3 +188,12 @@ def test_planning_views_drag_person_names_to_persist_sort_order():
     assert "person-order-draggable" in styles
     assert "person-order-drop-before" in styles
     assert "person-order-drop-after" in styles
+
+
+def test_schedule_does_not_infer_home_activity_from_home_area():
+    schedule_js = read_schedule_frontend()
+
+    assert "defaultHomeActivityId" not in schedule_js
+    assert "return person?.home_activity_id || null;" in _function_body(schedule_js, "homeActivityIdForPerson")
+    assert 'td.classList.add("scheduled-empty")' in schedule_js
+    assert 'part.classList.add("scheduled-empty-half")' in schedule_js

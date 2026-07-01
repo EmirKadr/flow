@@ -1,7 +1,7 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-01
 tags: [wiki, logg]
 ---
 
@@ -1997,3 +1997,11 @@ Ytgenereringens interaktiva resultatkarta visar nu ytkoden pa lediga ytor med
 samma dynamiska textstorlek som kundnamn pa placerade ytor. Staende lediga ytor
 roterar ytkoden langs ytan, sa platsnumret forblir tydligt vid utzoomad karta.
 Skyddas av riktat Playwright-test i `test_allocation_split_browser.py`.
+
+## [2026-07-01] fix | Tom huvudaktivitet forblir tom i Bemanning
+
+Schemalagda malltimmar far inte langre en automatisk huvudaktivitet fran
+personens hemomrade. Om personen saknar huvudaktivitet visas timmen tom med
+diskret schemalagd-markering; explicit huvudaktivitet och explicita celler
+fungerar fortsatt som tidigare. Seed/backfill lamnar befintliga tomma
+huvudaktiviteter tomma sa valet styrs fran Personer.

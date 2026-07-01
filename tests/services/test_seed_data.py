@@ -103,7 +103,7 @@ def test_seed_removes_existing_duplicate_person_names():
         duplicates = session.query(Person).filter_by(name=duplicate_name).all()
         assert len(duplicates) == 1
         assert duplicates[0].id == kept.id
-        assert duplicates[0].home_activity_id == activity.id
+        assert duplicates[0].home_activity_id is None
         assert session.query(ScheduleCell).filter_by(person_id=duplicate.id).count() == 0
         assert session.query(PersonScheduleTemplate).filter_by(person_id=duplicate.id).count() == 0
     finally:

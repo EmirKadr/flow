@@ -272,30 +272,6 @@ def seed_persons(db: Session, business: Business, areas: dict[str, Area]) -> Non
                     competencies=[],
                 )
             )
-        elif existing.home_area_id == gg and existing.home_activity_id is None:
-            existing.home_activity_id = gg_vm_id
-
-
-def backfill_home_activities(db: Session) -> None:
-    activities_by_business_code = {
-        (activity.business_id, activity.code): activity for activity in db.query(Activity).all()
-    }
-    fallback_by_area: dict[int, Activity] = {}
-    for activity in sorted(activities_by_business_code.values(), key=lambda a: (a.sort_order, a.label)):
-        if activity.area_id is None or activity.category == "absence":
-            continue
-        fallback_by_area.setdefault(activity.area_id, activity)
-
-    areas = db.query(Area).all()
-    area_by_id = {area.id: area for area in areas}
-    for person in db.query(Person).filter(Person.home_activity_id.is_(None)).all():
-        home_area = area_by_id.get(person.home_area_id)
-        if home_area is None:
-            continue
-        preferred = activities_by_business_code.get((person.business_id, f"{home_area.code}_VM"))
-        fallback = preferred or fallback_by_area.get(home_area.id)
-        if fallback is not None:
-            person.home_activity_id = fallback.id
 
 
 def run() -> None:
@@ -315,7 +291,6 @@ def run() -> None:
         seed_demo_user(db, stigamo)
         remove_duplicate_persons(db)
         seed_persons(db, stigamo, stigamo_areas)
-        backfill_home_activities(db)
         db.commit()
         print("Seed OK")
     except Exception:
