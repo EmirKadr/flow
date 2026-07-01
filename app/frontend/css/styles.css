@@ -4524,7 +4524,7 @@ body.dragging-ov select { pointer-events: none; }
 }
 
 .summary-card, .calc-card { min-width: 0; }
-.summary-card { position: relative; }
+.summary-card { position: relative; overflow: visible; }
 .summary-card.loading table {
   opacity: 0.72;
   transition: opacity 0.14s ease;
@@ -4550,6 +4550,51 @@ body.dragging-ov select { pointer-events: none; }
   padding: 8px 10px;
 }
 .summary-card table td { padding: 8px 10px; font-size: 12px; }
+.summary-card tbody tr {
+  cursor: pointer;
+  user-select: none;
+}
+.summary-card tbody tr.summary-row-selected td {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.summary-card tbody tr.summary-row-grouped td {
+  font-weight: 700;
+}
+.summary-card .summary-hours-cell {
+  cursor: copy;
+  user-select: none;
+}
+.summary-context-menu {
+  position: absolute;
+  z-index: 3000;
+  min-width: 190px;
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.summary-context-menu button {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  text-align: left;
+}
+.summary-context-menu button:hover:not(:disabled),
+.summary-context-menu button:focus-visible {
+  background: var(--bg-2);
+  border-color: transparent;
+}
+.summary-context-menu button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
 
 .calc-card-header {
   display: flex;

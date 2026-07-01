@@ -269,7 +269,7 @@ function pushScheduleUndo(label, snapshots) {
     }));
 
   if (!normalized.length) return;
-  state.undoStack.push({ label, snapshots: normalized });
+  state.undoStack.push({ kind: "schedule", label, snapshots: normalized });
   if (state.undoStack.length > 50) state.undoStack.shift();
   state.redoStack = [];
   updateUndoRedoButtons();
@@ -279,8 +279,10 @@ function updateUndoRedoButtons() {
   const undoBtn = document.getElementById("undoBtn");
   const redoBtn = document.getElementById("redoBtn");
   const readOnly = scheduleIsReadOnly();
-  if (undoBtn) undoBtn.disabled = readOnly || state.undoStack.length === 0;
-  if (redoBtn) redoBtn.disabled = readOnly || state.redoStack.length === 0;
+  const undoAction = state.undoStack[state.undoStack.length - 1];
+  const redoAction = state.redoStack[state.redoStack.length - 1];
+  if (undoBtn) undoBtn.disabled = !undoAction || (readOnly && undoAction.kind !== "summary");
+  if (redoBtn) redoBtn.disabled = !redoAction || (readOnly && redoAction.kind !== "summary");
 }
 
 function segmentVersionRefs(segments) {
@@ -351,7 +353,7 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
     const resp = await api.put("/api/schedule/hours/restore", { action: "undo_restore", hours });
     invalidateScheduleAllCache();
     applyRestoredHours(resp.hours);
-    oppositeStack.push({ label: action.label, snapshots: inverseSnapshots });
+    oppositeStack.push({ kind: "schedule", label: action.label, snapshots: inverseSnapshots });
     if (oppositeStack.length > 50) oppositeStack.shift();
     scheduleSummaryRefresh(0, { refreshCalculator: true });
     showToast(`${oppositeLabel}: ${action.label}`);
@@ -370,13 +372,22 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
 }
 
 async function undoLastScheduleAction() {
-  if (scheduleIsReadOnly()) {
-    showReadOnlyToast();
-    return;
-  }
   const action = state.undoStack[state.undoStack.length - 1];
   if (!action) {
     showToast("Inget att ångra.", "warn");
+    return;
+  }
+  if (action.kind === "summary") {
+    if (applySummaryHistoryAction(action, "undo")) {
+      state.undoStack.pop();
+      state.redoStack.push(action);
+      if (state.redoStack.length > 50) state.redoStack.shift();
+    }
+    updateUndoRedoButtons();
+    return;
+  }
+  if (scheduleIsReadOnly()) {
+    showReadOnlyToast();
     return;
   }
   const ok = await applyHistoryAction(action, {
@@ -389,11 +400,16 @@ async function undoLastScheduleAction() {
 }
 
 async function redoLastScheduleAction() {
-  if (scheduleIsReadOnly()) {
-    showReadOnlyToast();
+  const action = state.redoStack[state.redoStack.length - 1];
+  if (action?.kind === "summary") {
+    if (applySummaryHistoryAction(action, "redo")) {
+      state.redoStack.pop();
+      state.undoStack.push(action);
+      if (state.undoStack.length > 50) state.undoStack.shift();
+    }
+    updateUndoRedoButtons();
     return;
   }
-  const action = state.redoStack[state.redoStack.length - 1];
   if (!action) {
     showToast("Inget att göra om.", "warn");
     return;

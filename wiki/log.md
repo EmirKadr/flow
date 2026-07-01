@@ -2005,3 +2005,26 @@ personens hemomrade. Om personen saknar huvudaktivitet visas timmen tom med
 diskret schemalagd-markering; explicit huvudaktivitet och explicita celler
 fungerar fortsatt som tidigare. Seed/backfill lamnar befintliga tomma
 huvudaktiviteter tomma sa valet styrs fran Personer.
+
+## [2026-07-01] ux | Summering per aktivitet kan kopiera och lokalgruppera
+
+Bemanningens `Summering per aktivitet` kopierar nu timtalet till clipboard nar
+anvandaren klickar i `Timmar`-kolumnen. Aktivitetsrader kan markeras med
+vanligt klick, Ctrl-/Cmd-klick och Shift-klick; hogerklick visar `Summera` for
+flera markerade aktiviteter och `Dela` pa en summerad rad. Grupperingen ar lokal
+for aktuell anvandare, dag och omradesvy, gar att angra med Ctrl+Z och skriver
+ingen backend-audit eftersom den inte andrar schema eller serverdata.
+
+## [2026-07-01] fix | Summeringsmeny foljer musklicket
+
+Kontextmenyn for `Summering per aktivitet` positioneras nu i dokumentets
+koordinatsystem med scroll-offset och faller tillbaka till den hogerklickade
+raden om browsern ger ett avvikande contextmenu-varde. Det gor att `Summera`
+och `Dela` oppnas vid raden i stallet for hogt upp i Bemanning.
+
+## [2026-07-01] ux | Summeringsrader kan markeras med drag
+
+`Summering per aktivitet` har nu klick-drag over rader for att markera flera
+aktiviteter utan Ctrl-/Cmd-klick. Kontextmenyn monteras i summary-kortet och
+positioneras fran den hogerklickade radens nederkant, sa `Summera`/`Dela` inte
+langre hamnar vid schematabellens scrollbar.

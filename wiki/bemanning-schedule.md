@@ -34,7 +34,7 @@ Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr o
 | Undo | Angrar senaste lokala schemaandring | Restore av tidigare snapshot | `PUT /api/schedule/hours/restore` | Fungerar bara pa samma dag som andringen gjordes. |
 | Redo | Gor om senaste angring | Restore av efter-snapshot | `PUT /api/schedule/hours/restore` | Knappen ar disabled nar redo-stack ar tom. |
 | Narvarande | Valjer Alla omraden eller nuvarande omrade och skriver ut | Ligger fore Undo/Redo, hamtar narvarolista for vald dag/timme, grupperar Alla per verksamhet och oppnar printdialog | `GET /api/schedule/presence`, `presence_print.js` | Tom lista visas som varning; Windows-appen anvander desktop-printbrygga. |
-| Summering per aktivitet | Laser aktiviteternas timmar efter planering | Visar heltal utan decimaler och icke-heltal med upp till tva decimaler, till exempel `1`, `1.5` eller `1.28` | `renderSummaryRows`, `formatHours`, `GET /api/schedule/summary` | Om en delad cell har udda minuter syns decimaler i stallet for avrundat heltal. |
+| Summering per aktivitet | Laser aktiviteternas timmar efter planering, klickar pa timmar for att kopiera, markerar en eller flera aktivitetsrader och hogerklickar for `Summera` eller `Dela` | Visar heltal utan decimaler och icke-heltal med upp till tva decimaler, till exempel `1`, `1.5` eller `1.28`. Klick pa timcell kopierar visat timtal till clipboard. Klick-drag over rader markerar ett intervall; Ctrl-/Cmd-klick togglar rader och Shift-klick markerar intervall. `Summera` slar ihop valda rader lokalt for aktuell dag/omradesvy; `Dela` tar bort en lokal summering. | `renderSummaryRows`, `formatHours`, `GET /api/schedule/summary`, `summaryGroupsByScope`, `pushSummaryUndo` | Om en delad cell har udda minuter syns decimaler i stallet for avrundat heltal. Lokala summeringar andrar inte schema, aktiviteternas backend-summeringsregler eller Bemanningskalkylens underlag. |
 | Hover pa bemanningscell | Visar historiskt snitt for cellens person och aktivitet | Vantar kort sa snabba musrorelser inte skickar anrop, hamtar sedan bara aktuell person+aktivitet fran materialiserad personproduktivitet och visar till exempel `70 rader/timme` i en tooltip | `GET /api/schedule/activity-capacity/cell`, `scheduleActivityCapacityHover` | Om aktiviteten inte ar vald i Installningar, saknar KPI-process eller personen saknar historik visas en kort orsak i tooltipen. |
 | Personfilter | Skriver i Person-huvud | Filtrerar synliga rader klient-side | `refreshPersons` | Shift-klick pa header sorterar i stallet. |
 | Produktivitet-kolumn | Laser procenten bredvid hemomradet | Hamtar en liten sammanfattning fran `/api/schedule/productivity-summary` for valt datum och raknar bara avslutade KPI-timmar. For idag exkluderas pagaende timme; STOD/absence ger tom cell om ingen avslutad KPI-tid finns. Personer med 0 poang/0% visas inte som produktivitetsvarde. Procenten visas som heltal och fargas rod under 80, orange 80-99 och gron fran 100. | `loadScheduleProductivity`, `buildScheduleProductivityMapFromSummary`, `renderScheduleProductivityCell` | Tom cell betyder att produktivitetsrapport saknas, att extern snapshot-sync ar nere och ingen lokal cache finns, att personen inte har avslutad KPI-tid i perioden eller att personen saknar faktisk KPI-process/poang den dagen. |
@@ -91,6 +91,7 @@ Falt:
   eventuell redan materialiserad cache, sa Bemanning inte far ett serverfel bara
   for att Produktivitetens externa kalla ar nere.
 - Summeringen for ett lanat omrade raknar bara de explicita celler som faktiskt har aktivitet i valt omrade. Tomma lanemarkeringar raknas inte som aktivitet, men de tacker malltimmen sa personens hemomradesmall inte raknas in i fel omradessummering.
+- Anvandarstyrd `Summera` i `Summering per aktivitet` ar bara en lokal visningsgruppering per anvandare, datum och omradesfokus. Den sparas inte i backend, skriver ingen audit-rad och andrar inte `/api/schedule/summary`, `summary_activity_id` eller Bemanningskalkylens radunderlag. Undo/redo delar samma klientstack som schemaandringar men summary-actioner appliceras lokalt utan API-anrop.
 - Hogerklick pa personnamnet ar en snabbvag for laneregeln. Menyn visar aktiva omraden i personens verksamhet. Nar anvandaren skickar personen skapar klienten tomma schemaceller fran aktuell timme, eller fokuserad timme om dagen inte ar idag, och framat med `loan_area_id` for malomradet; mottagande omrade valjer sedan aktivitet sjalv. Om klienten inte kan avgora starttimmen stoppas flodet med varning sa tidigare timmar inte toms av misstag.
 - Om ett sparat omradesfokus pekar pa ett omrade som har tagits bort, till exempel ett gammalt `AREA:<id>` i browsern, normaliseras fokus till Alla innan Bemanning skickar API-anrop. Det skyddar mot 404 `Omrade hittades inte` och mot att vyn ser tom ut efter registerandringar.
 - Nar en period finns i cache kontrollerar klienten `/api/schedule/revision` tyst i bakgrunden. Aktiv vy kontrollerar ungefär var 10:e sekund, idle-vy ungefär var 30:e sekund, och dold browserflik pausar. Vid ny revision hamtas all-data och bara andrade synliga timmar patchas om anvandaren inte haller pa i just den cellen.
@@ -114,6 +115,8 @@ Falt:
 | "Varfor forsvann min andring?" | Troligen versionskonflikt: nagon annan sparade samma cell forst. Sidan laddar om serverns varde. |
 | "Varfor ar undo disabled?" | Det finns ingen lokal andring i undo-stacken for aktuell session/dag. |
 | "Varfor fungerar inte Ctrl+C/V?" | En schemacell eller del maste vara fokuserad forst. |
+| "Varfor kopieras bara timtalet i summeringen?" | Klick pa kolumnen `Timmar` i `Summering per aktivitet` ar en snabb kopiering av visat tal till clipboard. Klicka aktivitetsnamnet/raden om du vill markera raden for `Summera`. |
+| "Varfor syns inte min summerade aktivitet pa en annan dag?" | Manuell `Summera` i summeringstabellen ar lokal for aktuell datum- och omradesvy. Byt tillbaka till samma dag/omrade, eller hogerklicka pa den summerade raden och valj `Dela` for att visa originalraderna igen. |
 | "Hur delar jag en timme?" | Dubbelklicka pa timcellen, valj `1/2`, `1/3` eller `1/4`, justera minutstarterna vid behov och tryck Enter. Valj sedan aktivitet for varje del. |
 | "Var ar Fyll fran vanster?" | Backend-endpointen finns, men nuvarande UI visar ingen knapp for den funktionen. |
 | "Varfor kan jag inte dra namnet for att sortera?" | Anvandaren maste ha `Personsortering=Redigera`. Bemanningsansvarig/admin maste ha samma omrade som personens hemomrade; Super User och demo kan sortera alla synliga personer. Rensa personfiltret om det ar aktivt. |
@@ -133,6 +136,8 @@ Falt:
 
 - `../app/frontend/index.html`
 - `../app/frontend/js/schedule.js`
+- `../app/frontend/js/schedule/summary.js`
+- `../app/frontend/js/schedule/segments_undo.js`
 - `../app/frontend/js/schedule/rfid.js`
 - `../app/frontend/js/presence_print.js`
 - `../app/backend/routers/schedule.py`
