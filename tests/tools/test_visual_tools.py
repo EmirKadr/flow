@@ -10,6 +10,12 @@ from pathlib import Path
 from tools import interactive_e2e
 from tools import desktop_app_probe
 from tools import visual_smoke
+from tools.frontend_sources import (
+    read_overview_frontend,
+    read_persons_frontend,
+    read_productivity_overview_frontend,
+    read_sankey_inbound_frontend,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -688,7 +694,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
-    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
+    productivity_overview = read_productivity_overview_frontend()
     allocation_tools = read_allocation_frontend(frontend)
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
@@ -1018,9 +1024,9 @@ def test_area_focus_toggle_is_wired_to_views():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
-    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
-    persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
+    productivity_overview = read_productivity_overview_frontend()
+    persons = read_persons_frontend()
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
@@ -1530,7 +1536,7 @@ def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
 
@@ -1586,7 +1592,7 @@ def test_presence_print_is_wired_to_both_planning_views():
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
     presence = (frontend / "js" / "presence_print.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
@@ -1663,7 +1669,7 @@ def test_presence_print_is_wired_to_both_planning_views():
 
 def test_super_user_business_fields_are_wired_in_register_ui():
     frontend = ROOT / "app" / "frontend"
-    persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons = read_persons_frontend()
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     activities_html = (frontend / "aktiviteter.html").read_text(encoding="utf-8")
@@ -1790,7 +1796,7 @@ def test_import_views_have_templates_and_help_buttons():
     common = read_common_frontend(frontend)
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
     users_html = (frontend / "anvandare.html").read_text(encoding="utf-8")
     users_js = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     activities_html = (frontend / "aktiviteter.html").read_text(encoding="utf-8")

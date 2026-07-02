@@ -1,5 +1,11 @@
 from pathlib import Path
 import re
+from tools.frontend_sources import (
+    read_overview_frontend,
+    read_persons_frontend,
+    read_productivity_overview_frontend,
+    read_sankey_inbound_frontend,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,7 +42,7 @@ def _function_body(source: str, name: str) -> str:
 
 def test_persons_view_uses_delete_button_without_active_toggle():
     frontend = ROOT / "app" / "frontend"
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert "person-active-toggle" not in persons_js
@@ -50,7 +56,7 @@ def test_persons_view_uses_delete_button_without_active_toggle():
 
 
 def test_persons_view_has_ctrl_z_undo_for_person_changes():
-    persons_js = (ROOT / "app" / "frontend" / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     assert "personUndoStack" in persons_js
     assert "pushPersonUndo" in persons_js
@@ -63,7 +69,7 @@ def test_persons_view_has_ctrl_z_undo_for_person_changes():
 def test_persons_view_has_no_active_inactive_modes():
     frontend = ROOT / "app" / "frontend"
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert 'data-person-status="active"' not in persons_html
@@ -78,7 +84,7 @@ def test_persons_view_has_no_active_inactive_modes():
 def test_persons_view_exposes_required_noman_field():
     frontend = ROOT / "app" / "frontend"
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     assert '<th data-sort="noman">NoMan' in persons_html
     assert 'data-filter="noman"' in persons_html
@@ -93,7 +99,7 @@ def test_persons_view_exposes_required_noman_field():
 def test_persons_view_exposes_optional_rfid_field():
     frontend = ROOT / "app" / "frontend"
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     assert '<th data-sort="rfid_code">RFID' in persons_html
     assert 'data-filter="rfid_code"' in persons_html
@@ -107,7 +113,7 @@ def test_persons_view_exposes_optional_rfid_field():
 def test_persons_view_exposes_collar_type_field():
     frontend = ROOT / "app" / "frontend"
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     assert '<th data-sort="collar_type">Arbetstyp' in persons_html
     assert 'data-filter="collar_type"' in persons_html
@@ -124,7 +130,7 @@ def test_persons_view_exposes_collar_type_field():
 def test_persons_view_shows_business_column():
     frontend = ROOT / "app" / "frontend"
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     assert '<th data-sort="business">Verksamhet' in persons_html
     assert 'data-filter="business"' in persons_html
@@ -136,7 +142,7 @@ def test_persons_view_shows_business_column():
 
 def test_persons_view_opens_productivity_dialog_on_double_click():
     frontend = ROOT / "app" / "frontend"
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert "function openPersonProductivityModal(person)" in persons_js
@@ -155,7 +161,7 @@ def test_persons_view_opens_productivity_dialog_on_double_click():
 
 
 def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
-    persons_js = (ROOT / "app" / "frontend" / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
 
     load_body = _function_body(persons_js, "loadPersons")
     render_body = _function_body(persons_js, "renderRows")
@@ -174,7 +180,7 @@ def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
 def test_planning_views_drag_person_names_to_persist_sort_order():
     frontend = ROOT / "app" / "frontend"
     schedule_js = read_schedule_frontend()
-    overview_js = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    overview_js = read_overview_frontend()
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     for source in (schedule_js, overview_js):

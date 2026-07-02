@@ -1,4 +1,10 @@
 from pathlib import Path
+from tools.frontend_sources import (
+    read_overview_frontend,
+    read_persons_frontend,
+    read_productivity_overview_frontend,
+    read_sankey_inbound_frontend,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -7,11 +13,13 @@ FRONTEND = ROOT / "app" / "frontend"
 
 def test_sankey_inbound_frontend_contract():
     html = (FRONTEND / "sankey-inbound.html").read_text(encoding="utf-8")
-    script = (FRONTEND / "js" / "sankey_inbound.js").read_text(encoding="utf-8")
-    productivity = (FRONTEND / "js" / "productivity_overview.js").read_text(encoding="utf-8")
+    script = read_sankey_inbound_frontend()
+    productivity = read_productivity_overview_frontend()
     sidebar = (FRONTEND / "js" / "common" / "sidebar.js").read_text(encoding="utf-8")
 
     assert "/js/sankey_inbound.js" in html
+    assert 'data-staffing-tab-view="sankeyInbound"' in html
+    assert 'class="staffing-tab active" href="/sankey-inbound.html" aria-current="page" data-staffing-tab-view="sankeyInbound"' in html
     assert "sankey-split-maps" in html
     assert 'initPage("sankeyInbound")' in script
     assert 'api.get("/api/sankey/inbound" + query' in script
