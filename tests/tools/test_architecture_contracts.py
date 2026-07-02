@@ -32,7 +32,6 @@ WAREHOUSE_LINE_LIMIT = 1000
 
 # Fil -> tak (nuvarande storlek vid införandet). Får krympa, aldrig växa.
 BACKEND_LINE_EXCEPTIONS = {
-    "productivity_sync.py": 1230,
     "schemas.py": 1013,
 }
 FRONTEND_LINE_EXCEPTIONS = {
@@ -163,6 +162,7 @@ DOMAIN_PREFIXES = {
     "mcp_service": "mcp",
     "productivity_service": "productivity",
     "productivity_sync": "productivity",
+    "productivity_sync_paths": "productivity",
     "productivity_kpi_rules": "productivity",
     "productivity_finance_process_check": "productivity",
     "person_productivity_cache": "productivity",
