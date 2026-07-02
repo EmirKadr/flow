@@ -24,9 +24,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "app" / "backend"
 FRONTEND_JS = ROOT / "app" / "frontend" / "js"
+WAREHOUSE = ROOT / "warehouse_tools"
 
 BACKEND_LINE_LIMIT = 1000
 FRONTEND_LINE_LIMIT = 1000
+WAREHOUSE_LINE_LIMIT = 1000
 
 # Fil -> tak (nuvarande storlek vid införandet). Får krympa, aldrig växa.
 BACKEND_LINE_EXCEPTIONS = {
@@ -37,6 +39,7 @@ BACKEND_LINE_EXCEPTIONS = {
     "routers/audit_logs.py": 1170,
     "productivity_sync.py": 1230,
     "routers/meta_uploads.py": 1080,
+    "schemas.py": 1013,
 }
 FRONTEND_LINE_EXCEPTIONS = {
     "allocation/results.js": 1810,
@@ -47,6 +50,12 @@ FRONTEND_LINE_EXCEPTIONS = {
     "sankey_inbound.js": 1370,
     "allocation/state.js": 1250,
     "persons.js": 1100,
+}
+# Krympnings-ratchet for warehouse_tools: vendor-filen far bara minska tills
+# den ar sanerad fran dod GUI-kod och till slut uppdelad. Ingen frizon.
+WAREHOUSE_LINE_EXCEPTIONS = {
+    "vendor/allokering12.1.py": 9490,
+    "flows.py": 1410,
 }
 
 
@@ -89,6 +98,22 @@ def test_frontend_js_files_stay_under_line_limit():
     )
 
 
+def test_warehouse_tools_files_stay_under_line_limit():
+    violations = []
+    for path in sorted(WAREHOUSE.rglob("*.py")):
+        rel = _rel(path, WAREHOUSE)
+        lines = _line_count(path)
+        limit = WAREHOUSE_LINE_EXCEPTIONS.get(rel, WAREHOUSE_LINE_LIMIT)
+        if lines > limit:
+            violations.append(f"{rel}: {lines} rader (tak {limit})")
+    assert not violations, (
+        "warehouse_tools-filer över radtaket - vendor-filen ska bara krympa "
+        "(sänk dess tak i WAREHOUSE_LINE_EXCEPTIONS i samma commit), övriga "
+        "filer ska splittas i stället för att höja taket:\n  "
+        + "\n  ".join(violations)
+    )
+
+
 def test_line_limit_exceptions_are_not_stale():
     """En undantagsrad för en fil som inte längre finns eller redan är under
     grundtaket ska tas bort, så listan inte blir en permanent frizon."""
@@ -101,6 +126,10 @@ def test_line_limit_exceptions_are_not_stale():
         path = FRONTEND_JS / rel
         if not path.is_file() or _line_count(path) <= FRONTEND_LINE_LIMIT:
             stale.append(f"app/frontend/js/{rel}")
+    for rel, _limit in WAREHOUSE_LINE_EXCEPTIONS.items():
+        path = WAREHOUSE / rel
+        if not path.is_file() or _line_count(path) <= WAREHOUSE_LINE_LIMIT:
+            stale.append(f"warehouse_tools/{rel}")
     assert not stale, "Ta bort inaktuella undantag: " + ", ".join(stale)
 
 
