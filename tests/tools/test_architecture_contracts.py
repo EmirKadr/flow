@@ -35,7 +35,6 @@ BACKEND_LINE_EXCEPTIONS = {
     "schemas.py": 1013,
 }
 FRONTEND_LINE_EXCEPTIONS = {
-    "allocation/results.js": 1810,
     "allocation/settings_view.js": 1760,
     "productivity_overview.js": 1780,
     "overview.js": 1780,
