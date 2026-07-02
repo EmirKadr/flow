@@ -1,3 +1,5 @@
+import csv
+import gzip
 from datetime import date
 
 import pytest
@@ -45,6 +47,20 @@ class _SnapshotClient:
         return []
 
 
+@pytest.fixture(autouse=True)
+def _disable_productivity_snapshot_reuse(monkeypatch):
+    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", set())
+
+
+def _write_snapshot_rows(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = sorted({key for row in rows for key in row})
+    with gzip.open(path, "wt", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def test_snapshot_chunks_by_company_when_cap_hit(monkeypatch):
     monkeypatch.setattr(sis.settings, "DATA_SOURCE_RESPONSE_ROW_CAP", 3, raising=False)
     client = _SnapshotClient(per_company={"GG": 2, "MG": 2}, cap_rows=3)
@@ -79,6 +95,97 @@ def test_snapshot_warns_when_single_company_still_capped(monkeypatch):
     assert any(w["code"] == "snapshot_truncated" for w in warnings)
 
 
+def test_fetch_view_rows_reuses_productivity_snapshots_when_range_is_ready(monkeypatch, tmp_path):
+    first = tmp_path / "2026-06-01" / "receive.csv.gz"
+    second = tmp_path / "2026-06-02" / "receive.csv.gz"
+    _write_snapshot_rows(first, [{"rowid": "snap-1", "timestamp": "2026-06-01T08:00:00", "company": "GG"}])
+    _write_snapshot_rows(second, [{"rowid": "snap-2", "timestamp": "2026-06-02T08:00:00", "company": "GG"}])
+    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
+    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda _day: {"ready": True})
+    monkeypatch.setattr(
+        sis,
+        "productivity_snapshot_source_path",
+        lambda day, key: tmp_path / day.isoformat() / f"{key}.csv.gz",
+    )
+    monkeypatch.setattr(
+        sis,
+        "_fetch_segment_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("external API should not be called")),
+    )
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        _FakeClient(fail_views=set()),
+        key="receive",
+        view_id="v_ask_receive_log",
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 2),
+        company_codes=["GG"],
+        company_filter="GG",
+        today=date(2026, 6, 30),
+    )
+
+    assert [row["rowid"] for row in rows] == ["snap-1", "snap-2"]
+    assert warnings == []
+    assert statuses == [
+        {
+            "key": "receive",
+            "view": "v_ask_receive_log",
+            "segment": "productivity_snapshot",
+            "status": "productivity_snapshot",
+            "rows": 2,
+            "start": "2026-06-01",
+            "end": "2026-06-02",
+            "days": 2,
+        }
+    ]
+
+
+def test_fetch_view_rows_uses_api_when_productivity_snapshot_range_is_incomplete(monkeypatch):
+    client = _FakeClient(fail_views=set(), rows_by_view={"v_ask_receive_log": [{"rowid": "api"}]})
+    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
+    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda day: {"ready": day != date(2026, 6, 2)})
+    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *_args, **_kwargs: None)
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="receive",
+        view_id="v_ask_receive_log",
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 2),
+        company_codes=["GG"],
+        company_filter="GG",
+        today=date(2026, 6, 30),
+    )
+
+    assert rows == [{"rowid": "api"}]
+    assert client.calls == ["v_ask_receive_log"]
+    assert statuses[0]["status"] == "api"
+    assert warnings == []
+
+
+def test_pick_source_does_not_reuse_productivity_snapshots(monkeypatch):
+    client = _FakeClient(fail_views=set(), rows_by_view={"v_ask_pick_log_full": [{"rowid": "api"}]})
+    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive", "trans"})
+    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda _day: {"ready": True})
+    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *_args, **_kwargs: None)
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="pick",
+        view_id="v_ask_pick_log_full",
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 1),
+        company_codes=["GG"],
+        company_filter="GG",
+        today=date(2026, 6, 30),
+    )
+
+    assert rows == [{"rowid": "api"}]
+    assert client.calls == ["v_ask_pick_log_full"]
+    assert statuses[0]["status"] == "api"
+    assert warnings == []
+
+
 def test_live_failure_falls_back_to_dblog_archive(monkeypatch):
     monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
     client = _FakeClient(fail_views={"v_ask_trans_log"}, rows_by_view={"dblog_trans_log": [{"x": 1}]})
@@ -98,6 +205,174 @@ def test_live_failure_falls_back_to_dblog_archive(monkeypatch):
     assert "dblog_trans_log" in client.calls
     assert any(w["code"] == "archive_fallback_used" for w in warnings)
     assert any(s.get("segment") == "arkiv (fallback)" for s in statuses)
+
+
+def test_dispatch_source_uses_dispatch_pallet_log_and_archive(monkeypatch):
+    live_date_filter = sis._date_filter_for_view("dispatch_pallet_log", date(2026, 6, 1), date(2026, 6, 24))
+    archive_date_filter = sis._date_filter_for_view("dblog_dispatch_pallet_log", date(2026, 6, 1), date(2026, 6, 24))
+    assert live_date_filter["id"] == "created"
+    assert archive_date_filter["id"] == "created"
+
+    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    client = _FakeClient(
+        fail_views=set(),
+        rows_by_view={
+            "dblog_dispatch_pallet_log": [{"rowid": "old"}],
+            "dispatch_pallet_log": [{"rowid": "new"}],
+        },
+    )
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="dispatch",
+        view_id=sis.SANKEY_SOURCE_VIEWS["dispatch"],
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 24),
+        company_codes=["GG"],
+        company_filter=None,
+        today=date(2026, 6, 24),
+    )
+
+    assert sis.SANKEY_SOURCE_VIEWS["dispatch"] == "dispatch_pallet_log"
+    assert sis.LIVE_ARCHIVE_PAIRS["dispatch_pallet_log"] == (14, "dblog_dispatch_pallet_log")
+    assert rows == [{"rowid": "old"}, {"rowid": "new"}]
+    assert client.calls == ["dblog_dispatch_pallet_log", "dispatch_pallet_log"]
+    assert any(w["code"] == "archive_retention_used" and w["archive_view"] == "dblog_dispatch_pallet_log" for w in warnings)
+    assert [status["view"] for status in statuses] == ["dblog_dispatch_pallet_log", "dispatch_pallet_log"]
+
+
+def test_live_segment_uses_topped_up_local_archive_prefix(monkeypatch):
+    client = _FakeClient(fail_views=set(), rows_by_view={"v_ask_trans_log": [{"rowid": "live-today"}]})
+
+    monkeypatch.setattr(sis.local_archive_store, "is_enabled", lambda: True)
+    monkeypatch.setattr(
+        sis.local_archive_store,
+        "ingested_range",
+        lambda tenant, view: (date(2024, 4, 22), date(2026, 6, 30)),
+    )
+    monkeypatch.setattr(
+        sis,
+        "_query_local_archive_segment",
+        lambda **kwargs: [{"rowid": f"cached-{kwargs['segment_start']}-{kwargs['segment_end']}"}],
+    )
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="trans",
+        view_id="v_ask_trans_log",
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 7, 1),
+        company_codes=["GG"],
+        company_filter=None,
+        today=date(2026, 7, 1),
+        tenant="frey",
+    )
+
+    assert rows == [{"rowid": "cached-2026-06-01-2026-06-30"}, {"rowid": "live-today"}]
+    assert client.calls == ["v_ask_trans_log"]
+    assert statuses[0] == {
+        "key": "trans",
+        "view": "dblog_trans_log",
+        "live_view": "v_ask_trans_log",
+        "segment": "lokal_cache",
+        "status": "local_archive",
+        "rows": 1,
+        "start": "2026-06-01",
+        "end": "2026-06-30",
+    }
+    assert statuses[1]["view"] == "v_ask_trans_log"
+    assert statuses[1]["status"] == "api"
+    assert statuses[1]["start"] == "2026-07-01"
+    assert statuses[1]["end"] == "2026-07-01"
+    assert warnings == []
+
+
+def test_dblog_segment_status_marks_local_archive_hit(monkeypatch):
+    client = _FakeClient(fail_views=set(), rows_by_view={"dblog_pick_log": [{"rowid": "api"}]})
+    monkeypatch.setattr(sis.local_archive_store, "is_enabled", lambda: True)
+    monkeypatch.setattr(sis.local_archive_store, "query_rows", lambda *_args, **_kwargs: [{"rowid": "cached"}])
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="pick",
+        view_id="v_ask_pick_log_full",
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 2),
+        company_codes=["GG"],
+        company_filter=None,
+        today=date(2026, 7, 1),
+        tenant="frey",
+    )
+
+    assert rows == [{"rowid": "cached"}]
+    assert client.calls == []
+    assert statuses[0]["view"] == "dblog_pick_log"
+    assert statuses[0]["status"] == "local_archive"
+    assert warnings and warnings[0]["code"] == "archive_retention_used"
+
+
+def test_item_alias_uses_local_snapshot_when_available(monkeypatch):
+    client = _FakeClient(fail_views=set(), rows_by_view={"item_alias": [{"rowid": "api"}]})
+    seen = {}
+
+    def fake_query_snapshot(tenant, view_id, filters=None):
+        seen["tenant"] = tenant
+        seen["view_id"] = view_id
+        seen["filters"] = filters
+        return [{"rowid": "cached-alias", "company": "GG"}]
+
+    monkeypatch.setattr(sis.local_archive_store, "is_enabled", lambda: True)
+    monkeypatch.setattr(sis.local_archive_store, "query_snapshot_rows", fake_query_snapshot)
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="item_alias",
+        view_id="item_alias",
+        period_start=None,
+        period_end=None,
+        company_codes=["GG", "MG"],
+        company_filter="GG",
+        today=date(2026, 7, 1),
+        tenant="frey",
+    )
+
+    assert rows == [{"rowid": "cached-alias", "company": "GG"}]
+    assert client.calls == []
+    assert statuses[0]["status"] == "local_snapshot"
+    assert seen["tenant"] == "frey"
+    assert seen["view_id"] == "item_alias"
+    assert warnings == []
+
+
+def test_buffer_snapshot_source_stays_live_api(monkeypatch):
+    client = _FakeClient(
+        fail_views=set(),
+        rows_by_view={"v_ask_article_buffertpallet": [{"rowid": "live-buffer"}]},
+    )
+
+    monkeypatch.setattr(sis.local_archive_store, "is_enabled", lambda: True)
+    monkeypatch.setattr(
+        sis.local_archive_store,
+        "query_snapshot_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("buffer must stay live")),
+    )
+
+    rows, statuses, warnings = sis._fetch_view_rows(
+        client,
+        key="buffer",
+        view_id="v_ask_article_buffertpallet",
+        period_start=None,
+        period_end=None,
+        company_codes=["GG"],
+        company_filter=None,
+        today=date(2026, 7, 1),
+        tenant="frey",
+    )
+
+    assert rows == [{"rowid": "live-buffer"}]
+    assert client.calls == ["v_ask_article_buffertpallet"]
+    assert statuses[0]["status"] == "api"
+    assert warnings == []
 
 
 def test_required_source_failure_raises_detailed_message(monkeypatch):
@@ -186,6 +461,7 @@ def receive(
     item="A1",
     book="PO1",
     line="1",
+    **extra,
 ):
     return {
         "rowid": rowid,
@@ -198,6 +474,7 @@ def receive(
         "book_num": book,
         "line_num": line,
         "timestamp": timestamp,
+        **extra,
     }
 
 
@@ -226,12 +503,37 @@ def pick(location, qty, timestamp="2026-06-01T11:00:00", company="GG", item="A1"
     }
 
 
+def outbound_pick(rowid, order, zone, qty, timestamp="2026-06-01T11:00:00", company="GG", item="A1"):
+    return {
+        "rowid": rowid,
+        "company": company,
+        "wareh_num": "WH",
+        "item_num": item,
+        "order_num": order,
+        "pick_zone": zone,
+        "qty_suf": qty,
+        "timestamp": timestamp,
+    }
+
+
+def dispatch(rowid, parent="", timestamp="2026-06-01T12:00:00", company="GG", order="TO100", pick_pall="PP1"):
+    return {
+        "rowid": rowid,
+        "company": company,
+        "order_num": order,
+        "pick_pall_num": pick_pall,
+        "parent_pick_pall_num": parent,
+        "timestamp": timestamp,
+    }
+
+
 def build(rows, *, only_consumed=False, price=10, purchase_line_price=0, points=None):
     return build_sankey_inbound_payload(
         source_rows={
             "receive": rows.get("receive", []),
             "trans": rows.get("trans", []),
             "pick": rows.get("pick", []),
+            "dispatch": rows.get("dispatch", []),
             "buffer": rows.get("buffer", []),
             "kpi": rows.get("kpi", []),
         },
@@ -256,6 +558,79 @@ def process_revenue(payload, process_key):
         if row["process_key"] == process_key:
             return row["revenue"]
     return 0
+
+
+def test_outbound_flow_counts_store_and_ecommerce_invoice_branches():
+    finance_settings = {
+        "invoice_rows_by_company": {
+            "GG": [
+                {"id": "inbound_labels", "price": 0},
+                {"id": "inbound_article_rows", "price": 0},
+                {"id": "store_picked_orders", "price": 10},
+                {"id": "store_picked_rows", "price": 2},
+                {"id": "store_picked_pcs", "price": 4},
+                {"id": "store_full_pallets", "price": 5},
+                {"id": "store_loaded_pallets", "price": 7},
+                {"id": "ecom_picked_orders", "price": 11},
+                {"id": "ecom_picked_rows", "price": 3},
+                {"id": "ecom_picked_pcs", "price": 5},
+                {"id": "ecom_pallet", "price": 6},
+            ]
+        }
+    }
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [],
+            "trans": [],
+            "pick": [
+                outbound_pick("store-row-1", "TO100", "A", 12, item="A1"),
+                outbound_pick("store-row-2", "TO100", "B", 2, item="B1"),
+                outbound_pick("store-pallet", "TO200", "H", 1),
+                outbound_pick("store-zero", "TO300", "A", 0),
+                outbound_pick("ecom-row", "PR100", "A", 11, item="A1"),
+                outbound_pick("ecom-pallet", "PR101", "H", 2),
+                outbound_pick("ecom-zero", "PR102", "A", 0),
+                outbound_pick("ignored", "SO100", "A", 1),
+            ],
+            "dispatch": [
+                dispatch("loaded", parent="", pick_pall="PP1"),
+                dispatch("parented", parent="PARENT", pick_pall="PP2"),
+            ],
+            "item_alias": [
+                {"item_num": "A1", "company": "GG", "unit": "KRT", "conversion_factor": 10},
+                {"item_num": "A1", "company": "GG", "unit": "ST", "conversion_factor": 1},
+            ],
+        },
+        finance_settings=finance_settings,
+        company_codes=["GG"],
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 1),
+        follow_until=date(2026, 6, 24),
+        process_points={"RECEIVING": 2.5},
+    )
+
+    metrics = {row["metric_id"]: row for row in payload["outbound_metrics"] if row["company"] == "GG"}
+    assert metrics["store_picked_orders"]["count"] == 2
+    assert metrics["store_picked_rows"]["count"] == 2
+    assert metrics["store_picked_pcs"]["count"] == 5
+    assert metrics["store_full_pallets"]["count"] == 1
+    assert metrics["store_loaded_pallets"]["count"] == 1
+    assert metrics["ecom_picked_orders"]["count"] == 2
+    assert metrics["ecom_picked_rows"]["count"] == 1
+    assert metrics["ecom_picked_pcs"]["count"] == 2
+    assert metrics["ecom_pallet"]["count"] == 1
+    assert payload["summary"]["outbound_picked_pcs"] == 7
+    assert payload["summary"]["outbound_store_income"] == 56
+    assert payload["summary"]["outbound_ecom_income"] == 41
+    assert payload["summary"]["outbound_income"] == 97
+    assert payload["summary"]["gross_income"] == 97
+    labels = {node["label"] for node in payload["nodes"]}
+    assert {"Outbound", "Butik", "E-handel", "Utlastade pallar"}.issubset(labels)
+    outbound_traces = [row for row in payload["trace_rows"] if row.get("trace_type") == "outbound"]
+    assert len(outbound_traces) == 13
+    assert any(row["status"] == "outbound:store_loaded_pallets" and row["current_pall"] == "PP1" for row in outbound_traces)
+    assert any(row["status"] == "outbound:store_picked_pcs" and row["source_row_id"] == "store-row-1" and row["qty_remaining"] == 3 and row["revenue"] == 12 for row in outbound_traces)
+    assert any(row["status"] == "outbound:ecom_picked_pcs" and row["source_row_id"] == "ecom-row" and row["qty_remaining"] == 2 and row["revenue"] == 10 for row in outbound_traces)
 
 
 def test_receive_filter_excludes_types_zero_qty_and_type_100_zeroed_pallets():
@@ -288,6 +663,24 @@ def test_process_revenue_uses_points_share_for_receiving_and_hbw():
 
     assert process_revenue(payload, "RECEIVING") == 6.67
     assert process_revenue(payload, "HBW") == 3.33
+
+
+def test_buffer_update_falls_back_to_pallet_when_pick_location_key_misses():
+    payload = build(
+        {
+            "receive": [
+                receive("ok", "P1"),
+                receive("buffer-update", "P1", type="91", timestamp="2026-06-01T10:00:00", location="WRONG"),
+            ],
+            "trans": [trans("P1", "21", "A101", timestamp="2026-06-01T09:00:00")],
+        },
+        price=18,
+        points={"RECEIVING": 2.0, "PUTAWAY_PICK": 1.0, "BUFFER_UPDATE": 1.0},
+    )
+
+    assert process_revenue(payload, "BUFFER_UPDATE") == 4.5
+    assert any(row["process_key"] == "BUFFER_UPDATE" for row in payload["processes"])
+    assert any(row["status"] == "open_buffer" and "Buffer Update" in row["path"] for row in payload["trace_rows"])
 
 
 def test_purchase_line_revenue_is_deduplicated_and_distributed_with_process_points():
@@ -501,7 +894,58 @@ def test_client_filter_views_include_company_and_day_variants():
     assert views[day_gg_key]["summary"]["labels_received"] == 1
     assert views[day_gg_key]["period"]["type"] == "day"
     assert views[day_gg_key]["trace_rows"][0]["received_date"] == "2026-06-01"
+    assert set(views[day_gg_key]["trace_rows"][0]) == {"trace_type", "company", "received_date", "consumed", "node_ids", "link_keys"}
     assert views[day_mg_key]["companies"][0]["company"] == "MG"
+
+
+def test_month_client_filter_views_are_prebuilt_even_when_source_rows_are_large(monkeypatch):
+    monkeypatch.setattr(sis, "CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS", 0)
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [receive("large", "P1", timestamp="2026-06-01T08:00:00")],
+            "kpi": [],
+        },
+        finance_settings=finance_for_companies("GG", price=10),
+        company_codes=["GG"],
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 30),
+        follow_until=date(2026, 6, 30),
+        period_type="month",
+        period_label="MÃ¥nad",
+        process_points={"RECEIVING": 2.5},
+    )
+
+    client_filters = payload["client_filters"]
+    assert payload["summary"]["gross_income"] == 10
+    assert client_filters["prebuilt"] is True
+    assert client_filters["views"]
+    assert "only_consumed" in client_filters
+    assert "omitted_reason" not in client_filters
+
+
+def test_client_filter_views_are_not_prebuilt_when_view_count_is_too_large(monkeypatch):
+    monkeypatch.setattr(sis, "CLIENT_FILTER_PREBUILD_MAX_VIEWS", 0)
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [receive("large", "P1", timestamp="2026-06-01T08:00:00")],
+            "kpi": [],
+        },
+        finance_settings=finance_for_companies("GG", price=10),
+        company_codes=["GG"],
+        period_start=date(2026, 6, 1),
+        period_end=date(2026, 6, 30),
+        follow_until=date(2026, 6, 30),
+        period_type="month",
+        period_label="MÃƒÂ¥nad",
+        process_points={"RECEIVING": 2.5},
+    )
+
+    client_filters = payload["client_filters"]
+    assert payload["summary"]["gross_income"] == 10
+    assert client_filters["prebuilt"] is False
+    assert client_filters["views"] == {}
+    assert client_filters["omitted_reason"] == "too_many_views"
+    assert "only_consumed" not in client_filters
 
 
 def test_client_filter_views_include_month_variants_for_year_payload():
@@ -528,7 +972,7 @@ def test_client_filter_views_include_month_variants_for_year_payload():
     july_key = sis._client_filter_view_key("month", date(2026, 7, 1), "ALL", False)
 
     assert views[june_key]["summary"]["labels_received"] == 1
-    assert views[june_key]["trace_rows"][0]["source_row_id"] == "june"
+    assert views[june_key]["trace_rows"][0]["received_date"] == "2026-06-15"
     assert views[july_key]["summary"]["labels_received"] == 1
     assert views[july_key]["period"]["type"] == "month"
 
@@ -626,6 +1070,149 @@ def test_only_consumed_toggle_reuses_cached_sources(monkeypatch):
     assert calls["n"] == 1  # andra anropet återanvänder cachade källrader
     assert first["filters"]["only_consumed"] is False
     assert second["filters"]["only_consumed"] is True
+
+
+def test_load_payload_moves_trace_rows_to_token(monkeypatch):
+    trace_rows = [
+        {
+            "company": "GG",
+            "received_date": "2026-06-01",
+            "origin_pall": "P1",
+            "node_ids": ["GG:start", "GG:process:RECEIVING"],
+            "link_keys": ["GG:start->GG:process:RECEIVING"],
+            "consumed": True,
+        },
+        {
+            "company": "MG",
+            "received_date": "2026-06-02",
+            "origin_pall": "P2",
+            "node_ids": ["MG:start"],
+            "link_keys": [],
+            "consumed": False,
+        },
+    ]
+    variant_rows = [trace_rows[0]]
+
+    monkeypatch.setattr(
+        sis,
+        "fetch_sankey_inbound_sources",
+        lambda **_kwargs: ({"receive": [], "trans": [], "pick": [], "buffer": [], "kpi": []}, [], []),
+    )
+    monkeypatch.setattr(
+        sis,
+        "build_sankey_inbound_payload",
+        lambda **_kwargs: {
+            "period": {},
+            "filters": {"company": "ALL", "only_consumed": False},
+            "summary": {},
+            "source_status": [],
+            "warnings": [],
+            "trace_rows": list(trace_rows),
+            "client_filters": {
+                "schema": "views_v1",
+                "prebuilt": True,
+                "views": {
+                    "day|2026-06-01|GG|1": {
+                        "period": {"type": "day", "start_date": "2026-06-01", "end_date": "2026-06-01"},
+                        "filters": {"company": "GG", "only_consumed": True},
+                        "trace_rows": list(variant_rows),
+                    }
+                },
+                "only_consumed": {
+                    "period": {"type": "day", "start_date": "2026-06-01", "end_date": "2026-06-01"},
+                    "filters": {"company": "ALL", "only_consumed": True},
+                    "trace_rows": list(variant_rows),
+                },
+            },
+        },
+    )
+    sis._CACHE.clear()
+    sis._SOURCE_CACHE.clear()
+    sis._TRACE_CACHE.clear()
+
+    payload = sis.load_sankey_inbound_payload(
+        finance_settings=finance(10),
+        company_codes=["GG"],
+        period="day",
+        selected_date=date(2026, 6, 1),
+        business_id=1,
+        company_filter=None,
+        tenant=None,
+    )
+
+    assert "trace_rows" not in payload
+    assert payload["trace_total"] == 2
+    assert payload["trace_counts"]["nodes"]["GG:start"] == 1
+    assert payload["trace_counts"]["nodes"]["MG:start"] == 1
+    assert payload["trace_counts"]["nodes"]["GG:process:RECEIVING"] == 1
+    assert payload["trace_counts"]["links"]["GG:start->GG:process:RECEIVING"] == 1
+    assert payload["trace_filter"]["company"] == "ALL"
+    assert sis.get_trace_rows(payload["trace_token"]) == trace_rows
+    view = payload["client_filters"]["views"]["day|2026-06-01|GG|1"]
+    assert "trace_rows" not in view
+    assert view["trace_token"] == payload["trace_token"]
+    assert view["trace_total"] == 1
+    assert view["trace_filter"] == {
+        "company": "GG",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-01",
+        "only_consumed": True,
+    }
+    assert "trace_rows" not in payload["client_filters"]["only_consumed"]
+
+
+def test_load_payload_trace_token_uses_all_variant_rows_for_consumed_initial_view(monkeypatch):
+    all_rows = [
+        {"origin_pall": "P1", "company": "GG", "received_date": "2026-06-01", "consumed": True, "node_ids": ["N1"], "link_keys": []},
+        {"origin_pall": "P2", "company": "GG", "received_date": "2026-06-01", "consumed": False, "node_ids": ["N2"], "link_keys": []},
+    ]
+
+    monkeypatch.setattr(
+        sis,
+        "fetch_sankey_inbound_sources",
+        lambda **_kwargs: ({"receive": [], "trans": [], "pick": [], "buffer": [], "kpi": []}, [], []),
+    )
+    monkeypatch.setattr(
+        sis,
+        "build_sankey_inbound_payload",
+        lambda **_kwargs: {
+            "period": {"type": "day", "start_date": "2026-06-01", "end_date": "2026-06-01"},
+            "filters": {"company": "GG", "only_consumed": True},
+            "summary": {},
+            "source_status": [],
+            "warnings": [],
+            "trace_rows": [all_rows[0]],
+            "client_filters": {
+                "schema": "views_v1",
+                "prebuilt": True,
+                "views": {},
+                "all": {
+                    "period": {"type": "day", "start_date": "2026-06-01", "end_date": "2026-06-01"},
+                    "filters": {"company": "GG", "only_consumed": False},
+                    "trace_rows": list(all_rows),
+                },
+            },
+        },
+    )
+    sis._CACHE.clear()
+    sis._SOURCE_CACHE.clear()
+    sis._TRACE_CACHE.clear()
+
+    payload = sis.load_sankey_inbound_payload(
+        finance_settings=finance(10),
+        company_codes=["GG"],
+        period="day",
+        selected_date=date(2026, 6, 1),
+        business_id=1,
+        company_filter="GG",
+        tenant=None,
+        only_consumed=True,
+    )
+
+    assert payload["trace_total"] == 1
+    assert sis.get_trace_rows(payload["trace_token"]) == all_rows
+    assert "trace_rows" not in payload["client_filters"]["all"]
+    assert payload["client_filters"]["all"]["trace_total"] == 2
 
 
 def test_kpi_coredata_fallback_returns_empty_when_file_missing(monkeypatch):

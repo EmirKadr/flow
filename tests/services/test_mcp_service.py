@@ -204,24 +204,105 @@ def test_mcp_brain_auto_prefers_deepseek_when_key_exists(monkeypatch):
 
 def test_mcp_brain_options_include_configured_providers_and_models(monkeypatch):
     monkeypatch.setattr(mcp_service.settings, "DEEPSEEK_API_KEY", "deepseek-key")
-    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_MODEL", "gpt-test")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_BASE_URL", "https://llm.example.test/openai/v1")
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_KEY", "global-openai-key")
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_MODEL", "gpt-global")
     monkeypatch.setattr(mcp_service.settings, "GEMINI_API_KEY", "gemini-key")
     monkeypatch.setattr(mcp_service.settings, "MINIMAX_API_KEY", "minimax-key")
-    monkeypatch.setattr(mcp_service.settings, "MCP_OPENAI_MODELS", "gpt-test,gpt-other")
-    monkeypatch.setattr(mcp_service.settings, "OPENAI_MODEL", "gpt-test")
+    monkeypatch.setattr(mcp_service.settings, "MCP_OPENAI_MODELS", "gpt-global,gpt-other")
 
     options = mcp_service.mcp_brain_options()
     ids = [option["id"] for option in options]
+    nowaste = next(option for option in options if option["id"] == "nowaste")
     openai = next(option for option in options if option["id"] == "openai")
     deepseek = next(option for option in options if option["id"] == "deepseek")
 
-    assert ids[:4] == ["deepseek", "openai", "gemini", "minimax"]
-    assert openai["models"] == ["gpt-test", "gpt-other"]
+    assert ids[:5] == ["deepseek", "nowaste", "openai", "gemini", "minimax"]
+    assert nowaste["label"] == "NoWaste"
+    assert nowaste["models"] == ["gpt-test"]
+    assert openai["models"] == ["gpt-global", "gpt-other"]
     assert deepseek["thinking_modes"] == [
         {"value": "none", "label": "Ingen thinking"},
         {"value": "high", "label": "Thinking"},
         {"value": "max", "label": "Deep thinking"},
     ]
+
+
+def test_mcp_nowaste_uses_mcp_specific_env_not_global_openai(monkeypatch):
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_KEY", "mcp-openai-key")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setattr(
+        mcp_service.settings,
+        "MCP_LLM_OPENAI_API_BASE_URL",
+        "https://ask-ai-resource.services.ai.azure.com/openai/v1",
+    )
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_KEY", "global-openai-key")
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_MODEL", "gpt-4o-mini")
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+
+    assert mcp_service.nowaste_configured() is True
+    assert mcp_service.brain_model_name("nowaste") == "gpt-4o"
+    assert mcp_service._chat_provider_api_key("nowaste") == "mcp-openai-key"
+    assert (
+        mcp_service._chat_provider_url("nowaste")
+        == "https://ask-ai-resource.services.ai.azure.com/openai/v1/chat/completions"
+    )
+    assert mcp_service.openai_configured() is True
+    assert mcp_service.brain_model_name("openai") == "gpt-4o-mini"
+    assert mcp_service._chat_provider_api_key("openai") == "global-openai-key"
+    assert mcp_service._chat_provider_url("openai") == "https://api.openai.com/v1/chat/completions"
+
+
+def test_mcp_nowaste_default_model_is_only_option_even_when_openai_list_exists(monkeypatch):
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_KEY", "mcp-openai-key")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setattr(
+        mcp_service.settings,
+        "MCP_LLM_OPENAI_API_BASE_URL",
+        "https://ask-ai-resource.services.ai.azure.com/openai/v1",
+    )
+    monkeypatch.setattr(mcp_service.settings, "MCP_OPENAI_MODELS", "gpt-4o-mini,gpt-4o")
+
+    assert mcp_service.provider_model_options("nowaste") == ["gpt-4o"]
+
+
+def test_mcp_openai_default_list_includes_newer_models(monkeypatch):
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_MODEL", "gpt-4o-mini")
+    monkeypatch.setattr(
+        mcp_service.settings,
+        "MCP_OPENAI_MODELS",
+        "gpt-5.5,gpt-5.4,gpt-5.2,gpt-5,gpt-4o-mini,gpt-4o",
+    )
+
+    models = mcp_service.provider_model_options("openai")
+
+    assert models[:4] == ["gpt-4o-mini", "gpt-5.5", "gpt-5.4", "gpt-5.2"]
+    assert "gpt-5" in models
+
+
+def test_mcp_nowaste_does_not_fallback_to_global_openai_key(monkeypatch):
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_KEY", "")
+    monkeypatch.setattr(
+        mcp_service.settings,
+        "MCP_LLM_OPENAI_API_BASE_URL",
+        "https://ask-ai-resource.services.ai.azure.com/openai/v1",
+    )
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_KEY", "global-openai-key")
+
+    assert mcp_service.nowaste_configured() is False
+    assert mcp_service.brain_missing("nowaste") == [mcp_service.MCP_LLM_OPENAI_API_KEY_ENV]
+    assert mcp_service.openai_configured() is True
+
+
+def test_mcp_nowaste_requires_mcp_base_url(monkeypatch):
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_KEY", "mcp-openai-key")
+    monkeypatch.setattr(mcp_service.settings, "MCP_LLM_OPENAI_API_BASE_URL", "")
+    monkeypatch.setattr(mcp_service.settings, "OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+
+    assert mcp_service.nowaste_configured() is False
+    assert mcp_service.brain_missing("nowaste") == ["MCP_LLM_OPENAI_API_BASE_URL"]
 
 
 def test_mcp_deepseek_body_enables_thinking_without_temperature(monkeypatch):

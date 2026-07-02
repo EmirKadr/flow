@@ -64,11 +64,14 @@ python -m tools.healthcheck report --local --no-render
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Produktionens databas ar Postgres. Nar production/Render kontrolleras ska
-`DATABASE_URL` peka mot Render Postgres eller sa ska serverns `/api/healthcheck`
-anvandas efter deploy. SQLite anvands bara for lokal utveckling och temporara
-tester. Om agenten bara ska hamta Render deploy/loggar utan databaskoppling kan
-den kora:
+Render-produktionens databas ar Postgres. K8s/foretagsserverns standardvag ar
+Azure SQL (`mssql+pyodbc://...`) enligt `DEPLOY.md` och `k8s/README.md`. Nar
+production/Render kontrolleras ska `DATABASE_URL` peka mot Render Postgres
+eller sa ska serverns `/api/healthcheck` anvandas efter deploy. Nar K8s
+kontrolleras ska startup inte logga `PostgreSQL: kor alembic upgrade head`
+om malmiljon ar Azure SQL. SQLite anvands bara for lokal utveckling och
+temporara tester. Om agenten bara ska hamta Render deploy/loggar utan
+databaskoppling kan den kora:
 
 ```powershell
 python -m tools.healthcheck report --local --skip-db

@@ -7,18 +7,24 @@ from datetime import date, datetime, timedelta, timezone
 import logging
 import threading
 import time
+import uuid
 from typing import Any, Callable
 
+from . import local_archive_store
 from .config import settings
 from .data_fetch_service import (
     ARCHIVE_TO_LIVE,
     DataFetchConfigError,
     DataFetchPlanError,
     LIVE_ARCHIVE_PAIRS,
+    PACKAGE_ALIAS_VIEW,
+    PACKAGE_BASE_UNIT_LABEL,
     _date_period_payload,
     _period_values_for_column,
     _preferred_date_column,
+    build_package_ladders,
     load_catalog,
+    split_quantity_into_packages,
 )
 from .external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
 from .productivity_kpi_rules import (
@@ -32,8 +38,10 @@ from .productivity_service import (
     ProductivitySourceError,
     _number,
     _read_csv,
+    _read_csv_rows_with_headers,
     find_kpi_file,
 )
+from .productivity_sync import productivity_snapshot_source_path, productivity_snapshot_status
 from .settings_service import (
     clean_productivity_finance_company_code,
     productivity_finance_default_invoice_rows,
@@ -48,18 +56,37 @@ ZEROING_RECEIVE_TYPE = "100"
 BUFFER_UPDATE_RECEIVE_TYPE = "91"
 INBOUND_LABEL_ROW_ID = "inbound_labels"
 INBOUND_PURCHASE_LINE_ROW_ID = "inbound_article_rows"
+OUTBOUND_STORE_ORDER_PREFIX = "TO"
+OUTBOUND_ECOM_ORDER_PREFIX = "PR"
+OUTBOUND_METRICS = (
+    {"id": "store_picked_orders", "branch": "store", "branch_label": "Butik", "prefix": OUTBOUND_STORE_ORDER_PREFIX, "label": "Plockade orders", "unit": "orders"},
+    {"id": "store_picked_rows", "branch": "store", "branch_label": "Butik", "prefix": OUTBOUND_STORE_ORDER_PREFIX, "label": "Plockade rader", "unit": "rader"},
+    {"id": "store_picked_pcs", "branch": "store", "branch_label": "Butik", "prefix": OUTBOUND_STORE_ORDER_PREFIX, "label": "Plockade pcs", "unit": "plockenheter"},
+    {"id": "store_full_pallets", "branch": "store", "branch_label": "Butik", "prefix": OUTBOUND_STORE_ORDER_PREFIX, "label": "Antal helpallar", "unit": "helpallar"},
+    {"id": "store_loaded_pallets", "branch": "store", "branch_label": "Butik", "prefix": OUTBOUND_STORE_ORDER_PREFIX, "label": "Utlastade pallar", "unit": "pallar"},
+    {"id": "ecom_picked_orders", "branch": "ecom", "branch_label": "E-handel", "prefix": OUTBOUND_ECOM_ORDER_PREFIX, "label": "Plockade orders", "unit": "orders"},
+    {"id": "ecom_picked_rows", "branch": "ecom", "branch_label": "E-handel", "prefix": OUTBOUND_ECOM_ORDER_PREFIX, "label": "Plockade rader", "unit": "rader"},
+    {"id": "ecom_picked_pcs", "branch": "ecom", "branch_label": "E-handel", "prefix": OUTBOUND_ECOM_ORDER_PREFIX, "label": "Plockade pcs", "unit": "plockenheter"},
+    {"id": "ecom_pallet", "branch": "ecom", "branch_label": "E-handel", "prefix": OUTBOUND_ECOM_ORDER_PREFIX, "label": "Antal helpallar", "unit": "helpallar"},
+)
 
 SANKEY_SOURCE_VIEWS = {
     "receive": "v_ask_receive_log",
     "trans": "v_ask_trans_log",
     "pick": "v_ask_pick_log_full",
+    "dispatch": "dispatch_pallet_log",
     "buffer": "v_ask_article_buffertpallet",
     "kpi": "v_ask_kpi_target",
+    "item_alias": PACKAGE_ALIAS_VIEW,
 }
 
 REQUIRED_SOURCE_KEYS = {"receive", "trans", "pick"}
 DEGRADABLE_SOURCE_KEYS = {"pick"}
-CURRENT_STATE_SOURCE_KEYS = {"buffer", "kpi"}
+CURRENT_STATE_SOURCE_KEYS = {"buffer", "kpi", "item_alias"}
+PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS = {"receive", "trans"}
+PERIOD_ONLY_SOURCE_KEYS = {"dispatch"}
+CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS = 75_000
+CLIENT_FILTER_PREBUILD_MAX_VIEWS = 512
 
 # Naturliga steg i SSE-progressloggen: en hämtning per källa + ett bygg-steg.
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -77,7 +104,9 @@ SOURCE_LABELS = {
     "receive": "Varumottagningslogg",
     "trans": "Translogg",
     "pick": "Plocklogg Full",
+    "dispatch": "Dispatchpallslogg",
     "buffer": "Buffertpall",
+    "item_alias": "Item Alias",
     "kpi": "KPI-mål",
 }
 
@@ -171,7 +200,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE_TTL_SECONDS = 15 * 60 if settings.is_production else 0
 _CACHE_MAX_ITEMS = 64
 _CACHE: dict[tuple[Any, ...], tuple[float, dict]] = {}
-SANKEY_INBOUND_PAYLOAD_SCHEMA = "client_filters_v3"
+SANKEY_INBOUND_PAYLOAD_SCHEMA = "client_filters_v7"
 
 # Källrads-cache (oberoende av only_consumed). only_consumed är bara ett efterfilter
 # i bygget – samma rader hämtas oavsett – så vi cachar de dyra hämtningarna separat
@@ -181,6 +210,155 @@ _SOURCE_CACHE_LOCK = threading.Lock()
 _SOURCE_CACHE_TTL_SECONDS = 120
 _SOURCE_CACHE_MAX_ITEMS = 64
 _SOURCE_CACHE: dict[tuple[Any, ...], tuple[float, tuple[dict, list, list]]] = {}
+
+# Spårnings-rader (trace_rows) lazy-laddas: de skickas INTE i huvud-payloaden (för ett
+# helår blir de hundratals MB och spränger webbläsarfliken). Istället lagras de här
+# server-side under en token; frontend hämtar dem paginerat per nod/länk och exporterar
+# via en streamad CSV. TTL alltid på (även lokalt), och få poster hålls samtidigt.
+_TRACE_CACHE_LOCK = threading.Lock()
+_TRACE_CACHE_TTL_SECONDS = 30 * 60
+_TRACE_CACHE_MAX_ITEMS = 4
+_TRACE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+# Kolumner + svenska rubriker för trace-CSV (speglar frontendens tidigare klient-CSV).
+_TRACE_CSV_BASE_COLUMNS = (
+    "company", "received_date", "origin_pall", "current_pall", "current_location", "item",
+    "order_number", "pick_zone", "picked_qty", "purchase_number", "purchase_line",
+    "source_row_id", "status_label", "qty_remaining", "revenue", "label_revenue",
+    "purchase_line_revenue", "outbound_revenue", "label_fraction", "confidence", "path",
+)
+_TRACE_CSV_LABELS = {
+    "company": "Bolag", "received_date": "Mottagningsdatum", "origin_pall": "Ursprungspallid",
+    "current_pall": "Nuvarande pallid", "current_location": "Nuvarande plats", "item": "Artikel",
+    "order_number": "Ordernummer", "pick_zone": "Zon", "picked_qty": "Plockat",
+    "purchase_number": "Inköpsnummer", "purchase_line": "Radnummer", "source_row_id": "Mottagningsrad",
+    "status_label": "Status", "qty_remaining": "Kolli kvar", "revenue": "Intäkt",
+    "label_revenue": "Etikettintäkt", "purchase_line_revenue": "Inköpsradsintäkt",
+    "outbound_revenue": "Outboundintäkt", "label_fraction": "Etikettandel",
+    "confidence": "Spårningssäkerhet", "path": "Väg",
+}
+
+
+def _prune_trace_cache(now: float) -> None:
+    for token, (expires_at, _rows) in list(_TRACE_CACHE.items()):
+        if expires_at <= now:
+            _TRACE_CACHE.pop(token, None)
+    if len(_TRACE_CACHE) > _TRACE_CACHE_MAX_ITEMS:
+        for token, _entry in sorted(_TRACE_CACHE.items(), key=lambda item: item[1][0])[: len(_TRACE_CACHE) - _TRACE_CACHE_MAX_ITEMS]:
+            _TRACE_CACHE.pop(token, None)
+
+
+def store_trace_rows(rows: list[dict[str, Any]]) -> str:
+    """Lagra trace_rows server-side och returnera en token att hämta dem med."""
+    token = uuid.uuid4().hex
+    now = time.time()
+    with _TRACE_CACHE_LOCK:
+        _TRACE_CACHE[token] = (now + _TRACE_CACHE_TTL_SECONDS, rows)
+        _prune_trace_cache(now)
+    return token
+
+
+def get_trace_rows(token: str) -> list[dict[str, Any]] | None:
+    """Hämta lagrade trace_rows, eller None om token saknas/gått ut."""
+    now = time.time()
+    with _TRACE_CACHE_LOCK:
+        entry = _TRACE_CACHE.get(str(token or ""))
+        if not entry:
+            return None
+        expires_at, rows = entry
+        if expires_at <= now:
+            _TRACE_CACHE.pop(str(token), None)
+            return None
+        return rows
+
+
+def _trace_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+
+def filter_trace_rows(rows: list[dict[str, Any]], scope: str, id_value: str | None, *, company: str | None = None, start_date: date | str | None = None, end_date: date | str | None = None, only_consumed: bool | None = None) -> list[dict[str, Any]]:
+    """Filtrera trace_rows på vald nod (node_ids) eller länk (link_keys)."""
+    scope = str(scope or "all").strip().lower()
+    company_filter = clean_productivity_finance_company_code(company)
+    if company_filter == "ALL":
+        company_filter = None
+    start = _trace_date(start_date)
+    end = _trace_date(end_date)
+
+    def _matches_view(row: dict[str, Any]) -> bool:
+        if company_filter and (clean_productivity_finance_company_code(row.get("company")) or "") != company_filter:
+            return False
+        row_date = _trace_date(row.get("received_date"))
+        if start and (row_date is None or row_date < start):
+            return False
+        if end and (row_date is None or row_date > end):
+            return False
+        if only_consumed is True and not bool(row.get("consumed")):
+            return False
+        return True
+
+    filtered = [row for row in rows if _matches_view(row)]
+    if scope == "node" and id_value:
+        return [row for row in filtered if id_value in (row.get("node_ids") or [])]
+    if scope == "link" and id_value:
+        return [row for row in filtered if id_value in (row.get("link_keys") or [])]
+    return filtered
+
+
+def compute_trace_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Antal pallgrenar per nod-id och per länk-nyckel (för direkt visning i UI:t)."""
+    nodes: dict[str, int] = {}
+    links: dict[str, int] = {}
+    for row in rows:
+        for node_id in row.get("node_ids") or []:
+            nodes[node_id] = nodes.get(node_id, 0) + 1
+        for link_key in row.get("link_keys") or []:
+            links[link_key] = links.get(link_key, 0) + 1
+    return {"nodes": nodes, "links": links}
+
+
+def _csv_cell(value: Any) -> str:
+    if value is None:
+        text = ""
+    elif isinstance(value, (list, tuple)):
+        text = " | ".join(str(item) for item in value)
+    elif isinstance(value, dict):
+        import json as _json
+
+        text = _json.dumps(value, ensure_ascii=False)
+    else:
+        text = str(value)
+    text = text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace('"', '""')
+    return f'"{text}"' if any(ch in text for ch in ';"\r\n') else text
+
+
+def trace_rows_to_csv_lines(rows: list[dict[str, Any]]):
+    """Generator som streamar CSV (BOM + ';'-separerat) för trace_rows, inkl. dynamiska step_N."""
+    max_step = 0
+    for row in rows:
+        for key in row.keys():
+            if key.startswith("step_"):
+                suffix = key[5:]
+                if suffix.isdigit():
+                    max_step = max(max_step, int(suffix))
+    columns = [*_TRACE_CSV_BASE_COLUMNS[:-1], *[f"step_{i}" for i in range(1, max_step + 1)], "path"]
+    labels = {**_TRACE_CSV_LABELS, **{f"step_{i}": f"Steg {i}" for i in range(1, max_step + 1)}}
+    yield "﻿" + ";".join(_csv_cell(labels.get(col, col)) for col in columns) + "\r\n"
+    for row in rows:
+        yield ";".join(_csv_cell(row.get(col)) for col in columns) + "\r\n"
 
 
 def sankey_period_bounds(period: str, anchor: date | None = None) -> tuple[date, date, str]:
@@ -464,6 +642,355 @@ def _inbound_prices(finance_settings: dict, company_codes: list[str]) -> tuple[d
     return label_prices, purchase_line_prices, [*label_warnings, *purchase_line_warnings]
 
 
+def _outbound_prices(finance_settings: dict, company_codes: list[str]) -> tuple[dict[str, dict[str, float]], list[dict]]:
+    prices: dict[str, dict[str, float]] = {}
+    for metric in OUTBOUND_METRICS:
+        row_id = str(metric["id"])
+        metric_prices, _metric_warnings = _invoice_row_prices(
+            finance_settings,
+            company_codes,
+            row_id,
+            warning_code="missing_outbound_price",
+            description=f"{metric['branch_label']} {metric['label']}".lower(),
+        )
+        prices[row_id] = metric_prices
+    return prices, []
+
+
+def _row_order_number(row: dict[str, Any]) -> str:
+    return _row_text(row, "order_num", "Ordernr", "Order nr", "ordernr").upper()
+
+
+def _row_pick_zone(row: dict[str, Any]) -> str:
+    return _row_text(row, "pick_zone", "Zon", "zone").upper()
+
+
+def _row_picked_qty(row: dict[str, Any]) -> float:
+    return _row_number(row, "qty_suf", "Plockat", "picked_qty", "qty")
+
+
+def _row_parent_pick_pall(row: dict[str, Any]) -> str:
+    return _row_text(row, "parent_pick_pall_num", "Pappapallsnr", "Pappapallsnr.")
+
+
+def _row_pick_pall(row: dict[str, Any]) -> str:
+    return _row_text(row, "pick_pall_num", "Plockpallsnr", "Plockpallsnr.", "Pallid", "pall_num").upper()
+
+
+def _order_starts_with(row: dict[str, Any], prefix: str) -> bool:
+    return bool(prefix) and _row_order_number(row).startswith(str(prefix).upper())
+
+
+def _outbound_trace_row(
+    row: dict[str, Any],
+    *,
+    metric: dict[str, str],
+    company: str,
+    amount: float,
+    revenue: float,
+    node_ids: list[str],
+    link_keys: list[str],
+) -> dict[str, Any]:
+    stamp = _row_datetime(row)
+    order_number = _row_order_number(row)
+    current_pall = _normalize_pall(_row_pick_pall(row) or _row_pall(row))
+    current_location = _row_text(row, "location", "Lokation", "Plats").upper()
+    source_row_id = _row_text(row, "rowid", "Rowid", "Radid", "id") or order_number or current_pall
+    path_steps = ["Outbound", str(metric["branch_label"]), str(metric["label"])]
+    trace: dict[str, Any] = {
+        "branch_id": f"outbound:{metric['id']}:{source_row_id}",
+        "origin_id": source_row_id,
+        "trace_type": "outbound",
+        "company": company,
+        "warehouse": _row_warehouse(row),
+        "item": _row_item(row),
+        "origin_pall": current_pall,
+        "current_pall": current_pall,
+        "current_location": current_location,
+        "purchase_number": "",
+        "purchase_line": "",
+        "order_number": order_number,
+        "pick_zone": _row_pick_zone(row),
+        "picked_qty": _round_qty(_row_picked_qty(row)),
+        "received_date": stamp.date().isoformat() if stamp else "",
+        "source_row_id": source_row_id,
+        "qty_remaining": _round_qty(amount),
+        "revenue": _round_money(revenue),
+        "label_revenue": 0.0,
+        "purchase_line_revenue": 0.0,
+        "outbound_revenue": _round_money(revenue),
+        "label_fraction": _round_qty(amount),
+        "status": f"outbound:{metric['id']}",
+        "status_label": f"{metric['branch_label']} - {metric['label']}",
+        "consumed": True,
+        "confidence": "high",
+        "path": " -> ".join(path_steps),
+        "node_ids": list(node_ids),
+        "link_keys": list(link_keys),
+    }
+    for index, step in enumerate(path_steps, start=1):
+        trace[f"step_{index}"] = step
+    return trace
+
+
+def _build_outbound_sankey(
+    *,
+    pick_rows: list[dict[str, Any]],
+    dispatch_rows: list[dict[str, Any]],
+    alias_rows: list[dict[str, Any]],
+    prices: dict[str, dict[str, float]],
+    allowed_companies: set[str],
+    view_company_filter: str,
+    view_period_start: date,
+    view_period_end: date,
+    include_trace_details: bool = True,
+) -> dict[str, Any]:
+    target_companies = (
+        {view_company_filter}
+        if view_company_filter != "ALL"
+        else {company for company in allowed_companies if company}
+    )
+    if not target_companies:
+        row_companies = {_row_company(row) for row in pick_rows + dispatch_rows if _row_company(row)}
+        target_companies = row_companies
+
+    nodes: dict[str, dict] = {}
+    links: dict[tuple[str, str, str], dict] = {}
+    trace_rows: list[dict[str, Any]] = []
+    metric_rows: list[dict[str, Any]] = []
+    summary: dict[str, float] = {
+        "outbound_income": 0.0,
+        "outbound_store_income": 0.0,
+        "outbound_ecom_income": 0.0,
+        "outbound_picked_orders": 0.0,
+        "outbound_picked_rows": 0.0,
+        "outbound_picked_pcs": 0.0,
+        "outbound_full_pallets": 0.0,
+        "outbound_loaded_pallets": 0.0,
+    }
+    company_summaries: dict[str, dict[str, Any]] = {}
+    package_ladders = build_package_ladders(alias_rows)
+    default_package_ladder = [(PACKAGE_BASE_UNIT_LABEL, 1)]
+
+    def _row_in_view(row: dict[str, Any], company: str) -> bool:
+        return (
+            _row_company(row) == company
+            and _is_in_date_window(row, view_period_start, view_period_end)
+        )
+
+    pick_rows_by_company: dict[str, list[dict[str, Any]]] = {company: [] for company in target_companies}
+    dispatch_rows_by_company: dict[str, list[dict[str, Any]]] = {company: [] for company in target_companies}
+    for row in pick_rows:
+        company = _row_company(row)
+        if company in target_companies and _is_in_date_window(row, view_period_start, view_period_end):
+            pick_rows_by_company.setdefault(company, []).append(row)
+    for row in dispatch_rows:
+        company = _row_company(row)
+        if company in target_companies and _is_in_date_window(row, view_period_start, view_period_end):
+            dispatch_rows_by_company.setdefault(company, []).append(row)
+
+    def _metric_rows_for_company(metric: dict[str, str], company: str) -> list[dict[str, Any]]:
+        row_id = str(metric["id"])
+        prefix = str(metric.get("prefix") or "")
+        company_pick_rows = pick_rows_by_company.get(company, [])
+        if row_id.endswith("_picked_orders"):
+            by_order: dict[str, dict[str, Any]] = {}
+            for row in company_pick_rows:
+                order = _row_order_number(row)
+                if order.startswith(prefix) and _row_picked_qty(row) >= 1 and order not in by_order:
+                    by_order[order] = row
+            return list(by_order.values())
+        if row_id.endswith("_picked_rows") or row_id.endswith("_picked_pcs"):
+            return [
+                row
+                for row in company_pick_rows
+                if _order_starts_with(row, prefix)
+                and _row_pick_zone(row) != "H"
+                and _row_picked_qty(row) >= 1
+            ]
+        if row_id in {"store_full_pallets", "ecom_pallet"}:
+            return [
+                row
+                for row in company_pick_rows
+                if _order_starts_with(row, prefix)
+                and _row_pick_zone(row) == "H"
+                and _row_picked_qty(row) >= 1
+            ]
+        if row_id == "store_loaded_pallets":
+            return [
+                row
+                for row in dispatch_rows_by_company.get(company, [])
+                if not _row_parent_pick_pall(row)
+            ]
+        return []
+
+    def _package_count_for_pick_row(row: dict[str, Any]) -> float:
+        item = _row_text(row, "item_num", "Artikel", "Artikelnr", "article", "item").strip()
+        raw_company = _row_text(row, "company", "Company", "Bolag", "bolag").strip()
+        company = _row_company(row)
+        ladder = (
+            package_ladders.get((item, raw_company))
+            or package_ladders.get((item, company))
+            or package_ladders.get((item.upper(), company))
+            or package_ladders.get((item, ""))
+            or package_ladders.get((item.upper(), ""))
+            or default_package_ladder
+        )
+        packages = split_quantity_into_packages(_row_picked_qty(row), ladder)
+        return float(sum(packages.values()))
+
+    def _metric_trace_amounts(row_id: str, rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], float]]:
+        if row_id.endswith("_picked_pcs"):
+            return [(row, amount) for row in rows if (amount := _package_count_for_pick_row(row)) > 0]
+        return [(row, 1.0) for row in rows]
+
+    for company in sorted(target_companies):
+        if not company:
+            continue
+        for metric in OUTBOUND_METRICS:
+            row_id = str(metric["id"])
+            rows = _metric_rows_for_company(metric, company)
+            trace_amounts = _metric_trace_amounts(row_id, rows)
+            count = float(sum(amount for _row, amount in trace_amounts)) if row_id.endswith("_picked_pcs") else float(len(rows))
+            price = float((prices.get(row_id) or {}).get(company) or 0.0)
+            revenue = count * price
+            branch_key = str(metric["branch"])
+            branch_summary_key = f"outbound_{branch_key}_income"
+
+            metric_rows.append(
+                {
+                    "company": company,
+                    "branch": branch_key,
+                    "branch_label": metric["branch_label"],
+                    "metric_id": row_id,
+                    "label": metric["label"],
+                    "unit": metric["unit"],
+                    "count": _round_qty(count),
+                    "price": _round_money(price),
+                    "revenue": _round_money(revenue),
+                }
+            )
+            summary["outbound_income"] += revenue
+            summary[branch_summary_key] = summary.get(branch_summary_key, 0.0) + revenue
+            if row_id.endswith("_picked_orders"):
+                summary["outbound_picked_orders"] += count
+            elif row_id.endswith("_picked_rows"):
+                summary["outbound_picked_rows"] += count
+            elif row_id.endswith("_picked_pcs"):
+                summary["outbound_picked_pcs"] += count
+            elif row_id in {"store_full_pallets", "ecom_pallet"}:
+                summary["outbound_full_pallets"] += count
+            elif row_id == "store_loaded_pallets":
+                summary["outbound_loaded_pallets"] += count
+
+            company_summary = company_summaries.setdefault(
+                company,
+                {
+                    "company": company,
+                    "outbound_income": 0.0,
+                    "outbound_store_income": 0.0,
+                    "outbound_ecom_income": 0.0,
+                    "outbound_picked_orders": 0.0,
+                    "outbound_picked_rows": 0.0,
+                    "outbound_picked_pcs": 0.0,
+                    "outbound_full_pallets": 0.0,
+                    "outbound_loaded_pallets": 0.0,
+                },
+            )
+            company_summary["outbound_income"] += revenue
+            company_summary[branch_summary_key] = company_summary.get(branch_summary_key, 0.0) + revenue
+            if row_id.endswith("_picked_orders"):
+                company_summary["outbound_picked_orders"] += count
+            elif row_id.endswith("_picked_rows"):
+                company_summary["outbound_picked_rows"] += count
+            elif row_id.endswith("_picked_pcs"):
+                company_summary["outbound_picked_pcs"] += count
+            elif row_id in {"store_full_pallets", "ecom_pallet"}:
+                company_summary["outbound_full_pallets"] += count
+            elif row_id == "store_loaded_pallets":
+                company_summary["outbound_loaded_pallets"] += count
+
+            if count <= 0 and revenue <= 0:
+                continue
+            start_node = _add_node(nodes, company, "outbound:start", "Outbound", "outbound_source", 0)
+            branch_node = _add_node(nodes, company, f"outbound:{branch_key}", str(metric["branch_label"]), "outbound_branch", 1)
+            metric_node = _add_node(nodes, company, f"outbound:{row_id}", str(metric["label"]), "outbound_metric", 2)
+            for node in (start_node, branch_node, metric_node):
+                node["value"] += revenue
+                node["revenue"] += revenue
+                node["outbound_revenue"] += revenue
+                node["labels"] += count
+                node["unit_label"] = "st"
+            start_link_key = f'{start_node["id"]}->{branch_node["id"]}'
+            metric_link_key = f'{branch_node["id"]}->{metric_node["id"]}'
+            _add_link(links, start_node["id"], branch_node["id"], company, revenue, count, outbound_revenue=revenue)
+            _add_link(links, branch_node["id"], metric_node["id"], company, revenue, count, outbound_revenue=revenue)
+            for row, amount in trace_amounts:
+                node_ids = [start_node["id"], branch_node["id"], metric_node["id"]]
+                link_keys = [start_link_key, metric_link_key]
+                if include_trace_details:
+                    trace_rows.append(
+                        _outbound_trace_row(
+                            row,
+                            metric=metric,
+                            company=company,
+                            amount=amount,
+                            revenue=amount * price,
+                            node_ids=node_ids,
+                            link_keys=link_keys,
+                        )
+                    )
+                else:
+                    stamp = _row_datetime(row)
+                    trace_rows.append(
+                        _minimal_trace_row(
+                            company=company,
+                            received_date=stamp.date().isoformat() if stamp else "",
+                            consumed=True,
+                            node_ids=node_ids,
+                            link_keys=link_keys,
+                            trace_type="outbound",
+                        )
+                    )
+
+    node_rows: list[dict] = []
+    for node in nodes.values():
+        node["value"] = _round_money(node["value"])
+        node["revenue"] = _round_money(node["revenue"])
+        node["outbound_revenue"] = _round_money(node["outbound_revenue"])
+        node["labels"] = _round_qty(node["labels"])
+        node_rows.append(node)
+    node_rows.sort(key=lambda item: (item["company"], item["stage"], item["label"]))
+
+    link_rows: list[dict] = []
+    for link in links.values():
+        link["value"] = _round_money(link["value"])
+        link["revenue"] = _round_money(link["revenue"])
+        link["outbound_revenue"] = _round_money(link["outbound_revenue"])
+        link["labels"] = _round_qty(link["labels"])
+        if link["outbound_revenue"] > 0:
+            link["unit_label"] = "st"
+        link_rows.append(link)
+    link_rows.sort(key=lambda item: (item["company"], item["source"], item["target"]))
+
+    for key in list(summary):
+        summary[key] = _round_money(summary[key]) if "income" in key or "revenue" in key else _round_qty(summary[key])
+    for row in company_summaries.values():
+        for key in list(row):
+            if key == "company":
+                continue
+            row[key] = _round_money(row[key]) if "income" in key or "revenue" in key else _round_qty(row[key])
+
+    return {
+        "nodes": node_rows,
+        "links": link_rows,
+        "trace_rows": trace_rows,
+        "metrics": sorted(metric_rows, key=lambda item: (item["company"], item["branch"], item["label"])),
+        "summary": summary,
+        "companies": sorted(company_summaries.values(), key=lambda item: item["company"]),
+    }
+
+
 def _sync_branch_revenue(branch: TraceBranch) -> None:
     branch.revenue = max(0.0, float(branch.label_revenue or 0.0) + float(branch.purchase_line_revenue or 0.0))
 
@@ -643,6 +1170,7 @@ def _add_node(nodes: dict[str, dict], company: str, key: str, label: str, node_t
             "revenue": 0.0,
             "label_revenue": 0.0,
             "purchase_line_revenue": 0.0,
+            "outbound_revenue": 0.0,
             "labels": 0.0,
             "points": 0.0,
             "confidence": "high",
@@ -661,6 +1189,7 @@ def _add_link(
     *,
     label_revenue: float = 0.0,
     purchase_line_revenue: float = 0.0,
+    outbound_revenue: float = 0.0,
 ) -> None:
     if revenue <= 0 and labels <= 0:
         return
@@ -675,6 +1204,7 @@ def _add_link(
             "revenue": 0.0,
             "label_revenue": 0.0,
             "purchase_line_revenue": 0.0,
+            "outbound_revenue": 0.0,
             "labels": 0.0,
             "confidence": "high",
         },
@@ -683,6 +1213,7 @@ def _add_link(
     link["revenue"] += revenue
     link["label_revenue"] += label_revenue
     link["purchase_line_revenue"] += purchase_line_revenue
+    link["outbound_revenue"] += outbound_revenue
     link["labels"] += labels
 
 
@@ -740,6 +1271,29 @@ def _trace_row_for_branch(
     return row
 
 
+def _minimal_trace_row(
+    *,
+    company: str,
+    received_date: date | str | None,
+    consumed: bool,
+    node_ids: list[str],
+    link_keys: list[str],
+    trace_type: str = "inbound",
+) -> dict[str, Any]:
+    if isinstance(received_date, date):
+        received = received_date.isoformat()
+    else:
+        received = str(received_date or "")
+    return {
+        "trace_type": trace_type,
+        "company": company,
+        "received_date": received,
+        "consumed": bool(consumed),
+        "node_ids": list(node_ids),
+        "link_keys": list(link_keys),
+    }
+
+
 def _finalize_sankey(
     branches: list[TraceBranch],
     *,
@@ -747,6 +1301,7 @@ def _finalize_sankey(
     warnings: list[dict],
     current_locations: dict[tuple[str, str], str],
     branch_predicate: Callable[[TraceBranch], bool] | None = None,
+    include_trace_details: bool = True,
 ) -> tuple[list[dict], list[dict], list[dict], dict, list[dict]]:
     nodes: dict[str, dict] = {}
     links: dict[tuple[str, str, str], dict] = {}
@@ -874,16 +1429,27 @@ def _finalize_sankey(
         )
         path_link_keys.append(terminal_link_key)
         path_node_ids.append(terminal["id"])
-        trace_rows.append(
-            _trace_row_for_branch(
-                branch,
-                terminal_key=terminal_key,
-                terminal_label=terminal_label,
-                current_locations=current_locations,
-                node_ids=path_node_ids,
-                link_keys=path_link_keys,
+        if include_trace_details:
+            trace_rows.append(
+                _trace_row_for_branch(
+                    branch,
+                    terminal_key=terminal_key,
+                    terminal_label=terminal_label,
+                    current_locations=current_locations,
+                    node_ids=path_node_ids,
+                    link_keys=path_link_keys,
+                )
             )
-        )
+        else:
+            trace_rows.append(
+                _minimal_trace_row(
+                    company=company,
+                    received_date=branch.received_date,
+                    consumed=branch.consumed,
+                    node_ids=path_node_ids,
+                    link_keys=path_link_keys,
+                )
+            )
 
     gross = summary["gross_income"]
     for process in process_rows.values():
@@ -900,6 +1466,7 @@ def _finalize_sankey(
         node["revenue"] = _round_money(node["revenue"])
         node["label_revenue"] = _round_money(node["label_revenue"])
         node["purchase_line_revenue"] = _round_money(node["purchase_line_revenue"])
+        node["outbound_revenue"] = _round_money(node["outbound_revenue"])
         node["labels"] = _round_qty(node["labels"])
         node["points"] = _round_qty(node["points"])
         node_rows.append(node)
@@ -911,6 +1478,7 @@ def _finalize_sankey(
         link["revenue"] = _round_money(link["revenue"])
         link["label_revenue"] = _round_money(link["label_revenue"])
         link["purchase_line_revenue"] = _round_money(link["purchase_line_revenue"])
+        link["outbound_revenue"] = _round_money(link["outbound_revenue"])
         link["labels"] = _round_qty(link["labels"])
         link_rows.append(link)
     link_rows.sort(key=lambda item: (item["company"], item["source"], item["target"]))
@@ -943,16 +1511,20 @@ def build_sankey_inbound_payload(
     receive_rows = source_rows.get("receive") or []
     trans_rows = source_rows.get("trans") or []
     pick_rows = source_rows.get("pick") or []
+    dispatch_rows = source_rows.get("dispatch") or []
     buffer_rows = source_rows.get("buffer") or []
     kpi_rows = source_rows.get("kpi") or []
+    alias_rows = source_rows.get("item_alias") or []
     warnings_out = list(warnings or [])
 
-    row_companies = sorted({_row_company(row) for row in receive_rows + trans_rows + pick_rows if _row_company(row)})
+    row_companies = sorted({_row_company(row) for row in receive_rows + trans_rows + pick_rows + dispatch_rows if _row_company(row)})
     if not allowed_companies:
         allowed_companies = set(row_companies)
     all_company_codes = sorted(allowed_companies or set(row_companies))
     label_prices, purchase_line_prices, price_warnings = _inbound_prices(finance_settings, all_company_codes)
+    outbound_prices, outbound_price_warnings = _outbound_prices(finance_settings, all_company_codes)
     warnings_out.extend(price_warnings)
+    warnings_out.extend(outbound_price_warnings)
 
     point_map = {
         ("", _normalize_process_point_key(key)): float(value or 0.0)
@@ -1281,6 +1853,10 @@ def build_sankey_inbound_payload(
                     )
                     _append_process(child, "BUFFER_UPDATE", point_map, warnings_out, source="receive")
                     _index_branch(child)
+                if not moved and new_pall:
+                    for branch in _matching_branches(company, new_pall):
+                        _append_process(branch, "BUFFER_UPDATE", point_map, warnings_out, source="receive")
+                        branch.status = "open_buffer"
             elif new_pall:
                 for branch in _matching_branches(company, new_pall):
                     _append_process(branch, "BUFFER_UPDATE", point_map, warnings_out, source="receive")
@@ -1353,6 +1929,7 @@ def build_sankey_inbound_payload(
         view_period_type: str,
         view_period_start: date,
         view_period_end: date,
+        trace_detail: bool = True,
     ) -> dict:
         def _branch_matches_view(branch: TraceBranch) -> bool:
             return (
@@ -1367,6 +1944,18 @@ def build_sankey_inbound_payload(
             warnings=view_warnings,
             current_locations=current_locations,
             branch_predicate=_branch_matches_view,
+            include_trace_details=trace_detail,
+        )
+        outbound = _build_outbound_sankey(
+            pick_rows=pick_rows,
+            dispatch_rows=dispatch_rows,
+            alias_rows=alias_rows,
+            prices=outbound_prices,
+            allowed_companies=all_company_codes,
+            view_company_filter=view_company_filter,
+            view_period_start=view_period_start,
+            view_period_end=view_period_end,
+            include_trace_details=trace_detail,
         )
 
         view_receive_entries = [
@@ -1420,7 +2009,8 @@ def build_sankey_inbound_payload(
             company_summaries[company]["purchase_lines"] = count
 
         summary = {
-            "gross_income": _round_money(traced_summary["gross_income"]),
+            "gross_income": _round_money(traced_summary["gross_income"] + outbound["summary"]["outbound_income"]),
+            "inbound_income": _round_money(traced_summary["gross_income"]),
             "gross_income_labels": _round_money(traced_summary["gross_income_labels"]),
             "gross_income_purchase_lines": _round_money(traced_summary["gross_income_purchase_lines"]),
             "labels_received": len(view_receive_entries),
@@ -1438,6 +2028,7 @@ def build_sankey_inbound_payload(
             ]),
             "unallocated_revenue": _round_money(traced_summary["unallocated_revenue"]),
             "only_consumed": bool(view_only_consumed),
+            **outbound["summary"],
         }
         companies = []
         for row in company_summaries.values():
@@ -1449,14 +2040,35 @@ def build_sankey_inbound_payload(
             row["consumed_labels"] = _round_qty(row["consumed_labels"])
             row["open_labels"] = _round_qty(row["open_labels"])
             companies.append(row)
+        companies_by_code = {row["company"]: row for row in companies}
+        for outbound_company in outbound["companies"]:
+            code = outbound_company["company"]
+            row = companies_by_code.setdefault(
+                code,
+                {
+                    "company": code,
+                    "gross_income": 0.0,
+                    "gross_income_labels": 0.0,
+                    "gross_income_purchase_lines": 0.0,
+                    "labels": 0.0,
+                    "purchase_lines": 0.0,
+                    "consumed_labels": 0.0,
+                    "open_labels": 0.0,
+                },
+            )
+            for key, value in outbound_company.items():
+                if key != "company":
+                    row[key] = value
+        companies = list(companies_by_code.values())
         companies.sort(key=lambda item: item["company"])
         return {
             "summary": summary,
             "companies": companies,
-            "nodes": nodes,
-            "links": links,
+            "nodes": [*nodes, *outbound["nodes"]],
+            "links": [*links, *outbound["links"]],
             "processes": processes,
-            "trace_rows": trace_rows,
+            "outbound_metrics": outbound["metrics"],
+            "trace_rows": [*trace_rows, *outbound["trace_rows"]],
             "period": _view_period(view_period_type, view_period_start, view_period_end),
             "filters": {
                 "company": view_company_filter,
@@ -1472,41 +2084,55 @@ def build_sankey_inbound_payload(
         view_period_type=requested_period_type,
         view_period_start=period_start,
         view_period_end=period_end,
+        trace_detail=True,
     )
-    alternate_key = "all" if only_consumed else "only_consumed"
-    alternate_payload = _build_view_payload(
-        not bool(only_consumed),
-        list(warnings_out),
-        view_company_filter=current_view_company,
-        view_period_type=requested_period_type,
-        view_period_start=period_start,
-        view_period_end=period_end,
-    )
-
     available_companies = sorted({branch.company for branch in branches if branch.company} | set(all_company_codes))
     if current_view_company != "ALL":
         client_companies = [current_view_company]
     else:
         client_companies = ["ALL", *available_companies]
-    client_views: dict[str, dict] = {}
-    for view_period_type, view_period_start, view_period_end in _client_filter_period_specs(
+    client_period_specs = _client_filter_period_specs(
         requested_period_type,
         period_start,
         period_end,
-    ):
-        for view_company in client_companies:
-            for view_only_consumed in (False, True):
-                key = _client_filter_view_key(view_period_type, view_period_start, view_company, view_only_consumed)
-                if key in client_views:
-                    continue
-                client_views[key] = _build_view_payload(
-                    view_only_consumed,
-                    list(warnings_out),
-                    view_company_filter=view_company,
-                    view_period_type=view_period_type,
-                    view_period_start=view_period_start,
-                    view_period_end=view_period_end,
-                )
+    )
+    source_row_count = sum(len(rows or []) for rows in source_rows.values())
+    estimated_client_views = len(client_period_specs) * len(client_companies) * 2
+    interactive_period = requested_period_type in {"day", "week", "month"}
+    prebuild_client_filters = (
+        (interactive_period or source_row_count <= CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS)
+        and estimated_client_views <= CLIENT_FILTER_PREBUILD_MAX_VIEWS
+    )
+    alternate_key = "all" if only_consumed else "only_consumed"
+    alternate_payload = None
+    if prebuild_client_filters:
+        alternate_payload = _build_view_payload(
+            not bool(only_consumed),
+            list(warnings_out),
+            view_company_filter=current_view_company,
+            view_period_type=requested_period_type,
+            view_period_start=period_start,
+            view_period_end=period_end,
+            trace_detail=bool(only_consumed),
+        )
+
+    client_views: dict[str, dict] = {}
+    if prebuild_client_filters:
+        for view_period_type, view_period_start, view_period_end in client_period_specs:
+            for view_company in client_companies:
+                for view_only_consumed in (False, True):
+                    key = _client_filter_view_key(view_period_type, view_period_start, view_company, view_only_consumed)
+                    if key in client_views:
+                        continue
+                    client_views[key] = _build_view_payload(
+                        view_only_consumed,
+                        list(warnings_out),
+                        view_company_filter=view_company,
+                        view_period_type=view_period_type,
+                        view_period_start=view_period_start,
+                        view_period_end=view_period_end,
+                        trace_detail=False,
+                    )
 
     unique_warnings: list[dict] = []
     seen_warnings: set[tuple] = set()
@@ -1523,6 +2149,18 @@ def build_sankey_inbound_payload(
         seen_warnings.add(key)
         unique_warnings.append(warning)
 
+    client_filters = {
+        "schema": "views_v1",
+        "views": client_views,
+        "prebuilt": prebuild_client_filters,
+        "estimated_views": estimated_client_views,
+        "source_rows": source_row_count,
+    }
+    if alternate_payload is not None:
+        client_filters[alternate_key] = alternate_payload
+    if not prebuild_client_filters:
+        client_filters["omitted_reason"] = "too_many_views" if estimated_client_views > CLIENT_FILTER_PREBUILD_MAX_VIEWS else "large_payload"
+
     return {
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "period": _view_period(requested_period_type, period_start, period_end),
@@ -1533,11 +2171,7 @@ def build_sankey_inbound_payload(
         "schema_version": SANKEY_INBOUND_PAYLOAD_SCHEMA,
         "currency": "SEK",
         **view_payload,
-        "client_filters": {
-            "schema": "views_v1",
-            "views": client_views,
-            alternate_key: alternate_payload,
-        },
+        "client_filters": client_filters,
         "warnings": unique_warnings[:100],
         "source_status": list(source_status or []),
     }
@@ -1641,13 +2275,128 @@ def _fetch_segment_rows(
     segment_end: date | None,
     company_codes: list[str],
     company_filter: str | None,
+    tenant: str | None = None,
 ) -> list[dict[str, Any]]:
+    rows, _source = _fetch_segment_rows_with_source(
+        client,
+        segment_view=segment_view,
+        segment_start=segment_start,
+        segment_end=segment_end,
+        company_codes=company_codes,
+        company_filter=company_filter,
+        tenant=tenant,
+    )
+    return rows
+
+
+def _fetch_segment_rows_with_source(
+    client: ExternalDataClient,
+    *,
+    segment_view: str,
+    segment_start: date | None,
+    segment_end: date | None,
+    company_codes: list[str],
+    company_filter: str | None,
+    tenant: str | None = None,
+) -> tuple[list[dict[str, Any]], str]:
     filters = _company_filter(company_filter, company_codes)
     if segment_start and segment_end:
         date_filter = _date_filter_for_view(segment_view, segment_start, segment_end)
         if date_filter:
             filters.append(date_filter)
-    return client.fetch_all(segment_view, filters=filters or None)
+    # Lokal arkiv-cache först för dblog-segment; None => fall tillbaka till API/dblog.
+    if segment_view in ARCHIVE_TO_LIVE and local_archive_store.is_enabled():
+        try:
+            cached = local_archive_store.query_rows(tenant, segment_view, filters or None)
+        except Exception:  # noqa: BLE001 – cache-fel får aldrig fälla Sankey
+            logger.warning("Lokal arkiv-cache misslyckades för %s, faller tillbaka.", segment_view, exc_info=True)
+            cached = None
+        if cached is not None:
+            return cached, "local_archive"
+    return client.fetch_all(segment_view, filters=filters or None), "api"
+
+
+def _query_local_archive_segment(
+    *,
+    archive_view: str,
+    segment_start: date,
+    segment_end: date,
+    company_codes: list[str],
+    company_filter: str | None,
+    tenant: str | None = None,
+) -> list[dict[str, Any]] | None:
+    if not local_archive_store.is_enabled() or archive_view not in ARCHIVE_TO_LIVE:
+        return None
+    filters = _company_filter(company_filter, company_codes)
+    date_filter = _date_filter_for_view(archive_view, segment_start, segment_end)
+    if date_filter:
+        filters.append(date_filter)
+    try:
+        return local_archive_store.query_rows(tenant, archive_view, filters or None)
+    except Exception:  # noqa: BLE001 – cache-fel får aldrig fälla Sankey
+        logger.warning("Lokal arkiv-cache misslyckades för %s, faller tillbaka.", archive_view, exc_info=True)
+        return None
+
+
+def _date_span(start: date, end: date) -> list[date]:
+    if start > end:
+        return []
+    days = []
+    cursor = start
+    while cursor <= end:
+        days.append(cursor)
+        cursor += timedelta(days=1)
+    return days
+
+
+def _fetch_productivity_snapshot_rows(
+    *,
+    key: str,
+    view_id: str,
+    period_start: date,
+    period_end: date,
+) -> tuple[list[dict[str, Any]], list[dict], list[dict]] | None:
+    if key not in PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS:
+        return None
+    days = _date_span(period_start, period_end)
+    if not days:
+        return None
+
+    paths = []
+    for day in days:
+        status = productivity_snapshot_status(day)
+        if not status.get("ready"):
+            return None
+        path = productivity_snapshot_source_path(day, key)
+        if not path.is_file():
+            return None
+        paths.append((day, path))
+
+    rows: list[dict[str, Any]] = []
+    try:
+        for _day, path in paths:
+            _headers, day_rows = _read_csv_rows_with_headers(path, compressed=True)
+            rows.extend(dict(row) for row in day_rows)
+    except Exception:
+        logger.warning("Could not reuse productivity snapshot rows for Sankey source %s.", key, exc_info=True)
+        return None
+
+    return (
+        rows,
+        [
+            {
+                "key": key,
+                "view": view_id,
+                "segment": "productivity_snapshot",
+                "status": "productivity_snapshot",
+                "rows": len(rows),
+                "start": period_start.isoformat(),
+                "end": period_end.isoformat(),
+                "days": len(days),
+            }
+        ],
+        [],
+    )
 
 
 def _source_failure_message(
@@ -1690,6 +2439,7 @@ def _fetch_snapshot_rows(
     view_id: str,
     company_codes: list[str],
     company_filter: str | None,
+    tenant: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict], list[dict]]:
     """Hämtar en datumlös nulägeskälla (buffer/saldo/kpi).
 
@@ -1741,6 +2491,45 @@ def _fetch_snapshot_rows(
     return rows, [{"key": key, "view": view_id, "segment": "snapshot", "status": "api", "rows": len(rows), "truncated": True}], warnings
 
 
+def _fetch_item_alias_rows(
+    client: ExternalDataClient,
+    *,
+    view_id: str,
+    company_codes: list[str],
+    company_filter: str | None,
+    tenant: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict], list[dict]]:
+    """Hämta item_alias fullständigt trots datakällans radtak.
+
+    item_alias är en nulägeskälla utan datumaxel i Sankey, men vyn har en timestamp-
+    kolumn (utan tomma värden). Ett brett timestamp-Between låter ``fetch_all`` dela ner
+    under radtaket – annars kapas svaret vid ~50k/bolag och faktorer tappas, vilket ger
+    fel förpacknings-ladders. Ingen bolagschunkning behövs då.
+    """
+    filters = _company_filter(company_filter, company_codes)
+    if local_archive_store.is_enabled():
+        try:
+            cached = local_archive_store.query_snapshot_rows(tenant, view_id, filters or None)
+        except Exception:  # noqa: BLE001 - cache faults must not break Sankey
+            logger.warning("Lokal snapshot-cache misslyckades för %s, faller tillbaka.", view_id, exc_info=True)
+            cached = None
+        if cached is not None:
+            status = [{
+                "key": "item_alias",
+                "view": view_id,
+                "segment": "snapshot",
+                "status": "local_snapshot",
+                "rows": len(cached),
+            }]
+            return cached, status, []
+    date_filter = _date_filter_for_view(view_id, date(2000, 1, 1), date.today())
+    if date_filter:
+        filters.append(date_filter)
+    rows = client.fetch_all(view_id, filters=filters or None)
+    status = [{"key": "item_alias", "view": view_id, "segment": "timestamp-split", "status": "api", "rows": len(rows)}]
+    return rows, status, []
+
+
 def _fetch_view_rows(
     client: ExternalDataClient,
     *,
@@ -1751,6 +2540,7 @@ def _fetch_view_rows(
     company_codes: list[str],
     company_filter: str | None,
     today: date,
+    tenant: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict], list[dict]]:
     rows: list[dict[str, Any]] = []
     statuses: list[dict] = []
@@ -1759,6 +2549,12 @@ def _fetch_view_rows(
     if not (period_start and period_end):
         # Datumlös nulägeskälla – egen väg med bolagschunkning vid radtak.
         try:
+            if key == "item_alias":
+                # item_alias är för stor för bolagschunkning (>50k/bolag) – timestamp-split
+                # istället så inga omräkningsfaktorer kapas bort.
+                return _fetch_item_alias_rows(
+                    client, view_id=view_id, company_codes=company_codes, company_filter=company_filter, tenant=tenant,
+                )
             return _fetch_snapshot_rows(
                 client, key=key, view_id=view_id, company_codes=company_codes, company_filter=company_filter,
             )
@@ -1774,19 +2570,62 @@ def _fetch_view_rows(
             warnings.append({"code": "optional_source_unavailable", "source": key, "view": view_id, "message": message})
             return rows, statuses, warnings
     if period_start and period_end:
+        reused = _fetch_productivity_snapshot_rows(
+            key=key,
+            view_id=view_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if reused is not None:
+            return reused
         segments, warnings = _segments_for_view(view_id, period_start, period_end, today)
     else:
         segments = [(view_id, None, None)]
     for segment_view, segment_start, segment_end in segments:
         kind = _segment_kind(segment_view)
+        fetch_start = segment_start
+        if (
+            segment_view in LIVE_ARCHIVE_PAIRS
+            and segment_start is not None
+            and segment_end is not None
+            and local_archive_store.is_enabled()
+        ):
+            archive_view = LIVE_ARCHIVE_PAIRS[segment_view][1]
+            min_cached, max_cached = local_archive_store.covered_range(tenant, archive_view)
+            if min_cached is not None and max_cached is not None and min_cached <= segment_start <= max_cached:
+                cached_end = min(segment_end, max_cached)
+                cached_rows = _query_local_archive_segment(
+                    archive_view=archive_view,
+                    segment_start=segment_start,
+                    segment_end=cached_end,
+                    company_codes=company_codes,
+                    company_filter=company_filter,
+                    tenant=tenant,
+                )
+                if cached_rows is not None:
+                    rows.extend(cached_rows)
+                    statuses.append({
+                        "key": key,
+                        "view": archive_view,
+                        "live_view": segment_view,
+                        "segment": "lokal_cache",
+                        "status": "local_archive",
+                        "rows": len(cached_rows),
+                        "start": _iso(segment_start),
+                        "end": _iso(cached_end),
+                    })
+                    fetch_start = cached_end + timedelta(days=1)
+                    if fetch_start > segment_end:
+                        continue
         try:
-            segment_rows = _fetch_segment_rows(
+            segment_rows, segment_source = _fetch_segment_rows_with_source(
                 client,
                 segment_view=segment_view,
-                segment_start=segment_start,
+                segment_start=fetch_start,
                 segment_end=segment_end,
                 company_codes=company_codes,
                 company_filter=company_filter,
+                tenant=tenant,
             )
         except ExternalDataClientError as exc:
             archive_pair = LIVE_ARCHIVE_PAIRS.get(segment_view)
@@ -1799,22 +2638,23 @@ def _fetch_view_rows(
                     key, segment_view, exc, _iso(segment_start), _iso(segment_end), company, archive_view,
                 )
                 try:
-                    segment_rows = _fetch_segment_rows(
+                    segment_rows, segment_source = _fetch_segment_rows_with_source(
                         client,
                         segment_view=archive_view,
-                        segment_start=segment_start,
+                        segment_start=fetch_start,
                         segment_end=segment_end,
                         company_codes=company_codes,
                         company_filter=company_filter,
+                        tenant=tenant,
                     )
                 except ExternalDataClientError as archive_exc:
                     message = _source_failure_message(
-                        key=key, view=segment_view, kind=kind, start=segment_start, end=segment_end,
+                        key=key, view=segment_view, kind=kind, start=fetch_start, end=segment_end,
                         company_filter=company_filter, exc=exc, archive_view=archive_view, archive_exc=archive_exc,
                     )
                     statuses.append({
                         "key": key, "view": segment_view, "archive_view": archive_view, "segment": kind,
-                        "status": "error", "rows": 0, "start": _iso(segment_start), "end": _iso(segment_end),
+                        "status": "error", "rows": 0, "start": _iso(fetch_start), "end": _iso(segment_end),
                         "company": company, "message": message,
                     })
                     logger.error("Sankey-källa misslyckades (även arkiv): %s", message)
@@ -1834,20 +2674,20 @@ def _fetch_view_rows(
                     "archive_view": archive_view, "message": fallback_message,
                 })
                 statuses.append({
-                    "key": key, "view": archive_view, "segment": "arkiv (fallback)", "status": "api",
-                    "rows": len(segment_rows), "start": _iso(segment_start), "end": _iso(segment_end),
+                    "key": key, "view": archive_view, "segment": "arkiv (fallback)", "status": segment_source,
+                    "rows": len(segment_rows), "start": _iso(fetch_start), "end": _iso(segment_end),
                 })
                 logger.warning("Sankey-källa '%s': arkiv-fallback via %s lyckades (%d rader).", key, archive_view, len(segment_rows))
                 rows.extend(segment_rows)
                 continue
             # Ingen arkivpartner – misslyckas direkt, men med full kontext.
             message = _source_failure_message(
-                key=key, view=segment_view, kind=kind, start=segment_start, end=segment_end,
+                key=key, view=segment_view, kind=kind, start=fetch_start, end=segment_end,
                 company_filter=company_filter, exc=exc,
             )
             statuses.append({
                 "key": key, "view": segment_view, "segment": kind, "status": "error", "rows": 0,
-                "start": _iso(segment_start), "end": _iso(segment_end), "company": company, "message": message,
+                "start": _iso(fetch_start), "end": _iso(segment_end), "company": company, "message": message,
             })
             logger.error("Sankey-källa misslyckades: %s", message)
             if key in REQUIRED_SOURCE_KEYS:
@@ -1859,8 +2699,8 @@ def _fetch_view_rows(
             continue
         rows.extend(segment_rows)
         statuses.append({
-            "key": key, "view": segment_view, "segment": kind, "status": "api",
-            "rows": len(segment_rows), "start": _iso(segment_start), "end": _iso(segment_end),
+            "key": key, "view": segment_view, "segment": kind, "status": segment_source,
+            "rows": len(segment_rows), "start": _iso(fetch_start), "end": _iso(segment_end),
         })
     return rows, statuses, warnings
 
@@ -1904,6 +2744,7 @@ def _load_kpi_fallback_rows(
 def fetch_sankey_inbound_sources(
     *,
     period_start: date,
+    period_end: date | None = None,
     follow_until: date,
     company_codes: list[str],
     company_filter: str | None = None,
@@ -1947,15 +2788,17 @@ def fetch_sankey_inbound_sources(
             _emit_progress(progress_callback, step=steps[key], total=total, key=key, label=f"{SOURCE_LABELS.get(key, key)} klar", rows=len(rows), done=True, ms=elapsed_ms)
             return key, rows, statuses, source_warnings
         client = _api_client(tenant=tenant)
+        source_period_end = period_end if key in PERIOD_ONLY_SOURCE_KEYS and period_end is not None else follow_until
         rows, statuses, source_warnings = _fetch_view_rows(
             client,
             key=key,
             view_id=view_id,
             period_start=None if is_current else period_start,
-            period_end=None if is_current else follow_until,
+            period_end=None if is_current else source_period_end,
             company_codes=company_codes,
             company_filter=company_filter,
             today=today,
+            tenant=tenant,
         )
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         for status in statuses:
@@ -2057,6 +2900,7 @@ def _source_cache_key(
 ) -> tuple[Any, ...]:
     # Medvetet utan only_consumed: samma rader hämtas oavsett filtret.
     return (
+        SANKEY_INBOUND_PAYLOAD_SCHEMA,
         business_id,
         str(period or "day").lower(),
         selected_date.isoformat(),
@@ -2087,6 +2931,59 @@ def _set_cached_sankey_sources(key: tuple[Any, ...], value: tuple[dict, list, li
             return
         for stale_key, (expires_at, _value) in sorted(_SOURCE_CACHE.items(), key=lambda item: item[1][0])[: len(_SOURCE_CACHE) - _SOURCE_CACHE_MAX_ITEMS]:
             _SOURCE_CACHE.pop(stale_key, None)
+
+
+def _trace_filter_for_payload(payload: dict) -> dict[str, Any]:
+    period = payload.get("period") if isinstance(payload.get("period"), dict) else {}
+    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    company = clean_productivity_finance_company_code(filters.get("company")) or "ALL"
+    return {
+        "company": company,
+        "start_date": period.get("start_date"),
+        "end_date": period.get("end_date"),
+        "only_consumed": bool(filters.get("only_consumed")),
+    }
+
+
+def _set_trace_metadata(payload: dict, trace_rows: list[dict[str, Any]], token: str) -> None:
+    payload["trace_total"] = len(trace_rows)
+    payload["trace_counts"] = compute_trace_counts(trace_rows)
+    payload["trace_filter"] = _trace_filter_for_payload(payload)
+    payload["trace_token"] = token
+
+
+def _client_filter_payloads(payload: dict):
+    client_filters = payload.get("client_filters")
+    if not isinstance(client_filters, dict):
+        return
+    for key in ("all", "only_consumed"):
+        variant = client_filters.get(key)
+        if isinstance(variant, dict):
+            yield variant
+    views = client_filters.get("views")
+    if isinstance(views, dict):
+        for variant in views.values():
+            if isinstance(variant, dict):
+                yield variant
+
+
+def _attach_trace_token(payload: dict) -> None:
+    """Flytta trace_rows från payloaden till server-side cache; lämna token + antal kvar.
+
+    Håller huvud-payloaden liten (kraschar aldrig fliken); frontend lazy-laddar raderna
+    per nod/länk via /inbound/trace och exporterar via /inbound/trace.csv.
+    """
+    trace_rows = payload.pop("trace_rows", None) or []
+    token_rows = trace_rows
+    client_filters = payload.get("client_filters")
+    all_variant = client_filters.get("all") if isinstance(client_filters, dict) else None
+    if isinstance(all_variant, dict) and all_variant.get("trace_rows") is not None:
+        token_rows = all_variant.get("trace_rows") or []
+    token = store_trace_rows(token_rows)
+    _set_trace_metadata(payload, trace_rows, token)
+    for variant in _client_filter_payloads(payload) or ():
+        variant_rows = variant.pop("trace_rows", None) or []
+        _set_trace_metadata(variant, variant_rows, token)
 
 
 def load_sankey_inbound_payload(
@@ -2141,6 +3038,7 @@ def load_sankey_inbound_payload(
     else:
         source_rows, source_status, warnings = fetch_sankey_inbound_sources(
             period_start=period_start,
+            period_end=period_end,
             follow_until=today,
             company_codes=company_codes,
             company_filter=company_filter,
@@ -2197,5 +3095,6 @@ def load_sankey_inbound_payload(
         period, selected_date.isoformat(), clean_productivity_finance_company_code(company_filter) or "ALLA",
         only_consumed, fetch_ms, build_ms, timing["total_ms"], sources_cached, timing["rows_by_source"],
     )
+    _attach_trace_token(payload)
     set_cached_sankey_payload(cache_key, payload)
     return payload

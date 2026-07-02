@@ -8,7 +8,7 @@ from typing import Any, Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import Person, PersonProductivityDaily, ScheduleCell
+from .models import Activity, Area, Person, PersonProductivityDaily, ScheduleCell
 from .productivity_kpi_rules import (
     KpiRule,
     build_person_productivity_report_from_files,
@@ -25,6 +25,7 @@ from .productivity_service import _read_csv_rows_with_headers
 
 PRODUCTIVITY_CACHE_ROW_PERSON = "person"
 PRODUCTIVITY_CACHE_ROW_CELL = "cell"
+PRODUCTIVITY_CACHE_ROW_CELL_PROCESS = "cell_process"
 PRODUCTIVITY_CACHE_ROW_ACTIVITY = "activity"
 PRODUCTIVITY_CACHE_ROW_PROCESS = "process"
 PRODUCTIVITY_CACHE_METRIC_PRIORITY = ("rows", "packages", "pallets", "orders")
@@ -165,6 +166,275 @@ def person_productivity_daily_report_if_current(
                 "time_cells": time_cells,
             }
         ],
+    }
+
+
+def _time_label_from_minute(minute: int | None) -> str:
+    value = max(0, min(24 * 60, int(minute or 0)))
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def _cell_minutes_from_cache_row(row: PersonProductivityDaily) -> int:
+    kind = str(row.kind or "")
+    if kind == "support":
+        return int(row.support_minutes or 0)
+    if kind == "absence":
+        return int(row.absence_minutes or 0)
+    return int(row.kpi_minutes or 0)
+
+
+def _cell_score_pct(points: float, planned_points: float) -> float | None:
+    if planned_points <= 0:
+        return None
+    return round((points / planned_points) * 100.0, 1)
+
+
+def _cell_score_status(points: float, planned_points: float) -> str | None:
+    pct = _cell_score_pct(points, planned_points)
+    if pct is None:
+        return None
+    if pct < 80:
+        return "low"
+    if pct < 100:
+        return "warn"
+    return "good"
+
+
+def _person_cache_metadata(db: Session, person_ids: set[int]) -> dict[int, dict[str, Any]]:
+    if not person_ids:
+        return {}
+    rows = (
+        db.execute(
+            select(Person.id, Person.name, Person.collar_type, Area.name)
+            .select_from(Person)
+            .outerjoin(Area, Person.home_area_id == Area.id)
+            .where(Person.id.in_(person_ids))
+        )
+        .all()
+    )
+    return {
+        int(person_id): {
+            "name": name,
+            "collar_type": collar_type,
+            "home_area": home_area,
+        }
+        for person_id, name, collar_type, home_area in rows
+    }
+
+
+def _activity_cache_metadata(db: Session, activity_ids: set[int]) -> dict[int, dict[str, Any]]:
+    if not activity_ids:
+        return {}
+    rows = (
+        db.execute(
+            select(Activity.id, Activity.area_id, Activity.label, Area.code, Area.name)
+            .select_from(Activity)
+            .outerjoin(Area, Activity.area_id == Area.id)
+            .where(Activity.id.in_(activity_ids))
+        )
+        .all()
+    )
+    return {
+        int(activity_id): {
+            "activity_area_id": area_id,
+            "activity_label": label,
+            "activity_area_code": area_code,
+            "activity_area_name": area_name,
+        }
+        for activity_id, area_id, label, area_code, area_name in rows
+    }
+
+
+def person_productivity_daily_full_report_if_current(
+    db: Session,
+    snapshot_date: date,
+    *,
+    business_id: int | None,
+    sync: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not person_productivity_cache_is_current(db, snapshot_date, business_id=business_id, sync=sync):
+        return None
+
+    rows = (
+        _cache_query(db, snapshot_date, business_id)
+        .filter(
+            PersonProductivityDaily.row_type.in_(
+                (
+                    PRODUCTIVITY_CACHE_ROW_PERSON,
+                    PRODUCTIVITY_CACHE_ROW_CELL,
+                    PRODUCTIVITY_CACHE_ROW_CELL_PROCESS,
+                )
+            )
+        )
+        .order_by(
+            PersonProductivityDaily.person_id.asc(),
+            PersonProductivityDaily.row_type.asc(),
+            PersonProductivityDaily.start_minute.asc(),
+            PersonProductivityDaily.item_key.asc(),
+        )
+        .all()
+    )
+    if not rows:
+        return {
+            "date": snapshot_date.isoformat(),
+            "available_dates": [snapshot_date.isoformat()],
+            "people": [],
+            "summary": {
+                "people": 0,
+                "kpi_points": 0.0,
+                "planned_kpi_points": 0.0,
+                "kpi_minutes": 0,
+                "support_minutes": 0,
+                "absence_minutes": 0,
+                "average_productivity_pct": None,
+                "person_average_productivity_pct": None,
+                "diff_count": 0,
+                "unmatched_event_count": 0,
+                "missing_target_processes": [],
+                "missing_rule_processes": [],
+                "scored_event_count": 0,
+            },
+            "cache": {"source": "person_productivity_daily"},
+        }
+
+    person_ids = {int(row.person_id) for row in rows if row.person_id is not None}
+    activity_ids = {int(row.activity_id) for row in rows if row.activity_id is not None}
+    person_meta = _person_cache_metadata(db, person_ids)
+    activity_meta = _activity_cache_metadata(db, activity_ids)
+    person_rows: dict[int, PersonProductivityDaily] = {}
+    cell_rows_by_person: dict[int, list[PersonProductivityDaily]] = defaultdict(list)
+    process_rows_by_cell: dict[tuple[int, str], list[PersonProductivityDaily]] = defaultdict(list)
+
+    for row in rows:
+        person_id = int(row.person_id)
+        if row.row_type == PRODUCTIVITY_CACHE_ROW_PERSON:
+            person_rows[person_id] = row
+        elif row.row_type == PRODUCTIVITY_CACHE_ROW_CELL:
+            cell_rows_by_person[person_id].append(row)
+        elif row.row_type == PRODUCTIVITY_CACHE_ROW_CELL_PROCESS:
+            cell_key = str(row.item_key or "").split(":process:", 1)[0]
+            process_rows_by_cell[(person_id, cell_key)].append(row)
+
+    people: list[dict[str, Any]] = []
+    total_points = 0.0
+    total_planned = 0.0
+    total_kpi_minutes = 0
+    total_support_minutes = 0
+    total_absence_minutes = 0
+    total_diff_count = 0
+    total_scored_events = 0
+    productivity_values: list[float] = []
+
+    for person_id in sorted(person_ids):
+        person_row = person_rows.get(person_id)
+        meta = person_meta.get(person_id, {})
+        time_cells: list[dict[str, Any]] = []
+        for row in sorted(cell_rows_by_person.get(person_id, []), key=lambda item: (item.start_minute or 0, item.item_key or "")):
+            activity = activity_meta.get(int(row.activity_id)) if row.activity_id is not None else {}
+            points = float(row.kpi_points or 0.0)
+            planned = float(row.planned_kpi_points or 0.0)
+            start_minute = int(row.start_minute or 0)
+            end_minute = int(row.end_minute or start_minute)
+            process_points = [
+                {
+                    "process": process_row.process_label or process_row.process_key or "Poang",
+                    "process_key": process_row.process_key or normalize_process(process_row.process_label),
+                    "points": round(float(process_row.kpi_points or 0.0), 2),
+                    "event_count": int(process_row.event_count or 0),
+                }
+                for process_row in process_rows_by_cell.get((person_id, str(row.item_key or "")), [])
+                if float(process_row.kpi_points or 0.0) != 0
+            ]
+            time_cells.append(
+                {
+                    "hour": start_minute // 60,
+                    "minute_start": start_minute % 60,
+                    "minute_end": end_minute % 60 if end_minute % 60 else 60,
+                    "start": _time_label_from_minute(start_minute),
+                    "end": _time_label_from_minute(end_minute),
+                    "start_minute": start_minute,
+                    "end_minute": end_minute,
+                    "kind": str(row.kind or ""),
+                    "display": row.activity_label or activity.get("activity_label") or row.process_label or "",
+                    "activity_id": row.activity_id,
+                    "activity_label": row.activity_label or activity.get("activity_label") or "",
+                    "activity_area_id": activity.get("activity_area_id"),
+                    "activity_area_code": activity.get("activity_area_code"),
+                    "activity_area_name": activity.get("activity_area_name"),
+                    "points": round(points, 2),
+                    "expected_points": round(planned, 2),
+                    "minutes": _cell_minutes_from_cache_row(row),
+                    "event_count": int(row.event_count or 0),
+                    "diff_count": int(row.diff_count or 0),
+                    "diffs": [],
+                    "score_pct": _cell_score_pct(points, planned),
+                    "score_status": _cell_score_status(points, planned),
+                    "process_points": process_points,
+                }
+            )
+
+        person_points = float(person_row.kpi_points or 0.0) if person_row else sum(float(row.kpi_points or 0.0) for row in cell_rows_by_person.get(person_id, []))
+        person_planned = float(person_row.planned_kpi_points or 0.0) if person_row else sum(float(row.planned_kpi_points or 0.0) for row in cell_rows_by_person.get(person_id, []))
+        person_kpi_minutes = int(person_row.kpi_minutes or 0) if person_row else sum(int(row.kpi_minutes or 0) for row in cell_rows_by_person.get(person_id, []))
+        person_support_minutes = int(person_row.support_minutes or 0) if person_row else sum(int(row.support_minutes or 0) for row in cell_rows_by_person.get(person_id, []))
+        person_absence_minutes = int(person_row.absence_minutes or 0) if person_row else sum(int(row.absence_minutes or 0) for row in cell_rows_by_person.get(person_id, []))
+        person_diff_count = int(person_row.diff_count or 0) if person_row else sum(int(row.diff_count or 0) for row in cell_rows_by_person.get(person_id, []))
+        productivity_pct = person_points / person_planned if person_planned > 0 else None
+        if productivity_pct is not None:
+            productivity_values.append(productivity_pct)
+        total_points += person_points
+        total_planned += person_planned
+        total_kpi_minutes += person_kpi_minutes
+        total_support_minutes += person_support_minutes
+        total_absence_minutes += person_absence_minutes
+        total_diff_count += person_diff_count
+        total_scored_events += sum(int(row.event_count or 0) for row in cell_rows_by_person.get(person_id, []))
+        people.append(
+            {
+                "person_id": person_id,
+                "name": meta.get("name") or str(person_id),
+                "home_area": meta.get("home_area"),
+                "collar_type": meta.get("collar_type"),
+                "productivity_pct": productivity_pct,
+                "kpi_points": round(person_points, 2),
+                "planned_kpi_points": round(person_planned, 2),
+                "kpi_minutes": person_kpi_minutes,
+                "support_minutes": person_support_minutes,
+                "absence_minutes": person_absence_minutes,
+                "segments": [],
+                "time_cells": time_cells,
+                "diffs": [],
+                "missing_target_processes": [],
+                "missing_rule_processes": [],
+            }
+        )
+
+    return {
+        "generated_at": datetime.now(tz=timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "date": snapshot_date.isoformat(),
+        "available_dates": [snapshot_date.isoformat()],
+        "sources": {},
+        "people": people,
+        "summary": {
+            "people": len(people),
+            "kpi_points": round(total_points, 2),
+            "planned_kpi_points": round(total_planned, 2),
+            "kpi_minutes": total_kpi_minutes,
+            "support_minutes": total_support_minutes,
+            "absence_minutes": total_absence_minutes,
+            "average_productivity_pct": total_points / total_planned if total_planned > 0 else None,
+            "person_average_productivity_pct": (
+                sum(productivity_values) / len(productivity_values)
+                if productivity_values
+                else None
+            ),
+            "diff_count": total_diff_count,
+            "unmatched_event_count": 0,
+            "missing_target_processes": [],
+            "missing_rule_processes": [],
+            "scored_event_count": total_scored_events,
+        },
+        "cache": {"source": "person_productivity_daily"},
     }
 
 
@@ -479,13 +749,14 @@ def _build_report_rows(
             end_minute = _int(cell.get("end_minute"))
             activity_id = cell.get("activity_id")
             activity_label = str(cell.get("activity_label") or cell.get("display") or "")
+            cell_key = f"cell:{start_minute}:{end_minute}:{activity_id if activity_id is not None else activity_label}"
             rows.append(
                 PersonProductivityDaily(
                     business_id=row_business_id,
                     snapshot_date=snapshot_date,
                     person_id=person_id,
                     row_type=PRODUCTIVITY_CACHE_ROW_CELL,
-                    item_key=f"cell:{start_minute}:{end_minute}:{activity_id if activity_id is not None else activity_label}",
+                    item_key=cell_key,
                     metric="points",
                     unit=productivity_metric_label("points"),
                     activity_id=activity_id,
@@ -505,6 +776,34 @@ def _build_report_rows(
                     schedule_signature=schedule_signature,
                 )
             )
+            for process_point in cell.get("process_points") or []:
+                process_label = str(process_point.get("process") or "Poang")
+                process_key = normalize_process(process_point.get("process_key") or process_label)
+                if not process_key:
+                    continue
+                rows.append(
+                    PersonProductivityDaily(
+                        business_id=row_business_id,
+                        snapshot_date=snapshot_date,
+                        person_id=person_id,
+                        row_type=PRODUCTIVITY_CACHE_ROW_CELL_PROCESS,
+                        item_key=f"{cell_key}:process:{process_key}",
+                        metric="points",
+                        unit=productivity_metric_label("points"),
+                        activity_id=activity_id,
+                        activity_label=activity_label,
+                        process_key=process_key,
+                        process_label=process_label,
+                        kind=str(cell.get("kind") or ""),
+                        start_minute=start_minute,
+                        end_minute=end_minute,
+                        kpi_points=_float(process_point.get("points")),
+                        units=_float(process_point.get("points")),
+                        event_count=_int(process_point.get("event_count")),
+                        source_snapshot_at=source_snapshot_at,
+                        schedule_signature=schedule_signature,
+                    )
+                )
         rows.extend(
             _build_activity_rows(
                 person_id,

@@ -63,6 +63,24 @@ def test_render_sensitive_env_vars_are_secret_backed():
         assert "\n        value:" not in block, key
 
 
+def test_k8s_secret_example_uses_azure_sql_database_url():
+    secret_example = (ROOT / "k8s" / "secret.example.yaml").read_text(encoding="utf-8")
+    expected_prefix = "mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME"
+
+    assert "--from-literal=DATABASE_URL='mssql+pyodbc://" in secret_example
+    assert f'DATABASE_URL: "{expected_prefix}' in secret_example
+    assert "postgresql+psycopg://USER:PASS@HOST:5432/flow" not in secret_example
+
+
+def test_k8s_docs_explain_postgres_startup_mismatch():
+    readme = (ROOT / "k8s" / "README.md").read_text(encoding="utf-8")
+    deploy = (ROOT / "DEPLOY.md").read_text(encoding="utf-8")
+
+    for document in (readme, deploy):
+        assert "PostgreSQL: kör alembic upgrade head" in document
+        assert "mssql+pyodbc://..." in document
+
+
 def test_windows_release_is_blocked_by_tests_before_packaging():
     workflow = (ROOT / ".github" / "workflows" / "windows-release.yml").read_text(encoding="utf-8")
 

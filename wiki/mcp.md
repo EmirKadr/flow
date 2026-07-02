@@ -70,23 +70,30 @@ lange servermiljon har samma MCP- och LLM-konfiguration.
   miljo och kan sedan falla tillbaka till lokal `.env`/`app/.env` for just det
   dynamiska env-namnet.
 - Default-hjarna styrs av `MCP_LLM_PROVIDER`: `auto` (default), `deepseek`,
-  `openai`, `gemini` eller `minimax`. `auto` valjer forsta konfigurerade
-  provider i ordningen DeepSeek, OpenAI, Gemini, MiniMax.
+  `nowaste`, `openai`, `gemini` eller `minimax`. `auto` valjer forsta
+  konfigurerade provider i ordningen DeepSeek, NoWaste, OpenAI, Gemini, MiniMax.
 - DeepSeek styrs av `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`,
   `DEEPSEEK_API_BASE_URL`, `DEEPSEEK_THINKING_ENABLED` och
   `DEEPSEEK_REASONING_EFFORT`. Default ar `deepseek-v4-pro` med thinking av for
   snabbare MCP-fragor. Thinking kan slas pa med `DEEPSEEK_THINKING_ENABLED=true`;
   `DEEPSEEK_REASONING_EFFORT=high` ar normalniva och `max` kan anvandas for svar
   som kraver mer planering men blir langsammare.
-- OpenAI styrs av `OPENAI_API_KEY`, `OPENAI_MODEL` och
-  `OPENAI_API_BASE_URL`.
+- NoWaste visas som egen provider och styrs av den OpenAI-kompatibla
+  konfigurationen `MCP_LLM_OPENAI_API_KEY`, `MCP_LLM_OPENAI_MODEL` och
+  `MCP_LLM_OPENAI_API_BASE_URL`. Modellistan for NoWaste ar bara
+  `MCP_LLM_OPENAI_MODEL`, normalt `gpt-4o`.
+- OpenAI visas separat och styrs av `OPENAI_API_KEY`, `OPENAI_MODEL`,
+  `OPENAI_API_BASE_URL` och modellistan `MCP_OPENAI_MODELS`. NoWaste faller
+  inte tillbaka till OpenAI-nyckeln, och OpenAI anvander inte NoWaste-nyckeln.
 - Gemini styrs fortsatt av `GEMINI_API_KEY`, `GEMINI_MODEL` och
   `GEMINI_API_BASE_URL`.
 - MiniMax styrs av `MINIMAX_API_KEY`, `MINIMAX_MODEL` och `MINIMAX_API_URL`.
 - Modellistorna i MCP-vyn styrs av `MCP_DEEPSEEK_MODELS`,
   `MCP_OPENAI_MODELS`, `MCP_GEMINI_MODELS` och `MCP_MINIMAX_MODELS` som
   kommaseparerade listor. Provider-defaultmodellen laggs alltid till forst om
-  den inte redan finns i listan.
+  den inte redan finns i listan. OpenAI-listan ar en inbyggd standardlista och
+  hamtas inte live fran OpenAI, sa MCP-status inte gor extra provideranrop.
+  NoWaste ignorerar `MCP_OPENAI_MODELS` och visar bara sin defaultmodell.
   Provider-nyckeln skickas bara backend-side; frontend far aldrig se den.
 
 Om MCP-servern saknar textresurser och prompts men har tools, ska modellen normalt

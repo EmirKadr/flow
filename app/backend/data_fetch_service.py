@@ -185,6 +185,10 @@ DATE_COLUMN_PRIORITY = (
     "changed_date",
     "date_time",
 )
+PREFERRED_DATE_COLUMNS_BY_VIEW = {
+    "dispatch_pallet_log": "created",
+    "dblog_dispatch_pallet_log": "created",
+}
 RELATIVE_DAYS_PATTERN = re.compile(
     r"\b(?:senaste|sista)\s+(?P<days>\d{1,3})\s+dag(?:en|ar|arna)?\b",
     re.IGNORECASE,
@@ -346,6 +350,11 @@ def infer_prompt_period(prompt: object, today: date | None = None) -> dict[str, 
 
 def _preferred_date_column(view: DataView) -> DataColumn | None:
     columns_by_id = view.column_by_id
+    preferred_for_view = PREFERRED_DATE_COLUMNS_BY_VIEW.get(getattr(view, "id", ""))
+    if preferred_for_view:
+        column = columns_by_id.get(preferred_for_view)
+        if column:
+            return column
     for column_id in DATE_COLUMN_PRIORITY:
         column = columns_by_id.get(column_id)
         if column:
@@ -361,7 +370,7 @@ def _period_values_for_column(period: dict[str, Any], column: DataColumn) -> lis
     text = _normalize(f"{column.id} {column.label_en} {column.label_sv}")
     if column.id.endswith("_int") or "int" in text:
         return [period["start_yyyymmdd"], period["end_yyyymmdd"]]
-    if "timestamp" in text or column.id in {"date_time", "order_date_time", "created_at", "changed_date"}:
+    if "timestamp" in text or column.id in {"date_time", "order_date_time", "created_at", "changed_date", "created"}:
         return [f"{period['start_iso']}T00:00:00", f"{period['end_iso']}T23:59:59"]
     return [period["start_iso"], period["end_iso"]]
 
@@ -902,6 +911,7 @@ LIVE_ARCHIVE_PAIRS: dict[str, tuple[int, str]] = {
     "v_ask_trans_log": (60, "dblog_trans_log"),
     "v_ask_order_log": (80, "dblog_order_log"),
     "v_ask_palletloading_log": (60, "dblog_loading_log"),
+    "dispatch_pallet_log": (14, "dblog_dispatch_pallet_log"),
     "v_ask_receive_log": (60, "dblog_receive_log"),
     "v_ask_correct_log": (60, "dblog_correct_log"),
     "v_ask_count_log": (90, "dblog_count_log"),

@@ -64,6 +64,19 @@ kubectl -n flow port-forward svc/flow-web 8080:80
 curl http://localhost:8080/api/health    # ska ge {"status":"ok",...}
 ```
 
+## Felsökning: startup försöker nå PostgreSQL
+
+Om podloggen visar `PostgreSQL: kör alembic upgrade head ...` i K8s betyder
+det att `DATABASE_URL` börjar med `postgres...`. Den här K8s-deployen är
+skriven för Azure SQL, så `flow-secrets` ska i normalfallet innehålla en
+`mssql+pyodbc://...`-URL och podden ska startas om efter ändringen.
+
+En Render-Postgres intern URL fungerar bara inne i Render. Utanför Render ger
+den ofta `psycopg.OperationalError: [Errno -2] Name or service not known`
+eftersom företagets kluster inte kan slå upp Renders interna databas-host. Om
+ni avsiktligt kör Postgres på företagsservern behöver ni i stället skapa en
+nåbar Postgres-instans och peka `DATABASE_URL` på dess service/DNS-namn.
+
 ## Att tänka på
 
 - **1 replika.** Volymerna är `ReadWriteOnce`. Horisontell skalning kräver

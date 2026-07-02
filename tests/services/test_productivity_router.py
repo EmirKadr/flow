@@ -5,6 +5,10 @@ import time
 from datetime import date
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.backend.database import Base
 from app.backend.routers import productivity as productivity_router
 
 
@@ -15,6 +19,13 @@ def route_user():
 class _FakeSession:
     def close(self):
         pass
+
+
+def _sqlite_session(database_url: str = "sqlite+pysqlite:///:memory:"):
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
+    return engine, session
 
 
 async def _collect_sse(response):
@@ -451,6 +462,77 @@ def test_productivity_overview_period_reads_existing_snapshots_without_history_s
     assert payload["summary"]["points_per_hour"] == 10
     assert history_calls == []
     assert audits and audits[0]["status"] == "ok"
+
+
+def test_productivity_overview_day_waits_for_snapshot_when_opened_after_startup(monkeypatch):
+    calls = []
+
+    def fake_build(_request, _db, _user, report_date, *, ensure_snapshot=True, wait_seconds=10):
+        calls.append(
+            {
+                "date": report_date,
+                "ensure_snapshot": ensure_snapshot,
+                "wait_seconds": wait_seconds,
+            }
+        )
+        return (
+            {
+                "date": report_date.isoformat(),
+                "available_dates": [report_date.isoformat()],
+                "summary": {
+                    "people": 1,
+                    "kpi_points": 12,
+                    "planned_kpi_points": 24,
+                    "kpi_minutes": 60,
+                    "diff_count": 0,
+                    "unmatched_event_count": 0,
+                },
+                "people": [],
+                "sync": {"source": "api_snapshot"},
+            },
+            [{"status": "ok"}],
+        )
+
+    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_router, "_productivity_finance_context", lambda _db, _user, _business_id: {"visible": False})
+    monkeypatch.setattr(productivity_router, "_build_productivity_report_for_date", fake_build)
+    monkeypatch.setattr(productivity_router, "productivity_snapshot_status", lambda *_args, **_kwargs: {"ready": True})
+    monkeypatch.setattr(productivity_router, "productivity_backfill_status", lambda: {})
+    monkeypatch.setattr(productivity_router, "_audit_productivity_report_sources", lambda *_args, **_kwargs: None)
+
+    payload = productivity_router._run_productivity_overview(
+        SimpleNamespace(session={}),
+        object(),
+        route_user(),
+        period="day",
+        date_filter=date(2026, 6, 30),
+        start_date=None,
+        end_date=None,
+    )
+
+    assert payload["period"]["requested_days"] == 1
+    assert calls == [
+        {
+            "date": date(2026, 6, 30),
+            "ensure_snapshot": True,
+            "wait_seconds": productivity_router._PRODUCTIVITY_OVERVIEW_DAY_SNAPSHOT_WAIT_SECONDS,
+        }
+    ]
+
+
+def test_productivity_overview_uses_workers_for_file_sqlite_and_not_memory_sqlite(tmp_path):
+    memory_engine, memory_db = _sqlite_session()
+    file_engine, file_db = _sqlite_session(f"sqlite+pysqlite:///{(tmp_path / 'flow.db').as_posix()}")
+    try:
+        assert productivity_router._productivity_overview_day_worker_count(31, memory_db) == 1
+        assert productivity_router._productivity_overview_day_worker_count(31, file_db) == productivity_router._PRODUCTIVITY_OVERVIEW_DAY_WORKERS
+    finally:
+        memory_db.close()
+        file_db.close()
+        Base.metadata.drop_all(memory_engine)
+        Base.metadata.drop_all(file_engine)
+        memory_engine.dispose()
+        file_engine.dispose()
 
 
 def test_productivity_overview_period_uses_limited_parallel_day_workers(monkeypatch):

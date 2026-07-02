@@ -20,7 +20,7 @@ from . import audit
 from .compiled_data_paths import compiled_data_root
 from .database import SessionLocal
 from .external_data_client import ExternalDataClient
-from .business_scope import DEFAULT_BUSINESS_CODE
+from .business_scope import DEFAULT_BUSINESS_CODE, default_business_tenant
 from .models import Business
 from .productivity_service import ProductivitySourceError, find_kpi_file
 from .workflow_data import (
@@ -80,6 +80,10 @@ def productivity_snapshot_error_path(snapshot_date: date, reference_dir: Path | 
 
 def productivity_backfill_state_path(reference_dir: Path | str | None = None) -> Path:
     return productivity_snapshot_root(reference_dir) / "backfill.json"
+
+
+def productivity_prebuild_state_path(reference_dir: Path | str | None = None) -> Path:
+    return productivity_snapshot_root(reference_dir) / "prebuild.json"
 
 
 def productivity_snapshot_source_path(
@@ -264,6 +268,19 @@ def productivity_backfill_status(reference_dir: Path | str | None = None) -> dic
         "days_per_run": int(state.get("days_per_run") or PRODUCTIVITY_HISTORY_BACKFILL_DAYS_PER_RUN),
         "history_start_date": state.get("history_start_date"),
         "dates": state.get("dates") or [],
+        "errors": state.get("errors") or [],
+    }
+
+
+def productivity_prebuild_status(reference_dir: Path | str | None = None) -> dict[str, Any]:
+    state = _read_json(productivity_prebuild_state_path(reference_dir)) or {}
+    return {
+        "source": "person_productivity_prebuild",
+        "status": state.get("status") or "not_started",
+        "last_run_date": state.get("last_run_date"),
+        "last_sync_at": state.get("last_sync_at"),
+        "dates": state.get("dates") or [],
+        "results": state.get("results") or [],
         "errors": state.get("errors") or [],
     }
 
@@ -528,12 +545,20 @@ def _productivity_cache_business_id(db: Session | None, business_code: str | Non
 
 
 def _productivity_data_source_tenant(db: Session | None, business_code: str | None) -> str | None:
-    if db is None:
-        return None
     code = str(business_code or DEFAULT_BUSINESS_CODE or "").strip().lower()
     if not code:
         return None
-    return db.execute(select(Business.tenant).where(func.lower(Business.code) == code)).scalar()
+    if db is None:
+        return None
+    fallback = default_business_tenant(code)
+    try:
+        return db.execute(select(Business.tenant).where(func.lower(Business.code) == code)).scalar() or fallback
+    except Exception:
+        rollback = getattr(db, "rollback", None)
+        if callable(rollback):
+            rollback()
+        logger.warning("Could not resolve productivity data-source tenant from database; using default tenant.")
+        return fallback
 
 
 def _warm_person_productivity_daily_cache(
@@ -543,21 +568,92 @@ def _warm_person_productivity_daily_cache(
     reference_dir: Path | str | None,
     business_code: str | None,
     sync: dict[str, Any],
-) -> None:
+) -> dict[str, Any] | None:
     if db is None:
-        return
+        return None
     try:
         from .person_productivity_cache import ensure_person_productivity_daily_cache
 
-        ensure_person_productivity_daily_cache(
+        return ensure_person_productivity_daily_cache(
             db,
             productivity_snapshot_files(snapshot_date, reference_dir=reference_dir),
             report_date=snapshot_date,
             business_id=_productivity_cache_business_id(db, business_code),
             sync=sync,
         )
-    except Exception:
+    except Exception as exc:
         logger.warning("Could not warm person productivity daily cache.", exc_info=True)
+        return {
+            "date": snapshot_date.isoformat(),
+            "status": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
+
+
+def prebuild_ready_productivity_days(
+    *,
+    now: datetime | None = None,
+    reference_dir: Path | str | None = None,
+    business_code: str | None = None,
+    db: Session | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    current = (now or datetime.now(LOCAL_TZ)).astimezone(LOCAL_TZ)
+    today = current.date()
+    today_key = today.isoformat()
+    state = productivity_prebuild_status(reference_dir)
+    if not force and state.get("last_run_date") == today_key:
+        return {**state, "status": state.get("status") or "ok", "skipped": True}
+    if db is None:
+        payload = {
+            "source": "person_productivity_prebuild",
+            "status": "not_configured",
+            "last_run_date": today_key,
+            "last_sync_at": None,
+            "dates": [],
+            "results": [],
+            "errors": [{"message": "database session missing"}],
+        }
+        atomic_write_json(productivity_prebuild_state_path(reference_dir), payload)
+        return payload
+
+    ready_dates = [
+        snapshot_date
+        for snapshot_date in _snapshot_dates(reference_dir)
+        if snapshot_date < today
+        and productivity_snapshot_status(snapshot_date, reference_dir=reference_dir).get("ready")
+    ]
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for snapshot_date in ready_dates:
+        sync = productivity_snapshot_status(snapshot_date, reference_dir=reference_dir)
+        result = _warm_person_productivity_daily_cache(
+            db,
+            snapshot_date,
+            reference_dir=reference_dir,
+            business_code=business_code,
+            sync=sync,
+        )
+        if result is None:
+            continue
+        result = {"date": snapshot_date.isoformat(), **result}
+        if str(result.get("status") or "") == "error":
+            errors.append(result)
+        else:
+            results.append(result)
+
+    payload = {
+        "source": "person_productivity_prebuild",
+        "status": "error" if errors else "ok",
+        "last_run_date": today_key,
+        "last_sync_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
+        "dates": [item.isoformat() for item in ready_dates],
+        "results": results,
+        "errors": errors,
+    }
+    atomic_write_json(productivity_prebuild_state_path(reference_dir), payload)
+    return payload
 
 
 def sync_productivity_snapshot(
@@ -567,6 +663,7 @@ def sync_productivity_snapshot(
     business_code: str | None = None,
     db: Session | None = None,
     user_id: int | None = None,
+    warm_cache: bool = True,
 ) -> dict[str, Any]:
     day = snapshot_date or datetime.now(LOCAL_TZ).date()
     if not sources_available(tuple(productivity_api_source_map().values())):
@@ -653,13 +750,14 @@ def sync_productivity_snapshot(
         atomic_write_json(productivity_snapshot_metadata_path(day, reference_dir), metadata)
         productivity_snapshot_error_path(day, reference_dir).unlink(missing_ok=True)
         SNAPSHOT_STATUS.update(metadata)
-        _warm_person_productivity_daily_cache(
-            db,
-            day,
-            reference_dir=reference_dir,
-            business_code=business_code,
-            sync=metadata,
-        )
+        if warm_cache:
+            _warm_person_productivity_daily_cache(
+                db,
+                day,
+                reference_dir=reference_dir,
+                business_code=business_code,
+                sync=metadata,
+            )
         _audit_sync(db, snapshot_date=day, status_text="ok", sources=source_entries, user_id=user_id)
         return metadata
     except Exception as exc:
@@ -708,6 +806,7 @@ def sync_productivity_snapshot_history(
     business_code: str | None = None,
     db: Session | None = None,
     user_id: int | None = None,
+    warm_cache: bool = True,
 ) -> dict[str, Any]:
     dates = productivity_bootstrap_dates(end_date, days_back=days_back)
     if not dates:
@@ -853,13 +952,14 @@ def sync_productivity_snapshot_history(
                 sources=metadata["sources"],
                 user_id=user_id,
             )
-            _warm_person_productivity_daily_cache(
-                db,
-                snapshot_date,
-                reference_dir=reference_dir,
-                business_code=business_code,
-                sync=metadata,
-            )
+            if warm_cache:
+                _warm_person_productivity_daily_cache(
+                    db,
+                    snapshot_date,
+                    reference_dir=reference_dir,
+                    business_code=business_code,
+                    sync=metadata,
+                )
             results.append(metadata)
 
         SNAPSHOT_STATUS.update(metadata_by_date[final_date])
@@ -915,6 +1015,7 @@ def ensure_productivity_snapshot(
     db: Session | None = None,
     user_id: int | None = None,
     wait_seconds: float = 0,
+    warm_cache: bool = True,
 ) -> dict[str, Any]:
     day = snapshot_date or datetime.now(LOCAL_TZ).date()
     if productivity_snapshot_is_stale(day, reference_dir=reference_dir):
@@ -926,6 +1027,7 @@ def ensure_productivity_snapshot(
                 business_code=business_code,
                 db=db,
                 user_id=user_id,
+                warm_cache=warm_cache,
             )
             if str(status.get("status") or "") != "running":
                 return status
@@ -946,6 +1048,7 @@ def ensure_productivity_snapshot_history(
     business_code: str | None = None,
     db: Session | None = None,
     user_id: int | None = None,
+    warm_cache: bool = True,
 ) -> dict[str, Any]:
     dates = productivity_bootstrap_dates(end_date, days_back=days_back)
     needs_sync = any(productivity_snapshot_is_stale(snapshot_date, reference_dir=reference_dir) for snapshot_date in dates)
@@ -957,6 +1060,7 @@ def ensure_productivity_snapshot_history(
             business_code=business_code,
             db=db,
             user_id=user_id,
+            warm_cache=warm_cache,
         )
     results = [productivity_snapshot_status(snapshot_date, reference_dir=reference_dir) for snapshot_date in dates]
     return {
@@ -972,8 +1076,9 @@ def ensure_productivity_snapshot_history(
 def _bootstrap_productivity_snapshot_history() -> None:
     db = SessionLocal()
     try:
+        end_date = datetime.now(LOCAL_TZ).date() - timedelta(days=1)
         ensure_productivity_snapshot_history(
-            datetime.now(LOCAL_TZ).date(),
+            end_date,
             business_code=DEFAULT_BUSINESS_CODE,
             db=db,
         )
@@ -993,7 +1098,12 @@ def _scheduler_loop() -> None:
             if productivity_snapshot_is_stale(now.date(), now=now):
                 db = SessionLocal()
                 try:
-                    ensure_productivity_snapshot(now.date(), business_code=DEFAULT_BUSINESS_CODE, db=db)
+                    ensure_productivity_snapshot(
+                        now.date(),
+                        business_code=DEFAULT_BUSINESS_CODE,
+                        db=db,
+                        warm_cache=False,
+                    )
                 finally:
                     db.close()
             backfill_state = productivity_backfill_status()
@@ -1001,6 +1111,17 @@ def _scheduler_loop() -> None:
                 db = SessionLocal()
                 try:
                     ensure_productivity_historical_backfill(
+                        now=now,
+                        business_code=DEFAULT_BUSINESS_CODE,
+                        db=db,
+                    )
+                finally:
+                    db.close()
+            prebuild_state = productivity_prebuild_status()
+            if prebuild_state.get("last_run_date") != now.date().isoformat():
+                db = SessionLocal()
+                try:
+                    prebuild_ready_productivity_days(
                         now=now,
                         business_code=DEFAULT_BUSINESS_CODE,
                         db=db,

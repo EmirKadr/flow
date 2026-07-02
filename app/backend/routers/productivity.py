@@ -31,6 +31,7 @@ from ..productivity_sync import (
     ProductivitySyncError,
     ensure_productivity_snapshot,
     productivity_backfill_status,
+    productivity_prebuild_status,
     productivity_snapshot_files,
     productivity_snapshot_status,
     sync_productivity_snapshot,
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 _PERSON_REPORT_CACHE_TTL_SECONDS = 2 * 60
 _PERSON_REPORT_CACHE_MAX_ITEMS = 256
 _PRODUCTIVITY_OVERVIEW_DAY_WORKERS = 4
+_PRODUCTIVITY_OVERVIEW_DAY_SNAPSHOT_WAIT_SECONDS = 180
 _PERSON_REPORT_CACHE_LOCK = threading.Lock()
 _PERSON_REPORT_CACHE: dict[tuple, tuple[float, dict]] = {}
 
@@ -881,6 +883,7 @@ def _build_productivity_report_for_date(
         if not sync_status.get("ready"):
             raise ProductivitySyncError("Produktivitetens API-snapshot saknas eller är inte komplett.")
     snapshot_date = report_date or date.fromisoformat(str(sync_status.get("date") or date.today().isoformat()))
+    current_sync = productivity_snapshot_status(snapshot_date)
     files = productivity_snapshot_files(snapshot_date)
     source_status = list(sync_status.get("sources") or [])
     report = _build_cached_person_productivity_report(
@@ -888,7 +891,7 @@ def _build_productivity_report_for_date(
         files,
         report_date=snapshot_date,
         business_id=business_id,
-        sync=productivity_snapshot_status(snapshot_date),
+        sync=current_sync,
     )
     report["source_status"] = source_status
     return report, source_status
@@ -954,6 +957,7 @@ def get_person_productivity(
         "source_status": source_status,
         "errors": errors[:20],
         "backfill": productivity_backfill_status(),
+        "prebuild": productivity_prebuild_status(),
         **aggregate,
     }
 
@@ -1138,11 +1142,14 @@ def _productivity_overview_day_worker_count(day_count: int, db: Session) -> int:
     if day_count < 2 or not isinstance(db, Session):
         return 1
     try:
-        dialect_name = str(db.get_bind().dialect.name or "").lower()
+        bind = db.get_bind()
+        dialect_name = str(bind.dialect.name or "").lower()
     except Exception:
         return 1
     if dialect_name == "sqlite":
-        return 1
+        database_name = str(getattr(getattr(bind, "url", None), "database", "") or "")
+        if not database_name or database_name == ":memory:":
+            return 1
     return min(_PRODUCTIVITY_OVERVIEW_DAY_WORKERS, day_count)
 
 
@@ -1157,14 +1164,17 @@ def _build_productivity_overview_day(
     user: User,
     day: date,
     finance_context: dict,
+    *,
+    ensure_snapshot: bool = False,
+    wait_seconds: float = 0,
 ) -> tuple[dict, dict]:
     report, day_source_status = _build_productivity_report_for_date(
         request,
         db,
         user,
         day,
-        ensure_snapshot=False,
-        wait_seconds=0,
+        ensure_snapshot=ensure_snapshot,
+        wait_seconds=wait_seconds,
     )
     _attach_productivity_finance(report, finance_context, include_process_revenues=False)
     source_entry = {
@@ -1204,6 +1214,12 @@ def _run_productivity_overview(
     completed_steps = 0
     progress_lock = threading.Lock()
     day_steps = {day: index for index, day in enumerate(days, start=1)}
+    ensure_day_snapshot = normalized_period == "day" and len(days) == 1
+    day_snapshot_wait_seconds = (
+        _PRODUCTIVITY_OVERVIEW_DAY_SNAPSHOT_WAIT_SECONDS
+        if ensure_day_snapshot
+        else 0
+    )
 
     def emit_day_started(day: date) -> None:
         with progress_lock:
@@ -1244,7 +1260,15 @@ def _run_productivity_overview(
         for day in days:
             emit_day_started(day)
             try:
-                report, source_entry = _build_productivity_overview_day(request, db, user, day, finance_context)
+                report, source_entry = _build_productivity_overview_day(
+                    request,
+                    db,
+                    user,
+                    day,
+                    finance_context,
+                    ensure_snapshot=ensure_day_snapshot,
+                    wait_seconds=day_snapshot_wait_seconds,
+                )
                 record_day_result(day, report, source_entry)
                 emit_day_done(day)
             except (ProductivitySourceError, ProductivitySyncError) as exc:
@@ -1260,7 +1284,15 @@ def _run_productivity_overview(
             for day in days:
                 emit_day_started(day)
                 try:
-                    report, source_entry = _build_productivity_overview_day(request, db, user, day, finance_context)
+                    report, source_entry = _build_productivity_overview_day(
+                        request,
+                        db,
+                        user,
+                        day,
+                        finance_context,
+                        ensure_snapshot=ensure_day_snapshot,
+                        wait_seconds=day_snapshot_wait_seconds,
+                    )
                     record_day_result(day, report, source_entry)
                     emit_day_done(day)
                 except (ProductivitySourceError, ProductivitySyncError) as exc:
@@ -1271,7 +1303,15 @@ def _run_productivity_overview(
                 emit_day_started(day)
                 worker_db = session_factory()
                 try:
-                    report, source_entry = _build_productivity_overview_day(request, worker_db, user, day, finance_context)
+                    report, source_entry = _build_productivity_overview_day(
+                        request,
+                        worker_db,
+                        user,
+                        day,
+                        finance_context,
+                        ensure_snapshot=ensure_day_snapshot,
+                        wait_seconds=day_snapshot_wait_seconds,
+                    )
                     return day, report, source_entry
                 finally:
                     worker_db.close()
@@ -1332,6 +1372,7 @@ def _run_productivity_overview(
         "errors": errors[:20],
         "sync": sync,
         "backfill": productivity_backfill_status(),
+        "prebuild": productivity_prebuild_status(),
     }
     if finance_context.get("visible"):
         finance_summary = _empty_productivity_finance_summary(currency=str(finance_context.get("currency") or "SEK"))
@@ -1475,6 +1516,7 @@ def get_productivity(
         _attach_productivity_finance(report, finance_context)
         report["source_status"] = source_status
         report["backfill"] = productivity_backfill_status()
+        report["prebuild"] = productivity_prebuild_status()
         _audit_productivity_report_sources(db, user, status_text="ok", source_status=source_status)
         return report
     except ProductivitySyncError as exc:

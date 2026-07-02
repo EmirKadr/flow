@@ -48,6 +48,7 @@ SOURCE_SPECS = (
     SourceFileSpec("order_log", "Orderlogg", "v_ask_order_log", required=False, visible=False),
     SourceFileSpec("sort", "Sorteringslogg", "sort_conveyor_log", required=False, visible=False),
     SourceFileSpec("base_pallet", "Base pallet-logg", "v_ask_article_buffertpallet", required=False, visible=False),
+    SourceFileSpec("dispatch", "Dispatchpallslogg", "dispatch_pallet_log", required=False, visible=False),
     SourceFileSpec("kpi", "KPI-Mål", "v_ask_kpi_target", required=True, visible=False),
 )
 

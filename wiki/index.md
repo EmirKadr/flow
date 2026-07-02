@@ -35,6 +35,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med publicerbar katalog och Excel-export.
 - [MCP](mcp.md) - fråga/svar-vy där backend hämtar tenant-baserad Noeffect-MCP-kontext och vald LLM-hjärna svarar.
 - [ASK datalagring](ask-datalagring.md) - hur länge ASK/WMan-tabeller behålls (rensning vs arkivering) och vad det betyder för historisk data per vy.
+- [Lokal arkiv-cache (DuckDB)](local-archive-cache.md) - per-tenant DuckDB som speglar dblog_*-arkiven lokalt så Sankey/Produktivitet/Hämta data läser historik från disk (endast dev, dblog kvar som fallback).
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
 - [Meta-uppladdning](meta-upload.md) - publik fristaende mobilvy for att ladda upp bilder och videor till senare LLM-analys.
 - [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp.

@@ -2492,11 +2492,15 @@ table.productivity-matrix td.productivity-hour-empty {
 }
 
 .sankey-inbound-chart {
-  height: clamp(440px, 58vh, 640px);
+  height: clamp(760px, 76vh, 980px);
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(260px, .72fr);
+  gap: 12px;
   background:
     linear-gradient(90deg, rgba(148, 163, 184, .08) 1px, transparent 1px),
     linear-gradient(180deg, rgba(148, 163, 184, .08) 1px, transparent 1px),
@@ -2504,11 +2508,44 @@ table.productivity-matrix td.productivity-hour-empty {
   background-size: 48px 48px;
 }
 
+.sankey-flow-map {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sankey-flow-map + .sankey-flow-map {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.sankey-flow-map-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px 6px;
+}
+
+.sankey-flow-map-head h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.sankey-flow-map-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .sankey-inbound-svg {
   display: block;
   width: 100%;
   min-width: 0;
   height: 100%;
+  flex: 1 1 auto;
 }
 
 .sankey-inbound-link {
@@ -8113,7 +8150,7 @@ tr.filter-row input {
   .productivity-overview-summary,
   .sankey-inbound-summary,
   .productivity-sources { grid-template-columns: 1fr; }
-  .sankey-inbound-chart { height: 420px; }
+  .sankey-inbound-chart { height: 720px; grid-template-rows: minmax(0, 1fr) minmax(240px, .78fr); }
   .productivity-file-slot { grid-template-columns: 1fr; }
   .productivity-file-actions { justify-content: flex-start; }
   .productivity-panel-header { align-items: flex-start; flex-direction: column; }

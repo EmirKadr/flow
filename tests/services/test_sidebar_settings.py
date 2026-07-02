@@ -383,9 +383,14 @@ def test_productivity_finance_settings_use_business_company_codes_only():
             "sort_by": None,
             "limit": None,
         }
+        assert gg_rows["store_picked_orders"]["calculation_plan"]["filters"] == [
+            {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
         assert gg_rows["store_picked_orders"]["calculation_sql"] == (
             "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' "
-            "AND company = 'GG';"
+            "AND qty_suf >= 1 AND company = 'GG';"
         )
         assert gg_rows["store_picked_rows"]["calculation_prompt"] == (
             "antal poster i plocklogg full\ninkludera endast ordernummer som börjar på TO\n"
@@ -413,19 +418,80 @@ def test_productivity_finance_settings_use_business_company_codes_only():
             {"id": "company", "operator": "EQ", "value": "GG"},
         ]
         assert gg_rows["store_full_pallets"]["calculation_sql"] == (
-            "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= '1' "
+            "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= 1 "
             "AND order_num LIKE 'TO%' AND company = 'GG';"
         )
         assert gg_rows["store_loaded_pallets"]["calculation_prompt"] == (
-            "antal poster i dispatchpallar utan värde i kolumnen pappapallsnr"
+            "antal poster i dispatchpallslogg utan värde i kolumnen pappapallsnr"
         )
+        assert gg_rows["store_loaded_pallets"]["calculation_plan"]["view"] == "dispatch_pallet_log"
+        assert gg_rows["store_loaded_pallets"]["calculation_plan"]["view_label"] == "Dispatchpallslogg"
         assert gg_rows["store_loaded_pallets"]["calculation_plan"]["filters"] == [
-            {"id": "parent_pick_pall_num", "operator": "NE", "value": ""},
+            {"id": "parent_pick_pall_num", "operator": "EQ", "value": ""},
             {"id": "company", "operator": "EQ", "value": "GG"},
         ]
         assert gg_rows["store_loaded_pallets"]["calculation_sql"] == (
-            "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' "
+            "SELECT COUNT(*) AS value FROM dispatch_pallet_log WHERE parent_pick_pall_num = '' "
             "AND company = 'GG';"
+        )
+        assert gg_rows["store_picked_pcs"]["description"] == "Plockade pcs"
+        assert gg_rows["store_picked_pcs"]["unit"] == "Per plockenhet (kartong/styck)"
+        assert gg_rows["store_picked_pcs"]["calculation_plan"]["calculation"] == {
+            "metric": "package_breakdown",
+            "field": "qty_suf",
+            "distinct_by": [],
+            "group_by": ["item_num"],
+            "sort_by": None,
+            "limit": None,
+        }
+        assert gg_rows["store_picked_pcs"]["calculation_plan"]["filters"] == [
+            {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+            {"id": "pick_zone", "operator": "NE", "value": "H"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
+        assert "package_breakdown" in gg_rows["store_picked_pcs"]["calculation_plan"]["calculation"]["metric"]
+        assert gg_rows["ecom_picked_pcs"]["description"] == "Plockade pcs"
+        assert gg_rows["ecom_picked_pcs"]["calculation_plan"]["calculation"] == gg_rows["store_picked_pcs"]["calculation_plan"]["calculation"]
+        assert gg_rows["ecom_picked_pcs"]["calculation_plan"]["filters"] == [
+            {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+            {"id": "pick_zone", "operator": "NE", "value": "H"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
+        assert gg_rows["ecom_picked_orders"]["calculation_plan"]["calculation"] == {
+            "metric": "count_distinct",
+            "field": None,
+            "distinct_by": ["order_num"],
+            "group_by": [],
+            "sort_by": None,
+            "limit": None,
+        }
+        assert gg_rows["ecom_picked_orders"]["calculation_plan"]["filters"] == [
+            {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
+        assert gg_rows["ecom_picked_orders"]["calculation_sql"] == (
+            "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'PR%' "
+            "AND qty_suf >= 1 AND company = 'GG';"
+        )
+        assert gg_rows["ecom_picked_rows"]["calculation_plan"]["filters"] == [
+            {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+            {"id": "pick_zone", "operator": "NE", "value": "H"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
+        assert gg_rows["ecom_pallet"]["description"] == "Antal helpallar"
+        assert gg_rows["ecom_pallet"]["calculation_plan"]["filters"] == [
+            {"id": "pick_zone", "operator": "EQ", "value": "H"},
+            {"id": "qty_suf", "operator": "GTE", "value": 1},
+            {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+            {"id": "company", "operator": "EQ", "value": "GG"},
+        ]
+        assert gg_rows["ecom_pallet"]["calculation_sql"] == (
+            "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= 1 "
+            "AND order_num LIKE 'PR%' AND company = 'GG';"
         )
         assert gg_rows["inbound_article_rows"]["calculation_plan"]["calculation"]["distinct_by"] == ["book_num", "line_num"]
         assert gg_rows["inbound_article_rows"]["calculation_sql"] == (

@@ -158,6 +158,12 @@ görs ingenting.
 > dialekt-neutralt (undvik `JSONB`, `jsonb_build_array`, `USING`-clauses)
 > för att kunna köras mot Azure SQL.
 
+Om K8s-podden loggar `PostgreSQL: kör alembic upgrade head ...` är
+`DATABASE_URL` fel för den här målmiljön eller så kör ni avsiktligt Postgres.
+Standardvägen för företagsservern är Azure SQL (`mssql+pyodbc://...`). En
+Render-Postgres intern URL kan inte återanvändas utanför Render, eftersom dess
+hostnamn inte är upplösbart i företagets nät/kluster.
+
 ### Migrera data från Render (Postgres → Azure SQL)
 
 `pg_dump`/`pg_restore` fungerar **inte** mot SQL Server. Datan kopieras

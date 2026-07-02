@@ -20,6 +20,7 @@ function mcpEscape(value) {
 
 function mcpBrainLabel(value) {
   if (value === "deepseek") return "DeepSeek";
+  if (value === "nowaste") return "NoWaste";
   if (value === "openai") return "OpenAI";
   if (value === "gemini") return "Gemini";
   if (value === "minimax") return "MiniMax";

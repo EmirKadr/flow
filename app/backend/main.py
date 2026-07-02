@@ -14,6 +14,7 @@ from .config import settings
 from .database import SessionLocal, engine
 from .models import Business
 from .observability import begin_request_trace, configure_observability, current_trace_id, end_request_trace, start_span
+from .archive_cache_sync import start_archive_cache_scheduler
 from .productivity_sync import start_productivity_sync_scheduler
 from .routers import (
     activities,
@@ -188,6 +189,13 @@ def sync_allocation_observations_on_startup() -> None:
 def sync_productivity_snapshots_on_startup() -> None:
     with start_span("background.productivity_sync_startup"):
         start_productivity_sync_scheduler()
+
+
+@app.on_event("startup")
+def start_archive_cache_on_startup() -> None:
+    # Lokal DuckDB-arkivcache (endast dev, gate:at i start_archive_cache_scheduler).
+    with start_span("background.archive_cache_startup"):
+        start_archive_cache_scheduler()
 
 
 @app.on_event("startup")

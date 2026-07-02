@@ -1,5 +1,10 @@
 # Lokala exempeldata
 demo/
+# Lokal arkiv-cache (DuckDB, per tenant) – aldrig i repo
+archive_cache/
+**/archive_cache/
+*.duckdb
+*.duckdb.wal
 referens/*
 !referens/
 !referens/kpi.sql

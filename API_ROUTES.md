@@ -198,7 +198,7 @@ aktivitetstimmar.
 | `productivity.overview_stream` | `GET` | `/api/productivity/overview/stream` | Streama produktivitetsoversikt med progress |
 | `productivity.overview_business_summary` | `GET` | `/api/productivity/overview/business-summary` | Verksamhetssummering per bolag for samma periodurval som Produktivitet |
 | `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
-| `sankey.inbound` | `GET` | `/api/sankey/inbound` | Sankey - Inbound för mottagna etiketter, processintäkt och öppna/förverkade flöden |
+| `sankey.inbound` | `GET` | `/api/sankey/inbound` | Sankey - Inbound/Outbound för mottagna etiketter, outbounddebitering, processintäkt och öppna/förverkade flöden |
 | `sankey.inbound_stream` | `GET` | `/api/sankey/inbound/stream` | Streama Sankey - Inbound med progress |
 
 Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
@@ -237,12 +237,21 @@ dagar sa klienten kan visa ratt framdrift nar flera dagar ar aktiva samtidigt.
 `Plockat`/`qty_suf` ar `0`.
 
 `GET /api/sankey/inbound?period=day|week|month|year&date=YYYY-MM-DD`
-returnerar Sankey - Inbound för mottagningskohorten och följer raderna fram
-till dagens datum. Queryn accepterar valfri `company` och
-`only_consumed=true`. Svaret innehåller `summary`, `companies`, `nodes`,
-`links`, `processes`, `trace_rows`, `warnings`, `source_status` och
-`client_filters.views` för lokala bolags-/periodväxlingar när bredare data redan
-är hämtad.
+returnerar Sankey - Inbound/Outbound. Inbounddelen utgår från
+mottagningskohorten och följer raderna fram till dagens datum; outbounddelen
+räknar periodens Butik-/E-handelsdebitering från Plocklogg Full och
+Dispatchpallar. Queryn accepterar valfri `company` och `only_consumed=true`.
+Svaret innehåller `summary`, `companies`, `nodes`, `links`, `processes`,
+`outbound_metrics`, `trace_total`, `trace_counts`, `trace_token`, `trace_filter`, `warnings`,
+`source_status` och `client_filters.views` för lokala bolags-/periodväxlingar
+när bredare data redan är hämtad. Själva spårningsraderna skickas inte i
+huvudpayloaden utan hämtas via
+`GET /api/sankey/inbound/trace?token=&scope=all|node|link&id=&company=&start_date=&end_date=&only_consumed=&offset=&limit=`
+eller streamas som CSV via
+`GET /api/sankey/inbound/trace.csv?token=&scope=&id=&company=&start_date=&end_date=&only_consumed=&name=`. Dag/vecka/manad
+forbygger lokala klientvyer nar vyantalet ryms. Stora svar kan
+sätta `client_filters.prebuilt=false` och låta klienten hämta nästa
+filtervariant via API/SSE i stället för att förbygga alla lokala vyer.
 
 | `public.hours` | `GET` | `/api/public/hours` | Publika timmar för dag |
 | `public.hours_week` | `GET` | `/api/public/hours/week` | Publika timmar för vecka |

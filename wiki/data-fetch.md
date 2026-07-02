@@ -128,6 +128,18 @@ Svar: Det ska det inte längre. "Plocklogg Full" (`v_ask_pick_log_full`) läser 
 Fråga: Varför står det att data hämtades från arkivet / att två vyer slogs ihop?
 Svar: Den valda live-vyn behålls bara ett begränsat antal dagar operativt (retention). När din period ligger helt eller delvis bortom det byter Hämta data automatiskt till `dblog_*`-arkivvyn, eller hämtar både live och arkiv och slår ihop dem. Notisen visar exakt vilka vyer och datumintervall som användes. Eftersom live- och arkivvy har olika kolumnuppsättning blir sammanslagningen inte exakt likadan — saknade fält visas tomma.
 
+## Förpacknings-uppdelning och item_alias-taket
+
+`item_alias` (omräkningsfaktorer) är stor: datakällan kapar ett svar vid radtaket
+(~50 000) och tabellen har fler rader än så per bolag. En bred hämtning av hela
+`item_alias` blev därför tyst trunkerad → vissa artiklars faktorer saknades → fel
+förpacknings-uppdelning. `_fetch_package_alias_rows` i `routers/data_fetch.py` hämtar
+därför bara faktorerna för de `item_num` som faktiskt förekommer i plockraderna, i
+`Terms`-batchar (`PACKAGE_ALIAS_ITEM_BATCH`, 400/anrop), så varje svar hålls långt
+under taket och inga faktorer tappas. Behöver du någon gång hela `item_alias` måste
+hämtningen delas på en axel (t.ex. brett `timestamp`-Between så `fetch_all_rows`
+recurserar förbi taket) – ett rått svar ger max ett tak-antal rader.
+
 ## Källor
 
 - `../app/frontend/hamta-data.html`

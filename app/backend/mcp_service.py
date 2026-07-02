@@ -26,6 +26,7 @@ SERVER_NAME = "noeffect"
 DEFAULT_TOKEN_ENV_TEMPLATE = "NOEFFECT_{tenant}_TOKEN"
 CLIENT_NAME = "flow-mcp-view"
 CLIENT_VERSION = "0.1.5"
+MCP_LLM_OPENAI_API_KEY_ENV = "MCP_LLM_OPENAI_API_KEY"
 PROTOCOL_VERSIONS = ("2025-06-18", "2024-11-05")
 MCP_CONTEXT_RESOURCE_LIMIT = 16
 MCP_CONTEXT_PROMPT_LIMIT = 8
@@ -45,9 +46,10 @@ UNSAFE_TOOL_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 TEXTUAL_TOOL_CALL_RE = re.compile(r"(<\s*\|\s*DSML\s*\|)|(</\s*\|\s*DSML\s*\|)|(tool_calls)|(invoke name=)", re.IGNORECASE)
-MCP_PROVIDER_ORDER = ("deepseek", "openai", "gemini", "minimax")
+MCP_PROVIDER_ORDER = ("deepseek", "nowaste", "openai", "gemini", "minimax")
 MCP_PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
+    "nowaste": "NoWaste",
     "openai": "OpenAI",
     "gemini": "Gemini",
     "minimax": "MiniMax",
@@ -794,12 +796,32 @@ def gemini_model_name(model: str | None = None) -> str:
     return (str(model or settings.GEMINI_MODEL).strip() or "gemini-2.5-pro").removeprefix("models/")
 
 
+def nowaste_api_key() -> str:
+    return settings.MCP_LLM_OPENAI_API_KEY.strip()
+
+
+def nowaste_base_url() -> str:
+    return settings.MCP_LLM_OPENAI_API_BASE_URL.strip().rstrip("/")
+
+
 def openai_configured() -> bool:
     return bool(settings.OPENAI_API_KEY.strip())
 
 
 def openai_model_name(model: str | None = None) -> str:
     return str(model or settings.OPENAI_MODEL).strip() or "gpt-4o-mini"
+
+
+def _openai_base_url() -> str:
+    return settings.OPENAI_API_BASE_URL.strip().rstrip("/") or "https://api.openai.com/v1"
+
+
+def nowaste_configured() -> bool:
+    return bool(nowaste_api_key() and nowaste_base_url())
+
+
+def nowaste_model_name(model: str | None = None) -> str:
+    return str(model or settings.MCP_LLM_OPENAI_MODEL).strip() or "gpt-4o"
 
 
 def minimax_configured() -> bool:
@@ -840,6 +862,8 @@ def _deepseek_chat_url() -> str:
 def _provider_configured(provider: str) -> bool:
     if provider == "deepseek":
         return deepseek_configured()
+    if provider == "nowaste":
+        return nowaste_configured()
     if provider == "openai":
         return openai_configured()
     if provider == "gemini":
@@ -852,6 +876,13 @@ def _provider_configured(provider: str) -> bool:
 def _provider_missing(provider: str) -> list[str]:
     if provider == "deepseek":
         return [] if deepseek_configured() else ["DEEPSEEK_API_KEY"]
+    if provider == "nowaste":
+        missing: list[str] = []
+        if not nowaste_api_key():
+            missing.append(MCP_LLM_OPENAI_API_KEY_ENV)
+        if not nowaste_base_url():
+            missing.append("MCP_LLM_OPENAI_API_BASE_URL")
+        return missing
     if provider == "openai":
         return [] if openai_configured() else ["OPENAI_API_KEY"]
     if provider == "gemini":
@@ -886,6 +917,8 @@ def brain_missing(provider: str | None = None) -> list[str]:
 def provider_model_options(provider: str) -> list[str]:
     if provider == "deepseek":
         return _model_options(deepseek_model_name(), settings.MCP_DEEPSEEK_MODELS)
+    if provider == "nowaste":
+        return _model_options(nowaste_model_name(), "")
     if provider == "openai":
         return _model_options(openai_model_name(), settings.MCP_OPENAI_MODELS)
     if provider == "gemini":
@@ -906,6 +939,8 @@ def brain_model_name(
         return requested
     if selected_provider == "deepseek":
         return deepseek_model_name()
+    if selected_provider == "nowaste":
+        return nowaste_model_name()
     if selected_provider == "openai":
         return openai_model_name()
     if selected_provider == "gemini":
@@ -1202,8 +1237,10 @@ def _deepseek_body(
 def _chat_provider_url(provider: str) -> str:
     if provider == "deepseek":
         return _deepseek_chat_url()
+    if provider == "nowaste":
+        return f"{nowaste_base_url()}/chat/completions"
     if provider == "openai":
-        return f"{settings.OPENAI_API_BASE_URL.strip().rstrip('/') or 'https://api.openai.com/v1'}/chat/completions"
+        return f"{_openai_base_url()}/chat/completions"
     if provider == "minimax":
         return settings.MINIMAX_API_URL.strip() or "https://api.minimax.io/v1/chat/completions"
     return ""
@@ -1212,6 +1249,8 @@ def _chat_provider_url(provider: str) -> str:
 def _chat_provider_api_key(provider: str) -> str:
     if provider == "deepseek":
         return settings.DEEPSEEK_API_KEY.strip()
+    if provider == "nowaste":
+        return nowaste_api_key()
     if provider == "openai":
         return settings.OPENAI_API_KEY.strip()
     if provider == "minimax":
@@ -1648,6 +1687,7 @@ async def list_mcp_tools(tenant: object = None) -> dict[str, Any]:
             "mcp_configured": False,
             "brain_configured": brain_configured(),
             "deepseek_configured": deepseek_configured(),
+            "nowaste_configured": nowaste_configured(),
             "openai_configured": openai_configured(),
             "gemini_configured": gemini_configured(),
             "minimax_configured": minimax_configured(),
@@ -1679,6 +1719,7 @@ async def list_mcp_tools(tenant: object = None) -> dict[str, Any]:
         "mcp_configured": True,
         "brain_configured": brain_configured(),
         "deepseek_configured": deepseek_configured(),
+        "nowaste_configured": nowaste_configured(),
         "openai_configured": openai_configured(),
         "gemini_configured": gemini_configured(),
         "minimax_configured": minimax_configured(),
@@ -1729,7 +1770,7 @@ async def ask_mcp(
                 model=selected_model,
                 thinking_mode=selected_thinking,
             )
-        elif selected_provider in {"openai", "minimax"}:
+        elif selected_provider in {"nowaste", "openai", "minimax"}:
             answer, tool_calls, content_items, tools_used = await ask_chat_provider_with_mcp_tools(
                 selected_provider,
                 question,

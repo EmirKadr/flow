@@ -55,6 +55,7 @@ De vyer flow faktiskt använder och deras underliggande retention:
 | `v_ask_trans_log` | `TRANS_LOG` | 60 dagar | Ja → `log_wmanfrey` | ~800 dagar i arkivet |
 | `v_ask_palletloading_log` | `LOADING_LOG` | 60 dagar | Ja → `log_wmanfrey` | ~800 dagar i arkivet |
 | `v_ask_order_log` | `ORDER_LOG` | 80 dagar | Ja → `log_wmanfrey` | ~800 dagar i arkivet |
+| `dispatch_pallet_log` | `DISPATCH_PALLET_LOG` | 14 dagar | Ja → `log_wmanfrey` | ~800 dagar i arkivet |
 | `v_ask_pick_location_log` | `PICKLOCATION_LOG` | **40 dagar** | **Nej (endast rensning)** | **Endast 40 dagar – raderas permanent** |
 
 > Obs: `PICKLOCATION_LOG` (plockplatsbyten) är `archive="false"`. Plockplats-
@@ -103,13 +104,14 @@ Detaljer:
   medvetet.
 - **Notis åt båda håll** sätts på planen (`plan.notice`) och visas i planpanelen
   redan vid `Tolka`, samt vilka vyer som faktiskt hämtas (`plan.fetched_views`).
-- **Bara de 14 mappade vyerna** (radnivå-vyer med både live- och `dblog_`-vy i
+- **Bara de 15 mappade vyerna** (radnivå-vyer med både live- och `dblog_`-vy i
   katalogen). Aggregat-/statistikvyer och arkivtabeller utan live-vy auto-byts
   inte.
 
 Mappade par: `v_ask_pick_log_full`↔`dblog_pick_log` (40 d), `v_ask_trans_log`
 (60), `v_ask_order_log` (80), `v_ask_palletloading_log`↔`dblog_loading_log`
-(60), `v_ask_receive_log` (60), `v_ask_correct_log` (60), `v_ask_count_log`
+(60), `dispatch_pallet_log`↔`dblog_dispatch_pallet_log` (14),
+`v_ask_receive_log` (60), `v_ask_correct_log` (60), `v_ask_count_log`
 (90), `v_ask_login_log` (60), `v_ask_robot_pick_log` (30), `v_ask_pick_rest_log`
 (60), `v_ask_return_order_log` (60), `v_ask_trace_log` (60), `v_ask_fill_rate_log`
 (30), `v_ask_pallet_rent_log_raw` (3).
@@ -121,6 +123,10 @@ följer sedan etiketter fram till idag via receive/trans/pick/loading live-vyer
 och deras `dblog_*`-arkiv när perioden går utanför operativ retention. Det gör
 att en gammal mottagningsperiod kan ge bättre bild än bara dagens live-vyer,
 men den kan fortfarande inte se längre bak än arkivretentionen.
+Outbounddelen hämtar utlastade pallar från `dispatch_pallet_log` och byter till
+`dblog_dispatch_pallet_log` för dagar äldre än 14 dagar. Periodfiltret använder
+kolumnen `created`, samma tidskolumn som arkiveringsjobbet använder för
+`DISPATCH_PALLET_LOG`.
 
 Viktigt undantag: `v_ask_pick_location_log` är fortfarande bara cirka 40 dagar
 och arkiveras inte. Eftersom plockplatser är saldobaserade markeras äldre
