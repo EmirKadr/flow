@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.backend.models import PersonProductivityDaily, ScheduleCell, UserWaitMetric
+from tools.frontend_sources import read_overview_frontend, read_productivity_overview_frontend
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,7 +85,7 @@ def test_critical_user_waits_are_cached_prefetched_or_backgrounded():
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
     persons = read_frontend("js/persons.js")
-    productivity_overview = read_frontend("js/productivity_overview.js")
+    productivity_overview = read_productivity_overview_frontend()
     personal_router = (ROOT / "app" / "backend" / "routers" / "personal.py").read_text(encoding="utf-8")
 
     assert "PERSONAL_PRODUCTIVITY_CACHE_TTL_MS = 25 * 1000" in personal
@@ -124,8 +125,8 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
     common = read_sources(COMMON_SCRIPT_FILES)
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
-    overview = read_frontend("js/overview.js")
-    productivity_overview = read_frontend("js/productivity_overview.js")
+    overview = read_overview_frontend()
+    productivity_overview = read_productivity_overview_frontend()
 
     assert "requestIdleCallback" in common
     assert "BACKGROUND_PREFETCH_INITIAL_DELAY_MS" in common

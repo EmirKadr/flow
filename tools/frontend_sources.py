@@ -17,9 +17,15 @@ PERSONS_SCRIPT_FILES = [
 ]
 OVERVIEW_SCRIPT_FILES = [
     "js/overview.js",
+    "js/overview_state.js",
+    "js/overview_dates_cells.js",
+    "js/overview_grid.js",
 ]
 PRODUCTIVITY_OVERVIEW_SCRIPT_FILES = [
     "js/productivity_overview.js",
+    "js/productivity_overview_core.js",
+    "js/productivity_overview_tree.js",
+    "js/productivity_overview_render.js",
 ]
 SANKEY_INBOUND_SCRIPT_FILES = [
     "js/sankey_inbound.js",
