@@ -309,7 +309,7 @@ def test_allocate_flow_reuses_cached_outputs_for_same_file_versions(monkeypatch,
         return pd.DataFrame({"Artikel": ["A1"], "Källtyp": ["HELPALL"]}), pd.DataFrame()
 
     monkeypatch.setattr(flows.E, "allocate", fake_allocate)
-    monkeypatch.setattr(flows.E.App, "_reclassify_skrymmande", lambda result, _saldo: result)
+    monkeypatch.setattr(flows.E, "reclassify_skrymmande", lambda result, _saldo: result)
     monkeypatch.setattr(flows.E, "_merge_item_flags", lambda result, _items: result)
     monkeypatch.setattr(
         flows.E,

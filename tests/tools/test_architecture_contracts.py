@@ -54,7 +54,7 @@ FRONTEND_LINE_EXCEPTIONS = {
 # Krympnings-ratchet for warehouse_tools: vendor-filen far bara minska tills
 # den ar sanerad fran dod GUI-kod och till slut uppdelad. Ingen frizon.
 WAREHOUSE_LINE_EXCEPTIONS = {
-    "vendor/allokering12.1.py": 9490,
+    "vendor/allokering12.1.py": 4250,
     "flows.py": 1410,
 }
 

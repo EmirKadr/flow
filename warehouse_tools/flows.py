@@ -226,7 +226,7 @@ def _allocation_outputs_cached(
 
     log: list[str] = []
     result_df, near_miss_df = E.allocate(orders_raw, buffer_raw, log=log.append)
-    result_df = E.App._reclassify_skrymmande(result_df, saldo_norm)
+    result_df = E.reclassify_skrymmande(result_df, saldo_norm)
     result_df = E._merge_item_flags(result_df, item_norm)
     if near_miss_df.empty and len(near_miss_df.columns) == 0:
         near_miss_df = pd.DataFrame(columns=NEAR_MISS_COLUMNS)

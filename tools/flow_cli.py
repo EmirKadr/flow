@@ -135,6 +135,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("schedule.get", "GET", "/api/schedule", "Hämta dagsschema"),
     ApiRoute("schedule.set_cell", "PUT", "/api/schedule/cell", "Sätt schemacell"),
     ApiRoute("schedule.split_cell", "PUT", "/api/schedule/cell/split", "Dela/slå ihop schemacell"),
+    ApiRoute("schedule.cell_remark", "PUT", "/api/schedule/cell/remark", "Sätt anmärkning på schemacell"),
     ApiRoute("schedule.bulk_cells", "POST", "/api/schedule/cells", "Sätt flera schemaceller"),
     ApiRoute("schedule.restore_hours", "PUT", "/api/schedule/hours/restore", "Återställ timmar"),
     ApiRoute("schedule.summary", "GET", "/api/schedule/summary", "Schema-summering"),

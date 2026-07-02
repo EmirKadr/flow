@@ -103,6 +103,7 @@ def test_visual_smoke_covers_expected_routes():
         "uppladdningar",
         "bearbeta",
         "dela",
+        "etiketter",
     }
     assert pages_by_name["mitt-schema"].roles == ("admin", "person")
     assert pages_by_name["min-produktivitet"].roles == ("admin", "person")
@@ -116,6 +117,7 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
+    assert pages_by_name["etiketter"].roles == ("admin",)
 
 
 def test_schedule_view_uses_bemanning_label_in_visible_navigation():
