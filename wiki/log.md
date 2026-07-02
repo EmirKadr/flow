@@ -7,6 +7,23 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-02] lint | Arkitektursanering: vendor-krympning och radtaksfria splittar
+
+Stor refaktorserie utan produktbeteendeandringar (18 commits). Vendor-motorn
+warehouse_tools/vendor/allokering12.1.py sanerad fran dott Tkinter-GUI,
+analytics och CLI-wrappers: 9490 -> 4250 rader, skyddad av nya
+karakteriseringstester (10 floden mot lokala golden-snapshots) och en
+krympnings-ratchet i arkitektur-kontraktet. wms_sok79.py och headless_tk.py
+raderade (eftersok fanns aldrig i FLOW_BY_ID). Alla sju backendfiler pa
+radtaksundantagslistan splittade (routrar till *_helpers-moduler med
+kvalificerade patch-seams; productivity_kpi_rules till paket;
+productivity_sync till modul + paths-modul). Sju av atta frontendfiler
+splittade i globala moduler med script-taggar i alla berorda sidor;
+map_settings.js kvar pa sankt tak 1060 (en enda mount-funktion, closure-lyft
+ar uppfoljning). Statiska frontendtester laser nu via kanoniska fillistor i
+tools/frontend_sources.py. Repo-roten stadad (pag.docx avsparad, tmp-filer
+borta, pytest-tempkataloger gitignorerade).
+
 ## [2026-07-02] ux | Huvudmenyer for Bemanning och Verktyg
 
 Sidebaren samlar nu bemanningsrelaterade vyer under huvudmenyn `Bemanning`
