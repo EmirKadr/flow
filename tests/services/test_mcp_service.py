@@ -5,6 +5,7 @@ import pytest
 from app.backend import mcp_service
 from app.backend.mcp import chat as mcp_chat
 from app.backend.mcp import protocol as mcp_protocol
+from app.backend.mcp import service as mcp_svc
 
 
 def test_mcp_config_uses_tenant_url_and_token_templates(monkeypatch):
@@ -343,7 +344,7 @@ def test_ask_mcp_requires_gemini_key_before_mcp_calls(monkeypatch):
     monkeypatch.setattr(mcp_service.settings, "MCP_LLM_PROVIDER", "gemini")
     monkeypatch.setattr(mcp_service.settings, "GEMINI_API_KEY", "")
     monkeypatch.setattr(
-        mcp_service,
+        mcp_svc,
         "mcp_config",
         lambda tenant=None: mcp_service.McpConfig(
             url="https://mcp.example.test",
@@ -384,7 +385,7 @@ def test_mcp_status_is_ready_with_gemini_even_without_tools(monkeypatch):
     monkeypatch.setattr(mcp_service.settings, "GEMINI_API_KEY", "gemini-key")
     monkeypatch.setattr(mcp_service.settings, "GEMINI_MODEL", "gemini-2.5-flash")
     monkeypatch.setattr(
-        mcp_service,
+        mcp_svc,
         "mcp_config",
         lambda tenant=None: mcp_service.McpConfig(
             url="https://mcp.example.test",
