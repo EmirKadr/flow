@@ -149,7 +149,10 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
 
 
 def test_same_server_heavy_external_work_is_offloaded_from_async_routes():
+    # Routern ar splittad: endpoints i allocation.py, hjalpare/cachar i
+    # allocation_helpers.py. Kontraktet galler helheten.
     allocation = (ROOT / "app" / "backend" / "routers" / "allocation.py").read_text(encoding="utf-8")
+    allocation += (ROOT / "app" / "backend" / "routers" / "allocation_helpers.py").read_text(encoding="utf-8")
     data_fetch = (ROOT / "app" / "backend" / "routers" / "data_fetch.py").read_text(encoding="utf-8")
     assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
     audit_logs = (ROOT / "app" / "backend" / "routers" / "audit_logs.py").read_text(encoding="utf-8")

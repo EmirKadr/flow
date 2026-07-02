@@ -34,11 +34,8 @@ WAREHOUSE_LINE_LIMIT = 1000
 BACKEND_LINE_EXCEPTIONS = {
     "routers/productivity.py": 1600,
     "sankey_inbound/build.py": 1540,
-    "routers/allocation.py": 1310,
     "productivity_kpi_rules.py": 1290,
-    "routers/audit_logs.py": 1170,
     "productivity_sync.py": 1230,
-    "routers/meta_uploads.py": 1080,
     "schemas.py": 1013,
 }
 FRONTEND_LINE_EXCEPTIONS = {
