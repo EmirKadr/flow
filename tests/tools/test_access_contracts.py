@@ -34,6 +34,8 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "js/allocation/state.js",
+    "js/allocation/state_carrier_clusters.js",
+    "js/allocation/state_filters.js",
     "js/allocation/files.js",
     "js/allocation/api.js",
     "js/allocation/uploads_view.js",
@@ -187,7 +189,14 @@ def test_sidebar_main_menus_render_tabs_and_context_menus():
     meta_html = read_frontend("meta.html")
     schedule_html = read_frontend("index.html")
     overview_html = read_frontend("overblick.html")
+    productivity_html = read_frontend("produktivitet.html")
+    sankey_html = read_frontend("sankey-inbound.html")
+    activities_html = read_frontend("aktiviteter.html")
+    persons_html = read_frontend("personer.html")
     users_html = read_frontend("anvandare.html")
+    businesses_html = read_frontend("verksamheter.html")
+    my_schedule_html = read_frontend("mitt-schema.html")
+    my_productivity_html = read_frontend("min-produktivitet.html")
 
     assert 'id: "staffing"' in common
     assert 'label: "Bemanning"' in common
@@ -195,8 +204,19 @@ def test_sidebar_main_menus_render_tabs_and_context_menus():
     assert 'label: "Verktyg"' in common
     assert "function sidebarToolsHref" in common
     assert "function sidebarStaffingHref" in common
+    assert "function sidebarSettingsHref" in common
     assert "contextMenuViewIds: SIDEBAR_TOOLS_TAB_VIEW_IDS" in common
     assert "contextMenuViewIds: SIDEBAR_STAFFING_TAB_VIEW_IDS" in common
+    assert "contextMenuViewIds: SIDEBAR_SETTINGS_TAB_VIEW_IDS" in common
+    assert '"allocationMapSettings"' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.allocationMapSettings' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.allocationProcessMatrix' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.staffingSettings' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.productivityFinanceSettings' in common
+    assert '"/installningar.html?tab=map"' in common
+    assert '"/installningar.html?tab=process-matrix"' in common
+    assert '"/installningar.html?tab=staffing"' in common
+    assert '"/installningar.html?tab=productivity-finance"' in common
     assert "function openSidebarContextMenu" in common
     assert 'data-sidebar-context-menu="true"' in common
     assert ".sidebar-context-menu" in read_frontend("css/styles.css")
@@ -208,16 +228,30 @@ def test_sidebar_main_menus_render_tabs_and_context_menus():
         assert 'data-tools-tab-view="dataFetch"' in html
         assert 'data-tools-tab-view="analytics"' in html
         assert 'data-tools-tab-view="meta"' in html
-    for html in (schedule_html, overview_html, users_html):
+    staffing_html_pages = (
+        schedule_html,
+        overview_html,
+        productivity_html,
+        sankey_html,
+        activities_html,
+        persons_html,
+        users_html,
+        businesses_html,
+        my_schedule_html,
+        my_productivity_html,
+    )
+    for html in staffing_html_pages:
         assert 'data-staffing-tab-view="schedule"' in html
         assert 'data-staffing-tab-view="overview"' in html
         assert 'data-staffing-tab-view="productivity"' in html
+        assert 'data-staffing-tab-view="sankeyInbound"' in html
         assert 'data-staffing-tab-view="activities"' in html
         assert 'data-staffing-tab-view="persons"' in html
         assert 'data-staffing-tab-view="users"' in html
         assert 'data-staffing-tab-view="businesses"' in html
         assert 'data-staffing-tab-view="mySchedule"' in html
         assert 'data-staffing-tab-view="myProductivity"' in html
+    assert 'class="staffing-tab active" href="/sankey-inbound.html" aria-current="page" data-staffing-tab-view="sankeyInbound"' in sankey_html
     assert "function syncViewTabs" in common
     assert "function syncToolsTabs" in common
 

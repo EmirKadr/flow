@@ -41,7 +41,6 @@ FRONTEND_LINE_EXCEPTIONS = {
     "overview.js": 1780,
     "allocation/map_settings.js": 1440,
     "sankey_inbound.js": 1370,
-    "allocation/state.js": 1250,
     "persons.js": 1100,
 }
 # Krympnings-ratchet for warehouse_tools: vendor-filen far bara minska tills

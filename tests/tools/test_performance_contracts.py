@@ -15,6 +15,8 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "js/allocation/state.js",
+    "js/allocation/state_carrier_clusters.js",
+    "js/allocation/state_filters.js",
     "js/allocation/api.js",
     "js/allocation/boot.js",
     "js/allocation/map_settings.js",
