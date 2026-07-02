@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .background import background_job_status
 from .config import settings
 
 
@@ -501,6 +502,18 @@ def build_recommendations(checks: list[dict[str, Any]], report: dict[str, Any]) 
     return recs
 
 
+def collect_background_jobs(checks: list[dict[str, Any]]) -> dict[str, Any]:
+    jobs = background_job_status()
+    failed = sorted(name for name, entry in jobs.items() if entry.get("state") == "error")
+    if failed:
+        checks.append(check("Bakgrundsjobb", "warn", "Bakgrundsjobb med fel: " + ", ".join(failed) + "."))
+    elif jobs:
+        checks.append(check("Bakgrundsjobb", "ok", f"{len(jobs)} bakgrundsjobb registrerade utan fel."))
+    else:
+        checks.append(check("Bakgrundsjobb", "info", "Inga bakgrundsjobb registrerade i den här processen."))
+    return jobs
+
+
 def run_healthcheck(
     *,
     db: Session | None = None,
@@ -513,6 +526,7 @@ def run_healthcheck(
         "app": collect_app(base_url, checks),
         "database": collect_database(db, checks),
         "render": collect_render(include_render, checks),
+        "background_jobs": collect_background_jobs(checks),
     }
     report["checks"] = checks
     report["status"] = worst_status(checks)

@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-06-16
+updated: 2026-07-02
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -25,6 +25,48 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - Desktop ska bete sig som webben eftersom den anvander samma frontend och samma API.
 - Fonsterikonen laddas primart fran `desktop/assets/flow_icon.svg`. `.ico` ligger kvar for exe-/genvagsikon och fallback.
 - Tillatna desktop-specifika skillnader ar installation, auto-update, genvagar, lokalt skal och serverdrift.
+
+## Backend-paket och fasader
+
+De tre storsta servicefilerna ar uppdelade i paket med bakatkompatibla fasader
+(2026-07-02). Fasaden (gamla modulvagen) re-exporterar alla namn sa befintliga
+imports fungerar, men ny kod ska importera direkt fran paketet och tester ska
+monkeypatcha implementationsmodulen, inte fasaden.
+
+- `app/backend/data_fetch/`: `core` (konstanter, katalogtyper, primitiver),
+  `catalog` (katalogladdning/kontext), `plan` (MiniMax-payload och validering),
+  `segments` (retention-/arkivsegmentering), `engine` (deterministiska filter
+  och berakningar inkl. package breakdown), `present` (SQL-text och kolumner).
+  Fasad: `data_fetch_service.py`.
+- `app/backend/mcp/`: `protocol` (MCP-konfig, fel, HTTP-session), `tooling`
+  (tool-/resurs-/promptsummering och kontextinsamling), `providers`
+  (LLM-providerval), `chat` (provideranrop och meddelandebyggare), `service`
+  (orkestrering `ask_mcp`/`list_mcp_tools`). Fasad: `mcp_service.py`.
+- `app/backend/sankey_inbound/`: `common` (konstanter, dataklasser), `cache`
+  (payload-/kallradscache), `trace` (trace-tokens och CSV), `rows`
+  (radnormalisering, perioder, priser), `build` (grafbygget), `fetch`
+  (datahamtning/segment/snapshots), `service` (orkestrering
+  `load_sankey_inbound_payload`). Fasad: `sankey_inbound_service.py`.
+
+## Bakgrundsjobb
+
+Alla uppstartsjobb registreras i `BACKGROUND_JOBS` i `app/backend/main.py` och
+startas av FastAPI-lifespan via runnern i `app/backend/background.py`. Runnern
+ager tradar, felhantering och status; jobbstatus visas i healthcheck-rapporten
+under `background_jobs`. Nya bakgrundsjobb ska registreras dar, inte skapas som
+egna tradar eller startup-hooks. Registret antar exakt en uvicorn-worker -
+kontraktstest skyddar `render.yaml` mot `--workers`.
+
+## Arkitektur-kontraktstester
+
+`tests/tools/test_architecture_contracts.py` haller tre invariants:
+
+- Radtak (1000) for backend-Python och frontend-JS, med undantagslista dar
+  befintliga for stora filer far krympa men inte vaxa.
+- `render.yaml` far inte fa `--workers`/gunicorn utan ledarlas for schedulerna.
+- Domangranser: servicemoduler far importera delad grund och sin egen doman;
+  nya beroenden mellan domaner maste laggas till medvetet i
+  `ALLOWED_DOMAIN_EDGES`.
 
 ## Backend-routerkarta
 

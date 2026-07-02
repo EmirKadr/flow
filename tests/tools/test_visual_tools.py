@@ -100,6 +100,7 @@ def test_visual_smoke_covers_expected_routes():
         "verksamheter",
         "hamta-data",
         "mcp",
+        "etiketter",
         "uppladdningar",
         "bearbeta",
         "dela",
@@ -113,6 +114,7 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["verksamheter"].roles == ("admin",)
     assert pages_by_name["hamta-data"].roles == ("admin",)
     assert pages_by_name["mcp"].roles == ("admin",)
+    assert pages_by_name["etiketter"].roles == ("admin",)
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
@@ -476,7 +478,10 @@ def test_allocation_observations_github_sync_is_wired():
     assert "ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS" in main
     assert "ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS" in main
     assert "_allocation_observation_business_codes" in main
-    assert "sync_allocation_observations_on_startup" in main
+    # Uppstartsjobbet går via det centrala bakgrundsregistret, inte en egen hook.
+    assert '"allocation_observations_sync"' in main
+    assert "BACKGROUND_JOBS" in main
+    assert "background.BackgroundJob" in main
     assert '"OBSERVATIONS_GITHUB_TOKEN"' in engine
     assert '"FLOW_GITHUB_TOKEN"' in engine
     assert "github_sent_rows" in engine

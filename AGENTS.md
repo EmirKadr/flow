@@ -288,6 +288,43 @@ Postgres och att secrets i `render.yaml` inte har literalvarden. Om ett deployfe
 upptacks efter push ska nasta fix helst lagga ett test som hade fangat just den
 felklassen fore push.
 
+## Arkitekturkontrakt
+
+`tests/tools/test_architecture_contracts.py` haller tre invariants som agenter
+ska respektera i stallet for att kringga:
+
+- **Radtak per fil.** Backend-Python och frontend-JS har tak (1000 rader).
+  Blir en fil for stor ska den splittas i ett paket med bakatkompatibel fasad,
+  som `app/backend/data_fetch/`, `app/backend/mcp/` och
+  `app/backend/sankey_inbound/`. Hoj aldrig taket eller lagg till undantag
+  utan uttrycklig instruktion fran Emir. Nar en undantagsfil splittas ska
+  dess undantag tas bort.
+- **Single-worker.** Bakgrundsjobben i `app/backend/background.py` och
+  schedulerna antar exakt en uvicorn-worker. `--workers` i `render.yaml`
+  kraver ledarlas (t.ex. Postgres advisory lock) forst.
+- **Domangranser.** Servicemoduler far importera delad grund och sin egen
+  doman. Ett nytt beroende mellan domaner ar ett medvetet beslut: lagg till
+  kanten i `ALLOWED_DOMAIN_EDGES` i samma andring och motivera i
+  commit-meddelandet.
+
+Nya bakgrundsjobb registreras i `BACKGROUND_JOBS` i `app/backend/main.py`,
+aldrig som egna tradar eller startup-hooks. Ny kod ska importera fran paketen
+direkt; tester ska monkeypatcha implementationsmodulen, inte fasaden.
+
+## Livscykel for funktioner
+
+Varje funktionssida i `wiki/` har ett `status`-falt som ar funktionens
+livscykel: `aktiv`, `experiment`, `frys` eller `avveckla` (se `wiki/index.md`).
+
+- Nya funktioner borjar normalt som `experiment`: gate:ade bakom Super User
+  eller vy-/verksamhetstoggles, avstangda som default for vanliga anvandare.
+- Ett experiment ska ha ett beslutsdatum. Nar det passerats ska agenten lyfta
+  fragan till Emir: slapp till alla, forlang med nytt datum, eller ta bort.
+- `frys` betyder buggfixar men inga nya features - ifragasatt onskemal som
+  bygger ut en fryst funktion innan de genomfors.
+- Slapp till alla ska ske via toggle/rollaccess (runtime), inte kodandring,
+  sa rollback ar en flip och inte en deploy.
+
 ## Riskgenomgang efter nytt bygge
 
 Nar en agent anser sig klar med ett nytt bygge, stor andring eller nytt

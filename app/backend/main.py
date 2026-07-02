@@ -1,6 +1,6 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
-import threading
 import time
 
 from fastapi import FastAPI, Request
@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import allocation_bridge, demo_session
+from . import allocation_bridge, background, demo_session
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
 from .database import SessionLocal, engine
@@ -44,7 +44,14 @@ from .routers import (
     workflow_data,
 )
 
-app = FastAPI(title="flow", version="0.1.5")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Startar alla registrerade bakgrundsjobb vid appstart (se BACKGROUND_JOBS)."""
+    background.start_background_jobs(BACKGROUND_JOBS)
+    yield
+
+
+app = FastAPI(title="flow", version="0.1.5", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 configure_observability(app, engine=engine)
 
@@ -176,34 +183,19 @@ def _allocation_observation_business_codes() -> list[str]:
     return codes or [DEFAULT_BUSINESS_CODE]
 
 
-@app.on_event("startup")
-def sync_allocation_observations_on_startup() -> None:
-    threading.Thread(
-        target=_sync_allocation_observations_background,
-        name="AllocationObservationsSync",
-        daemon=True,
-    ).start()
-
-
-@app.on_event("startup")
-def sync_productivity_snapshots_on_startup() -> None:
+def _start_productivity_sync_scheduler_job() -> None:
     with start_span("background.productivity_sync_startup"):
         start_productivity_sync_scheduler()
 
 
-@app.on_event("startup")
-def start_archive_cache_on_startup() -> None:
+def _start_archive_cache_scheduler_job() -> None:
     # Lokal DuckDB-arkivcache (endast dev, gate:at i start_archive_cache_scheduler).
     with start_span("background.archive_cache_startup"):
         start_archive_cache_scheduler()
 
 
-@app.on_event("startup")
-def cleanup_stale_demo_sessions_on_startup() -> None:
-    try:
-        demo_session.cleanup_stale_demo_sessions(settings.DEMO_SESSION_MAX_AGE_HOURS)
-    except Exception:
-        pass
+def _cleanup_stale_demo_sessions_job() -> None:
+    demo_session.cleanup_stale_demo_sessions(settings.DEMO_SESSION_MAX_AGE_HOURS)
 
 
 def _purge_expired_meta_media_background() -> None:
@@ -216,13 +208,38 @@ def _purge_expired_meta_media_background() -> None:
             logger.warning("Meta media retention purge failed at startup.", exc_info=True)
 
 
-@app.on_event("startup")
-def purge_expired_meta_media_on_startup() -> None:
-    threading.Thread(
-        target=_purge_expired_meta_media_background,
-        name="MetaMediaRetentionPurge",
-        daemon=True,
-    ).start()
+# Alla uppstartsjobb registreras här och startas av lifespan via background-runnern.
+# Nya bakgrundsjobb ska in i den här listan, inte som egna trådar eller startup-hooks.
+BACKGROUND_JOBS = [
+    background.BackgroundJob(
+        name="allocation_observations_sync",
+        run=_sync_allocation_observations_background,
+        description="Hämtar allokeringsobservationer från GitHub efter uppstart.",
+    ),
+    background.BackgroundJob(
+        name="productivity_snapshot_scheduler",
+        run=_start_productivity_sync_scheduler_job,
+        description="Startar Produktivitetens snapshot-scheduler (hel-/halvtimme + backfill).",
+        in_thread=False,
+    ),
+    background.BackgroundJob(
+        name="archive_cache_scheduler",
+        run=_start_archive_cache_scheduler_job,
+        description="Startar lokala DuckDB-arkivcachens scheduler (endast dev).",
+        in_thread=False,
+    ),
+    background.BackgroundJob(
+        name="demo_session_cleanup",
+        run=_cleanup_stale_demo_sessions_job,
+        description="Rensar gamla demo-sandboxar vid uppstart.",
+        in_thread=False,
+    ),
+    background.BackgroundJob(
+        name="meta_media_retention_purge",
+        run=_purge_expired_meta_media_background,
+        description="Rensar utgången meta-media vid uppstart.",
+    ),
+]
 
 
 app.include_router(auth.router)

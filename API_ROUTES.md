@@ -74,6 +74,7 @@ verksamheter.
 | `query_data.plan` | `POST` | `/api/query-data/plan` | Tolka datafråga med MiniMax |
 | `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla med tenant per verksamhet, lokala exkluderingar/jämförelser/textfilter och validerad beräkning |
 | `query_data.export` | `GET` | `/api/query-data/export/{session_id}` | Exportera datahämtning till Excel |
+| `query_data.archive_cache_status` | `GET` | `/api/query-data/archive-cache/status` | Status för lokal arkiv-cache |
 | `mcp.status` | `GET` | `/api/mcp/status` | MCP- och LLM-status |
 | `mcp.query` | `POST` | `/api/mcp/query` | Skicka fråga till MCP via vald LLM-hjärna |
 | `allocation.health` | `GET` | `/api/allokering/health` | Lagerverktyg health |
@@ -200,6 +201,8 @@ aktivitetstimmar.
 | `productivity.report` | `GET` | `/api/productivity` | Produktivitetsrapport; lasning ar tillaten for `productivity=view` |
 | `sankey.inbound` | `GET` | `/api/sankey/inbound` | Sankey - Inbound/Outbound för mottagna etiketter, outbounddebitering, processintäkt och öppna/förverkade flöden |
 | `sankey.inbound_stream` | `GET` | `/api/sankey/inbound/stream` | Streama Sankey - Inbound med progress |
+| `sankey.inbound_trace` | `GET` | `/api/sankey/inbound/trace` | Hämta trace-rader för Sankey - Inbound via token |
+| `sankey.inbound_trace_csv` | `GET` | `/api/sankey/inbound/trace.csv` | Streama trace-rader för Sankey - Inbound som CSV |
 
 Produktivitetens API-snapshot använder källorna `pick`, `trans`, `pallet`
 (`LOADING_LOG`), `receive`, `order_log`, `sort`, `base_pallet` och `kpi`.

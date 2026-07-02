@@ -443,7 +443,8 @@ def test_warehouse_tool_testdata_is_local_to_flow():
         pytest.skip("Lokala warehouse-regressionsfiler saknas.")
     assert WAREHOUSE_TESTDATA.is_dir()
     assert any(WAREHOUSE_TESTDATA.glob("v_ask_pick_log_full-*.csv"))
-    assert ROOT.name == "flow"
+    # Testdatan ska bo i det här repot, oavsett vad repomappen råkar heta lokalt.
+    assert WAREHOUSE_TESTDATA.resolve().is_relative_to(ROOT.resolve())
 
 
 def test_warehouse_registry_is_loaded_from_flow_package():
