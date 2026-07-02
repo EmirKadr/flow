@@ -36,14 +36,23 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "state.js",
+    "state_carrier_clusters.js",
+    "state_filters.js",
     "files.js",
     "api.js",
     "uploads_view.js",
     "results.js",
+    "results_flows.js",
+    "results_warehouse_map.js",
+    "results_carrier_clusters.js",
     "process_view.js",
     "process_matrix.js",
     "map_settings.js",
+    "map_settings_layout.js",
     "settings_view.js",
+    "settings_staffing.js",
+    "settings_finance.js",
+    "settings_finance_check.js",
     "split_view.js",
     "boot.js",
 ]

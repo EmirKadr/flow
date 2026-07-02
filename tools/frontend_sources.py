@@ -23,6 +23,8 @@ PRODUCTIVITY_OVERVIEW_SCRIPT_FILES = [
 ]
 SANKEY_INBOUND_SCRIPT_FILES = [
     "js/sankey_inbound.js",
+    "js/sankey_inbound_state.js",
+    "js/sankey_inbound_trace.js",
 ]
 
 
