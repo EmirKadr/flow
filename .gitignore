@@ -67,6 +67,14 @@ hardware/MG_VM/MG_VM.ino
 .DS_Store
 Thumbs.db
 
+# Lokala arbetsfiler och pytest-tempkataloger
+påg.docx
+.pytest-tmp/
+.pytest-label-editor-browser-temp/
+
+# Lokala golden-snapshots for karakteriseringstester (bygger pa privat testdata)
+tests/services/golden/
+
 # Desktop build artifacts
 build/
 dist/
