@@ -36,7 +36,6 @@ BACKEND_LINE_EXCEPTIONS = {
 }
 FRONTEND_LINE_EXCEPTIONS = {
     "allocation/map_settings.js": 1060,
-    "persons.js": 1100,
 }
 # Krympnings-ratchet for warehouse_tools: vendor-filen far bara minska tills
 # den ar sanerad fran dod GUI-kod och till slut uppdelad. Ingen frizon.

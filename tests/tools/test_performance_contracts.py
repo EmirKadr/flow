@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.backend.models import PersonProductivityDaily, ScheduleCell, UserWaitMetric
-from tools.frontend_sources import read_overview_frontend, read_productivity_overview_frontend
+from tools.frontend_sources import read_overview_frontend, read_persons_frontend, read_productivity_overview_frontend
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,7 +84,7 @@ def test_critical_user_waits_are_cached_prefetched_or_backgrounded():
     personal = read_frontend("js/personal_views.js")
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
-    persons = read_frontend("js/persons.js")
+    persons = read_persons_frontend()
     productivity_overview = read_productivity_overview_frontend()
     personal_router = (ROOT / "app" / "backend" / "routers" / "personal.py").read_text(encoding="utf-8")
 

@@ -14,6 +14,8 @@ FRONTEND = ROOT / "app" / "frontend"
 
 PERSONS_SCRIPT_FILES = [
     "js/persons.js",
+    "js/persons_productivity.js",
+    "js/persons_table.js",
 ]
 OVERVIEW_SCRIPT_FILES = [
     "js/overview.js",
