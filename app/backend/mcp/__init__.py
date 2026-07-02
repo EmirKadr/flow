@@ -1,13 +1,7 @@
-"""Bakåtkompatibel fasad för det uppdelade paketet app.backend.mcp.
+"""MCP-paketet: protokoll, tool-summering, providerval, chat-anrop och orkestrering."""
+from . import chat, protocol, providers, service, tooling
 
-Implementationen bor i app/backend/mcp/ (protocol, tooling, providers, chat,
-service). Importera gärna direkt från paketet i ny kod. Tester som
-monkeypatchar interna namn ska patcha implementationsmodulen, inte fasaden.
-"""
-from .config import settings
-from .mcp import chat, protocol, providers, service, tooling
-
-from .mcp.protocol import (
+from .protocol import (
     CLIENT_NAME,
     CLIENT_VERSION,
     DEFAULT_TOKEN_ENV_TEMPLATE,
@@ -48,7 +42,7 @@ from .mcp.protocol import (
     mcp_token_env_var_for_tenant,
     mcp_url_for_tenant,
 )
-from .mcp.tooling import (
+from .tooling import (
     _clean_gemini_schema,
     _content_item_text,
     _context_label,
@@ -81,7 +75,7 @@ from .mcp.tooling import (
     summarize_tool,
     summarize_tools,
 )
-from .mcp.providers import (
+from .providers import (
     _csv_values,
     _deepseek_base_url,
     _deepseek_chat_url,
@@ -115,7 +109,7 @@ from .mcp.providers import (
     provider_model_options,
     provider_thinking_modes,
 )
-from .mcp.chat import (
+from .chat import (
     _call_gemini_generate_content,
     _candidate_content,
     _chat_completion_body,
@@ -141,7 +135,7 @@ from .mcp.chat import (
     _tool_exhausted_answer,
     openai_tool_declarations,
 )
-from .mcp.service import (
+from .service import (
     ask_chat_provider_with_mcp_context,
     ask_chat_provider_with_mcp_tools,
     ask_deepseek_with_mcp_context,

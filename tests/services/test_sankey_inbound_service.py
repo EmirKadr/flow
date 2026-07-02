@@ -5,6 +5,10 @@ from datetime import date
 import pytest
 
 from app.backend import sankey_inbound_service as sis
+from app.backend.sankey_inbound import build as sankey_build
+from app.backend.sankey_inbound import fetch as sankey_fetch
+from app.backend.sankey_inbound import service as sankey_service
+from app.backend.sankey_inbound import trace as sankey_trace
 from app.backend.external_data_client import ExternalDataClientError
 from app.backend.sankey_inbound_service import (
     _load_kpi_fallback_rows,
@@ -49,7 +53,7 @@ class _SnapshotClient:
 
 @pytest.fixture(autouse=True)
 def _disable_productivity_snapshot_reuse(monkeypatch):
-    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", set())
+    monkeypatch.setattr(sankey_fetch, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", set())
 
 
 def _write_snapshot_rows(path, rows):
@@ -100,15 +104,15 @@ def test_fetch_view_rows_reuses_productivity_snapshots_when_range_is_ready(monke
     second = tmp_path / "2026-06-02" / "receive.csv.gz"
     _write_snapshot_rows(first, [{"rowid": "snap-1", "timestamp": "2026-06-01T08:00:00", "company": "GG"}])
     _write_snapshot_rows(second, [{"rowid": "snap-2", "timestamp": "2026-06-02T08:00:00", "company": "GG"}])
-    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
-    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda _day: {"ready": True})
+    monkeypatch.setattr(sankey_fetch, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
+    monkeypatch.setattr(sankey_fetch, "productivity_snapshot_status", lambda _day: {"ready": True})
     monkeypatch.setattr(
-        sis,
+        sankey_fetch,
         "productivity_snapshot_source_path",
         lambda day, key: tmp_path / day.isoformat() / f"{key}.csv.gz",
     )
     monkeypatch.setattr(
-        sis,
+        sankey_fetch,
         "_fetch_segment_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("external API should not be called")),
     )
@@ -142,9 +146,9 @@ def test_fetch_view_rows_reuses_productivity_snapshots_when_range_is_ready(monke
 
 def test_fetch_view_rows_uses_api_when_productivity_snapshot_range_is_incomplete(monkeypatch):
     client = _FakeClient(fail_views=set(), rows_by_view={"v_ask_receive_log": [{"rowid": "api"}]})
-    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
-    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda day: {"ready": day != date(2026, 6, 2)})
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sankey_fetch, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive"})
+    monkeypatch.setattr(sankey_fetch, "productivity_snapshot_status", lambda day: {"ready": day != date(2026, 6, 2)})
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *_args, **_kwargs: None)
 
     rows, statuses, warnings = sis._fetch_view_rows(
         client,
@@ -165,9 +169,9 @@ def test_fetch_view_rows_uses_api_when_productivity_snapshot_range_is_incomplete
 
 def test_pick_source_does_not_reuse_productivity_snapshots(monkeypatch):
     client = _FakeClient(fail_views=set(), rows_by_view={"v_ask_pick_log_full": [{"rowid": "api"}]})
-    monkeypatch.setattr(sis, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive", "trans"})
-    monkeypatch.setattr(sis, "productivity_snapshot_status", lambda _day: {"ready": True})
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sankey_fetch, "PRODUCTIVITY_SNAPSHOT_REUSE_SOURCE_KEYS", {"receive", "trans"})
+    monkeypatch.setattr(sankey_fetch, "productivity_snapshot_status", lambda _day: {"ready": True})
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *_args, **_kwargs: None)
 
     rows, statuses, warnings = sis._fetch_view_rows(
         client,
@@ -187,7 +191,7 @@ def test_pick_source_does_not_reuse_productivity_snapshots(monkeypatch):
 
 
 def test_live_failure_falls_back_to_dblog_archive(monkeypatch):
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *a, **k: None)
     client = _FakeClient(fail_views={"v_ask_trans_log"}, rows_by_view={"dblog_trans_log": [{"x": 1}]})
 
     rows, statuses, warnings = sis._fetch_view_rows(
@@ -213,7 +217,7 @@ def test_dispatch_source_uses_dispatch_pallet_log_and_archive(monkeypatch):
     assert live_date_filter["id"] == "created"
     assert archive_date_filter["id"] == "created"
 
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *a, **k: None)
     client = _FakeClient(
         fail_views=set(),
         rows_by_view={
@@ -250,8 +254,15 @@ def test_live_segment_uses_topped_up_local_archive_prefix(monkeypatch):
         "ingested_range",
         lambda tenant, view: (date(2024, 4, 22), date(2026, 6, 30)),
     )
+    # covered_range är seamen som _fetch_view_rows faktiskt använder; utan patch
+    # läser den maskinens riktiga arkivstate och testet blir miljöberoende.
     monkeypatch.setattr(
-        sis,
+        sis.local_archive_store,
+        "covered_range",
+        lambda tenant, view: (date(2024, 4, 22), date(2026, 6, 30)),
+    )
+    monkeypatch.setattr(
+        sankey_fetch,
         "_query_local_archive_segment",
         lambda **kwargs: [{"rowid": f"cached-{kwargs['segment_start']}-{kwargs['segment_end']}"}],
     )
@@ -376,7 +387,7 @@ def test_buffer_snapshot_source_stays_live_api(monkeypatch):
 
 
 def test_required_source_failure_raises_detailed_message(monkeypatch):
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *a, **k: None)
     client = _FakeClient(fail_views={"v_ask_trans_log", "dblog_trans_log"})
 
     with pytest.raises(sis.SankeyInboundError) as excinfo:
@@ -403,7 +414,7 @@ def test_required_source_failure_raises_detailed_message(monkeypatch):
 
 
 def test_pick_archive_failure_degrades_instead_of_failing(monkeypatch):
-    monkeypatch.setattr(sis, "_date_filter_for_view", lambda *a, **k: None)
+    monkeypatch.setattr(sankey_fetch, "_date_filter_for_view", lambda *a, **k: None)
     client = _FakeClient(fail_views={"dblog_pick_log"})
 
     rows, statuses, warnings = sis._fetch_view_rows(
@@ -899,7 +910,7 @@ def test_client_filter_views_include_company_and_day_variants():
 
 
 def test_month_client_filter_views_are_prebuilt_even_when_source_rows_are_large(monkeypatch):
-    monkeypatch.setattr(sis, "CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS", 0)
+    monkeypatch.setattr(sankey_build, "CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS", 0)
     payload = build_sankey_inbound_payload(
         source_rows={
             "receive": [receive("large", "P1", timestamp="2026-06-01T08:00:00")],
@@ -924,7 +935,7 @@ def test_month_client_filter_views_are_prebuilt_even_when_source_rows_are_large(
 
 
 def test_client_filter_views_are_not_prebuilt_when_view_count_is_too_large(monkeypatch):
-    monkeypatch.setattr(sis, "CLIENT_FILTER_PREBUILD_MAX_VIEWS", 0)
+    monkeypatch.setattr(sankey_build, "CLIENT_FILTER_PREBUILD_MAX_VIEWS", 0)
     payload = build_sankey_inbound_payload(
         source_rows={
             "receive": [receive("large", "P1", timestamp="2026-06-01T08:00:00")],
@@ -999,7 +1010,7 @@ def test_kpi_coredata_fallback_reads_targets_when_live_view_unavailable(tmp_path
         "GG\tHBW\t0\t80\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(sis, "find_kpi_file", lambda *args, **kwargs: kpi_file)
+    monkeypatch.setattr(sankey_fetch, "find_kpi_file", lambda *args, **kwargs: kpi_file)
 
     rows, status, warnings = _load_kpi_fallback_rows(business_code="GG", db=None)
 
@@ -1018,11 +1029,11 @@ def test_sankey_kpi_fetch_uses_coredata_without_external_api(monkeypatch):
     def fail_external_fetch(*args, **kwargs):
         raise AssertionError("KPI ska inte hämtas via extern API-vy")
 
-    monkeypatch.setattr(sis, "SANKEY_SOURCE_VIEWS", {"kpi": "v_ask_kpi_target"})
-    monkeypatch.setattr(sis, "CURRENT_STATE_SOURCE_KEYS", {"kpi"})
-    monkeypatch.setattr(sis, "_fetch_view_rows", fail_external_fetch)
+    monkeypatch.setattr(sankey_fetch, "SANKEY_SOURCE_VIEWS", {"kpi": "v_ask_kpi_target"})
+    monkeypatch.setattr(sankey_fetch, "CURRENT_STATE_SOURCE_KEYS", {"kpi"})
+    monkeypatch.setattr(sankey_fetch, "_fetch_view_rows", fail_external_fetch)
     monkeypatch.setattr(
-        sis,
+        sankey_fetch,
         "_load_kpi_fallback_rows",
         lambda **_kwargs: (
             [{"company": "GG", "action_id": "Receiving", "loaded_rows": "2.5"}],
@@ -1052,7 +1063,7 @@ def test_only_consumed_toggle_reuses_cached_sources(monkeypatch):
         calls["n"] += 1
         return ({"receive": [], "trans": [], "pick": [], "buffer": [], "kpi": []}, [], [])
 
-    monkeypatch.setattr(sis, "fetch_sankey_inbound_sources", fake_fetch)
+    monkeypatch.setattr(sankey_fetch, "fetch_sankey_inbound_sources", fake_fetch)
     sis._SOURCE_CACHE.clear()
 
     common = dict(
@@ -1094,12 +1105,12 @@ def test_load_payload_moves_trace_rows_to_token(monkeypatch):
     variant_rows = [trace_rows[0]]
 
     monkeypatch.setattr(
-        sis,
+        sankey_fetch,
         "fetch_sankey_inbound_sources",
         lambda **_kwargs: ({"receive": [], "trans": [], "pick": [], "buffer": [], "kpi": []}, [], []),
     )
     monkeypatch.setattr(
-        sis,
+        sankey_build,
         "build_sankey_inbound_payload",
         lambda **_kwargs: {
             "period": {},
@@ -1168,12 +1179,12 @@ def test_load_payload_trace_token_uses_all_variant_rows_for_consumed_initial_vie
     ]
 
     monkeypatch.setattr(
-        sis,
+        sankey_fetch,
         "fetch_sankey_inbound_sources",
         lambda **_kwargs: ({"receive": [], "trans": [], "pick": [], "buffer": [], "kpi": []}, [], []),
     )
     monkeypatch.setattr(
-        sis,
+        sankey_build,
         "build_sankey_inbound_payload",
         lambda **_kwargs: {
             "period": {"type": "day", "start_date": "2026-06-01", "end_date": "2026-06-01"},
@@ -1221,7 +1232,7 @@ def test_kpi_coredata_fallback_returns_empty_when_file_missing(monkeypatch):
     def _raise(*args, **kwargs):
         raise ProductivitySourceError("saknar fil")
 
-    monkeypatch.setattr(sis, "find_kpi_file", _raise)
+    monkeypatch.setattr(sankey_fetch, "find_kpi_file", _raise)
 
     rows, status, warnings = _load_kpi_fallback_rows(business_code="GG", db=None)
 

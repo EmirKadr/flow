@@ -1,13 +1,7 @@
-"""Bakåtkompatibel fasad för det uppdelade paketet app.backend.data_fetch.
+"""Hämta data-paketet: katalog, MiniMax-plan, segmentering, beräkningsmotor och presentation."""
+from . import catalog, core, engine, plan, present, segments
 
-Implementationen bor i app/backend/data_fetch/ (core, catalog, plan, segments,
-engine, present). Importera gärna direkt från paketet i ny kod. Tester som
-monkeypatchar interna namn ska patcha implementationsmodulen, inte fasaden.
-"""
-from .config import settings
-from .data_fetch import catalog, core, engine, plan, present, segments
-
-from .data_fetch.core import (
+from .core import (
     ALLOWED_CALCULATION_METRICS,
     ALLOWED_OPERATORS,
     CALCULATION_METRIC_ALIASES,
@@ -52,7 +46,7 @@ from .data_fetch.core import (
     _tokens,
     infer_prompt_period,
 )
-from .data_fetch.catalog import (
+from .catalog import (
     _catalog_source,
     build_catalog_context,
     catalog_from_payload,
@@ -60,7 +54,7 @@ from .data_fetch.catalog import (
     clear_catalog_cache,
     load_catalog,
 )
-from .data_fetch.plan import (
+from .plan import (
     _assert_column,
     _column_id_list,
     _identifiers_are_column_list,
@@ -76,7 +70,7 @@ from .data_fetch.plan import (
     parse_minimax_plan,
     validate_plan_payload,
 )
-from .data_fetch.segments import (
+from .segments import (
     ARCHIVE_TO_LIVE,
     LIVE_ARCHIVE_PAIRS,
     _parse_plan_date_bound,
@@ -84,7 +78,7 @@ from .data_fetch.segments import (
     _segment_plan,
     build_retention_segments,
 )
-from .data_fetch.engine import (
+from .engine import (
     _calculation_label,
     _compare_values,
     _like_pattern_to_regex,
@@ -101,7 +95,7 @@ from .data_fetch.engine import (
     project_rows,
     split_quantity_into_packages,
 )
-from .data_fetch.present import (
+from .present import (
     _like_pattern_for_operator,
     _sql_literal,
     _sql_metric_expression,

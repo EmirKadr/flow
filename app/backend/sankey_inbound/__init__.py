@@ -1,28 +1,7 @@
-"""Bakåtkompatibel fasad för det uppdelade paketet app.backend.sankey_inbound.
+"""Sankey Inbound-paketet: common, cache, trace, rows, build, fetch, service."""
+from . import build, cache, common, fetch, rows, service, trace
 
-Implementationen bor i app/backend/sankey_inbound/ (common, cache, trace, rows,
-build, fetch, service). Importera gärna direkt från paketet i ny kod. Tester som
-monkeypatchar interna namn ska patcha implementationsmodulen, inte fasaden.
-"""
-from . import local_archive_store
-from .config import settings
-from .data_fetch_service import (
-    ARCHIVE_TO_LIVE,
-    DataFetchConfigError,
-    DataFetchPlanError,
-    LIVE_ARCHIVE_PAIRS,
-    PACKAGE_ALIAS_VIEW,
-    PACKAGE_BASE_UNIT_LABEL,
-    build_package_ladders,
-    load_catalog,
-    split_quantity_into_packages,
-)
-from .external_data_client import ExternalDataClient, ExternalDataClientError
-from .productivity_service import find_kpi_file
-from .productivity_sync import productivity_snapshot_status
-from .sankey_inbound import build, cache, common, fetch, rows, service, trace
-
-from .sankey_inbound.common import (
+from .common import (
     BUFFER_UPDATE_RECEIVE_TYPE,
     CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS,
     CLIENT_FILTER_PREBUILD_MAX_VIEWS,
@@ -51,10 +30,8 @@ from .sankey_inbound.common import (
     ZEROING_RECEIVE_TYPE,
     _emit_progress,
 )
-from .sankey_inbound.cache import (
+from .cache import (
     SANKEY_INBOUND_PAYLOAD_SCHEMA,
-    _CACHE,
-    _SOURCE_CACHE,
     _cache_key,
     _get_cached_sankey_sources,
     _set_cached_sankey_sources,
@@ -62,8 +39,7 @@ from .sankey_inbound.cache import (
     get_cached_sankey_payload,
     set_cached_sankey_payload,
 )
-from .sankey_inbound.trace import (
-    _TRACE_CACHE,
+from .trace import (
     _csv_cell,
     _prune_trace_cache,
     _trace_date,
@@ -73,7 +49,7 @@ from .sankey_inbound.trace import (
     store_trace_rows,
     trace_rows_to_csv_lines,
 )
-from .sankey_inbound.rows import (
+from .rows import (
     _clean_text,
     _client_filter_period_specs,
     _client_filter_view_key,
@@ -110,7 +86,7 @@ from .sankey_inbound.rows import (
     _row_warehouse,
     sankey_period_bounds,
 )
-from .sankey_inbound.build import (
+from .build import (
     _add_link,
     _add_node,
     _append_process,
@@ -133,7 +109,7 @@ from .sankey_inbound.build import (
     _trace_row_for_branch,
     build_sankey_inbound_payload,
 )
-from .sankey_inbound.fetch import (
+from .fetch import (
     _api_client,
     _company_filter,
     _date_filter_for_view,
@@ -153,7 +129,7 @@ from .sankey_inbound.fetch import (
     _source_failure_message,
     fetch_sankey_inbound_sources,
 )
-from .sankey_inbound.service import (
+from .service import (
     _attach_trace_token,
     _client_filter_payloads,
     _set_trace_metadata,

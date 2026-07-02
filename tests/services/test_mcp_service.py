@@ -3,10 +3,12 @@ import asyncio
 import pytest
 
 from app.backend import mcp_service
+from app.backend.mcp import chat as mcp_chat
+from app.backend.mcp import protocol as mcp_protocol
 
 
 def test_mcp_config_uses_tenant_url_and_token_templates(monkeypatch):
-    monkeypatch.setattr(mcp_service, "_load_project_mcp_entry", lambda: {})
+    monkeypatch.setattr(mcp_protocol, "_load_project_mcp_entry", lambda: {})
     monkeypatch.setattr(
         mcp_service.settings,
         "NOEFFECT_MCP_URL_TEMPLATE",
@@ -25,14 +27,14 @@ def test_mcp_config_uses_tenant_url_and_token_templates(monkeypatch):
 
 def test_mcp_config_can_read_local_codex_template_without_token_value(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        mcp_service,
+        mcp_protocol,
         "_load_project_mcp_entry",
         lambda: {
             "url": "https://noeffectui-{tenant}-development.example.test/mcp",
             "bearer_token_env_var": "NOEFFECT_{tenant}_TOKEN",
         },
     )
-    monkeypatch.setattr(mcp_service, "ROOT_DIR", tmp_path)
+    monkeypatch.setattr(mcp_protocol, "ROOT_DIR", tmp_path)
     monkeypatch.setattr(mcp_service.settings, "NOEFFECT_MCP_URL_TEMPLATE", "")
     monkeypatch.setattr(mcp_service.settings, "NOEFFECT_MCP_TOKEN_ENV_TEMPLATE", "")
     monkeypatch.delenv("NOEFFECT_FREY_TOKEN", raising=False)
@@ -50,8 +52,8 @@ def test_mcp_config_reads_dynamic_token_from_app_env_file(monkeypatch, tmp_path)
     app_dir.mkdir()
     token_env_var = "NOEFFECT_FREY_TOKEN"
     (app_dir / ".env").write_text(f'{token_env_var}="env-file-token"\n', encoding="utf-8")
-    monkeypatch.setattr(mcp_service, "ROOT_DIR", tmp_path)
-    monkeypatch.setattr(mcp_service, "_load_project_mcp_entry", lambda: {})
+    monkeypatch.setattr(mcp_protocol, "ROOT_DIR", tmp_path)
+    monkeypatch.setattr(mcp_protocol, "_load_project_mcp_entry", lambda: {})
     monkeypatch.setattr(
         mcp_service.settings,
         "NOEFFECT_MCP_URL_TEMPLATE",
@@ -392,7 +394,7 @@ def test_mcp_status_is_ready_with_gemini_even_without_tools(monkeypatch):
             tenant="frey",
         ),
     )
-    monkeypatch.setattr(mcp_service, "McpHttpSession", FakeSession)
+    monkeypatch.setattr(mcp_protocol, "McpHttpSession", FakeSession)
 
     payload = asyncio.run(mcp_service.list_mcp_tools("frey"))
 
@@ -434,7 +436,7 @@ def test_mcp_gemini_tool_loop_calls_mcp_tool(monkeypatch):
             assert arguments["viewName"] == "v_articles"
             return {"content": [{"type": "text", "text": "Artikel 1"}], "isError": False}
 
-    monkeypatch.setattr(mcp_service, "_gemini_generate_content", fake_generate)
+    monkeypatch.setattr(mcp_chat, "_gemini_generate_content", fake_generate)
     config = mcp_service.McpConfig(
         url="https://mcp.example.test",
         token_env_var="NOEFFECT_FREY_TOKEN",
@@ -505,7 +507,7 @@ def test_mcp_deepseek_tool_loop_calls_mcp_tool_and_keeps_reasoning(monkeypatch):
             assert arguments["viewName"] == "v_articles"
             return {"content": [{"type": "text", "text": "Artikel 1"}], "isError": False}
 
-    monkeypatch.setattr(mcp_service, "_deepseek_chat_completion", fake_chat)
+    monkeypatch.setattr(mcp_chat, "_deepseek_chat_completion", fake_chat)
     config = mcp_service.McpConfig(
         url="https://mcp.example.test",
         token_env_var="NOEFFECT_FREY_TOKEN",
