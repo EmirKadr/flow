@@ -35,10 +35,9 @@ BACKEND_LINE_EXCEPTIONS = {
     "schemas.py": 1013,
 }
 FRONTEND_LINE_EXCEPTIONS = {
-    "allocation/settings_view.js": 1760,
     "productivity_overview.js": 1780,
     "overview.js": 1780,
-    "allocation/map_settings.js": 1440,
+    "allocation/map_settings.js": 1060,
     "sankey_inbound.js": 1370,
     "persons.js": 1100,
 }

@@ -20,7 +20,11 @@ ALLOCATION_SCRIPT_FILES = [
     "js/allocation/api.js",
     "js/allocation/boot.js",
     "js/allocation/map_settings.js",
+    "js/allocation/map_settings_layout.js",
     "js/allocation/settings_view.js",
+    "js/allocation/settings_staffing.js",
+    "js/allocation/settings_finance.js",
+    "js/allocation/settings_finance_check.js",
 ]
 SCHEDULE_SCRIPT_FILES = [
     "js/schedule/state.js",
