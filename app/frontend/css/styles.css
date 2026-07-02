@@ -455,6 +455,38 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   transition: max-width 0.55s cubic-bezier(.22, 1, .36, 1), opacity 0.55s cubic-bezier(.22, 1, .36, 1);
 }
 
+.sidebar-context-menu {
+  position: fixed;
+  z-index: 3000;
+  display: grid;
+  min-width: 180px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.sidebar-context-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  text-align: left;
+}
+
+.sidebar-context-menu button:hover,
+.sidebar-context-menu button:focus-visible,
+.sidebar-context-menu button.active {
+  background: var(--bg-2);
+  border-color: transparent;
+}
+
 .sidebar-footer {
   margin-top: auto;
   display: flex;
@@ -2798,6 +2830,54 @@ table.productivity-matrix td.productivity-hour-empty {
   letter-spacing: 0.04em;
 }
 
+.tools-page-head,
+.staffing-page-head {
+  margin: 0 0 14px;
+}
+
+.tools-tabs,
+.staffing-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.tools-tab,
+.staffing-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tools-tab:hover,
+.tools-tab:focus-visible,
+.staffing-tab:hover,
+.staffing-tab:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+
+.tools-tab.active,
+.staffing-tab.active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
 
 /* ============================================================
    Controls / toolbar
@@ -3839,6 +3919,48 @@ table.matrix td.focused {
   z-index: 2;
 }
 
+table.matrix td.has-remark::before,
+.hour-segment.has-remark::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid var(--accent);
+  border-right: 8px solid transparent;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.schedule-cell-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 150px;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.schedule-cell-context-menu button {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  text-align: left;
+}
+.schedule-cell-context-menu button:hover,
+.schedule-cell-context-menu button:focus-visible {
+  background: var(--bg-2);
+  border-color: transparent;
+}
+
 table.matrix td.locked-cell,
 .hour-segment.locked-cell {
   cursor: not-allowed;
@@ -4812,6 +4934,11 @@ tr.filter-row input {
 }
 .modal.wide { min-width: min(760px, 92vw); }
 .schedule-split-modal { min-width: min(384px, 92vw); }
+.schedule-remark-modal { min-width: min(420px, 92vw); }
+.schedule-remark-modal textarea {
+  min-height: 110px;
+  resize: vertical;
+}
 .schedule-split-heading {
   display: flex;
   align-items: flex-start;
@@ -8713,5 +8840,394 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
 
   .personal-stat {
     min-height: 0;
+  }
+}
+
+/* Label editor ------------------------------------------------------------ */
+
+.label-editor-page {
+  width: min(100%, 1480px);
+  margin: 14px auto 40px;
+  padding: 0 18px 36px;
+}
+
+.label-editor-shell {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.label-editor-panel,
+.label-editor-workspace {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.label-editor-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.label-editor-panel-section {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.label-editor-panel-section:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.label-editor-panel h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.label-editor-measures,
+.label-editor-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.label-editor-panel label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.label-editor-panel input,
+.label-editor-panel select,
+.label-editor-panel textarea {
+  width: 100%;
+}
+
+.label-editor-panel textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.label-editor-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.label-editor-profile-save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.label-editor-tools button,
+.label-editor-actions button {
+  min-height: 34px;
+}
+
+.label-editor-selection-head,
+.label-editor-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.label-editor-mini-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.label-editor-mini-actions button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.label-editor-workspace {
+  min-height: min(720px, calc(100vh - 150px));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.label-canvas-wrap {
+  width: 100%;
+  min-height: min(720px, calc(100vh - 150px));
+  overflow: auto;
+  padding: 28px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--border) 34%, transparent) 1px, transparent 1px),
+    var(--bg);
+  background-size: 20px 20px;
+}
+
+.label-canvas {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.2);
+  color: #111827;
+  touch-action: none;
+}
+
+.label-object {
+  position: absolute;
+  display: grid;
+  place-items: stretch;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.label-object:active {
+  cursor: grabbing;
+}
+
+.label-object.selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.label-object svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.label-object-text {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  white-space: pre-wrap;
+  overflow: hidden;
+  line-height: 1.08;
+}
+
+.label-object-symbol {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.label-object-symbol-glyph {
+  display: block;
+  line-height: 1;
+  text-align: center;
+}
+
+.label-object-error {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 2px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 10px;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.label-symbol-picker {
+  width: min(760px, 92vw);
+  max-height: min(760px, 86vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.label-symbol-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.label-symbol-picker-head h2 {
+  margin: 0;
+}
+
+.label-symbol-picker-close {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.label-symbol-picker-groups {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.label-symbol-picker-group {
+  display: grid;
+  gap: 8px;
+}
+
+.label-symbol-picker-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.label-symbol-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 8px;
+}
+
+.label-symbol-choice {
+  min-height: 74px;
+  padding: 8px 6px;
+  display: grid;
+  grid-template-rows: 36px auto;
+  place-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.label-symbol-choice:hover,
+.label-symbol-choice:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.label-symbol-choice-mark {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
+
+.label-symbol-choice-mark svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.label-symbol-choice-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.label-symbol-choice-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1040px) {
+  .label-editor-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .label-editor-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .label-editor-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .label-editor-page {
+    margin-top: 10px;
+    padding: 0 10px 26px;
+  }
+
+  .label-editor-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .label-editor-actions {
+    grid-column: auto;
+  }
+
+  .label-editor-profile-save {
+    grid-template-columns: 1fr;
+  }
+
+  .label-canvas-wrap {
+    padding: 18px;
+    place-items: start center;
+  }
+}
+
+@media print {
+  body.label-printing {
+    background: #fff !important;
+  }
+
+  body.label-printing .sidebar,
+  body.label-printing .tools-page-head,
+  body.label-printing .label-editor-page > .section-title,
+  body.label-printing .label-editor-panel {
+    display: none !important;
+  }
+
+  body.label-printing .app,
+  body.label-printing .main,
+  body.label-printing .label-editor-page,
+  body.label-printing .label-editor-shell,
+  body.label-printing .label-editor-workspace,
+  body.label-printing .label-canvas-wrap {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body.label-printing .label-canvas {
+    width: var(--label-print-width) !important;
+    height: var(--label-print-height) !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.label-printing .label-object {
+    outline: 0 !important;
   }
 }

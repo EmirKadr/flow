@@ -147,9 +147,13 @@ python -m app.backend.archive_cache_cli --tenant frey --view dblog_dispatch_pall
 python -m app.backend.archive_cache_cli --tenant frey --view item_alias
 python -m app.backend.archive_cache_cli --tenant frey --snapshots-only
 python -m app.backend.archive_cache_cli --productivity-only --productivity-start 2025-01-01 --business-code STIGAMO
-python -m app.backend.archive_cache_cli --tenant frey --with-productivity --productivity-start 2025-01-01 --business-code STIGAMO
-# Utan --productivity-end slutar produktivitetsintervallet igar, aldrig idag.
+python -m app.backend.archive_cache_cli --tenant frey --with-productivity --business-code STIGAMO
+# Utan --productivity-start använder produktiviteten samma ARCHIVE_CACHE_SEED_DAYS-fönster till igår.
+# Utan --productivity-end slutar ett explicit produktivitetsintervall igar, aldrig idag.
+# Produktivitetsintervallet kors fran slutdatumet bakat och skippar redan klara snapshots/personcache.
 # Produktivitetsbygget kraver fungerande DATABASE_URL. Anvand --productivity-no-prebuild for att bara hamta snapshotfiler.
+python -m app.backend.archive_cache_cli --productivity-prebuild-existing  # bygg bara befintliga snapshots
+# Produktivitetsloggen visar sparade snapshotdagar, API-hamtning och persondagar per chunk.
 python -m app.backend.archive_cache_cli --workers 8    # fler parallella hämtningar
 python -m app.backend.archive_cache_cli --status       # bara täckning + logg
 ```
@@ -158,6 +162,12 @@ Kräver `ARCHIVE_CACHE_ENABLED=1` och API-uppgifter i `app/.env`. Varje rad visa
 tenant/vy, andel hämtat, dagar klara/totalt, rader och vilken chunk som hämtas just nu,
 plus en TOTALT-rad. **Ctrl+C** avbryter; redan hämtade chunkar är sparade och nästa körning
 fortsätter där den slutade (återupptagningsbart).
+Produktivitetsdelen har egen chunk-progress: varje intervall visar sparade
+snapshotdagar före start, saknade/gamla dagar, om API hämtades eller inte,
+rader i sparade snapshots/API-svar och om persondagar redan var aktuella eller
+byggdes.
+Om en arkivvy stoppas av tom-historikregeln skriver CLI-slutrapporten en `INFO`-rad med
+antal tomma dagar och att äldre intervall markerats som klart/tomt.
 
 ## Manuell körning / felsökning
 

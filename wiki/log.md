@@ -7,6 +7,72 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-02] ux | Huvudmenyer for Bemanning och Verktyg
+
+Sidebaren samlar nu bemanningsrelaterade vyer under huvudmenyn `Bemanning`
+och verktygsrelaterade vyer under `Verktyg`. Sidorna visar flikar for sina
+grupper, filtrerade efter vybehorighet. Hogerklick pa `Bemanning` visar
+Bemanning, Oversikt, Produktivitet, Aktiviteter, Personer, Anvandare,
+Verksamheter, Mitt schema och Min produktivitet. Hogerklick pa `Verktyg`
+visar Dela, Etiketter, MCP, Hamta data, Historik och Meta.
+
+## [2026-07-02] feature | Anmarkning pa bemanningscell
+
+Bemanningens hogerklicksmeny for celler har nu `Anmarkning`. Valet oppnar en
+modal for fri text pa hel timme eller vald del av en delad timme. Texten sparas
+i `schedule_cells.remark`, visas med en liten hornmarkering i cellen och foljer
+med vid split, merge, copy och undo/redo. API:t ar
+`PUT /api/schedule/cell/remark`. Audit sparar bara `remark_present` och
+`remark_length`, inte sjalva anmarkningstexten.
+
+## [2026-07-02] ux | Bemanningscell delar via hogerklicksmeny
+
+Bemanningens timceller har bytt klickmonster: hogerklick oppnar nu en
+cellmeny med `Dela` for hel timme och `Sla ihop` for redan delad timme.
+Dubbelklick oppnar i stallet cellens aktivitetsdropdown for vald timme eller
+del. Split-dialogen, minutvalen och samma `/api/schedule/cell/split`-mutation
+anvands fortfarande.
+
+## [2026-07-02] change | Tydligare produktivitetslogg i arkiv-CLI
+
+Produktivitetsdelen i `archive_cache_cli` skriver nu chunk-progressbar och
+visar fore varje intervall hur manga snapshotdagar som redan finns sparade,
+hur manga som saknas/ar gamla och hur manga rader som finns i sparad metadata.
+Efter varje chunk visas om API hamtades, hur manga sparade snapshotdatum som
+ateranvandes och hur manga `person_productivity_daily`-dagar som redan var
+aktuella eller byggdes. History-syncens resultat skickar nu med personcache-
+utfallet sa CLI:n kan skilja pa sparad snapshot och byggd persondag.
+
+## [2026-07-02] change | Produktivitets-CLI använder seed-fönster som default
+
+`archive_cache_cli --with-productivity` och `--productivity-only` använder nu
+`ARCHIVE_CACHE_SEED_DAYS` när inget produktivitetsdatum anges: intervallet går
+till och med igår och bakåt lika långt som arkivseedens standardfönster. Gamla
+läget "bygg bara befintliga snapshots" finns kvar som
+`--productivity-prebuild-existing`.
+
+## [2026-07-02] fix | Produktivitets-CLI återupptar utan dubbeljobb
+
+Produktivitetsdelen i `archive_cache_cli` går nu från slutdatumet bakåt i
+chunkar och skickar `skip_ready=True` till history-syncen. Redan kompletta
+snapshotdagar hämtas inte om; personcachen i appdatabasen kontrolleras via
+`person_productivity_daily`-signatur och byggs bara om när snapshot eller schema
+har ändrats. CLI-raden visar `hämtar`, `kontrollerar sparade snapshots/persondagar` eller `redan klar`
+per chunk.
+
+## [2026-07-02] ingest | Strukturrefaktorering: paketsplit, bakgrundsregister och arkitekturkontrakt
+
+De tre storsta servicefilerna ar uppdelade i paket med bakatkompatibla fasader:
+`data_fetch_service` -> `app/backend/data_fetch/`, `mcp_service` ->
+`app/backend/mcp/`, `sankey_inbound_service` -> `app/backend/sankey_inbound/`.
+Alla uppstartsjobb gar nu via jobbregistret i `app/backend/background.py` och
+FastAPI-lifespan (deprecated `on_event` borta); jobbstatus syns i healthcheck.
+Nya kontraktstester i `tests/tools/test_architecture_contracts.py` haller
+radtak per fil, skyddar single-worker-antagandet i `render.yaml` och vaktar
+domangranser mellan servicemoduler. Se [Arkitektur](architecture.md).
+Wikisidornas `status`-falt anvands nu som funktionslivscykel:
+`aktiv` / `experiment` / `frys` / `avveckla` (se index och AGENTS.md).
+
 ## [2026-07-02] fix | Arkivcache stoppar efter lång tom historik
 
 Bakåtseed i lokal DuckDB-arkivcache räknar nu tomma kalenderdagar och stoppar
@@ -14,7 +80,8 @@ när `ARCHIVE_CACHE_EMPTY_STOP_DAYS` nås (default 300). Vyn markeras då som
 täckt/tom för det äldre begärda intervallet, så stora seeds som 10 000 dagar
 inte behöver hämta hela vägen bak när API:t slutat hitta rader. Status visar nu
 både `ingested_start/end` (faktiska rader) och `covered_start/end` (rader plus
-kontrollerat tomma dagar).
+kontrollerat tomma dagar). CLI-slutrapporten skriver dessutom en `INFO`-rad med
+antal tomma dagar när tomstoppet används.
 
 ## [2026-07-02] feature | Arkivcache-CLI kan fylla produktivitet
 
@@ -2248,3 +2315,33 @@ och `Dela` oppnas vid raden i stallet for hogt upp i Bemanning.
 aktiviteter utan Ctrl-/Cmd-klick. Kontextmenyn monteras i summary-kortet och
 positioneras fran den hogerklickade radens nederkant, sa `Summera`/`Dela` inte
 langre hamnar vid schematabellens scrollbar.
+
+## [2026-07-02] ux | Etiketter som experimentvy
+
+Lade till `Etiketter` som skyddad experimentvy (`labelEditor`) for lokal
+label-design med millimetermatt, text, QR, Code128, former, symboler, drag och
+utskrift. Vyn ar Super User/opt-in via Vybehorigheter och skriver ingen sparad
+audit-logg eftersom etikettlayout och streckkodsvarden inte skickas till
+backend; dokumentloggen visar lokala tillagg/rensning/utskrift.
+
+## [2026-07-02] ux | Etikettprofiler och A-format
+
+Etiketter har nu standardprofiler for `104 x 199`, vanliga fraktetiketter samt
+A6/A5/A4/A3 i staende och liggande lage. Anvandaren kan spara egna lokala
+profiler i browserns `localStorage` och ta bort sparade profiler utan att
+etikettmatt eller profilnamn skickas till backend.
+
+## [2026-07-02] ux | Etikettkortkommandon
+
+Etiketter kan nu ta bort valt objekt med `Delete`/`Backspace`, kopiera/klippa
+ut/klistra in objekt med `Ctrl+C`/`Ctrl+X`/`Ctrl+V` och angra/gora om lokala
+layoutandringar med `Ctrl+Z`, `Ctrl+Y` eller `Ctrl+Shift+Z`. Kortkommandona
+ignoreras i redigerbara falt sa textredigering fungerar normalt, och
+etikettvarden skickas fortsatt inte till backend eller system-clipboard.
+
+## [2026-07-02] ux | Etiketter far symbol- och emojivaljare
+
+`Symbol` i Etiketter oppnar nu en dialog med flera SVG-symboler och emojis.
+Valet laggs in som ett vanligt symbolobjekt, kan andras i egenskapspanelen och
+foljer samma lokala dokumentlogg, kortkommandon och read-only/audit-undantag som
+ovriga etikettobjekt.

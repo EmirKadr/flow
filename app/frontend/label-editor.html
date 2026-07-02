@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Etiketter - flow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <section class="tools-page-head" aria-labelledby="tools-title">
+    <div class="section-title" id="tools-title">Verktyg</div>
+    <nav class="tools-tabs" aria-label="Verktyg">
+      <a class="tools-tab" href="/dela.html" data-tools-tab-view="allocationSplit">Dela</a>
+      <a class="tools-tab active" href="/label-editor.html" aria-current="page" data-tools-tab-view="labelEditor">Etiketter</a>
+      <a class="tools-tab" href="/mcp.html" data-tools-tab-view="mcp">MCP</a>
+      <a class="tools-tab" href="/hamta-data.html" data-tools-tab-view="dataFetch">Hämta data</a>
+      <a class="tools-tab" href="/historik.html" data-tools-tab-view="analytics">Historik</a>
+      <a class="tools-tab" href="/meta.html" data-tools-tab-view="meta">Meta</a>
+    </nav>
+  </section>
+
+  <main class="label-editor-page">
+    <section class="label-editor-shell">
+      <aside class="label-editor-panel">
+        <div class="label-editor-panel-section">
+          <h2>Mått</h2>
+          <label>Profil
+            <select id="labelProfileSelect"></select>
+          </label>
+          <div class="label-editor-measures">
+            <label>Bredd mm
+              <input id="labelWidth" type="number" min="20" max="500" step="1" />
+            </label>
+            <label>Höjd mm
+              <input id="labelHeight" type="number" min="10" max="500" step="1" />
+            </label>
+          </div>
+          <div class="label-editor-profile-save">
+            <input id="labelProfileName" type="text" maxlength="40" placeholder="Profilnamn" aria-label="Profilnamn" />
+            <button id="labelSaveProfile" type="button">Spara</button>
+            <button id="labelDeleteProfile" type="button" class="danger" disabled>Ta bort</button>
+          </div>
+        </div>
+
+        <div class="label-editor-panel-section">
+          <h2>Verktyg</h2>
+          <div class="label-editor-tools" role="group" aria-label="Verktyg">
+            <button type="button" data-add-label-object="text">Text</button>
+            <button type="button" data-add-label-object="qr">QR</button>
+            <button type="button" data-add-label-object="code128">Code128</button>
+            <button type="button" data-add-label-object="rect">Rektangel</button>
+            <button type="button" data-add-label-object="ellipse">Ellips</button>
+            <button type="button" data-add-label-object="line">Linje</button>
+            <button type="button" data-add-label-object="symbol">Symbol</button>
+          </div>
+        </div>
+
+        <div class="label-editor-panel-section">
+          <div class="label-editor-selection-head">
+            <h2 id="labelSelectedName">Inget valt</h2>
+            <div class="label-editor-mini-actions">
+              <button id="labelDuplicateObject" type="button" data-selected-field title="Duplicera" aria-label="Duplicera">⧉</button>
+              <button id="labelDeleteObject" type="button" data-selected-field class="danger" title="Ta bort" aria-label="Ta bort">×</button>
+            </div>
+          </div>
+
+          <div class="label-editor-field-grid">
+            <label>X
+              <input id="labelObjectX" type="number" min="0" step="0.5" data-selected-field disabled />
+            </label>
+            <label>Y
+              <input id="labelObjectY" type="number" min="0" step="0.5" data-selected-field disabled />
+            </label>
+            <label>B
+              <input id="labelObjectW" type="number" min="2" step="0.5" data-selected-field disabled />
+            </label>
+            <label>H
+              <input id="labelObjectH" type="number" min="2" step="0.5" data-selected-field disabled />
+            </label>
+          </div>
+
+          <label data-visible-for="text,qr,code128">Värde
+            <textarea id="labelObjectValue" rows="3" data-selected-field disabled></textarea>
+          </label>
+
+          <label data-visible-for="symbol">Symbol
+            <select id="labelObjectSymbol" data-selected-field disabled></select>
+          </label>
+
+          <div class="label-editor-field-grid">
+            <label data-visible-for="text">Text mm
+              <input id="labelObjectFontSize" type="number" min="2" max="30" step="0.5" data-selected-field disabled />
+            </label>
+            <label>Färg
+              <input id="labelObjectColor" type="color" data-selected-field disabled />
+            </label>
+            <label data-visible-for="rect,ellipse">Fyll
+              <input id="labelObjectFill" type="color" data-selected-field disabled />
+            </label>
+            <label data-visible-for="rect,ellipse,line">Linje
+              <input id="labelObjectStroke" type="color" data-selected-field disabled />
+            </label>
+            <label data-visible-for="rect,ellipse,line">Linje mm
+              <input id="labelObjectStrokeWidth" type="number" min="0.1" max="4" step="0.1" data-selected-field disabled />
+            </label>
+          </div>
+        </div>
+
+        <div class="label-editor-actions">
+          <button id="labelClear" type="button">Rensa</button>
+          <button id="labelPrint" type="button" class="primary">Skriv ut</button>
+        </div>
+      </aside>
+
+      <section class="label-editor-workspace" id="labelEditorWorkspace">
+        <div class="label-canvas-wrap">
+          <div id="labelCanvas" class="label-canvas" tabindex="0" aria-label="Etikettyta" aria-keyshortcuts="Delete Backspace Control+Z Control+Y Control+Shift+Z Control+C Control+X Control+V"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/desktop_bridge.js"></script>
+  <script src="/js/common/foundation.js?v=20260616-speed-common"></script>
+  <script src="/js/common/theme.js?v=20260616-speed-common"></script>
+  <script src="/js/common/area_focus.js?v=20260616-speed-common"></script>
+  <script src="/js/common/runtime.js?v=20260616-speed-common"></script>
+  <script src="/js/common/app_log.js?v=20260616-speed-common"></script>
+  <script src="/js/common/telemetry.js?v=20260616-speed-common"></script>
+  <script src="/js/common/access.js?v=20260616-speed-common"></script>
+  <script src="/js/common/sidebar.js?v=20260616-speed-common"></script>
+  <script src="/js/common/uploads.js?v=20260616-speed-common"></script>
+  <script src="/js/common/demo_prefetch_init.js?v=20260616-speed-common"></script>
+  <script src="/js/common/import_tools.js?v=20260616-speed-common"></script>
+  <script src="/js/common/table_sort.js?v=20260616-speed-common"></script>
+  <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
+  <script src="/js/common.js?v=20260616-speed-common"></script>
+  <script src="/js/label_editor/barcodes.js?v=20260702-label-editor"></script>
+  <script src="/js/label_editor/editor.js?v=20260702-label-editor"></script>
+</body>
+</html>

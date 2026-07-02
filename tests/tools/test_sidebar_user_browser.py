@@ -125,6 +125,48 @@ def test_sidebar_zoom_controls_and_shortcuts(local_sidebar_server, chromium_brow
         context.close()
 
 
+def test_sidebar_main_menu_context_menus_show_group_tabs(local_sidebar_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        page.goto(f"{local_sidebar_server}/login.html", wait_until="networkidle")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+        page.wait_for_selector('[data-sidebar-view-id="staffing"]', timeout=15000)
+        page.wait_for_selector('[data-sidebar-view-id="tools"]', timeout=15000)
+
+        page.locator('[data-sidebar-view-id="tools"]').click(button="right")
+        expect(page.locator(".sidebar-context-menu")).to_be_visible()
+        tools_items = page.locator(".sidebar-context-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => node.innerText.trim())"""
+        )
+        assert tools_items == ["Dela", "Etiketter", "MCP", "Hämta data", "Historik", "Meta"]
+
+        page.mouse.click(1, 1)
+        expect(page.locator(".sidebar-context-menu")).to_have_count(0)
+
+        page.locator('[data-sidebar-view-id="staffing"]').click(button="right")
+        expect(page.locator(".sidebar-context-menu")).to_be_visible()
+        staffing_items = page.locator(".sidebar-context-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => node.innerText.trim())"""
+        )
+        assert staffing_items == [
+            "Bemanning",
+            "Översikt",
+            "Produktivitet",
+            "Aktiviteter",
+            "Personer",
+            "Användare",
+            "Verksamheter",
+            "Mitt schema",
+            "Min produktivitet",
+        ]
+    finally:
+        context.close()
+
+
 def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, chromium_browser):
     admin_context = chromium_browser.new_context(locale="sv-SE")
     admin_page = admin_context.new_page()

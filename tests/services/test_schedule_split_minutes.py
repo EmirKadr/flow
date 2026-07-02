@@ -74,6 +74,7 @@ def test_split_cell_uses_requested_first_minutes_and_can_merge_back():
             minute_end=60,
             person_id=person.id,
             activity_id=activity.id,
+            remark="Behåll anmärkning",
             empty_override=False,
             version=1,
             updated_by=user.id,
@@ -98,6 +99,7 @@ def test_split_cell_uses_requested_first_minutes_and_can_merge_back():
         split_segments = split_response["segments"]
         assert [(item["minute_start"], item["minute_end"]) for item in split_segments] == [(0, 17), (17, 60)]
         assert {item["activity_id"] for item in split_segments} == {activity.id}
+        assert {item["remark"] for item in split_segments} == {"Behåll anmärkning"}
 
         merge_response = split_cell(
             SplitCellRequest(
@@ -122,6 +124,7 @@ def test_split_cell_uses_requested_first_minutes_and_can_merge_back():
 
         assert [(item["minute_start"], item["minute_end"]) for item in merge_response["segments"]] == [(0, 60)]
         assert merge_response["segments"][0]["activity_id"] == activity.id
+        assert merge_response["segments"][0]["remark"] == "Behåll anmärkning"
     finally:
         close_session(engine, session)
 

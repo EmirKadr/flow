@@ -78,6 +78,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             )
         if schedule_columns and "loan_area_id" not in schedule_columns:
             connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN loan_area_id INTEGER REFERENCES areas(id)")
+        if schedule_columns and "remark" not in schedule_columns:
+            connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN remark TEXT")
         if audit_columns and "business_id" not in audit_columns:
             connection.exec_driver_sql("ALTER TABLE audit_log ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if settings_columns and "business_id" not in settings_columns:

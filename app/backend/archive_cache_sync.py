@@ -372,6 +372,7 @@ def run_view(
 
     filled = {"seed": 0, "forward": 0, "backfill": 0}
     empty_stopped = False
+    empty_stop_days = 0
     for kind, start, end, descending in jobs:
         detail = {
             "seed": f"initial seed {start.isoformat()}..{end.isoformat()} (chunkat)",
@@ -385,6 +386,7 @@ def run_view(
         )
         filled[kind] += result.written
         empty_stopped = empty_stopped or result.empty_stopped
+        empty_stop_days = max(empty_stop_days, result.empty_days)
 
     # Loggmarkör när hela vyns intervall är på plats. `newly_complete` = det var inte
     # fullständigt innan men är det nu (dvs. seeden/ikappkörningen blev klar denna körning).
@@ -406,6 +408,7 @@ def run_view(
         "fully_covered": fully_covered, "newly_complete": newly_complete,
         "rows": total_new, "skipped": skipped,
         "empty_stopped": empty_stopped,
+        "empty_stop_days": empty_stop_days,
     })
     return {
         "view": archive_view_id,
@@ -415,6 +418,7 @@ def run_view(
         "newly_complete": newly_complete,
         "skipped": skipped,
         "empty_stopped": empty_stopped,
+        "empty_stop_days": empty_stop_days,
     }
 
 

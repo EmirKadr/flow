@@ -121,13 +121,27 @@ cache-current-kontrollen jamfor snapshot- och schemasignatur byggs bara datum
 om nar underlaget har andrats.
 
 Samma fyllning kan koras manuellt via arkivcache-CLI:t nar DB:n ska fyllas:
+`python -m app.backend.archive_cache_cli --tenant frey --with-productivity --business-code STIGAMO`
+hamtar standardfonstret fran `ARCHIVE_CACHE_SEED_DAYS`, till och med igar, och
+bygger normalt `person_productivity_daily` direkt.
 `python -m app.backend.archive_cache_cli --productivity-only --productivity-start 2025-01-01 --business-code STIGAMO`
-hamtar API-dagfiler fran startdatumet till och med igar och bygger normalt
-`person_productivity_daily` direkt. `--productivity-no-prebuild` hamtar bara
-filerna och kraver inte att appdatabasen kan skriva personcachen. Bygglaget
-kraver fungerande `DATABASE_URL`; om DB:n ar nere stoppar CLI:t innan den
-hamtar en lang period. Utan datumargument kor `--productivity-only` prebuild for alla
-snapshotdagar som redan finns, ar kompletta och ar aldre an dagens datum.
+hamtar ett explicit API-dagintervall fran startdatumet till och med igar och bygger normalt
+`person_productivity_daily` direkt. Intervallkörningen går från slutdatumet
+bakåt i chunkar, hoppar över snapshotdagar som redan är kompletta och använder
+cache-current-kontrollen innan personcachen byggs. Det betyder att en omkörning
+inte hämtar eller materialiserar datum som redan är aktuella. `--productivity-no-prebuild`
+hamtar bara filerna och kraver inte att appdatabasen kan skriva personcachen.
+Bygglaget kraver fungerande `DATABASE_URL`; om DB:n ar nere stoppar CLI:t innan
+den hamtar en lang period. `--productivity-prebuild-existing` kor gamla prebuild-laget
+for alla snapshotdagar som redan finns, ar kompletta och ar aldre an dagens datum,
+utan att hamta ett seed-intervall.
+Produktivitets-CLI:n skriver en chunk-progressbar och visar per intervall hur
+manga snapshotdagar som redan hittades sparade, hur manga som saknas/ar gamla,
+hur manga rader som finns i sparade snapshotmetadata, om API hamtades, samt hur
+manga `person_productivity_daily`-dagar som redan var aktuella eller byggdes.
+Det ar medvetet formulerat som sparade snapshots/persondagar i stallet for
+generell cache, eftersom snapshotfilerna ligger pa disk och persondagarna ligger
+i appdatabasen.
 
 Sankey - Inbound kan ateranvanda samma snapshotfiler for de gemensamma
 datumstyrda loggkallorna `receive` och `trans` nar hela Sankeys foljfonster

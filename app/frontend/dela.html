@@ -12,6 +12,17 @@
 </head>
 <body class="with-sidebar">
   <header class="topbar"></header>
+  <section class="tools-page-head" aria-labelledby="tools-title">
+    <div class="section-title" id="tools-title">Verktyg</div>
+    <nav class="tools-tabs" aria-label="Verktyg">
+      <a class="tools-tab active" href="/dela.html" aria-current="page" data-tools-tab-view="allocationSplit">Dela</a>
+      <a class="tools-tab" href="/label-editor.html" data-tools-tab-view="labelEditor">Etiketter</a>
+      <a class="tools-tab" href="/mcp.html" data-tools-tab-view="mcp">MCP</a>
+      <a class="tools-tab" href="/hamta-data.html" data-tools-tab-view="dataFetch">Hämta data</a>
+      <a class="tools-tab" href="/historik.html" data-tools-tab-view="analytics">Historik</a>
+      <a class="tools-tab" href="/meta.html" data-tools-tab-view="meta">Meta</a>
+    </nav>
+  </section>
   <main id="allocationRoot" class="allocation-page" data-allocation-view="split"></main>
 
   <script src="/js/api.js"></script>

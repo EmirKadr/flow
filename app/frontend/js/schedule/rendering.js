@@ -1,3 +1,5 @@
+let scheduleCellContextMenu = null;
+
 function buildDisplayLabel(text, className) {
   const label = document.createElement("div");
   label.className = className;
@@ -223,6 +225,7 @@ function requestScheduleSplitMinutes(defaultMinutes = DEFAULT_SPLIT_MINUTES) {
 function openFullHourSelect(e, td) {
   e.preventDefault();
   e.stopPropagation();
+  closeScheduleCellContextMenu();
   if (scheduleIsReadOnly()) {
     focusSegment(td, td, 0, 60);
     showReadOnlyToast();
@@ -241,6 +244,7 @@ function openFullHourSelect(e, td) {
 function openSplitSegmentSelect(e, td, part, minuteStart, minuteEnd) {
   e.preventDefault();
   e.stopPropagation();
+  closeScheduleCellContextMenu();
   if (scheduleIsReadOnly()) {
     focusSegment(td, part, minuteStart, minuteEnd);
     showReadOnlyToast();
@@ -259,6 +263,7 @@ function openSplitSegmentSelect(e, td, part, minuteStart, minuteEnd) {
 async function toggleFullHourSplitFromEvent(e, td) {
   e.preventDefault();
   e.stopPropagation();
+  closeScheduleCellContextMenu();
   if (scheduleIsReadOnly()) {
     focusSegment(td, td, 0, 60);
     showReadOnlyToast();
@@ -277,6 +282,7 @@ async function toggleFullHourSplitFromEvent(e, td) {
 function toggleSplitSegmentFromEvent(e, td, part, minuteStart, minuteEnd) {
   e.preventDefault();
   e.stopPropagation();
+  closeScheduleCellContextMenu();
   if (scheduleIsReadOnly()) {
     focusSegment(td, part, minuteStart, minuteEnd);
     showReadOnlyToast();
@@ -288,6 +294,239 @@ function toggleSplitSegmentFromEvent(e, td, part, minuteStart, minuteEnd) {
   }
   focusSegment(td, part, minuteStart, minuteEnd);
   void toggleHourSplit(td, minuteStart);
+}
+
+function scheduleRemarkText(value) {
+  return String(value || "").trim();
+}
+
+function applyScheduleRemarkIndicator(target, remark) {
+  const text = scheduleRemarkText(remark);
+  target.classList.toggle("has-remark", !!text);
+  if (!text) return;
+  target.title = target.title ? `${target.title}\n${text}` : text;
+}
+
+function requestScheduleCellRemark(initialRemark = "") {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal schedule-remark-modal" role="dialog" aria-modal="true" aria-labelledby="scheduleRemarkTitle">
+        <h2 id="scheduleRemarkTitle">Anmärkning</h2>
+        <label>Text
+          <textarea id="scheduleRemarkInput" maxlength="500">${escapeHtml(initialRemark || "")}</textarea>
+        </label>
+        <div class="actions">
+          <button type="button" id="scheduleRemarkClear">Ta bort</button>
+          <button type="button" id="scheduleRemarkCancel">Avbryt</button>
+          <button type="button" class="primary" data-enter-default id="scheduleRemarkSave">Spara</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const input = backdrop.querySelector("#scheduleRemarkInput");
+    const close = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+    backdrop.querySelector("#scheduleRemarkCancel").addEventListener("click", () => close(null));
+    backdrop.querySelector("#scheduleRemarkClear").addEventListener("click", () => close(""));
+    backdrop.querySelector("#scheduleRemarkSave").addEventListener("click", () => close(input.value));
+    backdrop.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(null);
+      }
+    });
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  });
+}
+
+function applyScheduleRemarkResponse(td, updated) {
+  const personId = Number(updated.person_id);
+  const hour = Number(updated.hour);
+  const minuteStart = Number(updated.minute_start);
+  const minuteEnd = Number(updated.minute_end);
+  const existing = segmentsForHour(personId, hour).filter(
+    (segment) => !(segment.minute_start === minuteStart && segment.minute_end === minuteEnd)
+  );
+  const shouldRemove = Number(updated.version) === 0
+    && updated.activity_id == null
+    && updated.loan_area_id == null
+    && !updated.empty_override
+    && !scheduleRemarkText(updated.remark);
+  replaceHourSegments(personId, hour, shouldRemove ? existing : [...existing, updated]);
+  renderHourCell(td);
+  focusMatchingSegment(td, minuteStart, minuteEnd);
+}
+
+async function openScheduleCellRemarkDialog(e, td, part = null, minuteStart = 0, minuteEnd = 60) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeScheduleCellContextMenu();
+  const personId = Number(td.dataset.personId);
+  const hour = Number(td.dataset.hour);
+  if (scheduleIsReadOnly()) {
+    focusSegment(td, part || td, minuteStart, minuteEnd);
+    showReadOnlyToast();
+    return;
+  }
+  if (isRangeLocked(personId, hour, minuteStart, minuteEnd)) {
+    showLockedCellToast();
+    return;
+  }
+  focusSegment(td, part || td, minuteStart, minuteEnd);
+  const segment = currentSegment(personId, hour, minuteStart, minuteEnd);
+  const nextRemark = await requestScheduleCellRemark(scheduleRemarkText(segment.remark));
+  if (nextRemark == null) return;
+
+  const undoSnapshot = snapshotHour(personId, hour);
+  try {
+    const resp = await api.put("/api/schedule/cell/remark", {
+      year: state.year,
+      week: state.week,
+      weekday: state.weekday,
+      hour,
+      minute_start: minuteStart,
+      minute_end: minuteEnd,
+      person_id: personId,
+      remark: scheduleRemarkText(nextRemark) || null,
+      expected_version: Number(segment.version) || 0,
+    });
+    invalidateScheduleAllCache();
+    pushScheduleUndo("anmärkning", [undoSnapshot]);
+    applyScheduleRemarkResponse(td, resp.cell);
+    scheduleSummaryRefresh(90, { refreshCalculator: true });
+    showToast(scheduleRemarkText(resp.cell?.remark) ? "Anmärkning sparad." : "Anmärkning borttagen.");
+  } catch (err) {
+    if (err.status === 409) {
+      showToast("Cellen ändrades av någon annan – läste in på nytt", "warn");
+      await loadSchedule();
+    } else {
+      showToast("Kunde inte spara anmärkningen: " + err.message, "error");
+    }
+  }
+}
+
+function closeScheduleCellContextMenu() {
+  if (!scheduleCellContextMenu) return;
+  scheduleCellContextMenu.remove();
+  scheduleCellContextMenu = null;
+  document.removeEventListener("pointerdown", handleScheduleCellContextMenuPointerDown);
+  document.removeEventListener("keydown", handleScheduleCellContextMenuKeydown);
+  document.removeEventListener("scroll", handleScheduleCellContextMenuScroll, true);
+  window.removeEventListener("resize", closeScheduleCellContextMenu);
+}
+
+function handleScheduleCellContextMenuPointerDown(event) {
+  if (!scheduleCellContextMenu || scheduleCellContextMenu.contains(event.target)) return;
+  closeScheduleCellContextMenu();
+}
+
+function handleScheduleCellContextMenuKeydown(event) {
+  if (event.key === "Escape") closeScheduleCellContextMenu();
+}
+
+function handleScheduleCellContextMenuScroll(event) {
+  if (scheduleCellContextMenu?.contains(event.target)) return;
+  closeScheduleCellContextMenu();
+}
+
+function scheduleCellActionEvent() {
+  return {
+    preventDefault() {},
+    stopPropagation() {},
+  };
+}
+
+function positionScheduleCellContextMenu(menu, event, td) {
+  const rect = menu.getBoundingClientRect();
+  const anchorRect = td?.getBoundingClientRect?.();
+  const rawX = Number(event?.clientX);
+  const rawY = Number(event?.clientY);
+  const clientX = Number.isFinite(rawX) ? rawX : (anchorRect ? anchorRect.left + 16 : 8);
+  const clientY = Number.isFinite(rawY) ? rawY : (anchorRect ? anchorRect.bottom : 8);
+  const left = Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function openScheduleCellContextMenu(event, td, part = null) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeScheduleCellContextMenu();
+  if (typeof closeScheduleLoanMenu === "function") closeScheduleLoanMenu();
+
+  const isSplit = td.dataset.split === "1";
+  const minuteStart = part ? Number(part.dataset.minuteStart) : 0;
+  const minuteEnd = part ? Number(part.dataset.minuteEnd) : 60;
+  if (isSplit && part) focusSegment(td, part, minuteStart, minuteEnd);
+  else focusSegment(td, td, 0, 60);
+
+  const menu = document.createElement("div");
+  menu.className = "schedule-cell-context-menu";
+  menu.setAttribute("role", "menu");
+  menu.style.left = "0px";
+  menu.style.top = "0px";
+
+  const splitButton = document.createElement("button");
+  splitButton.type = "button";
+  splitButton.dataset.scheduleCellAction = "split";
+  splitButton.setAttribute("role", "menuitem");
+  splitButton.textContent = isSplit ? "Slå ihop" : "Dela";
+  splitButton.addEventListener("click", () => {
+    closeScheduleCellContextMenu();
+    const actionEvent = scheduleCellActionEvent();
+    if (isSplit && part) {
+      const currentPart = td.querySelector(
+        `.hour-segment[data-minute-start="${minuteStart}"][data-minute-end="${minuteEnd}"]`
+      );
+      if (!currentPart) return;
+      toggleSplitSegmentFromEvent(actionEvent, td, currentPart, minuteStart, minuteEnd);
+      return;
+    }
+    void toggleFullHourSplitFromEvent(actionEvent, td);
+  });
+  menu.appendChild(splitButton);
+
+  const remarkButton = document.createElement("button");
+  remarkButton.type = "button";
+  remarkButton.dataset.scheduleCellAction = "remark";
+  remarkButton.setAttribute("role", "menuitem");
+  remarkButton.textContent = "Anmärkning";
+  remarkButton.addEventListener("click", () => {
+    closeScheduleCellContextMenu();
+    const actionEvent = scheduleCellActionEvent();
+    if (isSplit && part) {
+      const currentPart = td.querySelector(
+        `.hour-segment[data-minute-start="${minuteStart}"][data-minute-end="${minuteEnd}"]`
+      );
+      if (!currentPart) return;
+      void openScheduleCellRemarkDialog(actionEvent, td, currentPart, minuteStart, minuteEnd);
+      return;
+    }
+    void openScheduleCellRemarkDialog(actionEvent, td, null, 0, 60);
+  });
+  menu.appendChild(remarkButton);
+
+  document.body.appendChild(menu);
+  scheduleCellContextMenu = menu;
+  positionScheduleCellContextMenu(menu, event, td);
+
+  window.setTimeout(() => {
+    if (scheduleCellContextMenu !== menu) return;
+    splitButton.focus({ preventScroll: true });
+    document.addEventListener("pointerdown", handleScheduleCellContextMenuPointerDown);
+    document.addEventListener("keydown", handleScheduleCellContextMenuKeydown);
+    document.addEventListener("scroll", handleScheduleCellContextMenuScroll, true);
+    window.addEventListener("resize", closeScheduleCellContextMenu);
+  }, 0);
 }
 
 function splitPartFromEvent(td, e) {
@@ -354,7 +593,7 @@ function armHalfHourDrag(td, minuteStart, minuteEnd, event) {
 }
 
 function resetRenderedHourState(td) {
-  td.classList.remove("split-hour", "scheduled-empty", "base-value", "with-display-label", "locked-cell");
+  td.classList.remove("split-hour", "scheduled-empty", "base-value", "with-display-label", "locked-cell", "has-remark");
   td.style.background = "#fff";
   td.dataset.isBase = "";
   td.title = "";
@@ -363,7 +602,7 @@ function resetRenderedHourState(td) {
 function renderFullHourCell(td, segment, isScheduled) {
   td.dataset.split = "0";
   resetRenderedHourState(td);
-  td.oncontextmenu = (e) => openFullHourSelect(e, td);
+  td.oncontextmenu = (e) => openScheduleCellContextMenu(e, td);
 
   const personId = Number(td.dataset.personId);
   const hasExplicitSegment = !!segment;
@@ -376,6 +615,7 @@ function renderFullHourCell(td, segment, isScheduled) {
     td.classList.add("locked-cell");
     td.title = "Låst av annan användare";
   }
+  applyScheduleRemarkIndicator(td, segment?.remark);
 
   if (explicitActivityId != null) {
     td.style.background = colorFor(explicitActivityId);
@@ -423,7 +663,7 @@ function renderFullHourCell(td, segment, isScheduled) {
     }
   });
   select.addEventListener("keydown", (e) => handleSelectClipboardKeys(e), true);
-  select.addEventListener("contextmenu", (e) => openFullHourSelect(e, td), true);
+  select.addEventListener("contextmenu", (e) => openScheduleCellContextMenu(e, td), true);
 
   td.appendChild(select);
   if (showScheduledDefault && scheduledActivityId != null) {
@@ -439,14 +679,12 @@ function renderSplitHourCell(td, segments, isScheduled) {
   td.classList.add("split-hour");
   td.oncontextmenu = (e) => {
     const part = splitPartFromEvent(td, e);
-    if (!part) return;
-    openSplitSegmentSelect(
-      e,
-      td,
-      part,
-      Number(part.dataset.minuteStart),
-      Number(part.dataset.minuteEnd),
-    );
+    if (!part) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    openScheduleCellContextMenu(e, td, part);
   };
 
   const wrapper = document.createElement("div");
@@ -472,6 +710,7 @@ function renderSplitHourCell(td, segments, isScheduled) {
       part.classList.add("locked-cell");
       part.title = "Låst av annan användare";
     }
+    applyScheduleRemarkIndicator(part, segment?.remark);
 
     if (segment.activity_id != null) {
       part.style.background = colorFor(segment.activity_id);
@@ -521,12 +760,12 @@ function renderSplitHourCell(td, segments, isScheduled) {
     select.addEventListener("keydown", (e) => handleSelectClipboardKeys(e), true);
     part.addEventListener(
       "contextmenu",
-      (e) => openSplitSegmentSelect(e, td, part, minute_start, minute_end),
+      (e) => openScheduleCellContextMenu(e, td, part),
       true,
     );
     select.addEventListener(
       "contextmenu",
-      (e) => openSplitSegmentSelect(e, td, part, minute_start, minute_end),
+      (e) => openScheduleCellContextMenu(e, td, part),
       true,
     );
 

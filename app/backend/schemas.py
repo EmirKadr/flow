@@ -231,6 +231,7 @@ class CellOut(BaseModel):
     minute_end: int
     activity_id: int | None
     loan_area_id: int | None = None
+    remark: str | None = None
     empty_override: bool = False
     version: int
     updated_at: datetime | None = None
@@ -290,6 +291,18 @@ class CellUpdate(BaseModel):
     expected_version: int
 
 
+class CellRemarkUpdate(BaseModel):
+    year: int
+    week: int
+    weekday: int
+    hour: int
+    minute_start: int = 0
+    minute_end: int = 60
+    person_id: int
+    remark: str | None = Field(default=None, max_length=500)
+    expected_version: int
+
+
 class BulkCellItem(BaseModel):
     year: int
     week: int
@@ -314,6 +327,7 @@ class RestoreSegment(BaseModel):
     minute_end: int
     activity_id: int | None
     loan_area_id: int | None = None
+    remark: str | None = Field(default=None, max_length=500)
     empty_override: bool = False
 
 

@@ -139,6 +139,36 @@ function canUseAllocationProcess(user) {
   return canViewPage(user, "allocationProcess");
 }
 
+const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta"];
+const SIDEBAR_STAFFING_TAB_VIEW_IDS = [
+  "schedule",
+  "overview",
+  "productivity",
+  "activities",
+  "persons",
+  "users",
+  "businesses",
+  "mySchedule",
+  "myProductivity",
+];
+const SIDEBAR_VIEW_HREFS = {
+  allocationSplit: "/dela.html",
+  labelEditor: "/label-editor.html",
+  mcp: "/mcp.html",
+  dataFetch: "/hamta-data.html",
+  analytics: "/historik.html",
+  meta: "/meta.html",
+  schedule: "/index.html",
+  overview: "/overblick.html",
+  productivity: "/produktivitet.html",
+  activities: "/aktiviteter.html",
+  persons: "/personer.html",
+  users: "/anvandare.html",
+  businesses: "/verksamheter.html",
+  mySchedule: "/mitt-schema.html",
+  myProductivity: "/min-produktivitet.html",
+};
+
 function sidebarDefaultLayout() {
   return SIDEBAR_DEFAULT_LAYOUT.map((item) => ({
     id: item.id,
@@ -147,8 +177,47 @@ function sidebarDefaultLayout() {
   }));
 }
 
+function sidebarTabTargetVisible(user, viewId) {
+  if (viewId === "meta" || viewId === "businesses") return Boolean(user?.is_super_user);
+  return canViewPage(user, viewId);
+}
+
+function sidebarGroupVisible(user, viewIds) {
+  return viewIds.some((viewId) => sidebarTabTargetVisible(user, viewId));
+}
+
+function sidebarFirstGroupHref(user, viewIds) {
+  const viewId = viewIds.find((candidate) => sidebarTabTargetVisible(user, candidate));
+  return viewId ? SIDEBAR_VIEW_HREFS[viewId] || "#" : "#";
+}
+
+function sidebarGroupActive(activePage, groupId, viewIds) {
+  return activePage === groupId || viewIds.includes(activePage);
+}
+
+function sidebarToolsHref(user) {
+  return sidebarFirstGroupHref(user, SIDEBAR_TOOLS_TAB_VIEW_IDS);
+}
+
+function sidebarStaffingHref(user) {
+  return sidebarFirstGroupHref(user, SIDEBAR_STAFFING_TAB_VIEW_IDS);
+}
+
 function sidebarPageDefinitions(user, activePage) {
+  const toolsVisible = sidebarGroupVisible(user, SIDEBAR_TOOLS_TAB_VIEW_IDS);
+  const toolsActive = sidebarGroupActive(activePage, "tools", SIDEBAR_TOOLS_TAB_VIEW_IDS);
+  const staffingVisible = sidebarGroupVisible(user, SIDEBAR_STAFFING_TAB_VIEW_IDS);
+  const staffingActive = sidebarGroupActive(activePage, "staffing", SIDEBAR_STAFFING_TAB_VIEW_IDS);
   return [
+    {
+      id: "staffing",
+      label: "Bemanning",
+      href: sidebarStaffingHref(user),
+      icon: "📋",
+      visible: staffingVisible,
+      active: staffingActive,
+      contextMenuViewIds: SIDEBAR_STAFFING_TAB_VIEW_IDS,
+    },
     {
       id: "mySchedule",
       label: "Mitt schema",
@@ -156,6 +225,7 @@ function sidebarPageDefinitions(user, activePage) {
       iconHtml: MY_SCHEDULE_ICON,
       visible: canViewPage(user, "mySchedule"),
       active: activePage === "mySchedule",
+      sidebar: false,
     },
     {
       id: "myProductivity",
@@ -164,6 +234,7 @@ function sidebarPageDefinitions(user, activePage) {
       iconHtml: MY_PRODUCTIVITY_ICON,
       visible: canViewPage(user, "myProductivity"),
       active: activePage === "myProductivity",
+      sidebar: false,
     },
     {
       id: "schedule",
@@ -172,6 +243,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "📋",
       visible: canViewPage(user, "schedule"),
       active: activePage === "schedule",
+      sidebar: false,
     },
     {
       id: "overview",
@@ -180,6 +252,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "🗓️",
       visible: canViewPage(user, "overview"),
       active: activePage === "overview",
+      sidebar: false,
     },
     {
       id: "productivity",
@@ -188,6 +261,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "📈",
       visible: canViewPage(user, "productivity"),
       active: activePage === "productivity",
+      sidebar: false,
     },
     {
       id: "dataFetch",
@@ -196,6 +270,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "⇩",
       visible: canViewPage(user, "dataFetch"),
       active: activePage === "dataFetch",
+      sidebar: false,
     },
     {
       id: "mcp",
@@ -204,6 +279,25 @@ function sidebarPageDefinitions(user, activePage) {
       iconHtml: MCP_ICON,
       visible: canViewPage(user, "mcp"),
       active: activePage === "mcp",
+      sidebar: false,
+    },
+    {
+      id: "tools",
+      label: "Verktyg",
+      href: sidebarToolsHref(user),
+      iconHtml: TOOLS_ICON,
+      visible: toolsVisible,
+      active: toolsActive,
+      contextMenuViewIds: SIDEBAR_TOOLS_TAB_VIEW_IDS,
+    },
+    {
+      id: "labelEditor",
+      label: "Etiketter",
+      href: "/label-editor.html",
+      iconHtml: LABEL_EDITOR_ICON,
+      visible: canViewPage(user, "labelEditor"),
+      active: activePage === "labelEditor",
+      sidebar: false,
     },
     {
       id: "allocationProcess",
@@ -231,6 +325,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "✂",
       visible: canViewPage(user, "allocationSplit"),
       active: activePage === "allocationSplit",
+      sidebar: false,
     },
     {
       id: "persons",
@@ -239,6 +334,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "👥",
       visible: canViewPage(user, "persons"),
       active: activePage === "persons",
+      sidebar: false,
     },
     {
       id: "activities",
@@ -247,6 +343,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "📍",
       visible: canViewPage(user, "activities"),
       active: activePage === "activities",
+      sidebar: false,
     },
     {
       id: "analytics",
@@ -255,6 +352,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "📊",
       visible: canViewPage(user, "analytics"),
       active: activePage === "analytics",
+      sidebar: false,
     },
     {
       id: "meta",
@@ -263,6 +361,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "M",
       visible: Boolean(user?.is_super_user),
       active: activePage === "meta",
+      sidebar: false,
     },
     {
       id: "users",
@@ -271,6 +370,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "👤",
       visible: canViewPage(user, "users"),
       active: activePage === "users",
+      sidebar: false,
     },
     {
       id: "businesses",
@@ -279,6 +379,7 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "⌘",
       visible: Boolean(user?.is_super_user),
       active: activePage === "businesses",
+      sidebar: false,
     },
   ];
 }
@@ -397,8 +498,43 @@ async function refreshRoleViewAccessForRouting() {
 function firstAccessiblePageHref(user, activePage = "") {
   const pages = sidebarPageDefinitions(user, activePage);
   const currentPath = window.location?.pathname || "";
-  const visiblePage = pages.find((page) => page.visible && page.href && page.href !== currentPath);
+  const visiblePage = pages.find((page) => page.visible && page.sidebar !== false && page.href && page.href !== currentPath);
   return visiblePage?.href || "";
+}
+
+function syncTabGroup(user, tabs, navs, datasetKey) {
+  if (!tabs.length) return;
+  const pages = sidebarPageDefinitions(user, window.flowActivePage || document.body?.dataset.activePage || "");
+  const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
+  let visibleCount = 0;
+  tabs.forEach((tab) => {
+    const viewId = normalizeViewId(tab.dataset[datasetKey]);
+    const visible = Boolean(pageById[viewId]?.visible);
+    tab.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  navs.forEach((nav) => {
+    nav.hidden = visibleCount <= 1;
+  });
+}
+
+function syncViewTabs(user) {
+  syncTabGroup(
+    user,
+    Array.from(document.querySelectorAll("[data-tools-tab-view]")),
+    Array.from(document.querySelectorAll(".tools-tabs")),
+    "toolsTabView",
+  );
+  syncTabGroup(
+    user,
+    Array.from(document.querySelectorAll("[data-staffing-tab-view]")),
+    Array.from(document.querySelectorAll(".staffing-tabs")),
+    "staffingTabView",
+  );
+}
+
+function syncToolsTabs(user) {
+  syncViewTabs(user);
 }
 
 function isPersonOnlyAccount(user) {

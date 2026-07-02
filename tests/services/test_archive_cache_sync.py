@@ -118,6 +118,7 @@ def test_deep_seed_stops_after_empty_history_threshold(enabled, monkeypatch):
 
     assert res["fully_covered"] is True
     assert res["empty_stopped"] is True
+    assert res["empty_stop_days"] == 300
     assert min(start for _view, start, _end in calls) > target_start
     assert store.ingested_range(TENANT, VIEW) == (first_data, target_end)
     assert store.covered_range(TENANT, VIEW) == (target_start, target_end)
@@ -273,6 +274,30 @@ def test_cli_default_includes_archive_and_snapshot_views(monkeypatch, capsys):
     assert "DuckDB-cache" in capsys.readouterr().out
 
 
+def test_cli_reports_archive_empty_stop(monkeypatch, capsys):
+    def fake_seed_all(tenants, *, max_workers=None, progress=None, view_ids=None):
+        return {
+            "status": "ok",
+            "results": [
+                {
+                    "tenant": "frey",
+                    "view": VIEW,
+                    "fully_covered": True,
+                    "empty_stopped": True,
+                    "empty_stop_days": 300,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(cli.store, "is_enabled", lambda: True)
+    monkeypatch.setattr(cli.sync, "seed_all", fake_seed_all)
+
+    assert cli.main(["--tenant", "frey"]) == 0
+    out = capsys.readouterr().out
+    assert "300 tomma dagar" in out
+    assert "klart/tomt" in out
+
+
 def test_cli_can_run_snapshots_only(monkeypatch):
     captured = {}
 
@@ -300,12 +325,13 @@ def test_cli_productivity_only_fetches_range_and_skips_archive(monkeypatch):
     def fail_seed_all(*args, **kwargs):
         raise AssertionError("archive seed ska inte koras")
 
-    def fake_history(end_date, *, days_back, business_code, db, warm_cache):
+    def fake_history(end_date, *, days_back, business_code, db, warm_cache, skip_ready=False):
         captured["end_date"] = end_date
         captured["days_back"] = days_back
         captured["business_code"] = business_code
         captured["db"] = db
         captured["warm_cache"] = warm_cache
+        captured["skip_ready"] = skip_ready
         return {"status": "ok", "dates": ["2025-01-01", "2025-12-31"], "errors": []}
 
     monkeypatch.setattr(cli.store, "is_enabled", fail_store_enabled)
@@ -328,6 +354,7 @@ def test_cli_productivity_only_fetches_range_and_skips_archive(monkeypatch):
     assert captured["days_back"] == 364
     assert captured["business_code"] == "STIGAMO"
     assert captured["warm_cache"] is True
+    assert captured["skip_ready"] is True
     assert captured["closed"] is True
 
 
@@ -343,12 +370,13 @@ def test_cli_productivity_start_defaults_end_to_yesterday(monkeypatch):
         captured["archive_view_ids"] = view_ids
         return {"status": "ok", "results": [{"view": "item_alias", "fully_covered": True}]}
 
-    def fake_history(end_date, *, days_back, business_code, db, warm_cache):
+    def fake_history(end_date, *, days_back, business_code, db, warm_cache, skip_ready=False):
         captured["end_date"] = end_date
         captured["days_back"] = days_back
         captured["business_code"] = business_code
         captured["db"] = db
         captured["warm_cache"] = warm_cache
+        captured["skip_ready"] = skip_ready
         return {"status": "ok", "dates": ["2025-01-01", "2026-07-01"], "errors": []}
 
     monkeypatch.setattr(cli.store, "is_enabled", lambda: True)
@@ -374,6 +402,44 @@ def test_cli_productivity_start_defaults_end_to_yesterday(monkeypatch):
     assert captured["days_back"] == 546
     assert captured["business_code"] == "STIGAMO"
     assert captured["warm_cache"] is True
+    assert captured["skip_ready"] is True
+    assert captured["closed"] is True
+
+
+def test_cli_productivity_without_dates_defaults_to_archive_seed_window(monkeypatch):
+    captured = {}
+
+    class FakeDb:
+        def close(self):
+            captured["closed"] = True
+
+    def fake_seed_all(tenants, *, max_workers=None, progress=None, view_ids=None):
+        captured["archive_tenants"] = tenants
+        return {"status": "ok", "results": [{"view": "item_alias", "fully_covered": True}]}
+
+    def fake_history(end_date, *, days_back, business_code, db, warm_cache, skip_ready=False):
+        captured["end_date"] = end_date
+        captured["days_back"] = days_back
+        captured["business_code"] = business_code
+        captured["warm_cache"] = warm_cache
+        captured["skip_ready"] = skip_ready
+        return {"status": "ok", "dates": ["2026-06-22", "2026-07-01"], "errors": []}
+
+    monkeypatch.setattr(settings, "ARCHIVE_CACHE_SEED_DAYS", 10)
+    monkeypatch.setattr(cli.store, "is_enabled", lambda: True)
+    monkeypatch.setattr(cli.sync, "seed_all", fake_seed_all)
+    monkeypatch.setattr(cli, "SessionLocal", lambda: FakeDb())
+    monkeypatch.setattr(cli, "sync_productivity_snapshot_history", fake_history)
+    monkeypatch.setattr(cli, "productivity_snapshot_is_stale", lambda _day: True)
+    monkeypatch.setattr(cli, "_default_productivity_end", lambda: date(2026, 7, 1))
+
+    assert cli.main(["--tenant", "frey", "--with-productivity", "--business-code", "STIGAMO"]) == 0
+    assert captured["archive_tenants"] == ["frey"]
+    assert captured["end_date"] == date(2026, 7, 1)
+    assert captured["days_back"] == 9
+    assert captured["business_code"] == "STIGAMO"
+    assert captured["warm_cache"] is True
+    assert captured["skip_ready"] is True
     assert captured["closed"] is True
 
 
@@ -384,8 +450,8 @@ def test_cli_productivity_range_is_chunked(monkeypatch):
         def close(self):
             captured["closed"] = True
 
-    def fake_history(end_date, *, days_back, business_code, db, warm_cache):
-        captured["calls"].append((end_date, days_back, business_code, warm_cache))
+    def fake_history(end_date, *, days_back, business_code, db, warm_cache, skip_ready=False):
+        captured["calls"].append((end_date, days_back, business_code, warm_cache, skip_ready))
         return {"status": "ok", "dates": [end_date.isoformat()], "errors": []}
 
     monkeypatch.setattr(cli.store, "is_enabled", lambda: False)
@@ -402,9 +468,67 @@ def test_cli_productivity_range_is_chunked(monkeypatch):
         "31",
     ]) == 0
     assert captured["calls"] == [
-        (date(2025, 1, 31), 30, "STIGAMO", True),
-        (date(2025, 2, 5), 4, "STIGAMO", True),
+        (date(2025, 2, 5), 4, "STIGAMO", True, True),
+        (date(2025, 1, 31), 30, "STIGAMO", True, True),
     ]
+    assert captured["closed"] is True
+
+
+def test_cli_productivity_logs_saved_snapshots_and_person_days(monkeypatch, capsys):
+    captured = {}
+
+    class FakeDb:
+        def close(self):
+            captured["closed"] = True
+
+    def fake_status(snapshot_date):
+        return {
+            "date": snapshot_date.isoformat(),
+            "ready": True,
+            "sources": [
+                {"key": "pick", "rows": 10},
+                {"key": "trans", "rows": 5},
+            ],
+        }
+
+    def fake_history(end_date, *, days_back, business_code, db, warm_cache, skip_ready=False):
+        assert end_date == date(2025, 1, 2)
+        assert days_back == 1
+        assert warm_cache is True
+        assert skip_ready is True
+        return {
+            "status": "ok",
+            "dates": ["2025-01-01", "2025-01-02"],
+            "synced_dates": [],
+            "skipped_dates": ["2025-01-01", "2025-01-02"],
+            "results": [
+                {"date": "2025-01-01", "snapshot": "ready", "status": "current", "rows": 0},
+                {"date": "2025-01-02", "snapshot": "ready", "status": "materialized", "rows": 7},
+            ],
+            "errors": [],
+        }
+
+    monkeypatch.setattr(cli.store, "is_enabled", lambda: False)
+    monkeypatch.setattr(cli, "SessionLocal", lambda: FakeDb())
+    monkeypatch.setattr(cli, "productivity_snapshot_status", fake_status)
+    monkeypatch.setattr(cli, "productivity_snapshot_is_stale", lambda _day: False)
+    monkeypatch.setattr(cli, "sync_productivity_snapshot_history", fake_history)
+
+    assert cli.main([
+        "--productivity-only",
+        "--productivity-start",
+        "2025-01-01",
+        "--productivity-end",
+        "2025-01-02",
+        "--productivity-chunk-days",
+        "31",
+    ]) == 0
+    out = capsys.readouterr().out
+    assert "Sparat före start: snapshots aktuella 2/2d" in out
+    assert "ingen API-hämtning" in out
+    assert "sparade snapshotrader=30" in out
+    assert "persondagar aktuella=1d, byggda=1d" in out
+    assert "återanvände 2 sparade snapshotdatum" in out
     assert captured["closed"] is True
 
 
@@ -436,6 +560,7 @@ def test_cli_with_productivity_without_dates_runs_archive_then_prebuild(monkeypa
         "--with-productivity",
         "--business-code",
         "STIGAMO",
+        "--productivity-prebuild-existing",
         "--force-productivity-prebuild",
     ]) == 0
     assert captured["archive_tenants"] == ["frey"]

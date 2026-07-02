@@ -15,10 +15,11 @@ som full replace. Körningen är återupptagningsbar för arkivvyer (Ctrl+C och 
 igen fortsätter där den slutade). Kräver ARCHIVE_CACHE_ENABLED=1 och API-uppgifter
 i app/.env.
 
-Produktivitetslage med startdatum men utan slutdatum hamtar till och med igar,
-aldrig dagens datum i defaultlaget. Det kan samtidigt bygga
-`person_productivity_daily`. `--productivity-only` kan koras utan
-DuckDB-arkivcachen.
+Produktivitetslage utan datum hamtar samma bakatfonster som ARCHIVE_CACHE_SEED_DAYS,
+till och med igar. Startdatum utan slutdatum hamtar till och med igar, aldrig dagens
+datum i defaultlaget. Det kan samtidigt bygga `person_productivity_daily`.
+`--productivity-prebuild-existing` bygger bara redan hamtade snapshots.
+`--productivity-only` kan koras utan DuckDB-arkivcachen.
 """
 from __future__ import annotations
 
@@ -35,11 +36,14 @@ from sqlalchemy import text
 from . import archive_cache_sync as sync
 from . import local_archive_store as store
 from .business_scope import DEFAULT_BUSINESS_CODE
+from .config import settings
 from .database import SessionLocal
 from .productivity_sync import (
     LOCAL_TZ,
     ProductivitySyncError,
     prebuild_ready_productivity_days,
+    productivity_snapshot_is_stale,
+    productivity_snapshot_status,
     sync_productivity_snapshot,
     sync_productivity_snapshot_history,
 )
@@ -72,6 +76,11 @@ def _default_productivity_end() -> date:
     return datetime.now(LOCAL_TZ).date() - timedelta(days=1)
 
 
+def _default_productivity_start(end: date) -> date:
+    seed_days = max(1, int(getattr(settings, "ARCHIVE_CACHE_SEED_DAYS", 400) or 400))
+    return end - timedelta(days=seed_days - 1)
+
+
 def _productivity_date_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[str, date | None, date | None]:
     single = _parse_iso_date(parser, args.productivity_date, "--productivity-date")
     start = _parse_iso_date(parser, args.productivity_start, "--productivity-start")
@@ -80,10 +89,15 @@ def _productivity_date_args(args: argparse.Namespace, parser: argparse.ArgumentP
         parser.error("--productivity-date kan inte kombineras med --productivity-start/--productivity-end.")
     if single:
         return "day", single, single
-    if end and not start:
-        parser.error("--productivity-end kraver --productivity-start.")
-    if not start and not end:
+    if getattr(args, "productivity_prebuild_existing", False):
+        if start or end:
+            parser.error("--productivity-prebuild-existing kan inte kombineras med --productivity-start/--productivity-end.")
         return "prebuild", None, None
+    if end and not start:
+        start = _default_productivity_start(end)
+    if not start and not end:
+        range_end = _default_productivity_end()
+        return "range", _default_productivity_start(range_end), range_end
     range_start = start
     range_end = end or _default_productivity_end()
     if range_start is not None and range_start > range_end:
@@ -99,7 +113,190 @@ def _productivity_chunks(start: date, end: date, chunk_days: int) -> list[tuple[
         chunk_end = min(end, current + timedelta(days=span_days - 1))
         chunks.append((current, chunk_end))
         current = chunk_end + timedelta(days=1)
-    return chunks
+    return list(reversed(chunks))
+
+
+def _date_range(start: date, end: date) -> list[date]:
+    days: list[date] = []
+    current = start
+    while current <= end:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _date_span_text(dates: list[date] | list[str]) -> str:
+    if not dates:
+        return "-"
+    values = [str(item)[:10] for item in dates]
+    if len(values) == 1:
+        return values[0]
+    return f"{values[0]}..{values[-1]}"
+
+
+def _source_rows_total(sources: list[dict] | None) -> int:
+    total = 0
+    for source in sources or []:
+        try:
+            total += int(source.get("rows") or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _productivity_snapshot_scan(chunk_dates: list[date]) -> dict:
+    saved_days = 0
+    current_days = 0
+    saved_rows = 0
+    stale_dates: list[date] = []
+    for snapshot_date in chunk_dates:
+        status = productivity_snapshot_status(snapshot_date)
+        ready = bool(status.get("ready"))
+        stale = productivity_snapshot_is_stale(snapshot_date)
+        if ready:
+            saved_days += 1
+            saved_rows += _source_rows_total(status.get("sources") or [])
+        if ready and not stale:
+            current_days += 1
+        if stale:
+            stale_dates.append(snapshot_date)
+    return {
+        "days": len(chunk_dates),
+        "saved_days": saved_days,
+        "current_days": current_days,
+        "missing_days": max(0, len(chunk_dates) - saved_days),
+        "stale_saved_days": max(0, saved_days - current_days),
+        "saved_rows": saved_rows,
+        "stale_dates": stale_dates,
+    }
+
+
+def _productivity_scan_text(scan: dict) -> str:
+    total_days = int(scan.get("days") or 0)
+    parts = [
+        f"snapshots aktuella {int(scan.get('current_days') or 0)}/{total_days}d",
+    ]
+    stale_saved = int(scan.get("stale_saved_days") or 0)
+    missing = int(scan.get("missing_days") or 0)
+    if stale_saved:
+        parts.append(f"sparade men gamla {stale_saved}d")
+    if missing:
+        parts.append(f"saknas {missing}d")
+    parts.append(f"rader i sparade snapshots {_fmt_int(int(scan.get('saved_rows') or 0))}")
+    return ", ".join(parts)
+
+
+def _productivity_result_counters(result: dict) -> dict:
+    counters = {
+        "synced_days": len(result.get("synced_dates") or []),
+        "skipped_days": len(result.get("skipped_dates") or []),
+        "api_rows": 0,
+        "person_current": 0,
+        "person_materialized": 0,
+        "person_errors": 0,
+    }
+    for item in result.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        counters["api_rows"] += _source_rows_total(item.get("sources") or [])
+        person_result = item.get("person_cache")
+        if not isinstance(person_result, dict) and item.get("snapshot") == "ready":
+            person_result = item
+        if isinstance(person_result, dict):
+            status_text = str(person_result.get("status") or "")
+            if status_text == "current":
+                counters["person_current"] += 1
+            elif status_text == "materialized":
+                counters["person_materialized"] += 1
+            elif status_text == "error":
+                counters["person_errors"] += 1
+    return counters
+
+
+def _productivity_done_text(result: dict, scan: dict, *, warm_cache: bool) -> str:
+    counters = _productivity_result_counters(result)
+    parts = [
+        f"API hämtade={counters['synced_days']}d",
+        f"sparade snapshots={counters['skipped_days']}d",
+    ]
+    if counters["synced_days"]:
+        parts.append(f"API-rader={_fmt_int(counters['api_rows'])}")
+    else:
+        parts.append(f"sparade snapshotrader={_fmt_int(int(scan.get('saved_rows') or 0))}")
+    if warm_cache:
+        parts.append(
+            "persondagar "
+            f"aktuella={counters['person_current']}d, "
+            f"byggda={counters['person_materialized']}d"
+        )
+        if counters["person_errors"]:
+            parts.append(f"persondagsfel={counters['person_errors']}d")
+    else:
+        parts.append("persondagar=av")
+    errors = result.get("errors") or []
+    if errors:
+        parts.append(f"fel={len(errors)}")
+    return ", ".join(parts)
+
+
+def _print_productivity_chunk_start(
+    index: int,
+    total: int,
+    chunk_start: date,
+    chunk_end: date,
+    scan: dict,
+    *,
+    warm_cache: bool,
+) -> None:
+    bar, pct = _bar(index - 1, total)
+    stale_dates = scan.get("stale_dates") or []
+    if stale_dates:
+        action = f"hämtar API för {len(stale_dates)}d ({_date_span_text(stale_dates)})"
+        if warm_cache:
+            action += " och bygger/kontrollerar persondagar"
+    elif warm_cache:
+        action = "ingen API-hämtning; kontrollerar/bygger persondagar från sparade snapshots"
+    else:
+        action = "redan klar; hoppar över"
+    print(f"Produktivitet {index}/{total} [{bar}] {pct:5.1f}%: {chunk_start}..{chunk_end}")
+    print(f"  Sparat före start: {_productivity_scan_text(scan)}.")
+    print(f"  Åtgärd: {action}.")
+
+
+def _print_productivity_chunk_done(index: int, total: int, text: str) -> None:
+    bar, pct = _bar(index, total)
+    print(f"  KLAR {index}/{total} [{bar}] {pct:5.1f}%: {text}.")
+
+
+def _productivity_range_done_text(result: dict, *, warm_cache: bool) -> str:
+    totals = {
+        "synced_days": 0,
+        "skipped_days": 0,
+        "api_rows": 0,
+        "person_current": 0,
+        "person_materialized": 0,
+        "person_errors": 0,
+    }
+    for chunk_result in result.get("results") or []:
+        if not isinstance(chunk_result, dict):
+            continue
+        counters = _productivity_result_counters(chunk_result)
+        for key in totals:
+            totals[key] += counters[key]
+    parts = [
+        f"API hämtade {totals['synced_days']} datum",
+        f"återanvände {totals['skipped_days']} sparade snapshotdatum",
+        f"API-rader {_fmt_int(totals['api_rows'])}",
+    ]
+    if warm_cache:
+        parts.append(
+            "persondagar "
+            f"aktuella {totals['person_current']}, "
+            f"byggda {totals['person_materialized']}"
+        )
+        if totals["person_errors"]:
+            parts.append(f"persondagsfel {totals['person_errors']}")
+    return ", ".join(parts)
 
 
 def _sync_productivity_range(
@@ -117,7 +314,34 @@ def _sync_productivity_range(
     chunk_days = max(1, int(args.productivity_chunk_days or _DEFAULT_PRODUCTIVITY_CHUNK_DAYS))
     chunks = _productivity_chunks(start, end, chunk_days)
     for index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
-        print(f"Produktivitet {index}/{len(chunks)}: hamtar {chunk_start}..{chunk_end}")
+        chunk_dates = _date_range(chunk_start, chunk_end)
+        scan = _productivity_snapshot_scan(chunk_dates)
+        needs_fetch = bool(scan.get("stale_dates"))
+        _print_productivity_chunk_start(
+            index,
+            len(chunks),
+            chunk_start,
+            chunk_end,
+            scan,
+            warm_cache=warm_cache,
+        )
+        if not needs_fetch and not warm_cache:
+            dates.extend(item.isoformat() for item in chunk_dates)
+            result = {
+                "status": "ok",
+                "source": "api_snapshot_history",
+                "dates": [item.isoformat() for item in chunk_dates],
+                "synced_dates": [],
+                "skipped_dates": [item.isoformat() for item in chunk_dates],
+                "errors": [],
+            }
+            results.append(result)
+            _print_productivity_chunk_done(
+                index,
+                len(chunks),
+                _productivity_done_text(result, scan, warm_cache=warm_cache),
+            )
+            continue
         try:
             result = sync_productivity_snapshot_history(
                 chunk_end,
@@ -125,6 +349,7 @@ def _sync_productivity_range(
                 business_code=business_code,
                 db=db,
                 warm_cache=warm_cache,
+                skip_ready=True,
             )
         except ProductivitySyncError as exc:
             errors.append(
@@ -138,6 +363,11 @@ def _sync_productivity_range(
             break
         results.append(result)
         dates.extend(str(item) for item in (result.get("dates") or []))
+        _print_productivity_chunk_done(
+            index,
+            len(chunks),
+            _productivity_done_text(result, scan, warm_cache=warm_cache),
+        )
         chunk_errors = result.get("errors") or []
         if chunk_errors:
             errors.append({"start": chunk_start.isoformat(), "end": chunk_end.isoformat(), "errors": chunk_errors})
@@ -237,6 +467,8 @@ def _run_productivity(args: argparse.Namespace, parser: argparse.ArgumentParser)
         f"datum={len(dates or [])}, prebuild={'pa' if warm_cache else 'av'}"
         + (f", fel={len(errors)}" if errors else ".")
     )
+    if result.get("source") == "api_snapshot_history_chunks":
+        print("Produktivitet summering: " + _productivity_range_done_text(result, warm_cache=warm_cache) + ".")
     for err in errors:
         print("  FEL Produktivitet: " + json.dumps(err, ensure_ascii=False, default=str))
     return 1 if errors or failed_status else 0
@@ -341,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--productivity-end", help="Slutdatum for Produktivitetsintervall (YYYY-MM-DD). Default: igar nar start anges.")
     parser.add_argument("--productivity-chunk-days", type=int, default=_DEFAULT_PRODUCTIVITY_CHUNK_DAYS, help="Max dagar per produktivitets-API-hamtning (default 31).")
     parser.add_argument("--productivity-no-prebuild", action="store_true", help="Hamta produktivitetsfiler men bygg inte person_productivity_daily.")
+    parser.add_argument("--productivity-prebuild-existing", action="store_true", help="Bygg bara befintliga produktivitetssnapshots, utan att hamta ett seed-intervall.")
     parser.add_argument("--force-productivity-prebuild", action="store_true", help="Bygg om historiska person_productivity_daily aven om dagens prebuild redan korts.")
     parser.add_argument("--productivity-json", action="store_true", help="Skriv full JSON for produktivitetsdelen.")
     args = parser.parse_args(argv)
@@ -413,6 +646,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     for err in errors:
         print(f"  FEL {err.get('tenant')}/{err.get('view')}: {err.get('error')}")
+    empty_stops = [r for r in results if r.get("empty_stopped")]
+    for item in empty_stops:
+        days = int(item.get("empty_stop_days") or 0)
+        print(
+            f"  INFO {item.get('tenant')}/{item.get('view')}: "
+            f"stoppade bakatseed efter {days} tomma dagar; aldre intervall markerat som klart/tomt."
+        )
     exit_code = 1 if errors else 0
     if run_productivity:
         exit_code = max(exit_code, _run_productivity(args, parser))

@@ -1,7 +1,7 @@
 ---
 title: Roller och behorighet
 status: aktiv
-updated: 2026-06-15
+updated: 2026-07-02
 tags: [auth, roller, behorighet]
 ---
 
@@ -55,7 +55,7 @@ Apphjalpens LLM-prompt far en begransad supportkontext om inloggad anvandare: ro
 
 Vyer som kan styras:
 
-- `schedule`, `overview`, `productivity`, `sankeyInbound`, `productivityFinance`, `dataFetch`
+- `schedule`, `overview`, `productivity`, `sankeyInbound`, `productivityFinance`, `dataFetch`, `mcp`, `labelEditor`
 - `mySchedule`, `myProductivity`
 - `allocationUploads`, `allocationProcess`, `allocationProcessMatrix`, `allocationSplit`
 - `allocationSettings`, `staffingSettings`, `productivityFinanceSettings`
@@ -84,6 +84,7 @@ Om anvandaren bara har `view`:
 - Intakt/utgift saknas i Produktivitet: rollen saknar `productivityFinance=view`. Endast Super User har den seedad som full atkomst tills den ges till andra roller via Vybehorigheter.
 - Intakt/utgift-fliken i Installningar saknas eller kan inte sparas: rollen saknar `productivityFinanceSettings=view` eller `productivityFinanceSettings=edit`. Den styr kostnad per timme och intaktsunderlag per bolag; `GG` ar forifyllt med Grann-garden-priserna och `MG` med bara VAS + IT. Endast Super User har den seedad som full atkomst.
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.
+- Etiketter saknas eller nekas: rollen saknar `labelEditor`. Vyn ar ett experiment och har inga basroller med standardatkomst; Super User kan oppna den och andra roller kan slas pa via Vybehorigheter.
 - Bearbeta saknas eller nekas: rollen saknar `allocationProcess=edit` i vyatkomst. Lagerroller har som standard Uppladdningar och Dela, men kan fa Bearbeta via Vybehorigheter.
 - Bearbeta-fliken i Installningar saknas eller Bearbeta-matrisen kan inte sparas: rollen saknar `allocationProcessMatrix=view` eller `allocationProcessMatrix=edit`. Med `view` visas matrisen lasande; med `edit` kan den sparas. Admin har `edit` som standard och Super User har alltid full atkomst.
 - Installningar saknas eller Ytgenereringens ytkarta inte kan sparas: rollen saknar `allocationSettings=view` eller `allocationSettings=edit`. Admin har `edit` som standard och Super User har alltid full atkomst.

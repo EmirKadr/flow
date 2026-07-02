@@ -1,13 +1,18 @@
 ---
 title: Bemanning
 status: aktiv
-updated: 2026-07-01
+updated: 2026-07-02
 tags: [bemanning, schema, ui, knappar]
 ---
 
 # Bemanning
 
 Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr omrade med omradesfokus i sidebar. Sedan satter anvandaren aktivitet per person och timme. Andringar sparas direkt till `/api/schedule/*` med versionsskydd.
+
+Bemanning ar ocksa en huvudmeny i sidebar. Samma grupp visas som flikar pa
+Bemanning-relaterade sidor: Bemanning, Oversikt, Produktivitet, Aktiviteter,
+Personer, Anvandare, Verksamheter, Mitt schema och Min produktivitet. Hogerklick
+pa `Bemanning` i sidebar visar samma lista, filtrerad efter vybehorighet.
 
 ## Anvandarflode
 
@@ -44,8 +49,8 @@ Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr o
 | Dra personnamn | Drar ett namn upp eller ned | Sparar ny personsortering direkt pa personernas `sort_order` | `PUT /api/persons/sort-order` | Kraver `personSortOrder=edit`. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. Rensa personfilter innan sortering. |
 | Hogerklick personnamn | Valjer `Skicka till <omrade>` | Bevarar personens tidigare timmar och gor personens schemalagda timmar fran aktuell eller fokuserad starttimme och framat tomma i malomradet, utan att andra personens hemomrade | `POST /api/schedule/cells` med `action=loan_to_area`, `activity_id=null`, `loan_area_id=<omrade>` | Visas bara som andring om personen har schematimmar/explicita celler fran starttimmen. Om starttimme inte kan avgoras visas varning i stallet for att tomma fran morgonen. Lasta celler hoppas over och read-only far varning. |
 | Cell-dropdown | Valjer aktivitet/tomt | Sparar segment direkt | `PUT /api/schedule/cell` | 409 betyder att nagon annan hann andra cellen. |
-| Hogerklick cell | Oppnar cellens aktivitetsval | Fokuserar vald timme/del och visar dropdown om browsern tillater det | `openFullHourSelect`, `openSplitSegmentSelect` | Read-only eller last cell visar varning. |
-| Dubbelklick cell | Delar hel timme eller slar ihop delad timme | Vid hel timme oppnas `Dela timme` med toggle for `1/2`, `1/3` och `1/4`. `1/2` har `30` forifyllt och markerat. `1/3` har minutstarterna `20` och `40`, och `1/4` har `15`, `30`, `45`. Enter fortsatter med forifyllda eller inskrivna stigande minutstarter. | `requestScheduleSplitMinutes`, `toggleHourSplit`, `PUT /api/schedule/cell/split` | I read-only visas varning. Minutstarter maste vara stigande heltal mellan 1 och 59 och skapa 2-4 sammanhangande delar. |
+| Hogerklick cell | Oppnar cellens snabbmeny och valjer `Dela` eller `Anmarkning` | Fokuserar vald timme/del. `Dela` oppnar `Dela timme` for hel cell; pa redan delad cell visas `Sla ihop`. `Anmarkning` oppnar en modal dar anvandaren kan spara eller ta bort cellens textnotering. Celler med anmarkning visas med en liten markering i hornet. | `openScheduleCellContextMenu`, `openScheduleCellRemarkDialog`, `requestScheduleSplitMinutes`, `toggleHourSplit`, `PUT /api/schedule/cell/split`, `PUT /api/schedule/cell/remark` | Read-only eller last cell visar varning nar anvandaren valjer menyhandlingen. |
+| Dubbelklick cell | Oppnar cellens aktivitetsval | Fokuserar vald timme/del och visar dropdown om browsern tillater det | `openFullHourSelect`, `openSplitSegmentSelect` | Read-only eller last cell visar varning. |
 | Drag over celler | Fyller markerat omrade med kallcellens aktivitet | Bulk-sparar upp till 200 celler/delar | `POST /api/schedule/cells` med `action=drag_fill` | Lasta celler hoppas over eller ger konflikt. |
 | Ctrl+C | Kopierar fokuserad cell/del | Lagrar aktivitet i lokal clipboard | `copyFocused(false)` | Kraver fokuserad cell. |
 | Ctrl+X | Klipper fokuserad cell/del | Kopierar och tommer kallsegment | `copyFocused(true)`, `PUT /api/schedule/cell` | Kan fa konflikt om cellen andrats. |
@@ -99,6 +104,7 @@ Falt:
 - Nar anvandaren valjer Alla omraden grupperas utskriften per verksamhet sa Super User inte far blandade verksamheter i samma lista.
 - Historiskt kapacitetssnitt visas som hover-tooltip per bemanningscell i stallet for som parentes i alla celler. Klienten debouncar hover ungefar 250 ms, anropar sedan `/api/schedule/activity-capacity/cell` med vald dag, person och aktivitet, och cachar svaret per cellkontext sa samma cell inte hamtas om i samma vy.
 - Kapacitets-API:t anvander aktivitetens `kpi_process_name`, senaste KPI-mal och `kpi_target_rule` for att avgora om processen ska raknas i rader, kolli/paket, pallar eller order. Snittet laser materialiserade processrader i `person_productivity_daily`. Om en historikdag saknar cache byggs den en gang fran global snapshot och ateranvands sedan. Gransen styrs av `staffing_history_hours`, har default 40 timmar och anvands aven av automatisk bemanningskalkyl. Vilka aktiviteter som far visa hover-snitt styrs av `staffing_activity_capacity_activity_ids`: `null` betyder alla KPI-aktiviteter, en lista betyder bara dessa och en tom lista betyder inga.
+- Cellernas splitflode ligger i hogerklicksmenyn: `openScheduleCellContextMenu` visar `Dela` for hel cell och `Sla ihop` for en redan delad cell. Samma meny visar `Anmarkning`, som sparar fri text i `schedule_cells.remark` via `PUT /api/schedule/cell/remark`. Audit-raden for anmarkningar sparar bara om text finns och textlangd, inte sjalva anmarkningstexten. Dubbelklick ar reserverat for aktivitetsvalet sa anvandaren inte delar en timme av misstag nar hen bara vill byta aktivitet.
 - `fill-from-left` finns som API (`POST /api/schedule/fill-from-left`) men har ingen synlig knapp i nuvarande `index.html`/`schedule.js`.
 - Personnamn kan dras for att andra personernas sorteringsnummer. Klienten skickar hela synliga ordningen till `/api/persons/sort-order`; backend nekar andra roller, filtrerade/forandrade personlistor och, for vanliga admin/bemanningsansvariga, personer med annat hemomrade. Super User och demo far sortera over omradesgranser nar de har `Personsortering=Redigera`.
 - Klick pa en personrad markerar raden diskret med `person-row-selected`. Det ar bara ett lokalt visuellt hjalpmedel for att folja en rad over manga timmar och paverkar inte schema, filter eller sparning.
@@ -117,7 +123,8 @@ Falt:
 | "Varfor fungerar inte Ctrl+C/V?" | En schemacell eller del maste vara fokuserad forst. |
 | "Varfor kopieras bara timtalet i summeringen?" | Klick pa kolumnen `Timmar` i `Summering per aktivitet` ar en snabb kopiering av visat tal till clipboard. Klicka aktivitetsnamnet/raden om du vill markera raden for `Summera`. |
 | "Varfor syns inte min summerade aktivitet pa en annan dag?" | Manuell `Summera` i summeringstabellen ar lokal for aktuell datum- och omradesvy. Byt tillbaka till samma dag/omrade, eller hogerklicka pa den summerade raden och valj `Dela` for att visa originalraderna igen. |
-| "Hur delar jag en timme?" | Dubbelklicka pa timcellen, valj `1/2`, `1/3` eller `1/4`, justera minutstarterna vid behov och tryck Enter. Valj sedan aktivitet for varje del. |
+| "Hur delar jag en timme?" | Hogerklicka pa timcellen, valj `Dela`, valj `1/2`, `1/3` eller `1/4`, justera minutstarterna vid behov och tryck Enter. Valj sedan aktivitet for varje del. |
+| "Hur skriver jag en anmarkning pa en cell?" | Hogerklicka pa timcellen eller delen, valj `Anmarkning`, skriv texten och tryck `Spara`. Rensa texten eller tryck `Ta bort` for att ta bort anmarkningen. |
 | "Var ar Fyll fran vanster?" | Backend-endpointen finns, men nuvarande UI visar ingen knapp for den funktionen. |
 | "Varfor kan jag inte dra namnet for att sortera?" | Anvandaren maste ha `Personsortering=Redigera`. Bemanningsansvarig/admin maste ha samma omrade som personens hemomrade; Super User och demo kan sortera alla synliga personer. Rensa personfiltret om det ar aktivt. |
 | "Varfor hander inget nar jag skickar en person till omrade?" | Personen maste ha schemalagda timmar eller explicita celler fran aktuell/startad timme den dagen. Om alla celler ar lasta visas varning och inget skrivs. |

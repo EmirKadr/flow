@@ -596,6 +596,79 @@ def test_productivity_history_uses_default_tenant_when_db_lookup_fails(monkeypat
     assert productivity_sync.productivity_snapshot_source_path(date(2026, 6, 8), "pick", tmp_path).is_file()
 
 
+def test_productivity_history_returns_person_cache_result(monkeypatch, tmp_path):
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        return {"date": snapshot_date.isoformat(), "status": "materialized", "rows": 7}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=0,
+        reference_dir=tmp_path,
+        db=object(),
+        warm_cache=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["person_cache"]["status"] == "materialized"
+    assert result["results"][0]["person_cache"]["rows"] == 7
+
+
+def test_productivity_history_skip_ready_does_not_refetch_snapshots(monkeypatch, tmp_path):
+    warm_calls = []
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("redan klara snapshots ska inte hamtas om")
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        warm_calls.append(snapshot_date)
+        return {"date": snapshot_date.isoformat(), "status": "current", "rows": 0}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+    productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=1,
+        reference_dir=tmp_path,
+        warm_cache=False,
+    )
+
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fail_fetch)
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=1,
+        reference_dir=tmp_path,
+        db=object(),
+        warm_cache=True,
+        skip_ready=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["synced_dates"] == []
+    assert result["skipped_dates"] == ["2026-06-07", "2026-06-08"]
+    assert warm_calls == [date(2026, 6, 7), date(2026, 6, 8)]
+
+
 def test_productivity_kpi_coredata_fallback_works_when_db_is_down(monkeypatch, tmp_path):
     kpi_dir = tmp_path / "coredata" / "stigamo"
     kpi_dir.mkdir(parents=True)

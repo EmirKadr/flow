@@ -157,6 +157,7 @@ verksamheter.
 | `schedule.revision` | `GET` | `/api/schedule/revision` | Schema-revision |
 | `schedule.presence` | `GET` | `/api/schedule/presence` | NÃ¤rvarolista fÃ¶r utskrift |
 | `schedule.calculator_profile` | `GET` | `/api/schedule/calculator-profile` | Hamta personliga automatiska bemanningskalkyler |
+| `schedule.cell_remark` | `PUT` | `/api/schedule/cell/remark` | Spara eller ta bort anmarkning pa schemacell |
 | `schedule.calculator_profile_update` | `PUT` | `/api/schedule/calculator-profile` | Spara personliga automatiska bemanningskalkyler |
 | `schedule.calculator_profile_import` | `POST` | `/api/schedule/calculator-profile/import` | Kopiera bemanningskalkyler fran anvandare |
 | `schedule.calculator_automatic` | `GET` | `/api/schedule/calculator/automatic` | Berakna automatiska bemanningskalkyler |
@@ -177,6 +178,9 @@ Schema-celler i svar fran `schedule.get`, `schedule.bulk_cells`,
 Det anvands for tomma utlanade timmar: `activity_id=null` och
 `loan_area_id=<omrade>` gor personen synlig i mottagande omrade utan att skapa
 aktivitetstimmar.
+
+`PUT /api/schedule/cell/remark` sparar fri anmarkning pa hel timme eller
+delad cell. Svar fran schemaendpoints kan darfor ocksa innehalla `remark`.
 | `personal.persons` | `GET` | `/api/personal/persons` | Personval för personliga vyer |
 | `personal.schedule` | `GET` | `/api/personal/schedule` | Mitt schema för en person |
 | `personal.productivity` | `GET` | `/api/personal/productivity` | Min produktivitet med schema och global personproduktivitet |

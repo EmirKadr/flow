@@ -750,8 +750,9 @@ def sync_productivity_snapshot(
         atomic_write_json(productivity_snapshot_metadata_path(day, reference_dir), metadata)
         productivity_snapshot_error_path(day, reference_dir).unlink(missing_ok=True)
         SNAPSHOT_STATUS.update(metadata)
+        cache_result = None
         if warm_cache:
-            _warm_person_productivity_daily_cache(
+            cache_result = _warm_person_productivity_daily_cache(
                 db,
                 day,
                 reference_dir=reference_dir,
@@ -759,7 +760,10 @@ def sync_productivity_snapshot(
                 sync=metadata,
             )
         _audit_sync(db, snapshot_date=day, status_text="ok", sources=source_entries, user_id=user_id)
-        return metadata
+        result = dict(metadata)
+        if cache_result is not None:
+            result["person_cache"] = cache_result
+        return result
     except Exception as exc:
         error_payload = {
             "date": day.isoformat(),
@@ -807,17 +811,54 @@ def sync_productivity_snapshot_history(
     db: Session | None = None,
     user_id: int | None = None,
     warm_cache: bool = True,
+    skip_ready: bool = False,
 ) -> dict[str, Any]:
-    dates = productivity_bootstrap_dates(end_date, days_back=days_back)
-    if not dates:
+    requested_dates = productivity_bootstrap_dates(end_date, days_back=days_back)
+    if not requested_dates:
         return {"status": "ok", "source": "api_snapshot_history", "dates": [], "results": [], "errors": []}
+    dates = requested_dates
+    skipped_dates: list[date] = []
+    skipped_results: list[dict[str, Any]] = []
+    if skip_ready:
+        stale_dates: list[date] = []
+        for snapshot_date in requested_dates:
+            if productivity_snapshot_is_stale(snapshot_date, reference_dir=reference_dir):
+                stale_dates.append(snapshot_date)
+            else:
+                skipped_dates.append(snapshot_date)
+        dates = stale_dates
+        if warm_cache and db is not None:
+            for snapshot_date in skipped_dates:
+                sync = productivity_snapshot_status(snapshot_date, reference_dir=reference_dir)
+                result = _warm_person_productivity_daily_cache(
+                    db,
+                    snapshot_date,
+                    reference_dir=reference_dir,
+                    business_code=business_code,
+                    sync=sync,
+                )
+                if result is not None:
+                    skipped_results.append({"date": snapshot_date.isoformat(), "snapshot": "ready", **result})
+        if not dates:
+            return {
+                "status": "ok",
+                "source": "api_snapshot_history",
+                "days_back": max(0, int(days_back)),
+                "dates": [item.isoformat() for item in requested_dates],
+                "synced_dates": [],
+                "skipped_dates": [item.isoformat() for item in skipped_dates],
+                "results": skipped_results,
+                "errors": [],
+            }
     start_date = dates[0]
     final_date = dates[-1]
     if not sources_available(tuple(productivity_api_source_map().values())):
         status_payload = {
             "status": "not_configured",
             "source": "api_snapshot_history",
-            "dates": [item.isoformat() for item in dates],
+            "dates": [item.isoformat() for item in requested_dates],
+            "synced_dates": [item.isoformat() for item in dates],
+            "skipped_dates": [item.isoformat() for item in skipped_dates],
             "results": [],
             "errors": [],
             "last_sync_at": None,
@@ -836,7 +877,9 @@ def sync_productivity_snapshot_history(
         return {
             "status": "running",
             "source": "api_snapshot_history",
-            "dates": [item.isoformat() for item in dates],
+            "dates": [item.isoformat() for item in requested_dates],
+            "synced_dates": [item.isoformat() for item in dates],
+            "skipped_dates": [item.isoformat() for item in skipped_dates],
             "results": [],
             "errors": [],
             "next_sync_at": next_productivity_sync_at().isoformat(timespec="seconds"),
@@ -902,7 +945,7 @@ def sync_productivity_snapshot_history(
             }
 
         synced_at = datetime.now(LOCAL_TZ).isoformat(timespec="seconds")
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = list(skipped_results)
         metadata_by_date: dict[date, dict[str, Any]] = {}
         for snapshot_date in dates:
             snapshot_dir = productivity_snapshot_dir(snapshot_date, reference_dir)
@@ -952,22 +995,28 @@ def sync_productivity_snapshot_history(
                 sources=metadata["sources"],
                 user_id=user_id,
             )
+            cache_result = None
             if warm_cache:
-                _warm_person_productivity_daily_cache(
+                cache_result = _warm_person_productivity_daily_cache(
                     db,
                     snapshot_date,
                     reference_dir=reference_dir,
                     business_code=business_code,
                     sync=metadata,
                 )
-            results.append(metadata)
+            result_entry = dict(metadata)
+            if cache_result is not None:
+                result_entry["person_cache"] = cache_result
+            results.append(result_entry)
 
         SNAPSHOT_STATUS.update(metadata_by_date[final_date])
         return {
             "status": "ok",
             "source": "api_snapshot_history",
             "days_back": max(0, int(days_back)),
-            "dates": [item.isoformat() for item in dates],
+            "dates": [item.isoformat() for item in requested_dates],
+            "synced_dates": [item.isoformat() for item in dates],
+            "skipped_dates": [item.isoformat() for item in skipped_dates],
             "results": results,
             "errors": [],
             "last_sync_at": synced_at,
@@ -1061,6 +1110,7 @@ def ensure_productivity_snapshot_history(
             db=db,
             user_id=user_id,
             warm_cache=warm_cache,
+            skip_ready=True,
         )
     results = [productivity_snapshot_status(snapshot_date, reference_dir=reference_dir) for snapshot_date in dates]
     return {

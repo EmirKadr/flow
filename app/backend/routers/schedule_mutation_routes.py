@@ -74,7 +74,7 @@ def update_cell(
             entity_id=cell.id,
             action="create",
             old_value=None,
-            new_value=_cell_to_dict(cell),
+            new_value=_cell_audit_dict(cell),
             user_id=user.id,
             business_id=person.business_id,
         )
@@ -96,7 +96,7 @@ def update_cell(
         ):
             return {"cell": _cell_to_dict(cell)}
         assert_can_modify_schedule_cells([cell], user, owner_lock_enabled)
-        old = _cell_to_dict(cell)
+        old = _cell_audit_dict(cell)
         cell.activity_id = payload.activity_id
         cell.loan_area_id = None
         cell.empty_override = desired_empty_override
@@ -109,7 +109,7 @@ def update_cell(
             entity_id=cell.id,
             action="update",
             old_value=old,
-            new_value=_cell_to_dict(cell),
+            new_value=_cell_audit_dict(cell),
             user_id=user.id,
             business_id=person.business_id,
         )
@@ -117,6 +117,120 @@ def update_cell(
     db.commit()
     db.refresh(cell)
     return {"cell": _cell_to_dict(cell)}
+
+
+@router.put("/cell/remark")
+def update_cell_remark(
+    payload: CellRemarkUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_view_access("schedule", "edit")),
+):
+    _validate_segment(payload.hour, payload.minute_start, payload.minute_end)
+    person = scoped_get(db, Person, payload.person_id, user, detail="Person hittades inte")
+    remark = _normalize_cell_remark(payload.remark)
+
+    hour_segments = _load_hour_segments(
+        db,
+        year=payload.year,
+        week=payload.week,
+        weekday=payload.weekday,
+        hour=payload.hour,
+        person_id=payload.person_id,
+        lock=True,
+    )
+    owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
+    matching = next(
+        (
+            cell
+            for cell in hour_segments
+            if cell.minute_start == payload.minute_start and cell.minute_end == payload.minute_end
+        ),
+        None,
+    )
+
+    current_version = matching.version if matching else 0
+    if current_version != payload.expected_version:
+        return _conflict_response(person_id=payload.person_id, hour=payload.hour, current=hour_segments)
+    if matching is None and hour_segments:
+        return _conflict_response(person_id=payload.person_id, hour=payload.hour, current=hour_segments)
+
+    if matching is None:
+        if remark is None:
+            return {"cell": _empty_segment_dict(payload.person_id, payload.hour, payload.minute_start, payload.minute_end)}
+        cell = ScheduleCell(
+            year=payload.year,
+            week=payload.week,
+            weekday=payload.weekday,
+            hour=payload.hour,
+            minute_start=payload.minute_start,
+            minute_end=payload.minute_end,
+            person_id=payload.person_id,
+            activity_id=None,
+            loan_area_id=None,
+            remark=remark,
+            empty_override=False,
+            version=1,
+            updated_by=user.id,
+        )
+        db.add(cell)
+        db.flush()
+        audit_log(
+            db,
+            entity_type="schedule_cell",
+            entity_id=cell.id,
+            action="remark_create",
+            old_value=None,
+            new_value=_cell_audit_dict(cell),
+            user_id=user.id,
+            business_id=person.business_id,
+        )
+        db.commit()
+        db.refresh(cell)
+        return {"cell": _cell_to_dict(cell)}
+
+    if _normalize_cell_remark(matching.remark) == remark:
+        return {"cell": _cell_to_dict(matching)}
+
+    assert_can_modify_schedule_cells([matching], user, owner_lock_enabled)
+    old = _cell_audit_dict(matching)
+    if (
+        remark is None
+        and len(hour_segments) == 1
+        and matching.activity_id is None
+        and matching.loan_area_id is None
+        and not matching.empty_override
+    ):
+        audit_log(
+            db,
+            entity_type="schedule_cell",
+            entity_id=matching.id,
+            action="remark_delete",
+            old_value=old,
+            new_value=None,
+            user_id=user.id,
+            business_id=person.business_id,
+        )
+        db.delete(matching)
+        db.commit()
+        return {"cell": _empty_segment_dict(payload.person_id, payload.hour, payload.minute_start, payload.minute_end)}
+
+    matching.remark = remark
+    matching.version += 1
+    matching.updated_by = user.id
+    db.flush()
+    audit_log(
+        db,
+        entity_type="schedule_cell",
+        entity_id=matching.id,
+        action="remark_update",
+        old_value=old,
+        new_value=_cell_audit_dict(matching),
+        user_id=user.id,
+        business_id=person.business_id,
+    )
+    db.commit()
+    db.refresh(matching)
+    return {"cell": _cell_to_dict(matching)}
 
 
 @router.put("/cell/split")
@@ -157,8 +271,8 @@ def split_cell(
             preferred = next((cell for cell in hour_segments if cell.activity_id is not None), None) or hour_segments[0]
         other_segments = [cell for cell in hour_segments if cell.id != preferred.id]
 
-        old_preferred = _cell_to_dict(preferred)
-        old_others = [(other, _cell_to_dict(other)) for other in other_segments]
+        old_preferred = _cell_audit_dict(preferred)
+        old_others = [(other, _cell_audit_dict(other)) for other in other_segments]
         merged_loan_area_id = preferred.loan_area_id
         if preferred.activity_id is None:
             merged_loan_area_id = preferred.loan_area_id or next(
@@ -166,6 +280,7 @@ def split_cell(
                 None,
             )
         merged_empty_override = any(cell.empty_override for cell in hour_segments)
+        merged_remark = _merged_cell_remark(hour_segments)
 
         for other, old_other in old_others:
             audit_log(
@@ -183,6 +298,7 @@ def split_cell(
         preferred.minute_start = 0
         preferred.minute_end = 60
         preferred.loan_area_id = None if preferred.activity_id is not None else merged_loan_area_id
+        preferred.remark = merged_remark
         preferred.empty_override = merged_empty_override
         preferred.version += 1
         preferred.updated_by = user.id
@@ -193,7 +309,7 @@ def split_cell(
             entity_id=preferred.id,
             action="split_merge_update",
             old_value=old_preferred,
-            new_value=_cell_to_dict(preferred),
+            new_value=_cell_audit_dict(preferred),
             user_id=user.id,
         )
         db.commit()
@@ -228,7 +344,7 @@ def split_cell(
                 entity_id=cell.id,
                 action="split_create",
                 old_value=None,
-                new_value=_cell_to_dict(cell),
+                new_value=_cell_audit_dict(cell),
                 user_id=user.id,
             )
             created.append(cell)
@@ -240,9 +356,10 @@ def split_cell(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Cellen är redan delad eller har ogiltigt segmentformat.")
 
     assert_can_modify_schedule_cells([source], user, owner_lock_enabled)
-    old = _cell_to_dict(source)
+    old = _cell_audit_dict(source)
     original_activity_id = source.activity_id
     original_loan_area_id = source.loan_area_id
+    original_remark = source.remark
     original_empty_override = source.empty_override
     first_start, first_end = split_ranges[0]
     source.minute_start = first_start
@@ -256,7 +373,7 @@ def split_cell(
         entity_id=source.id,
         action="split_update",
         old_value=old,
-        new_value=_cell_to_dict(source),
+        new_value=_cell_audit_dict(source),
         user_id=user.id,
     )
 
@@ -272,6 +389,7 @@ def split_cell(
             person_id=source.person_id,
             activity_id=original_activity_id,
             loan_area_id=original_loan_area_id,
+            remark=original_remark,
             empty_override=original_empty_override,
             version=1,
             updated_by=user.id,
@@ -284,7 +402,7 @@ def split_cell(
             entity_id=segment.id,
             action="split_create",
             old_value=None,
-            new_value=_cell_to_dict(segment),
+            new_value=_cell_audit_dict(segment),
             user_id=user.id,
         )
         created_segments.append(segment)
@@ -437,9 +555,10 @@ def bulk_update_cells(
                         continue
 
                     assert_can_modify_schedule_cells([full_segment], user, owner_lock_enabled)
-                    old_full = _cell_to_dict(full_segment)
+                    old_full = _cell_audit_dict(full_segment)
                     original_activity_id = full_segment.activity_id
                     original_loan_area_id = full_segment.loan_area_id
+                    original_remark = full_segment.remark
                     original_empty_override = full_segment.empty_override
                     first_start, first_end = split_ranges[0]
                     full_segment.minute_start = first_start
@@ -459,6 +578,7 @@ def bulk_update_cells(
                             person_id=person_id,
                             activity_id=original_activity_id,
                             loan_area_id=original_loan_area_id,
+                            remark=original_remark,
                             empty_override=original_empty_override,
                             version=1,
                             updated_by=user.id,
@@ -472,7 +592,7 @@ def bulk_update_cells(
                         entity_id=full_segment.id,
                         action=f"{payload.action}_split_update",
                         old_value=old_full,
-                        new_value=_cell_to_dict(full_segment),
+                        new_value=_cell_audit_dict(full_segment),
                         user_id=user.id,
                     )
                     for segment in created_split_segments:
@@ -482,7 +602,7 @@ def bulk_update_cells(
                             entity_id=segment.id,
                             action=f"{payload.action}_split_create",
                             old_value=None,
-                            new_value=_cell_to_dict(segment),
+                            new_value=_cell_audit_dict(segment),
                             user_id=user.id,
                         )
                     hour_segments = sorted(
@@ -539,7 +659,7 @@ def bulk_update_cells(
                             entity_id=cell.id,
                             action=payload.action,
                             old_value=None,
-                            new_value=_cell_to_dict(cell),
+                            new_value=_cell_audit_dict(cell),
                             user_id=user.id,
                         )
                     applied.extend(_serialize_segments(created))
@@ -601,7 +721,7 @@ def bulk_update_cells(
                     continue
 
                 assert_can_modify_schedule_cells([matching], user, owner_lock_enabled)
-                old = _cell_to_dict(matching)
+                old = _cell_audit_dict(matching)
                 matching.activity_id = item.activity_id
                 matching.loan_area_id = item.loan_area_id
                 matching.empty_override = desired_empty_override
@@ -627,7 +747,7 @@ def bulk_update_cells(
                         entity_id=cell.id,
                         action=payload.action,
                         old_value=None,
-                        new_value=_cell_to_dict(cell),
+                        new_value=_cell_audit_dict(cell),
                         user_id=user.id,
                     )
                 for cell, old in updated_cells:
@@ -637,7 +757,7 @@ def bulk_update_cells(
                         entity_id=cell.id,
                         action=payload.action,
                         old_value=old,
-                        new_value=_cell_to_dict(cell),
+                        new_value=_cell_audit_dict(cell),
                         user_id=user.id,
                     )
 
@@ -766,7 +886,7 @@ def restore_hours(
                     entity_type="schedule_cell",
                     entity_id=cell.id,
                     action=f"{payload.action}_delete",
-                    old_value=_cell_to_dict(cell),
+                    old_value=_cell_audit_dict(cell),
                     new_value=None,
                     user_id=user.id,
                 )
@@ -786,6 +906,7 @@ def restore_hours(
                     person_id=item.person_id,
                     activity_id=segment.activity_id,
                     loan_area_id=segment.loan_area_id,
+                    remark=_normalize_cell_remark(segment.remark),
                     empty_override=segment.empty_override,
                     version=1,
                     updated_by=user.id,
@@ -802,7 +923,7 @@ def restore_hours(
                         entity_id=cell.id,
                         action=f"{payload.action}_create",
                         old_value=None,
-                        new_value=_cell_to_dict(cell),
+                        new_value=_cell_audit_dict(cell),
                         user_id=user.id,
                     )
 

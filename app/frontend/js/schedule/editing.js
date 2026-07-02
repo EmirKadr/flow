@@ -580,6 +580,22 @@ function setupDrag() {
     if (!td) return;
     if (td.dataset.split === "1") {
       const part = splitPartFromEvent(td, e);
+      if (!part) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (part) openScheduleCellContextMenu(e, td, part);
+      return;
+    }
+    openScheduleCellContextMenu(e, td);
+  }, true);
+
+  body.addEventListener("dblclick", (e) => {
+    const td = e.target.closest("td[data-hour]");
+    if (!td) return;
+    if (td.dataset.split === "1") {
+      const part = splitPartFromEvent(td, e);
       if (part) {
         openSplitSegmentSelect(
           e,
@@ -592,25 +608,6 @@ function setupDrag() {
       return;
     }
     openFullHourSelect(e, td);
-  }, true);
-
-  body.addEventListener("dblclick", (e) => {
-    const td = e.target.closest("td[data-hour]");
-    if (!td) return;
-    if (td.dataset.split === "1") {
-      const part = splitPartFromEvent(td, e);
-      if (part) {
-        toggleSplitSegmentFromEvent(
-          e,
-          td,
-          part,
-          Number(part.dataset.minuteStart),
-          Number(part.dataset.minuteEnd),
-        );
-      }
-      return;
-    }
-    toggleFullHourSplitFromEvent(e, td);
   }, true);
 
   document.addEventListener("mousemove", (e) => {

@@ -31,6 +31,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 - `GET /api/schedule` - hamta dagsschema, scopeat till anvandarens verksamhet eller `business_id` for Super User.
 - `PUT /api/schedule/cell` - satt en cell/ett segment.
 - `PUT /api/schedule/cell/split` - dela eller sla ihop timme.
+- `PUT /api/schedule/cell/remark` - spara eller ta bort anmarkning pa hel timme eller vald del av delad timme. Audit sparar bara om text finns och textlangd, inte sjalva anmarkningen.
 - `POST /api/schedule/cells` - bulk-satt flera celler, anvands vid drag.
 - `PUT /api/schedule/hours/restore` - undo/redo for Bemanning och Oversikt.
 - `GET /api/schedule/summary` - summering per aktivitet.

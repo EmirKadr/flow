@@ -1,7 +1,7 @@
 ---
 title: flow wiki-index
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-02
 tags: [wiki, index]
 ---
 
@@ -34,6 +34,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Historik och audit](history-audit.md) - filter, statistik, auditlogg, felkoder, vantetider och Halsa.
 - [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med publicerbar katalog och Excel-export.
 - [MCP](mcp.md) - fråga/svar-vy där backend hämtar tenant-baserad Noeffect-MCP-kontext och vald LLM-hjärna svarar.
+- [Etiketter](label-editor.md) - experimentell lokal label editor för QR, Code128, text, former, symboler och utskrift.
 - [ASK datalagring](ask-datalagring.md) - hur länge ASK/WMan-tabeller behålls (rensning vs arkivering) och vad det betyder för historisk data per vy.
 - [Lokal arkiv-cache (DuckDB)](local-archive-cache.md) - per-tenant DuckDB som speglar dblog_*-arkiven lokalt så Sankey/Produktivitet/Hämta data läser historik från disk (endast dev, dblog kvar som fallback).
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
@@ -51,6 +52,21 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Felsokning och framtida LLM-chat](troubleshooting-chat.md) - fragor/svar och symptom till rotorsak.
 - [Kallmanifest](sources.md) - vilka filer som anvandes nar wikin skapades.
 - [Logg](log.md) - append-only historik over wikiarbete.
+
+## Funktionslivscykel
+
+Varje funktionssidas `status`-falt i frontmattern ar funktionens livscykelbeslut,
+inte bara wikisidans status. Tillatna varden:
+
+- `aktiv` - fullt underhallen, paritetsregeln galler fullt ut.
+- `experiment` - under utprovning, normalt bara synlig for Super User eller
+  pilotanvandare. Ska fa ett beslutsdatum i sidan: slappa eller slanga.
+- `frys` - buggfixar men inga nya features. Nya onskemal ska ifragasattas.
+- `avveckla` - pa vag bort. Inga andringar utom borttagning; notera ersattare.
+
+Nar en funktions status andras ska sidan, denna lista och `log.md` uppdateras
+i samma arbete. Experiment som statt stilla lange ska lyftas till Emir for
+beslut i stallet for att ligga kvar tyst.
 
 ## Underhallsregel
 
