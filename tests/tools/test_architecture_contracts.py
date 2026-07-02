@@ -32,7 +32,6 @@ WAREHOUSE_LINE_LIMIT = 1000
 
 # Fil -> tak (nuvarande storlek vid införandet). Får krympa, aldrig växa.
 BACKEND_LINE_EXCEPTIONS = {
-    "sankey_inbound/build.py": 1540,
     "productivity_kpi_rules.py": 1290,
     "productivity_sync.py": 1230,
     "schemas.py": 1013,
