@@ -557,10 +557,49 @@ def archive_cache_status(
 
     Visar bl.a. vilka dagar som saknas (t.ex. efter en eller flera natters nedtid)
     och som fylls på vid nästa/pågående synk. Läsbart även när cachen är av.
+    Innehåller även produktivitetsbyggets status (snapshots, backfill, förbyggda
+    dagar) så Arkivstatus-vyn kan visa hela hämta/bygg-kedjan.
     """
+    payload: dict
     if not local_archive_store.is_enabled():
-        return {"enabled": False, "today": None, "views": [], "tenants": []}
-    return archive_cache_sync.coverage_report()
+        payload = {"enabled": False, "today": None, "views": [], "tenants": []}
+    else:
+        payload = archive_cache_sync.coverage_report()
+    payload["productivity"] = _productivity_build_status()
+    return payload
+
+
+def _productivity_build_status() -> dict:
+    """Produktivitetskedjans status: dagens snapshot, backfill-läge och förbyggt."""
+    from datetime import date as _date
+
+    from ..productivity_sync_paths import (
+        productivity_backfill_status,
+        productivity_prebuild_status,
+        productivity_snapshot_root,
+        productivity_snapshot_status,
+    )
+
+    status: dict = {
+        "today": productivity_snapshot_status(_date.today()),
+        "backfill": productivity_backfill_status(),
+        "prebuild": productivity_prebuild_status(),
+    }
+    try:
+        root = productivity_snapshot_root(None)
+        snapshot_dirs = sorted(
+            entry.name for entry in root.iterdir() if entry.is_dir() and entry.name[:4].isdigit()
+        ) if root.exists() else []
+        overview_reports = len(list(root.glob("*/overview-report-*.json.gz"))) if root.exists() else 0
+        status["snapshots"] = {
+            "days": len(snapshot_dirs),
+            "first": snapshot_dirs[0] if snapshot_dirs else None,
+            "last": snapshot_dirs[-1] if snapshot_dirs else None,
+            "overview_reports": overview_reports,
+        }
+    except Exception:  # noqa: BLE001 - statusvyn får aldrig fälla endpointen
+        status["snapshots"] = {"days": None, "first": None, "last": None, "overview_reports": None}
+    return status
 
 
 @router.post("/catalog/reload")

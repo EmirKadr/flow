@@ -139,7 +139,7 @@ function canUseAllocationProcess(user) {
   return canViewPage(user, "allocationProcess");
 }
 
-const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta"];
+const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta", "archiveStatus"];
 const SIDEBAR_STAFFING_TAB_VIEW_IDS = [
   "schedule",
   "overview",
@@ -165,6 +165,7 @@ const SIDEBAR_VIEW_HREFS = {
   dataFetch: "/hamta-data.html",
   analytics: "/historik.html",
   meta: "/meta.html",
+  archiveStatus: "/arkiv-status.html",
   schedule: "/index.html",
   overview: "/overblick.html",
   productivity: "/produktivitet.html",
@@ -190,7 +191,7 @@ function sidebarDefaultLayout() {
 }
 
 function sidebarTabTargetVisible(user, viewId) {
-  if (viewId === "meta" || viewId === "businesses") return Boolean(user?.is_super_user);
+  if (viewId === "meta" || viewId === "businesses" || viewId === "archiveStatus") return Boolean(user?.is_super_user);
   return canViewPage(user, viewId);
 }
 
@@ -429,6 +430,15 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "M",
       visible: Boolean(user?.is_super_user),
       active: activePage === "meta",
+      sidebar: false,
+    },
+    {
+      id: "archiveStatus",
+      label: "Arkivstatus",
+      href: "/arkiv-status.html",
+      icon: "🗄",
+      visible: Boolean(user?.is_super_user),
+      active: activePage === "archiveStatus",
       sidebar: false,
     },
     {

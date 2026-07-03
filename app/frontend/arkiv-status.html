@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arkivstatus - flow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <style>
+    .archive-status-page { padding: 16px 24px 48px; max-width: 1200px; }
+    .archive-card { background: var(--card, #fff); border: 1px solid var(--border, #ddd); border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+    .archive-card h3 { margin: 0 0 10px; font-size: 15px; }
+    .archive-meta { color: var(--muted, #777); font-size: 12px; margin: 4px 0 12px; }
+    table.archive-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.archive-table th, table.archive-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border, #eee); white-space: nowrap; }
+    table.archive-table th { font-weight: 600; }
+    .cov-ok { color: #1a7f37; font-weight: 600; }
+    .cov-warn { color: #b35900; font-weight: 600; }
+    .cov-err { color: #b3261e; font-weight: 600; }
+    .archive-sync-log { font-size: 12px; max-height: 260px; overflow-y: auto; }
+    .archive-sync-log div { padding: 3px 0; border-bottom: 1px dotted var(--border, #eee); }
+    .archive-refresh { font-size: 12px; color: var(--muted, #777); }
+  </style>
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <main class="archive-status-page">
+    <div class="section-title">Arkivstatus</div>
+    <p class="archive-meta">
+      Läget för den lokala arkiv-cachen (DuckDB) och produktivitetsbygget: vilka vyer och datum
+      som är hämtade, vad som är förbyggt och när senaste synkarna kördes.
+      <span class="archive-refresh" id="archiveRefreshInfo"></span>
+    </p>
+
+    <div class="archive-card">
+      <h3>Arkiv-cache (DuckDB)</h3>
+      <div class="archive-meta" id="archiveCacheSummary">Laddar …</div>
+      <table class="archive-table" id="archiveCoverageTable" hidden>
+        <thead>
+          <tr>
+            <th>Tenant</th><th>Vy</th><th>Hämtat från</th><th>Hämtat till</th>
+            <th>Täckt till</th><th>Saknade dagar</th><th>Rader</th>
+          </tr>
+        </thead>
+        <tbody id="archiveCoverageBody"></tbody>
+      </table>
+    </div>
+
+    <div class="archive-card">
+      <h3>Produktivitetsbygget</h3>
+      <div class="archive-meta" id="productivitySummary">Laddar …</div>
+      <table class="archive-table">
+        <tbody id="productivityBody"></tbody>
+      </table>
+    </div>
+
+    <div class="archive-card">
+      <h3>Senaste synkar</h3>
+      <div class="archive-sync-log" id="archiveSyncLog">Laddar …</div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/common/foundation.js?v=20260616-speed-common"></script>
+  <script src="/js/common/theme.js?v=20260616-speed-common"></script>
+  <script src="/js/common/area_focus.js?v=20260616-speed-common"></script>
+  <script src="/js/common/runtime.js?v=20260616-speed-common"></script>
+  <script src="/js/common/app_log.js?v=20260616-speed-common"></script>
+  <script src="/js/common/telemetry.js?v=20260616-speed-common"></script>
+  <script src="/js/common/access.js?v=20260616-speed-common"></script>
+  <script src="/js/common/sidebar.js?v=20260616-speed-common"></script>
+  <script src="/js/common/uploads.js?v=20260616-speed-common"></script>
+  <script src="/js/common/demo_prefetch_init.js?v=20260616-speed-common"></script>
+  <script src="/js/common/import_tools.js?v=20260616-speed-common"></script>
+  <script src="/js/common/table_sort.js?v=20260616-speed-common"></script>
+  <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
+  <script src="/js/common.js?v=20260616-speed-common"></script>
+  <script src="/js/arkiv_status.js?v=20260704-archive-status"></script>
+</body>
+</html>

@@ -7,6 +7,17 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-04] feature | Arkivstatus-dashboard (superuser) + seed-konfig som lokalt
+
+Ny vy **Arkivstatus** (`/arkiv-status.html`, vy-id `archiveStatus`, Super
+User-gated, Verktyg-menyn): täckning per tenant/vy, saknade dagar, synk-logg
+och produktivitetsbygget (snapshotdagar, förbyggda rapporter, backfill,
+nattligt förbygge). `GET /api/query-data/archive-cache/status` utökad med
+`productivity`-block. k8s-configen ändrad till `ARCHIVE_CACHE_SEED_DAYS=10000`
++ `ARCHIVE_CACHE_EMPTY_STOP_DAYS=300` (samma som lokalt — empty-stop-regeln
+avgör hur långt bak, inte ett fast dagantal). Verifierad live mot riktig data
+(10005 snapshotdagar, 21 täckningsrader). Se [local-archive-cache.md](local-archive-cache.md).
+
 ## [2026-07-04] feature | Arkiv-cachen (DuckDB) påslagen i deployade miljöer
 
 Produktionsspärren i `start_archive_cache_scheduler` borttagen — cachen är
