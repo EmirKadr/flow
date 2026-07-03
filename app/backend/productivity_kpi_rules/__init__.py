@@ -6,6 +6,7 @@ from .rules import (  # noqa: F401
     EVENT_DATE_SOURCE_KEYS,
     KPI_LOGIC_SOURCE_KEY,
     KPI_LOGIC_SOURCE_LABEL,
+    SQL_REFERENCE_KPI_RULE_ROWS,
     KpiTarget,
     KpiLogEvent,
     KpiPointEvent,
