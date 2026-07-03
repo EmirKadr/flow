@@ -31,3 +31,13 @@ data:
   ALLOCATION_OBSERVATIONS_STARTUP_SYNC: "false"
   TRACKING_ALLOW_VALUE_SAMPLES: "false"
   META_ANALYSIS_AUTO_START: "false"
+
+  # --- Lokal arkiv-cache (DuckDB pa flow-media-PVC:n) ---
+  # Sankey/Produktivitet/Hamta data laser dblog-historik fran disk istallet
+  # for externa API:t. Utan cachen drar Sankey hela arkivet i minnet och
+  # OOM-dodar podden (se wiki/local-archive-cache.md).
+  ARCHIVE_CACHE_ENABLED: "1"
+  # Djup-seed vid start: chunkad och ateruppupptagbar; efter forsta fulla
+  # seeden ar passet en billig no-op och toppar bara pa nya dagar.
+  ARCHIVE_CACHE_SEED_ON_START: "1"
+  ARCHIVE_CACHE_SEED_DAYS: "400"

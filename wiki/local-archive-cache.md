@@ -8,11 +8,14 @@ tags: [ask, arkiv, dblog, duckdb, cache, lokal, sankey, produktivitet, hamta-dat
 # Lokal arkiv-cache (DuckDB)
 
 Kort svar: en **per-tenant DuckDB-databas** som speglar ASK/WMS-arkivvyerna
-(`dblog_*`) så att lokala körningar av **Sankey**, **Produktivitet** och **Hämta
-data** kan läsa historik från disk istället för via NoWaste-API:t. Enbart för
-**lokal utveckling** – startar aldrig i produktion, och API/dblog finns kvar som
-fallback. Läs denna sida innan du felsöker "varför läser den inte lokalt" eller
-ändrar seed/topp-på-logiken.
+(`dblog_*`) så att **Sankey**, **Produktivitet** och **Hämta data** läser
+historik från disk istället för via NoWaste-API:t. Opt-in via
+`ARCHIVE_CACHE_ENABLED` – sedan 2026-07-04 även i **deployade miljöer**
+(DuckDB-filerna ligger på flow-media-PVC:n och överlever poddomstarter);
+API/dblog finns kvar som fallback. Utan cachen drar Sankeys månad/år-vyer hela
+arkivet i minnet och OOM-dödar podden (1 Gi-tak), vilket var motivet för
+produktionspåslaget. Läs denna sida innan du felsöker "varför läser den inte
+lokalt" eller ändrar seed/topp-på-logiken.
 
 ## Varför
 
@@ -38,11 +41,13 @@ för dagar äldre än retentionen blir i praktiken tomma. Se [ask-datalagring.md
   300) markeras resten av det begärda äldre intervallet som kontrollerat/tomt och vyn
   anses klar. Det gör att ett stort `ARCHIVE_CACHE_SEED_DAYS`, t.ex. 10 000, inte behöver
   fråga hela vägen bak när datan uppenbart tagit slut.
-- **Djup-seeden körs via CLI, inte vid serverstart.** Den tunga initiala hämtningen av
-  hela historiken görs med `python -m app.backend.archive_cache_cli` (se nedan). Serverns
-  schemaläggare kör med `deep_seed=False` och **toppar bara på redan seedade vyer framåt** –
-  den startar aldrig en tung seed och rör inte oseedade vyer (styrs av
-  `ARCHIVE_CACHE_SEED_ON_START`, default av).
+- **Djup-seeden körs via CLI lokalt, via `ARCHIVE_CACHE_SEED_ON_START=1` i deployade
+  miljöer.** Lokalt görs den tunga initiala hämtningen med
+  `python -m app.backend.archive_cache_cli` (se nedan). Serverns schemaläggare kör
+  annars med `deep_seed=False` och **toppar bara på redan seedade vyer framåt**.
+  I k8s (där ingen kör CLI:t) sätts `ARCHIVE_CACHE_SEED_ON_START=1` i configmappen:
+  första passet djup-seedar chunkat/återupptagbart, och när täckningen är komplett
+  är passet en billig no-op. En poddomstart mitt i seeden tappar bara pågående chunk.
 - **Ingen omseed vid varje start.** DuckDB-filen ligger kvar på disk; `run_view` ser att
   intervallet redan finns och gör inget (eller bara dagens nya dygn).
 - **Parallellt och snabbt.** CLI:t hämtar varje vy i egen tråd (nätverket parallelliseras);
@@ -100,12 +105,12 @@ snapshotdelen. Buffertpall ingar inte har.
 
 | Nyckel | Default | Roll |
 | --- | --- | --- |
-| `ARCHIVE_CACHE_ENABLED` | `false` | Slår på cachen + schemaläggaren (endast lokalt). |
+| `ARCHIVE_CACHE_ENABLED` | `false` | Slår på cachen + schemaläggaren (lokalt och deployat; i k8s via configmappen). |
 | `ARCHIVE_CACHE_DIR` | `<compiled_data_root>/archive_cache` | Var `.duckdb`-filerna ligger. |
 | `ARCHIVE_CACHE_SEED_DAYS` | `400` | Hur långt bak den initiala dblog-seeden går. |
 | `ARCHIVE_CACHE_CHUNK_DAYS` | `14` | Chunkstorlek för seed/topp-på (mindre = mer återupptagningsbart, fler API-anrop). |
 | `ARCHIVE_CACHE_EMPTY_STOP_DAYS` | `300` | Stoppar bakåtseed när så många kalenderdagar i rad saknar rader och markerar äldre begärt intervall som täckt/tomt. `0` stänger av stoppregeln. |
-| `ARCHIVE_CACHE_SEED_ON_START` | `false` | Låt servern göra den tunga djup-seeden vid start (annars gör CLI:t det, servern toppar bara på). |
+| `ARCHIVE_CACHE_SEED_ON_START` | `false` | Låt servern göra den tunga djup-seeden vid start (annars gör CLI:t det, servern toppar bara på). Sätts till `1` i k8s-configmappen där ingen kör CLI:t. |
 | `ARCHIVE_CACHE_SEED_WORKERS` | `5` | Parallella hämtningar (vyer/tenants) i CLI-seeden. |
 | `ARCHIVE_CACHE_SYNC_HOUR` / `_MINUTE` | `0` / `1` | Daglig topp-på-tid (Europe/Berlin). |
 

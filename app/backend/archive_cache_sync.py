@@ -8,8 +8,12 @@ Strategy (see wiki/local-archive-cache.md and local_archive_store.py):
 - The DuckDB ``_row_date`` range plus ``_archive_coverage`` per view is the
   watermark. Re-running is idempotent (chunks replace rows and mark coverage).
 
-Local-dev only: the scheduler refuses to start in production and when
-``ARCHIVE_CACHE_ENABLED`` is off.
+Opt-in via ``ARCHIVE_CACHE_ENABLED`` — off means everything reads via
+API/dblog as before. In deployed environments the DuckDB files live on the
+flow-media PVC (``<compiled_data_root>/archive_cache``) and survive restarts;
+the daily scheduler tops up already-seeded views, and the initial deep seed
+runs at startup when ``ARCHIVE_CACHE_SEED_ON_START`` is set (chunked and
+resumable, so pod restarts continue where they left off).
 """
 from __future__ import annotations
 
@@ -639,18 +643,18 @@ def _scheduler_loop() -> None:
 
 
 def start_archive_cache_scheduler() -> None:
-    """Starta daglig topp-på (endast lokalt, gate:at)."""
+    """Starta daglig topp-på. Opt-in via ARCHIVE_CACHE_ENABLED (även produktion)."""
     global _SCHEDULER_STARTED
     if _SCHEDULER_STARTED:
         return
     if not store.is_enabled():
         return
-    if settings.is_production:
-        logger.info("Archive cache scheduler startas inte i produktion.")
-        return
     _SCHEDULER_STARTED = True
     threading.Thread(target=_scheduler_loop, name="ArchiveCacheSync", daemon=True).start()
-    logger.info("Archive cache scheduler startad (lokal dev).")
+    logger.info(
+        "Archive cache scheduler startad (%s).",
+        "produktion" if settings.is_production else "lokal dev",
+    )
 
 
 def main() -> None:
