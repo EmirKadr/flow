@@ -119,8 +119,6 @@ spec:
               value: "#{DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE}"
             - name: DATA_SOURCE_VERIFY_SSL
               value: "true"
-            - name: DATA_SOURCE_CA_BUNDLE
-              value: "#{DATA_SOURCE_CA_BUNDLE}"
             - name: DATA_SOURCE_MAX_ROWS
               value: "1000"
             - name: DATA_SOURCE_RESPONSE_ROW_CAP
