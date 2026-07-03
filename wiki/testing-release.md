@@ -9,6 +9,14 @@ tags: [test, release, agent]
 
 Kort svar: vid produktbeteende ska agenten testa både webb och Windows-paritet sa langt rimligt. Dokumentationsandringar som bara lagger till wiki kraver normalt ingen testsvit, men kan verifieras med fil-/lankkontroll.
 
+## Pre-push-hooken kor sviten automatiskt
+
+`.githooks/pre-push` kor `python -m pytest -x -q` fore varje push och
+blockerar vid rott — CI-fel ska fangas lokalt i fortid, inte upptackas efter
+push. Nodfallsbypass: `FLOW_SKIP_PREPUSH_TESTS=1` (motivera i commit-texten).
+Kraver `git config core.hooksPath .githooks` (redan satt i repot via
+tools.agent_audit install-hooks).
+
 ## Snabbtest for kodandringar
 
 ```powershell
