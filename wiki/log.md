@@ -7,6 +7,25 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-03] fix | MSSQL-härdning: dialektsäkra migrationer, startup-migrering och CI-gate
+
+Tre produktionskrascher mot MSSQL (Azure) åtgärdade i grunden: (1) tuple-IN i
+`routers/overview.py` ersatt med `_ywd_filter` (OR-kedja av AND-tripplar);
+(2) schema-drift (`schedule_cells.remark` saknades) löst med `alembic upgrade
+head` + ny `_run_startup_migrations` i `main.py` som kör alembic vid appstart
+för icke-SQLite (av med `RUN_DB_MIGRATIONS_ON_START=0`); (3) unika constraints
+på nullbara kolumner gav NULL-dubblettfel — fem index i MSSQL omgjorda till
+filtrerade unika index med PG-semantik. Migrationskedjan 0001–0045 dialektsäkrad
+(0002 CHECK-literaler, 0014/0016/0019 TRUE-literaler, 0015 expressionsindex,
+0017 reserverat ord "key", 0018 PG-autonamn + INSERT-literaler + existing_type)
+och verifierad från noll mot SQL Server 2022 i Docker. Tre index som prod
+saknade skapade (`ix_schedule_cells_ywd` m.fl.). Nya CI-jobbet `mssql-gate`
+bygger schemat från noll mot riktig MSSQL vid varje push. Nya kontraktstester:
+`test_mssql_compat.py` (utökad med tuple-IN), `test_model_migration_parity.py`,
+`test_startup_migrations.py`, `test_ci_workflows.py::test_push_ci_runs_mssql_alembic_gate`.
+Se [testing-release.md](testing-release.md) och [nowaste-git-release.md](nowaste-git-release.md)
+(nya branch-regler: alltid ny feature-branch, alltid ny release-branch per deploy).
+
 ## [2026-07-03] refactor | Render-sanering: legacy-drift borttagen ur repot
 
 Migreringen till nowasteserver (k8s + MSSQL via Octopus) ar klar och verifierad,

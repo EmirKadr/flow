@@ -16,7 +16,11 @@ depends_on: Union[str, tuple[str, ...], None] = None
 
 
 def upgrade() -> None:
-    op.execute("UPDATE users SET is_active = TRUE WHERE is_active IS NOT TRUE")
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("UPDATE users SET is_active = TRUE WHERE is_active IS NOT TRUE")
+    else:
+        # MSSQL/SQLite: boolean lagras som 0/1 och TRUE-literalen ar ogiltig T-SQL.
+        op.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL OR is_active = 0")
 
 
 def downgrade() -> None:

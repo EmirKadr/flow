@@ -32,8 +32,15 @@ def upgrade() -> None:
     op.execute(f"DELETE FROM schedule_cells WHERE person_id IN ({duplicate_ids})")
     op.execute(f"DELETE FROM person_schedule_templates WHERE person_id IN ({duplicate_ids})")
     op.execute(f"DELETE FROM persons WHERE id IN ({duplicate_ids})")
+    if op.get_bind().dialect.name == "mssql":
+        # SQL Server saknar expressionsindex och IF NOT EXISTS for index.
+        # Kollationen ar redan case-insensitiv och namndubbletter stadas ovan,
+        # sa den normaliserade unikheten uppratthalls av applikationen.
+        return
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_persons_name_normalized ON persons (lower(trim(name)))")
 
 
 def downgrade() -> None:
+    if op.get_bind().dialect.name == "mssql":
+        return
     op.drop_index("uq_persons_name_normalized", table_name="persons")

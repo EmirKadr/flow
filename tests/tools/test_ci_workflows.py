@@ -20,6 +20,17 @@ def test_push_ci_runs_core_test_gates_against_postgres_alembic_simulation():
     assert "python desktop/main.py --smoke-test" in workflow
 
 
+def test_push_ci_runs_mssql_alembic_gate():
+    """Produktionsdatabasen (NoWaste/Azure) ar SQL Server; CI ska bygga schemat
+    fran noll mot riktig MSSQL sa dialektbrott fangas fore deploy."""
+    workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+
+    assert "mssql-gate:" in workflow
+    assert "mcr.microsoft.com/mssql/server:2022-latest" in workflow
+    assert "mssql+pymssql://" in workflow
+    assert "Simulate Alembic build (MSSQL)" in workflow
+
+
 def test_k8s_secret_example_uses_azure_sql_database_url():
     secret_example = (ROOT / "k8s" / "secret.example.yaml").read_text(encoding="utf-8")
     expected_prefix = "mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME"
