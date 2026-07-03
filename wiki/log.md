@@ -7,6 +7,18 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-04] feature | Arkiv-cachen (DuckDB) påslagen i deployade miljöer
+
+Produktionsspärren i `start_archive_cache_scheduler` borttagen — cachen är
+opt-in via `ARCHIVE_CACHE_ENABLED` överallt. k8s-configmappen sätter
+`ARCHIVE_CACHE_ENABLED=1`, `ARCHIVE_CACHE_SEED_ON_START=1` (chunkad,
+återupptagbar djup-seed vid poddstart; billig no-op när täckningen är klar)
+och `ARCHIVE_CACHE_SEED_DAYS=400`. DuckDB-filerna hamnar på flow-media-PVC:n
+(`/var/flow-media/flow-data/archive_cache`) och överlever omstarter. Motiv:
+Sankeys månad/år-vyer utan cache drar hela dblog-arkivet i minnet och
+OOM-dödar podden. Obs: Octopus-miljön måste också få env-variablerna om den
+inte använder repo-configmappen. Se [local-archive-cache.md](local-archive-cache.md).
+
 ## [2026-07-04] fix | Serversmoke-verktyg, Översiktens skriptordning och Sankey-OOM-diagnos
 
 Nytt läs-bara verktyg `tools.server_smoke` (loggar in mot riktig miljö, öppnar
