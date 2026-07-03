@@ -63,7 +63,8 @@ def _normalize_role_access(value: object, *, reverse: bool = False) -> object:
 
 def _update_json_setting(key: str, normalizer, *, reverse: bool = False) -> None:
     connection = op.get_bind()
-    row = connection.execute(sa.text("SELECT value FROM app_settings WHERE key = :key"), {"key": key}).first()
+    # "key" ar reserverat ord i T-SQL - citera sa fragan gar pa alla dialekter.
+    row = connection.execute(sa.text('SELECT value FROM app_settings WHERE "key" = :key'), {"key": key}).first()
     if row is None:
         return
     try:
@@ -74,7 +75,7 @@ def _update_json_setting(key: str, normalizer, *, reverse: bool = False) -> None
     if after == before:
         return
     connection.execute(
-        sa.text("UPDATE app_settings SET value = :value WHERE key = :key"),
+        sa.text('UPDATE app_settings SET value = :value WHERE "key" = :key'),
         {"key": key, "value": json.dumps(after, ensure_ascii=False, separators=(",", ":"))},
     )
 

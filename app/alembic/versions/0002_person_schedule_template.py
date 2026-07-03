@@ -17,6 +17,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # MSSQL saknar boolean-literalerna true/false i uttryck; PG kraver dem.
+    if op.get_bind().dialect.name == "mssql":
+        true_lit, false_lit = "1", "0"
+    else:
+        true_lit, false_lit = "true", "false"
     op.create_table(
         "person_schedule_templates",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -29,8 +34,8 @@ def upgrade() -> None:
         sa.Column("updated_by", sa.Integer(), sa.ForeignKey("users.id")),
         sa.UniqueConstraint("person_id", "weekday", name="uq_person_schedule_weekday"),
         sa.CheckConstraint(
-            "(is_off = true AND start_hour IS NULL AND end_hour IS NULL) OR "
-            "(is_off = false AND start_hour IS NOT NULL AND end_hour IS NOT NULL "
+            f"(is_off = {true_lit} AND start_hour IS NULL AND end_hour IS NULL) OR "
+            f"(is_off = {false_lit} AND start_hour IS NOT NULL AND end_hour IS NOT NULL "
             "AND start_hour >= 6 AND end_hour <= 24 AND start_hour < end_hour)",
             name="ck_template_hours",
         ),
