@@ -31,6 +31,10 @@ from ..productivity_service import (
     _read_csv_rows_with_headers,
     _row_value,
 )
+from ..person_productivity_cache import (
+    productivity_cache_schedule_signature,
+    productivity_snapshot_signature,
+)
 from ..productivity_kpi_rules import build_person_productivity_report_from_files, normalize_process
 from ..productivity_sync import (
     LOCAL_TZ,
@@ -40,7 +44,9 @@ from ..productivity_sync import (
     productivity_prebuild_status,
     productivity_snapshot_files,
     productivity_snapshot_status,
+    read_overview_report_cache,
     sync_productivity_snapshot,
+    write_overview_report_cache,
 )
 from ..settings_service import (
     PRODUCTIVITY_FINANCE_COLLAR_TYPES,
@@ -330,15 +336,52 @@ def _build_productivity_report_for_date(
             raise ProductivitySyncError("Produktivitetens API-snapshot saknas eller är inte komplett.")
     snapshot_date = report_date or date.fromisoformat(str(sync_status.get("date") or date.today().isoformat()))
     current_sync = productivity_snapshot_status(snapshot_date)
-    files = productivity_snapshot_files(snapshot_date)
     source_status = list(sync_status.get("sources") or [])
-    report = _build_cached_person_productivity_report(
-        db,
-        files,
-        report_date=snapshot_date,
-        business_id=business_id,
-        sync=current_sync,
-    )
+
+    # Las den forbyggda fulldetaljerade dagrapporten fran disk nar snapshot- och
+    # schemasignatur fortfarande stammer, sa ar-/manadsvyn slipper bygga om varje
+    # dag fran CSV. Miss (saknad eller foraldrad) faller tillbaka pa CSV-bygget
+    # och skriver om cachen (self-heal). Signaturberakningen ar defensiv sa en
+    # fake-session/patchad miljo bara faller tillbaka pa CSV-bygget som forr.
+    report = None
+    snapshot_signature = ""
+    schedule_signature = ""
+    cache_ready = False
+    try:
+        snapshot_signature = productivity_snapshot_signature(current_sync)
+        schedule_signature = productivity_cache_schedule_signature(db, snapshot_date, business_id=business_id)
+        cache_ready = True
+        report = read_overview_report_cache(
+            snapshot_date,
+            business_id,
+            snapshot_signature=snapshot_signature,
+            schedule_signature=schedule_signature,
+        )
+    except Exception:
+        logger.debug("Forbyggd oversiktsrapport otillganglig for %s; bygger fran CSV.", snapshot_date, exc_info=True)
+        report = None
+        cache_ready = False
+
+    if report is None:
+        files = productivity_snapshot_files(snapshot_date)
+        report = _build_cached_person_productivity_report(
+            db,
+            files,
+            report_date=snapshot_date,
+            business_id=business_id,
+            sync=current_sync,
+        )
+        if cache_ready:
+            try:
+                write_overview_report_cache(
+                    snapshot_date,
+                    business_id,
+                    report,
+                    snapshot_signature=snapshot_signature,
+                    schedule_signature=schedule_signature,
+                )
+            except Exception:
+                logger.warning("Kunde inte skriva forbyggd oversiktsrapport for %s.", snapshot_date, exc_info=True)
     report["source_status"] = source_status
     return report, source_status
 

@@ -169,6 +169,35 @@ byggdes.
 Om en arkivvy stoppas av tom-historikregeln skriver CLI-slutrapporten en `INFO`-rad med
 antal tomma dagar och att äldre intervall markerats som klart/tomt.
 
+## Förbyggd översiktsrapport (overview-report)
+
+Produktivitets **periodöversikt** (Bemanning → Produktivitet, år/månad-läge)
+behöver komplett tim-/process-/diff-detalj per dag och kan därför inte läsa
+`person_productivity_daily` som fullrapport. För att slippa räkna om varje dag
+från snapshot-CSV vid varje öppning persisteras den **exakta** dagrapporten (samma
+byggare som dag-vyn, `build_person_productivity_report_from_files`) som en gzip-JSON
+bredvid snapshoten: `productivity_snapshots/<datum>/overview-report-<business_id>.json.gz`.
+
+- **Byggs i förväg, kräver ingen live-data.** Warm-vägen
+  (`productivity_cache_warm.ensure_person_and_overview_caches`) bygger dagrapporten
+  **en gång** och matar både `person_productivity_daily` (Bemanning) och
+  `overview-report` (Produktivitet). Alla produktivitets-CLI-lägen som redan bygger
+  personcachen (`--with-productivity`, `--productivity-only`,
+  `--productivity-prebuild-existing`) och nattjobbet
+  (`prebuild_ready_productivity_days`) skriver därmed även `overview-report`.
+- **Signaturvakt.** Kuvertet lagrar `snapshot_signature` (snapshotens `last_sync_at`)
+  och `schedule_signature` (schemats antal/version/uppdaterad). Läsningen ger bara
+  träff när båda fortfarande stämmer; annars miss → CSV-ombyggnad → omskrivning
+  (self-heal). Så en ny snapshot-sync eller schemaändring invaliderar automatiskt.
+- **Skrivs bara bredvid en faktisk snapshot-katalog** (fil ligger i snapshotens
+  datummapp), aldrig som lös katalog på default-roten.
+- **Läsväg:** `routers/productivity_helpers._build_productivity_report_for_date`
+  läser cachen först och bygger bara om vid miss. Signaturberäkningen är defensiv,
+  så en fake-session i test faller tillbaka på CSV-bygget som förr.
+- IO + path: `productivity_sync_paths.productivity_overview_report_path` /
+  `read_overview_report_cache` / `write_overview_report_cache` /
+  `overview_report_cache_is_current`.
+
 ## Manuell körning / felsökning
 
 - CLI-seed (rekommenderat): se ovan. Serverns schemaläggare gör **inte** den tunga seeden –

@@ -50,11 +50,16 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   audit och vantetidsmatning fortsatter galla.
 - Periodoversikten bygger dagrapporter fran befintliga snapshotfiler.
   `person_productivity_daily` anvands inte som fullrapport for tradet, eftersom
-  Produktivitet behover komplett tim-/processdetalj per dag. Postgres och
-  filbaserad SQLite bygger dagar med begransad parallellism, hogst fyra dagar
-  samtidigt; in-memory SQLite och fake-sessioner kor seriellt. Progressen raknar
-  fardiga dagar, sa dagar kan bli klara i annan ordning utan att slutresultatet
-  andrar ordning.
+  Produktivitet behover komplett tim-/processdetalj per dag. For att slippa
+  rakna om varje dag fran CSV vid varje oppning persisteras den fardigberaknade
+  fulldetaljerade dagrapporten till disk som en forbyggd `overview-report`-cache
+  (se [local-archive-cache.md](local-archive-cache.md) -> "Forbyggd
+  oversiktsrapport"). Ar-/manadsvyn laser den nar snapshot- och schemasignatur
+  fortfarande stammer, och faller annars tillbaka pa CSV-bygget och skriver om
+  cachen (self-heal). Postgres och filbaserad SQLite bygger dagar med begransad
+  parallellism, hogst fyra dagar samtidigt; in-memory SQLite och fake-sessioner
+  kor seriellt. Progressen raknar fardiga dagar, sa dagar kan bli klara i annan
+  ordning utan att slutresultatet andrar ordning.
 - Noder for verksamhet, omrade, aktivitet, person, timme och processpoang.
 - Barnnoder visas som en sammanhangande horisontell tradgren. Nar det finns
   manga barn scrollas tradytan i sidled i stallet for att bryta upp grenlinjen.
@@ -115,10 +120,11 @@ dagsmappar rensas inte av produktivitetsflodet; dagens filer kan ersattas
 atomiskt nar dagens data uppdateras, medan aldre datum ligger kvar.
 `backfill.json` i samma rot sparar hur langt den langsamma historikhamtningen
 har kommit.
-`prebuild.json` sparar nattjobbet som bygger `person_productivity_daily` for
-alla snapshotdatum som redan finns och ar aldre an idag. Eftersom
-cache-current-kontrollen jamfor snapshot- och schemasignatur byggs bara datum
-om nar underlaget har andrats.
+`prebuild.json` sparar nattjobbet som bygger `person_productivity_daily` och den
+forbyggda `overview-report`-cachen for alla snapshotdatum som redan finns och ar
+aldre an idag. Bada matas fran samma engangs-dagbygge, sa en dag byggs hogst en
+gang. Eftersom cache-current-kontrollen jamfor snapshot- och schemasignatur
+byggs bara datum om nar underlaget har andrats.
 
 Samma fyllning kan koras manuellt via arkivcache-CLI:t nar DB:n ska fyllas:
 `python -m app.backend.archive_cache_cli --tenant frey --with-productivity --business-code STIGAMO`
@@ -197,7 +203,10 @@ Produktivitet.
   fortsatt befintliga snapshots for perioden och triggar inte extern
   historikhamtning vid varje periodbyte. Varje dagsrapport byggs fran
   snapshotfilerna, inte fran `person_productivity_daily`, sa full tim- och
-  processdetalj finns kvar. Nar databasen stodjer det byggs dagrapporterna med
+  processdetalj finns kvar. Fardigberaknade dagrapporter cachas dessutom pa disk
+  (forbyggd `overview-report`), sa redan byggda dagar laddas i princip momentant
+  utan CSV-ombyggnad; cachen invalideras nar snapshot- eller schemasignaturen
+  andras. Nar databasen stodjer det byggs dagrapporterna med
   max fyra parallella dagjobb; varje jobb har egen session och payloaden ordnas
   per datum innan den returneras.
   Med `productivityFinance=view` innehaller payloaden aven `finance` pa
@@ -327,7 +336,8 @@ och statusen aven nar rapporten ar tung.
 | "Varfor saknas dagar?" | Historik-backfillen har inte hunnit hamta alla datum an. Saknade dagar visas i `missing_dates`. |
 | "Hamtas data varje gang jag oppnar en person?" | Nej. Persondialogen laser sparade globala snapshots och klienten cachar nyligen hamtade perioder kort. Om datum saknas beror det pa att backfill/snapshot inte ar klar. |
 | "Varfor visar Produktivitet fel direkt efter start local?" | Dagvyn vantar nu pa dagens startup-snapshot i stallet for att direkt visa saknad API-snapshot. Om fel anda visas ar snapshot-syncen antingen fortfarande upptagen for lange eller sa felar extern datakalla. |
-| "Varfor kan Manad ta langre tid lokalt?" | Periodoversikten bygger fulla dagsrapporter fran snapshotfiler for att behalla komplett tim- och processdata. Filbaserad SQLite far anvanda samma begransade dagparallellism som Postgres, men `person_productivity_daily` anvands inte som ersattning for hela Produktivitetstradet. |
+| "Varfor kan Manad ta langre tid lokalt?" | Forsta gangen en dag byggs fran snapshotfiler (full tim-/processdetalj); resultatet cachas sedan som forbyggd `overview-report` pa disk sa nasta oppning gar momentant. Bygg i forvag med produktivitets-CLI:t (`--with-productivity`) sa ar-vyn ar snabb direkt. Filbaserad SQLite far samma begransade dagparallellism som Postgres, men `person_productivity_daily` anvands inte som ersattning for hela Produktivitetstradet. |
+| "Jag byggde snapshot med CLI:t men Januari laddar anda om?" | Snapshotfilerna racker inte for tradet; det behover den forbyggda `overview-report`-cachen. Kor om produktivitets-CLI:t med `--with-productivity`/`--productivity-only` sa skrivs bade `person_productivity_daily` och `overview-report` per dag. Ar snapshot- eller schemasignaturen aldrig andrad hoppas redan byggda dagar over. |
 | "Varfor ska periodbyte i Produktivitet inte starta en stor API-korning?" | Vecka, manad, ar och custom-perioder ska bara lasa de snapshots som redan finns. API-syncen sker vid startup, hel-/halvtimme, manuell sync eller historik-backfill. Daglage kan bara sakra den enskilda dagens snapshot. |
 | "Varfor gar det inte att ladda upp produktivitetsfiler?" | Den manuella produktivitetsuppladdningen ar borttagen. Produktivitet bygger pa global API-snapshot. |
 | "Vilken KPI-fil kravs for poang?" | `v_ask_kpi_target`/`kpi` kravs. Den gamla separata regelfilen anvands inte. |
@@ -337,6 +347,10 @@ och statusen aven nar rapporten ar tung.
 
 - `../app/backend/productivity_kpi_rules.py`
 - `../app/backend/productivity_sync.py`
+- `../app/backend/productivity_sync_paths.py`
+- `../app/backend/productivity_cache_warm.py`
+- `../app/backend/person_productivity_cache.py`
+- `../app/backend/routers/productivity_helpers.py`
 - `../app/backend/routers/productivity.py`
 - `../app/backend/routers/settings.py`
 - `../app/backend/settings_service.py`
