@@ -149,7 +149,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "flow-web"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "#{OPENTELEMETRY_URL}"
+              value: "#{OPENTELEMETRY_URL}/v1/traces"
             - name: OTEL_EXPORTER_OTLP_HEADERS
               value: "X-Seq-ApiKey=#{OPENTELEMETRY_TOKEN}"
             - name: OTEL_TRACES_SAMPLE_RATE
