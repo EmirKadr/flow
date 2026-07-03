@@ -78,7 +78,7 @@ def business_id_from_area_focus(db: Session, area_focus: object) -> int | None:
         area = (
             db.query(Area)
             .filter(func.upper(Area.code) == focus)
-            .filter(Area.is_active.is_(True))
+            .filter(Area.is_active)
             .order_by(Area.sort_order.asc(), Area.id.asc())
             .first()
         )

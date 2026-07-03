@@ -222,7 +222,7 @@ def _productivity_finance_context(db: Session, user: User, business_id: int | No
             continue
         rows = invoice_rows_by_company.get(company) or productivity_finance_default_invoice_rows(company)
         rates[company] = _productivity_finance_collar_rates(productivity_finance_vas_rates_from_invoice_rows(rows))
-    query = db.query(Activity).filter(Activity.is_active.is_(True))
+    query = db.query(Activity).filter(Activity.is_active)
     if business_id is not None:
         query = query.filter(Activity.business_id == business_id)
     activities = query.all()

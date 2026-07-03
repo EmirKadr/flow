@@ -575,7 +575,7 @@ def active_tenants() -> list[str]:
     try:
         rows = (
             db.query(Business.tenant)
-            .filter(Business.is_active.is_(True))
+            .filter(Business.is_active)
             .order_by(Business.sort_order, Business.id)
             .all()
         )

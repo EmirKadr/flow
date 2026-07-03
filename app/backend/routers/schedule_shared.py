@@ -72,7 +72,7 @@ def _visible_schedule_persons(
     weekdays: list[int] | None = None,
 ) -> tuple[list[Person], int | None]:
     scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active.is_(True))
+    persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -553,7 +553,7 @@ def _calculator_profile_display_name(user: User) -> str:
 
 
 def _accessible_calculator_profile_user_query(db: Session, user: User):
-    query = db.query(User).filter(User.is_active.is_(True))
+    query = db.query(User).filter(User.is_active)
     if not is_super_user(user):
         business_id = getattr(user, "business_id", None)
         if business_id is not None:

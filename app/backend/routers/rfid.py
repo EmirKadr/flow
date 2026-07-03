@@ -77,7 +77,7 @@ def _activity_for_module(db: Session, module_name: str) -> Activity | None:
     key = _compact_key(module_name)
     if not key:
         return None
-    rows = db.query(Activity).filter(Activity.is_active.is_(True)).all()
+    rows = db.query(Activity).filter(Activity.is_active).all()
     exact = [
         activity
         for activity in rows
@@ -120,7 +120,7 @@ def _person_for_tag(db: Session, tag_code: str, tag_dec: str | None, activity: A
     candidates.discard("")
     if not candidates:
         return None
-    query = db.query(Person).filter(Person.is_active.is_(True), Person.rfid_code.isnot(None))
+    query = db.query(Person).filter(Person.is_active, Person.rfid_code.isnot(None))
     if activity is not None and activity.business_id is not None:
         query = query.filter(Person.business_id == activity.business_id)
     for person in query.all():

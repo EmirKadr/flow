@@ -54,7 +54,7 @@ def get_schedule_presence(
     selected_date = _schedule_date(year, week, weekday)
     scoped_business_id = visible_business_id(db, user, business_id)
 
-    persons_q = select(Person).where(Person.is_active.is_(True))
+    persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
