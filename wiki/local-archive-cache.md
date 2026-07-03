@@ -116,6 +116,17 @@ snapshotdelen. Buffertpall ingar inte har.
 
 `.duckdb`-filerna är gitignorerade och hamnar aldrig i repo.
 
+## Arkivstatus-vyn (superuser-dashboard)
+
+Sidan **Arkivstatus** (`/arkiv-status.html`, vy-id `archiveStatus`, endast
+Super User, nås via Verktyg-menyn) visar hela hämta/bygg-kedjan live:
+täckning per tenant/vy (hämtat från/till, saknade dagar, kvarvarande
+djup-backfill), snapshotvyer, senaste synk-loggposterna samt
+produktivitetsbygget (snapshotdagar på disk, förbyggda översiktsrapporter,
+dagens snapshot, backfill-läge och nattligt förbygge). Pollar
+`GET /api/query-data/archive-cache/status` var 30:e sekund — endpointen
+innehåller sedan 2026-07-04 även `productivity`-blocket.
+
 ## Synk-logg och täckning (efter nedtid)
 
 Varje hämtning loggas i en tabell `_archive_sync_log` i tenantens DuckDB-fil
@@ -132,7 +143,7 @@ Så ser du både när varje chunk hämtas och när en vy är färdigseedad. När
 tenant är klara loggas dessutom `tenant=… KLAR – alla N vyer fullständigt hämtade lokalt`.
 
 Se täckning + senaste synkar:
-- **Endpoint:** `GET /api/data-fetch/archive-cache/status` (kräver `dataFetch: view`).
+- **Endpoint:** `GET /api/query-data/archive-cache/status` (kräver `dataFetch: view`).
   Ger per tenant/vy: `ingested_start/end` (faktiska rader), `covered_start/end`
   (rader + kontrollerat tomma dagar), `missing_start/end`, `missing_days`, samt `recent_syncs`.
 - **CLI:** `python -m app.backend.archive_cache_sync status`.

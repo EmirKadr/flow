@@ -250,6 +250,7 @@ const ROLE_VIEW_IDS = [
   "areas",
   "analytics",
   "meta",
+  "archiveStatus",
   "users",
   "userImport",
   "businesses",

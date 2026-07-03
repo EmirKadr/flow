@@ -40,4 +40,7 @@ data:
   # Djup-seed vid start: chunkad och ateruppupptagbar; efter forsta fulla
   # seeden ar passet en billig no-op och toppar bara pa nya dagar.
   ARCHIVE_CACHE_SEED_ON_START: "1"
-  ARCHIVE_CACHE_SEED_DAYS: "400"
+  # Grav bakat tills 300 dagar i rad saknar rader (empty-stop), inte till ett
+  # fast datum - 10000 ar i praktiken "hela historiken".
+  ARCHIVE_CACHE_SEED_DAYS: "10000"
+  ARCHIVE_CACHE_EMPTY_STOP_DAYS: "300"
