@@ -106,7 +106,7 @@ def staffing_calculator_profile_count(profile: Any) -> int:
 
 def staffing_process_options(db: Session, user: User) -> list[dict[str, str]]:
     business_id = visible_business_id(db, user, None)
-    query = select(Activity).where(Activity.is_active.is_(True))
+    query = select(Activity).where(Activity.is_active)
     if business_id is not None:
         query = query.where(Activity.business_id == business_id)
     activities = db.execute(query.order_by(Activity.sort_order, Activity.label)).scalars().all()
@@ -513,8 +513,8 @@ def schedule_activity_capacity(
     business_id = visible_business_id(db, user, None)
     rule_business_id = _staffing_rule_business_id(db, user, business_id)
 
-    persons_query = select(Person).where(Person.is_active.is_(True))
-    activities_query = select(Activity).where(Activity.is_active.is_(True))
+    persons_query = select(Person).where(Person.is_active)
+    activities_query = select(Activity).where(Activity.is_active)
     if business_id is not None:
         persons_query = persons_query.where(Person.business_id == business_id)
         activities_query = activities_query.where(Activity.business_id == business_id)
@@ -638,8 +638,8 @@ def schedule_activity_capacity_cell(
     business_id = visible_business_id(db, user, None)
     rule_business_id = _staffing_rule_business_id(db, user, business_id)
 
-    person_query = select(Person).where(Person.id == person_id, Person.is_active.is_(True))
-    activity_query = select(Activity).where(Activity.id == activity_id, Activity.is_active.is_(True))
+    person_query = select(Person).where(Person.id == person_id, Person.is_active)
+    activity_query = select(Activity).where(Activity.id == activity_id, Activity.is_active)
     if business_id is not None:
         person_query = person_query.where(Person.business_id == business_id)
         activity_query = activity_query.where(Activity.business_id == business_id)

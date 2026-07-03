@@ -379,13 +379,13 @@ def build_schedule_segments(
     persons_query = (
         select(Person)
         .where(
-            Person.is_active.is_(True),
+            Person.is_active,
             func.trim(func.coalesce(Person.noman, "")) != "",
         )
         .order_by(Person.sort_order, Person.name)
     )
-    activities_query = select(Activity).where(Activity.is_active.is_(True)).order_by(Activity.sort_order, Activity.label)
-    areas_query = select(Area).where(Area.is_active.is_(True)).order_by(Area.sort_order, Area.name)
+    activities_query = select(Activity).where(Activity.is_active).order_by(Activity.sort_order, Activity.label)
+    areas_query = select(Area).where(Area.is_active).order_by(Area.sort_order, Area.name)
     if business_id is not None:
         persons_query = persons_query.where(Person.business_id == business_id)
         activities_query = activities_query.where(Activity.business_id == business_id)

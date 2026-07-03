@@ -334,7 +334,7 @@ def _process_matrix_area_options_for_user(
     user: User,
     business_id: int | None = None,
 ) -> list[dict[str, object]]:
-    query = db.query(Area).filter(Area.is_active.is_(True))
+    query = db.query(Area).filter(Area.is_active)
     scoped_business_id = visible_business_id(db, user, business_id)
     if scoped_business_id is not None:
         query = query.filter(Area.business_id == scoped_business_id)
@@ -572,7 +572,7 @@ def _filter_profile_display_name(user: User) -> str:
 
 
 def _accessible_filter_profile_user_query(db: Session, user: User):
-    query = db.query(User).filter(User.is_active.is_(True))
+    query = db.query(User).filter(User.is_active)
     if not is_super_user(user):
         business_id = getattr(user, "business_id", None)
         if business_id is not None:

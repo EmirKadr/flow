@@ -112,7 +112,7 @@ def list_areas(
     q = db.query(Area)
     q = filter_query_for_business(q, Area, db, user, business_id)
     if not include_inactive:
-        q = q.filter(Area.is_active.is_(True))
+        q = q.filter(Area.is_active)
     return q.order_by(Area.sort_order, Area.name).all()
 
 

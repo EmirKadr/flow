@@ -166,7 +166,7 @@ def _calc_activity_hours(
 
     # 2. Implicit standard per (person, weekday) - täcker timmar utan explicit segment
     persons_q = select(Person).where(
-        Person.is_active.is_(True),
+        Person.is_active,
         Person.business_id == business_id,
         Person.home_activity_id.is_not(None),
     )

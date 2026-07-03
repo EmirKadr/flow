@@ -75,7 +75,7 @@ def _visible_overview_persons(
     business_id: int | None = None,
 ) -> tuple[list[Person], int | None]:
     scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active.is_(True))
+    persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -610,7 +610,7 @@ def get_overview(
     user: User = Depends(require_view_access("overview", "view")),
 ) -> OverviewOut:
     scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active.is_(True))
+    persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -727,7 +727,7 @@ def get_month_overview(
         )
         current_day += timedelta(days=1)
 
-    persons_q = select(Person).where(Person.is_active.is_(True))
+    persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
