@@ -145,15 +145,15 @@ spec:
               value: "1.0"
             # HTTPS is required in production because session cookies are Secure.
             - name: OTEL_ENABLED
-              value: "false"
+              value: "true"
             - name: OTEL_SERVICE_NAME
               value: "flow-web"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "#{OTEL_EXPORTER_OTLP_ENDPOINT}"
+              value: "#{OPENTELEMETRY_URL}"
             - name: OTEL_EXPORTER_OTLP_HEADERS
-              value: "#{OTEL_EXPORTER_OTLP_HEADERS}"
+              value: "X-Seq-ApiKey=#{OPENTELEMETRY_TOKEN}"
             - name: OTEL_TRACES_SAMPLE_RATE
-              value: "0.1"
+              value: "0.5"
           volumeMounts:
             - name: flow-data
               mountPath: /repo/data
