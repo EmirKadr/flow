@@ -20,6 +20,25 @@ Det finns en LLM-underhallen projektwiki i `wiki/`.
   felmeddelanden ska relevant wiki-sida och `wiki/log.md` uppdateras i samma
   arbetsinsats.
 
+## Kallkodshantering och release (NoWaste)
+
+Flow driftas sedan 2026-07 officiellt pa NoWaste-servern: GitHub-orgen
+`nowastelogistics`, deploy via Octopus-projektet **Flow** till foretagets
+Kubernetes (`k8s/`, namespace `flow`, MSSQL-databas). NoWaste har en egen
+branch- och releasemodell (master/develop/feature/release/hotfix/patch) som
+finns sammanfattad i `wiki/nowaste-git-release.md`.
+
+- Viktigast: **commits till en `release/*`-branch bygger automatiskt en
+  release i Octopus**. Feature mergas till release-branchen, eller `main`
+  mergas dit om andringen redan ar i main.
+- Emir behover inte folja NoWaste-processen till punkt och pricka i detta
+  repo (huvudbranchen heter `main`), men agenter ska kanna till modellen,
+  anvanda dess begrepp korrekt och hjalpa till nar releaser gors mot
+  NoWaste-miljoerna (development/production via Octopus).
+- Render-driften ar avvecklad (juli 2026). `render.yaml`, RENDER_*-settings
+  och migreringsskriptet `backend.migrate_pg_to_mssql` ar borttagna ur repot;
+  historiken finns i git.
+
 ## Hemligheter, commits och pushar
 
 `AGENTS.md` ska vara kvar i git. Den ar till for att framtida agenter och
@@ -57,9 +76,9 @@ privata data foljer med:
 - Sok staged diffen efter hemlighetsmonster och gamla provider-detaljer innan
   push. Minst kontrollera ord som `API_KEY`, `SECRET`, `TOKEN`, `PASSWORD`,
   `PRIVATE`, samt provider-specifika namn, URL:er, headernamn och endpointmallar.
-- `.env.example`, README, wiki och `render.yaml` far bara innehalla tomma eller
-  generiska variabelnamn och `sync: false` for hemligheter. De far inte innehalla
-  riktiga varden eller leverantorens privata API-kontrakt.
+- `.env.example`, README, wiki och `k8s/secret.example.yaml` far bara innehalla
+  tomma eller generiska variabelnamn/platshallare for hemligheter. De far inte
+  innehalla riktiga varden eller leverantorens privata API-kontrakt.
 - Backend ska lasa privata anslutningsdetaljer fran miljo variabler eller
   driftens secret store. Frontend far aldrig prata direkt med privata externa API:er.
 - Privata dataunderlag ska vara ignorerade i git. En genererad katalog far
@@ -67,7 +86,7 @@ privata data foljer med:
   som `data/external_data_catalog.json` for Hämta data. Katalogen far aldrig
   innehalla nycklar, URL:er, headernamn, endpointmallar eller rad-/kunddata.
 - Om en hemlighet redan har blivit staged: avbryt committen, unstagea filen och
-  flytta vardet till `.env` eller Render/secret store.
+  flytta vardet till `.env` eller driftens secret store.
 - Om en hemlighet redan har pushats: pusha inte mer ovanpa i panik. Skriv tydligt
   till Emir att nyckeln maste roteras och att historiken kan behova saneras.
   Historikradering eller force-push far bara goras efter uttrycklig instruktion.
@@ -112,7 +131,7 @@ Nar du andrar nagot, kontrollera alltid konsekvensen for bada klienterna:
 Foljande far vara klientspecifikt utan att bryta mot paritetsregeln:
 
 - Windows-installation, `Setup.exe`, auto-update och genvagar
-- Render-/serverdrift, deployment och backend-infrastruktur
+- serverdrift, deployment och backend-infrastruktur
 - andra rent plattformsspecifika detaljer som inte motsvarar en anvandarfunktion
 
 Om du tror att nagot annat maste vara olika mellan klienterna ska det ses som ett
@@ -193,16 +212,16 @@ dokumentloggen.
 
 Halsa och vantetider ar ett arbetssatt, inte en engangsfeature. Nar en agent gor
 en storre andring, pushar backend/frontend-beteende, andrar cache/bakgrundsladdning,
-databas, Render-konfiguration, import/export, Bearbeta-floden eller releasefiler
+databas, drift-/k8s-konfiguration, import/export, Bearbeta-floden eller releasefiler
 ska agenten aktivt kontrollera systemhalsan.
 
 Fore slutrapport efter storre push ska agenten normalt kora eller verifiera:
 
-- `python -m tools.healthcheck report --local --no-render` for lokal app- och
+- `python -m tools.healthcheck report --local` for lokal app- och
   databassignal.
 - `python -m tools.healthcheck waits --local --period 24h` nar vantetidsdata finns.
 - `python -m tools.healthcheck report --base-url <url>` mot servern efter deploy
-  nar agenten har inloggning/cookie och Render-secrets ar konfigurerade.
+  nar agenten har inloggning/cookie.
 - Historik-flikarna `Halsa` och `Vantetider` visuellt eller via API nar UI:t
   paverkas.
 
@@ -226,7 +245,7 @@ denna pollingtrappa:
 - darefter kolla var 30:e sekund tills workflowen ar bekraftat klar eller failad
 
 Detta ar for att undvika onodiga statusanrop, logghamtningar och
-kontext-/tokenkostnad nar GitHub/Render anda arbetar asynkront.
+kontext-/tokenkostnad nar GitHub/Octopus anda arbetar asynkront.
 
 ## Testregel for agenter
 
@@ -278,15 +297,14 @@ visar auditposten eller ett kontraktstest som binder `entity_type`/`action` till
 frontend-/backend-labeln. Om flodet saknar audit pa grund av ett avsiktligt
 read-only-undantag ska testet bevisa just det undantaget.
 
-Nar en andring ror databas, Alembic, Render-build, CI-workflows, secret/env-
+Nar en andring ror databas, Alembic, Docker-build, CI-workflows, secret/env-
 konfiguration eller deploy ska agenten ocksa lagga eller uppdatera kontraktstester
 for de driftbegransningar som kan fa push/deploy att falla. Testa inte bara den
 nya funktionen utan aven de invariants som miljoerna kraver, till exempel
 Alembic-revisioners maxlangd, unikhet, down_revision-kedja, exakt en head,
-att Render-builden kor `alembic upgrade head`, att CI simulerar Render mot
-Postgres och att secrets i `render.yaml` inte har literalvarden. Om ett deployfel
-upptacks efter push ska nasta fix helst lagga ett test som hade fangat just den
-felklassen fore push.
+att CI simulerar alembic-bygget mot Postgres och att `k8s/secret.example.yaml`
+bara har platshallare. Om ett deployfel upptacks efter push ska nasta fix helst
+lagga ett test som hade fangat just den felklassen fore push.
 
 ## Arkitekturkontrakt
 
@@ -300,8 +318,8 @@ ska respektera i stallet for att kringga:
   utan uttrycklig instruktion fran Emir. Nar en undantagsfil splittas ska
   dess undantag tas bort.
 - **Single-worker.** Bakgrundsjobben i `app/backend/background.py` och
-  schedulerna antar exakt en uvicorn-worker. `--workers` i `render.yaml`
-  kraver ledarlas (t.ex. Postgres advisory lock) forst.
+  schedulerna antar exakt en uvicorn-worker. `--workers` i Dockerfile-CMD
+  kraver ledarlas (t.ex. databasbaserat ledarlas) forst.
 - **Domangranser.** Servicemoduler far importera delad grund och sin egen
   doman. Ett nytt beroende mellan domaner ar ett medvetet beslut: lagg till
   kanten i `ALLOWED_DOMAIN_EDGES` i samma andring och motivera i

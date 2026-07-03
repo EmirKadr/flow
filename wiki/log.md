@@ -1,11 +1,61 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-02
+updated: 2026-07-03
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-03] refactor | Render-sanering: legacy-drift borttagen ur repot
+
+Migreringen till nowasteserver (k8s + MSSQL via Octopus) ar klar och verifierad,
+sa all Render-specifik kod och konfiguration togs bort: `render.yaml` och
+`backend.migrate_pg_to_mssql` raderade (finns i git-historiken),
+RenderClient/deploy-/logg-/metrics-checks borttagna ur `healthcheck_service.py`,
+`RENDER_*`-settings ur `config.py`/`.env.example`, `--no-render`-flaggan ur
+`tools.healthcheck`, `include_render` ur `/api/healthcheck`, och Render-kortet/
+tabellen ur Historik-Halsa (`historik.html` + `analytics.js`). Single-worker-
+kontraktet vaktar nu Dockerfile-CMD i stallet for `render.yaml`; CI-steget heter
+`Simulate Alembic build (Postgres)`. Alembic + Postgres-simuleringen i CI ar
+kvar (schemahistorik och dialektneutral migrationsvag). k8s/-manifesten och
+`APP_MIGRATION_PLAN.md` behalls. Uppdaterade sidor: [api.md](api.md),
+[architecture.md](architecture.md), [history-audit.md](history-audit.md),
+[testing-release.md](testing-release.md), [data-fetch.md](data-fetch.md),
+[error-reference.md](error-reference.md), [meta-upload.md](meta-upload.md),
+[nowaste-git-release.md](nowaste-git-release.md) samt root-dokumenten
+`AGENTS.md`, `TESTPROTOCOL.md`, `DEPLOY.md`, `app/README.md`, `k8s/README.md`.
+
+## [2026-07-03] ingest | NoWaste kallkodshantering och release via Octopus
+
+Ingest av internt NoWaste-dokument "Kallkodshantering (GitHub)" (PDF) plus
+muntlig releaseinstruktion: commits till `release/*`-branchar bygger
+automatiskt releaser i Octopus; releaser deployas darifran till
+development/production. Flow har officiellt gatt over till NoWaste-servern
+(k8s, Octopus-projektet Flow, MSSQL). Ny sida
+[nowaste-git-release.md](nowaste-git-release.md) med branchmodell
+(master/develop/feature/release/hotfix/patch), releaseflode steg 1-10 och
+Flow-specifika avvikelser (huvudbranch `main`, processen ar vagledande, inte
+tvingande). Uppdaterade: [index.md](index.md),
+[architecture.md](architecture.md) (drift + databas till k8s/MSSQL, Render
+legacy), [testing-release.md](testing-release.md) (releasekontroll +
+driftgrind) samt root-`AGENTS.md` (ny sektion om NoWaste-release).
+
+## [2026-07-03] fix | Forbyggd overview-report-cache for Produktivitets periodoversikt
+
+Produktivitets ar-/manadsvy raknade om varje dag fran snapshot-CSV vid varje
+oppning, aven for dagar som redan byggts via produktivitets-CLI:t. Orsak:
+overview-vyn kan inte anvanda `person_productivity_daily` som fullrapport (saknar
+komplett tim-/process-/diff-detalj) och hade ingen persistent cache av det tunga
+dagbygget. Losning: persistera den exakta dagrapporten (samma byggare som dag-vyn)
+som gzip-JSON bredvid snapshoten (`overview-report-<business_id>.json.gz`),
+signaturvaktad pa snapshot- + schemasignatur. Warm-vagen
+(`productivity_cache_warm.ensure_person_and_overview_caches`) bygger dagrapporten
+en gang och matar bade `person_productivity_daily` och `overview-report`, sa
+CLI:ts `--with-productivity`/prebuild och nattjobbet forbygger aven oversikten.
+Overview-lasvagen laser cachen forst och self-healar vid miss. Berorda sidor:
+[productivity.md](productivity.md), [local-archive-cache.md](local-archive-cache.md),
+[index.md](index.md).
 
 ## [2026-07-02] fix | Sankey helarsfilter ateranvander hamtad data
 

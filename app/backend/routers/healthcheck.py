@@ -77,11 +77,10 @@ def summarize_group(rows: list[UserWaitMetric], *, key_fn) -> list[dict[str, Any
 
 @router.get("")
 def healthcheck_report(
-    include_render: bool = Query(True),
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> dict[str, Any]:
-    return run_healthcheck(db=db, include_render=include_render)
+    return run_healthcheck(db=db)
 
 
 @router.post("/wait-metrics", status_code=status.HTTP_204_NO_CONTENT)

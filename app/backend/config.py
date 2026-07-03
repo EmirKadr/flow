@@ -12,7 +12,7 @@ def _load_env_files_into_environ(paths: tuple[str, ...]) -> None:
     Pydantic-settings laser bara deklarerade falt ur env_file och skriver aldrig
     tillbaka till os.environ. Dynamiskt namngivna nycklar (t.ex.
     NOEFFECT_<TENANT>_TOKEN) lases med os.getenv och blir annars osynliga lokalt.
-    Riktiga OS-miljovariabler (t.ex. i Render) skrivs aldrig over.
+    Riktiga OS-miljovariabler (t.ex. i k8s) skrivs aldrig over.
     """
     for path in paths:
         if not os.path.isfile(path):
@@ -125,14 +125,6 @@ class Settings(BaseSettings):
     ARCHIVE_CACHE_SYNC_MINUTE: int = 1
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0
-    RENDER_API_KEY: str = ""
-    RENDER_API_BASE_URL: str = "https://api.render.com/v1"
-    RENDER_SERVICE_ID: str = ""
-    RENDER_WEB_SERVICE_ID: str = ""
-    RENDER_OWNER_ID: str = ""
-    RENDER_WORKSPACE_ID: str = ""
-    RENDER_POSTGRES_ID: str = ""
-    RENDER_DATABASE_ID: str = ""
     HEALTHCHECK_PUBLIC_URL: str = ""
     TRACKING_ALLOW_VALUE_SAMPLES: bool = False
     RFID_DEVICE_TOKEN: str = ""

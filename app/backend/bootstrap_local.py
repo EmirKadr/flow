@@ -5,8 +5,8 @@ cleanly on SQLite. For the local preview stack we instead create tables
 straight from the model metadata (which uses portable type variants) and run
 the idempotent seed.
 
-Production deploys (Render) still go through `alembic upgrade head` from
-render.yaml — this module is local-dev only.
+Production (k8s/MSSQL) skapar schema via `backend.prestart` vid containerstart
+— this module is local-dev only.
 """
 from __future__ import annotations
 

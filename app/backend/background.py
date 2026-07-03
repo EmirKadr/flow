@@ -10,7 +10,7 @@ Status per jobb exponeras via background_job_status() och visas i healthcheck-
 rapporten, så drift kan se senaste start/slut/fel utan att läsa loggar.
 
 Viktig driftbegränsning: registret antar exakt en uvicorn-worker. Flera workers
-skulle köra varje jobb en gång per worker. Kontraktstest på render.yaml skyddar
+skulle köra varje jobb en gång per worker. Kontraktstest på Dockerfile skyddar
 mot att --workers läggs till utan ledarlås.
 """
 from __future__ import annotations

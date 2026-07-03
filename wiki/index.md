@@ -1,7 +1,7 @@
 ---
 title: flow wiki-index
 status: aktiv
-updated: 2026-07-02
+updated: 2026-07-03
 tags: [wiki, index]
 ---
 
@@ -18,6 +18,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [UI-karta och alla kontroller](ui-map.md) - snabbkarta over knappar, menyer och generella UI-funktioner.
 - [API-karta](api.md) - endpoints grupperade efter funktion.
 - [Test och release](testing-release.md) - hur en agent verifierar andringar.
+- [Kallkodshantering och release (NoWaste)](nowaste-git-release.md) - branchmodell, Octopus-releaser (`release/*` bygger automatiskt) och deploy till development/production.
 - [Begrepp och agentordlista](terminology.md) - namngivna produktbegrepp som
   ska tolkas konsekvent i framtida chattar.
 
@@ -36,7 +37,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [MCP](mcp.md) - fråga/svar-vy där backend hämtar tenant-baserad Noeffect-MCP-kontext och vald LLM-hjärna svarar.
 - [Etiketter](label-editor.md) - experimentell lokal label editor för QR, Code128, text, former, symboler och utskrift.
 - [ASK datalagring](ask-datalagring.md) - hur länge ASK/WMan-tabeller behålls (rensning vs arkivering) och vad det betyder för historisk data per vy.
-- [Lokal arkiv-cache (DuckDB)](local-archive-cache.md) - per-tenant DuckDB som speglar dblog_*-arkiven lokalt så Sankey/Produktivitet/Hämta data läser historik från disk (endast dev, dblog kvar som fallback).
+- [Lokal arkiv-cache (DuckDB)](local-archive-cache.md) - per-tenant DuckDB som speglar dblog_*-arkiven lokalt så Sankey/Produktivitet/Hämta data läser historik från disk (endast dev, dblog kvar som fallback); inkl. förbyggd `overview-report`-cache för Produktivitets periodöversikt.
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
 - [Meta-uppladdning](meta-upload.md) - publik fristaende mobilvy for att ladda upp bilder och videor till senare LLM-analys.
 - [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp.

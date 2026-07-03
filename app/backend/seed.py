@@ -1,12 +1,11 @@
 """Seed initial data: areas, activities, admin-user, demo persons.
 
 Idempotent – kan köras flera gånger utan att duplicera rader.
-Får inte köras mot production/live. Render kör bara migrations.
+Får inte köras mot production/live.
 """
 from __future__ import annotations
 
 from sqlalchemy import func
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from .business_scope import DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE, ensure_seed_businesses
@@ -88,13 +87,6 @@ PERSONS: list[str] = [
 def _seed_target_block_reason() -> str | None:
     if settings.is_production:
         return "ENVIRONMENT=production"
-    try:
-        url = make_url(settings.DATABASE_URL)
-    except Exception:
-        return None
-    host = str(url.host or "").lower()
-    if "render.com" in host:
-        return "Render-databas"
     return None
 
 

@@ -1,4 +1,4 @@
----
+﻿---
 title: Meta-uppladdning
 status: aktiv
 updated: 2026-06-14
@@ -82,7 +82,7 @@ Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och u
 | "Varfor har vissa Meta-rader anda ordernummer, sandningsnummer, anvandarnamn eller kund?" | Antingen kommer de fran ASK-uppslaget via pall-id, eller fran historiska analyser fore audio-only-andringen. Kontrollera `Uppdaterad`-timestampen och eventuell osakerhetsanteckning i Meta-tabellen. |
 | "Vad analyserar Gemini nu?" | Bara rosten. Den ska hitta tydligast hort pall-id och avvikelser, inte lasa etiketten. Om personen sager "pall" eller "godsmärkning" ska det tolkas som pall-id nar det ar pallens identitet. |
 | "Var hittar Super User uppladdade videos?" | I sidebarvyn `Meta`, i sandningsanalysen. Dar kan Super User soka, sortera, exportera Excel, ladda ner video eller etikettstillbild och starta analys fran tabellens ikonknappar. |
-| "Varför står analysen som LLM saknas?" | Servern saknar `GEMINI_API_KEY`. Lägg Gemini-nyckeln i `.env` lokalt eller Render secrets. |
+| "Varför står analysen som LLM saknas?" | Servern saknar `GEMINI_API_KEY`. Lägg Gemini-nyckeln i `.env` lokalt eller driftens secret store. |
 | "Vad händer om Gemini är osäker?" | Raden får status `Kontrollera` och visar osäkerhetsanteckning. Appen ska inte gissa när video och ljud inte räcker. |
 | "Varför saknas stillbild?" | Backend forsokte ta en enkel frame vid standardtiden men kunde inte extrahera bilden. Rostanalysen kan anda vara klar. |
 | "Varfor sparades inte alla filer?" | Om en fil ar exakt samma som en redan sparad fil hoppas den over som dubblett for att inte ta onodigt databas-utrymme. Sidan visar hur manga som hoppades over. |

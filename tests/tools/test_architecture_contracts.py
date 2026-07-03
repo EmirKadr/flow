@@ -9,7 +9,7 @@ Tre invariants som skyddar mot smygande strukturförfall:
 
 2. Single-worker: bakgrundsjobben (app/backend/background.py och schedulers)
    antar exakt en uvicorn-worker. Fler workers => varje jobb körs en gång per
-   worker. --workers får inte läggas till i render.yaml utan ledarlås.
+   worker. --workers får inte läggas till i Dockerfile-CMD utan ledarlås.
 
 3. Domängränser: servicemoduler får importera delad grund (config, models,
    settings_service m.fl.) och sin egen domän. Nya beroenden mellan domäner
@@ -119,16 +119,16 @@ def test_line_limit_exceptions_are_not_stale():
     assert not stale, "Ta bort inaktuella undantag: " + ", ".join(stale)
 
 
-def test_render_start_command_keeps_single_worker():
-    text = (ROOT / "render.yaml").read_text(encoding="utf-8")
-    start_lines = [line for line in text.splitlines() if "startCommand" in line]
-    assert start_lines, "render.yaml saknar startCommand"
+def test_container_start_command_keeps_single_worker():
+    text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    start_lines = [line for line in text.splitlines() if "uvicorn" in line]
+    assert start_lines, "Dockerfile saknar uvicorn-startkommando"
     for line in start_lines:
         assert "--workers" not in line and "gunicorn" not in line, (
-            "startCommand får inte köra flera workers: bakgrundsjobben i "
+            "Startkommandot får inte köra flera workers: bakgrundsjobben i "
             "app/backend/background.py och schedulerna i productivity_sync/"
             "archive_cache_sync antar exakt en process. Inför ledarlås "
-            "(t.ex. Postgres advisory lock) innan --workers läggs till. Rad: " + line.strip()
+            "(t.ex. databasbaserat ledarlås) innan --workers läggs till. Rad: " + line.strip()
         )
 
 
@@ -139,7 +139,7 @@ SHARED_MODULES = {
     "audit", "background", "bootstrap_local", "business_scope", "code_utils",
     "compiled_data_paths", "config", "database", "demo_session", "deps",
     "external_data_client", "healthcheck_service", "home_activity", "main",
-    "media_store", "migrate_pg_to_mssql", "models", "observability",
+    "media_store", "models", "observability",
     "prepare_local_database", "prestart", "schedule_locks", "schemas",
     "security", "seed", "settings_service", "sync_live_to_local",
     "template_service", "user_access", "workflow_data",

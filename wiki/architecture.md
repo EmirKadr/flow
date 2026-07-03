@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-07-02
+updated: 2026-07-03
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -14,7 +14,7 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - Backend: Python, FastAPI, SQLAlchemy 2, Alembic.
 - Frontend: statiska HTML/CSS/JS-filer utan buildsteg.
 - Auth: session-cookie via FastAPI `SessionMiddleware`.
-- Databas: PostgreSQL i produktion; SQLite anvands for lokal test/probe.
+- Databas: MSSQL (`mssql+pyodbc`) pa foretagets k8s-drift; SQLite anvands for lokal test/probe.
 - Static serving: FastAPI serverar `app/frontend`.
 - Webbfavicon och brandlogga ar SVG som primarkalla. PNG/ICO ligger kvar som fallback for PWA, Apple touch och aldre plattformar.
 
@@ -55,7 +55,7 @@ startas av FastAPI-lifespan via runnern i `app/backend/background.py`. Runnern
 ager tradar, felhantering och status; jobbstatus visas i healthcheck-rapporten
 under `background_jobs`. Nya bakgrundsjobb ska registreras dar, inte skapas som
 egna tradar eller startup-hooks. Registret antar exakt en uvicorn-worker -
-kontraktstest skyddar `render.yaml` mot `--workers`.
+kontraktstest skyddar Dockerfile-CMD mot `--workers`.
 
 ## Arkitektur-kontraktstester
 
@@ -63,7 +63,7 @@ kontraktstest skyddar `render.yaml` mot `--workers`.
 
 - Radtak (1000) for backend-Python och frontend-JS, med undantagslista dar
   befintliga for stora filer far krympa men inte vaxa.
-- `render.yaml` far inte fa `--workers`/gunicorn utan ledarlas for schedulerna.
+- Dockerfile-CMD far inte fa `--workers`/gunicorn utan ledarlas for schedulerna.
 - Domangranser: servicemoduler far importera delad grund och sin egen doman;
   nya beroenden mellan domaner maste laggas till medvetet i
   `ALLOWED_DOMAIN_EDGES`.
@@ -93,7 +93,13 @@ kontraktstest skyddar `render.yaml` mot `--workers`.
 
 ## Deployment och lokal drift
 
-- `render.yaml` beskriver Render-drift.
+- Officiell drift sedan 2026-07 ar foretagets Kubernetes (nowasteserver):
+  manifest i `k8s/` (namespace `flow`, 1 replika, PVC:er for data/media),
+  deploy via Octopus-projektet **Flow**, databas MSSQL. Development-miljon ar
+  `flow-development.nowastelogistics.com`. Release- och branchmodellen
+  beskrivs i [nowaste-git-release.md](nowaste-git-release.md).
+- Render-driften ar avvecklad (2026-07-03); `render.yaml` och
+  `backend.migrate_pg_to_mssql` ar borttagna ur repot och finns i git-historiken.
 - `start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
 - `start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
 - `sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.

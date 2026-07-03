@@ -1,4 +1,4 @@
----
+﻿---
 title: Hämta data
 status: aktiv
 updated: 2026-06-15
@@ -61,7 +61,7 @@ aldrig till modellen.
   och `Hämta data` kan spärras innan någon AI-fråga eller extern API-fråga skickas.
 - Om extern datahämtning misslyckas loggar backend `error_id`, vy och filterstruktur
   i serverloggen utan URL:er eller hemligheter. Frontend visar samma fel-id i
-  Hämta data-panelen så felet går att hitta i Render-loggarna.
+  Hämta data-panelen så felet går att hitta i serverloggarna (`kubectl logs`).
 
 ## Teknisk modell
 
@@ -108,7 +108,7 @@ Fråga: Hur räknar jag ordernummer som börjar på TO?
 Svar: Skriv till exempel "antal unika ordernummer i plocklogg full som börjar på TO". MiniMax ska returnera `StartsWith` på `order_num`, backend visar querytext som `order_num LIKE 'TO%'` och filtrerar raderna lokalt innan beräkningen körs.
 
 Fråga: Varför fick jag HTTP 500/502 när planen såg rätt ut?
-Svar: Planen kan vara korrekt men externa datakällan kan ändå neka, stänga anslutningen, vara nere eller svara med fel. Vid sådana fel visar Hämta data ett fel-id. Leta på samma fel-id i Render-loggarna för att se vilken vy som kördes och om felet var nätåtkomst, endpointmall, SSL-verifiering eller HTTP-status från datakällan.
+Svar: Planen kan vara korrekt men externa datakällan kan ändå neka, stänga anslutningen, vara nere eller svara med fel. Vid sådana fel visar Hämta data ett fel-id. Leta på samma fel-id i serverloggarna (`kubectl logs`) för att se vilken vy som kördes och om felet var nätåtkomst, endpointmall, SSL-verifiering eller HTTP-status från datakällan.
 
 Fråga: Hur kontrollerar jag en uträkning mot riktig extern data?
 Svar: Kör live-testet opt-in, till exempel `RUN_DATA_SOURCE_INTEGRATION=1 LIVE_DATA_SOURCE_EXPECTED_PICK_COUNT=45945 python -m pytest tests/integration/test_data_source_live.py -q -s`. Standardfallet testar `v_ask_pick_log_full` för maj 2026, `GG`, `pick_zone <> H`, `qty_suf >= 1` och `time_stamp_int` som datumfält. Byt vid behov med `LIVE_DATA_SOURCE_YEAR`, `LIVE_DATA_SOURCE_MONTH`, `LIVE_DATA_SOURCE_COMPANY`, `LIVE_DATA_SOURCE_DATE_FIELD`, `LIVE_DATA_SOURCE_TENANT`, `LIVE_DATA_SOURCE_EXCLUDE_ZONE` och `LIVE_DATA_SOURCE_MIN_PICKED`.

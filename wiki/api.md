@@ -1,4 +1,4 @@
----
+﻿---
 title: API-karta
 status: aktiv
 updated: 2026-06-25
@@ -89,7 +89,7 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/audit/interactions`, `GET /api/audit/interactions/summary`, `GET /api/audit/interactions/coverage` - Super User-endpoints for Historik > Funktioner/Knappar/Kolumner/Floden med filter for period, verksamhet, anvandare, vy, eventtyp, feature, flow och fritext.
 - `POST /api/audit/interactions/chat`, `POST /api/audit/interactions/chat/clear` - Historik-AI via MiniMax for trackingfragor. Chatten far aggregeringar och raw events inom limit men ska bara svara om historik/tracking och inte visa hemligheter eller blockerade falt.
 - `TRACKING_ALLOW_VALUE_SAMPLES=false` ar default. Om flaggan inte satts till true strippar backend klartext-vardeprover eller ersatter dem med langd/antal aven om klienten skickar dem.
-- `GET /api/healthcheck` - Super User-halsa for app, databas och Render-koppling. Render-data hamtas bara nar `RENDER_API_KEY` och resurs-id finns i secrets; build-loggar anvander Render `ownerId` + service-id och kan falla tillbaka pa `RENDER_OWNER_ID`.
+- `GET /api/healthcheck` - Super User-halsa for app, databas, bakgrundsjobb och publik ping (`HEALTHCHECK_PUBLIC_URL`). Render-integrationen togs bort 2026-07-03 nar Render-driften avvecklades; serverloggar hamtas nu med `kubectl -n flow logs deploy/flow-web`.
 - `POST /api/healthcheck/wait-metrics` - tyst insamling av anvandarens vantetider for vyload, API-anrop, nedladdningar och bakgrundsladdning. Payloaden ar sanerad till event, vy, steg, duration, status och begransad teknisk detalj.
 - `GET /api/healthcheck/wait-metrics/summary` - Super User-summering for Historik-fliken `Vantetider` och CLI-verktyget `tools.healthcheck`; accepterar `business_id`.
 - `GET /api/productivity` - produktivitet, kraver `productivity=view` for lasning. Rapporten anvander serverns globala personbaserade API-snapshot for pick/trans/pallet/receive/order_log/sort/base_pallet/kpi och returnerar `backfill` for historikhamtning.

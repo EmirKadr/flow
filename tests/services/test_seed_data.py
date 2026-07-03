@@ -29,14 +29,6 @@ def test_seed_is_blocked_in_production(monkeypatch):
         seed.assert_seed_target_allowed()
 
 
-def test_seed_is_blocked_for_render_database_url(monkeypatch):
-    monkeypatch.setattr(seed.settings, "ENVIRONMENT", "development")
-    monkeypatch.setattr(seed.settings, "DATABASE_URL", "postgresql://user:pass@example.render.com/db")
-
-    with pytest.raises(RuntimeError, match="Render-databas"):
-        seed.assert_seed_target_allowed()
-
-
 def test_local_bootstrap_refuses_non_sqlite_engine():
     class Dialect:
         name = "postgresql"

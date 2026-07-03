@@ -184,7 +184,7 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'params.set("business_id", businessId)' in analytics
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
     assert 'api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`)' in analytics
-    assert 'api.get("/api/healthcheck?include_render=true"' in analytics
+    assert 'api.get("/api/healthcheck"' in analytics
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
@@ -423,7 +423,7 @@ def test_testprotocol_documents_agent_test_tools():
         "python -m tools.visual_smoke",
         "python -m tools.interactive_e2e",
         "python -m tools.performance_benchmark",
-        "python -m tools.healthcheck report --local --no-render",
+        "python -m tools.healthcheck report --local",
         "python -m tools.healthcheck waits --local --period 24h",
         "python -m tools.desktop_shell_screens",
         "python -m tools.desktop_app_probe",

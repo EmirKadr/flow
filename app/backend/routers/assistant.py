@@ -62,7 +62,7 @@ REPO_TEXT_SUFFIXES = {
     ".yaml",
     ".yml",
 }
-REPO_TEXT_NAMES = {"AGENTS.md", "API_ROUTES.md", "Dockerfile", "render.yaml"}
+REPO_TEXT_NAMES = {"AGENTS.md", "API_ROUTES.md", "Dockerfile"}
 REPO_EXCLUDED_DIRS = {
     ".git",
     ".pytest_cache",
