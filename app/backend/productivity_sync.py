@@ -66,6 +66,10 @@ from .productivity_sync_paths import (  # noqa: F401
     productivity_backfill_status,
     productivity_prebuild_status,
     productivity_snapshot_status,
+    productivity_overview_report_path,
+    overview_report_cache_is_current,
+    read_overview_report_cache,
+    write_overview_report_cache,
 )
 
 
@@ -336,14 +340,15 @@ def _warm_person_productivity_daily_cache(
     if db is None:
         return None
     try:
-        from .person_productivity_cache import ensure_person_productivity_daily_cache
+        from .productivity_cache_warm import ensure_person_and_overview_caches
 
-        return ensure_person_productivity_daily_cache(
+        return ensure_person_and_overview_caches(
             db,
             productivity_snapshot_files(snapshot_date, reference_dir=reference_dir),
             report_date=snapshot_date,
             business_id=_productivity_cache_business_id(db, business_code),
             sync=sync,
+            reference_dir=reference_dir,
         )
     except Exception as exc:
         logger.warning("Could not warm person productivity daily cache.", exc_info=True)

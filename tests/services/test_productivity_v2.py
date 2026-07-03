@@ -839,3 +839,161 @@ def test_productivity_snapshot_uses_coredata_kpi_when_kpi_api_is_forbidden(monke
         encoding="utf-8",
     ).read()
     assert "Manual_Pick" in kpi_snapshot
+
+
+def test_overview_report_cache_round_trip_and_freshness(tmp_path):
+    snapshot_date = date(2026, 6, 8)
+    # Report-cachen skrivs bara bredvid en faktisk snapshot-katalog.
+    productivity_sync.productivity_snapshot_dir(snapshot_date, tmp_path).mkdir(parents=True, exist_ok=True)
+    report = {
+        "date": snapshot_date.isoformat(),
+        "people": [{"person_id": 1, "kpi_points": 12.5}],
+        "summary": {"kpi_points": 12.5},
+    }
+
+    productivity_sync.write_overview_report_cache(
+        snapshot_date,
+        1,
+        report,
+        snapshot_signature="snap-1",
+        schedule_signature="sched-1",
+        reference_dir=tmp_path,
+    )
+    assert productivity_sync.productivity_overview_report_path(snapshot_date, 1, tmp_path).is_file()
+
+    # Aktuella signaturer -> traff.
+    assert productivity_sync.overview_report_cache_is_current(
+        snapshot_date, 1, snapshot_signature="snap-1", schedule_signature="sched-1", reference_dir=tmp_path
+    )
+    assert (
+        productivity_sync.read_overview_report_cache(
+            snapshot_date, 1, snapshot_signature="snap-1", schedule_signature="sched-1", reference_dir=tmp_path
+        )
+        == report
+    )
+
+    # Ny snapshotsignatur (ny synk) -> miss.
+    assert (
+        productivity_sync.read_overview_report_cache(
+            snapshot_date, 1, snapshot_signature="snap-2", schedule_signature="sched-1", reference_dir=tmp_path
+        )
+        is None
+    )
+    # Ny schemasignatur (schema andrat) -> miss.
+    assert (
+        productivity_sync.read_overview_report_cache(
+            snapshot_date, 1, snapshot_signature="snap-1", schedule_signature="sched-2", reference_dir=tmp_path
+        )
+        is None
+    )
+    # Annan verksamhet -> annan fil -> miss.
+    assert (
+        productivity_sync.read_overview_report_cache(
+            snapshot_date, 2, snapshot_signature="snap-1", schedule_signature="sched-1", reference_dir=tmp_path
+        )
+        is None
+    )
+
+
+def test_overview_report_cache_skips_write_without_snapshot_dir(tmp_path):
+    snapshot_date = date(2026, 6, 8)
+    productivity_sync.write_overview_report_cache(
+        snapshot_date,
+        1,
+        {"date": snapshot_date.isoformat()},
+        snapshot_signature="snap-1",
+        schedule_signature="sched-1",
+        reference_dir=tmp_path,
+    )
+    assert not productivity_sync.productivity_overview_report_path(snapshot_date, 1, tmp_path).exists()
+    assert not productivity_sync.productivity_snapshot_dir(snapshot_date, tmp_path).exists()
+
+
+def test_ensure_person_and_overview_caches_writes_prebuilt_full_report(tmp_path):
+    from fastapi.encoders import jsonable_encoder
+
+    from app.backend.models import PersonProductivityDaily
+    from app.backend.person_productivity_cache import (
+        productivity_cache_schedule_signature,
+        productivity_snapshot_signature,
+    )
+    from app.backend.productivity_cache_warm import ensure_person_and_overview_caches
+
+    db = make_session()
+    data = seed_people_and_activities(db)
+    business_id = data["business"].id
+    snapshot_date = date(2026, 6, 8)
+
+    pick = write(
+        tmp_path / "pick.csv",
+        """
+Zon\tPlockat\tAnvÃ¤ndare\tÃ„ndrad\tLokation\tBolag\tLager
+A\t10\talvin\t2026-06-08 07:10:00\tA101\tMG\t404
+H\t1\tALV94\t2026-06-08 09:10:00\tBUFF01\tGG\t404
+A\t1\tALV94\t2026-06-08 10:10:00\tA101\tMG\t404
+A\t1\tOkÃ¤nd\t2026-06-08 07:20:00\tA101\tMG\t404
+""",
+    )
+    trans = write(
+        tmp_path / "trans.csv",
+        """
+Typ\tTill\tAntal\tAnvÃ¤ndare\tTimestamp\tBolag\tLager
+26\tAS100\t20\tALV94\t2026-06-08 08:10:00\tGG\t404
+""",
+    )
+    files = {
+        "pick": pick,
+        "trans": trans,
+        "pallet": empty_file(tmp_path, "pallet.csv", "Typ\tAnvÃ¤ndare\tÃ„ndrad\tBolag\tLager"),
+        "receive": empty_file(tmp_path, "receive.csv", "Typ\tStatus\tAnvÃ¤ndare\tTimestamp\tBolag\tLager"),
+        "sort": empty_file(tmp_path, "sort.csv", "SSCC\tAnvÃ¤ndare\tTimestamp\tSÃ¤ndningsnr"),
+        "kpi": base_kpi_file(tmp_path),
+    }
+    # Report-cachen skrivs bara bredvid en faktisk snapshot-katalog.
+    productivity_sync.productivity_snapshot_dir(snapshot_date, tmp_path).mkdir(parents=True, exist_ok=True)
+    sync = {"last_sync_at": "2026-06-08T10:00:00", "source": "api_snapshot"}
+
+    expected = jsonable_encoder(
+        build_person_productivity_report_from_files(
+            db, files, report_date=snapshot_date, business_id=business_id, sync=sync
+        )
+    )
+
+    result = ensure_person_and_overview_caches(
+        db, files, report_date=snapshot_date, business_id=business_id, sync=sync, reference_dir=tmp_path
+    )
+    # Personcachen byggdes och oversiktsrapporten skrevs, fran en och samma build.
+    assert result["status"] == "materialized"
+    assert result.get("overview_report") == "materialized"
+    assert db.query(PersonProductivityDaily).filter_by(snapshot_date=snapshot_date).count() > 0
+
+    path = productivity_sync.productivity_overview_report_path(snapshot_date, business_id, tmp_path)
+    assert path.is_file()
+
+    snap_sig = productivity_snapshot_signature(sync)
+    sched_sig = productivity_cache_schedule_signature(db, snapshot_date, business_id=business_id)
+    cached = productivity_sync.read_overview_report_cache(
+        snapshot_date, business_id, snapshot_signature=snap_sig, schedule_signature=sched_sig, reference_dir=tmp_path
+    )
+    assert cached is not None
+    # Full detalj bevaras troget (people/time_cells/summary) genom cachen.
+    assert cached["people"] == expected["people"]
+    assert cached["summary"] == expected["summary"]
+    assert cached["date"] == expected["date"]
+    assert {person["name"] for person in cached["people"]} == {"Alvin", "StÃ¶d Hela Dagen"}
+    assert cached["summary"]["kpi_points"] == 300
+
+    # Foraldrad signatur -> miss (self-heal skulle bygga om).
+    assert (
+        productivity_sync.read_overview_report_cache(
+            snapshot_date, business_id, snapshot_signature="annan", schedule_signature=sched_sig, reference_dir=tmp_path
+        )
+        is None
+    )
+
+    # Andra korningen: bada cacharna aktuella -> ingen ombyggnad.
+    second = ensure_person_and_overview_caches(
+        db, files, report_date=snapshot_date, business_id=business_id, sync=sync, reference_dir=tmp_path
+    )
+    assert second["status"] == "current"
+    assert "overview_report" not in second

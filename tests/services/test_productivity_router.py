@@ -685,3 +685,63 @@ def test_person_productivity_aggregates_activity_cells_for_period(monkeypatch):
     assert plock["productivity_pct"] == 0.75
     assert pack["productivity_pct"] == 0.4
     assert result["summary"]["kpi_minutes"] == 180
+
+
+def test_productivity_overview_uses_prebuilt_report_cache_without_rebuild(monkeypatch):
+    """Ar-/manadsvyn laser den forbyggda dagrapporten och bygger inte om fran CSV."""
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("byggde fran CSV trots att report-cachen var aktuell")
+
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_code", lambda _db, _user: "STIGAMO")
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_helpers, "sources_available", lambda _keys: True)
+    monkeypatch.setattr(
+        productivity_helpers,
+        "productivity_snapshot_status",
+        lambda day=None, **_kwargs: {
+            "source": "api_snapshot",
+            "status": "ok",
+            "ready": True,
+            "date": str(day or ""),
+            "last_sync_at": "2026-06-08T10:00:00",
+        },
+    )
+    # Fake-session: schemasignaturen ska inte trafffa databasen i testet.
+    monkeypatch.setattr(productivity_helpers, "productivity_cache_schedule_signature", lambda *_a, **_k: "sched-1")
+    monkeypatch.setattr(productivity_helpers, "build_person_productivity_report_from_files", boom)
+
+    def fake_read(report_date, business_id, *, snapshot_signature, schedule_signature, reference_dir=None):
+        assert business_id == 1
+        assert schedule_signature == "sched-1"
+        return {
+            "date": report_date.isoformat(),
+            "available_dates": [report_date.isoformat()],
+            "sources": {},
+            "people": [],
+            "summary": {
+                "people": 0,
+                "kpi_points": 5,
+                "planned_kpi_points": 10,
+                "kpi_minutes": 30,
+                "diff_count": 0,
+                "unmatched_event_count": 0,
+            },
+            "sync": {"source": "api_snapshot"},
+        }
+
+    monkeypatch.setattr(productivity_helpers, "read_overview_report_cache", fake_read)
+    monkeypatch.setattr(productivity_router.audit, "log_and_commit", lambda *args, **kwargs: None)
+
+    payload = productivity_router.get_productivity_overview(
+        SimpleNamespace(session={}),
+        period="week",
+        date_filter=date(2026, 6, 3),
+        user=route_user(),
+        db=object(),
+    )
+
+    assert len(payload["reports"]) == 7
+    # 5 poang * 7 dagar; byggaren fick aldrig anropas.
+    assert payload["summary"]["kpi_points"] == 35
+    assert payload["summary"]["points_per_hour"] == 10

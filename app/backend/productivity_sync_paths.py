@@ -292,6 +292,127 @@ def productivity_prebuild_status(reference_dir: Path | str | None = None) -> dic
     }
 
 
+OVERVIEW_REPORT_SCHEMA_VERSION = 1
+
+
+def productivity_overview_report_path(
+    snapshot_date: date,
+    business_id: int | None = None,
+    reference_dir: Path | str | None = None,
+) -> Path:
+    """Forbyggd fulldetaljerad dagrapport for Produktivitets periodoversikt.
+
+    Ligger bredvid snapshotfilerna, en fil per verksamhet (business_id), sa
+    ar-/manadsvyn kan lasa fardigberaknade dagrapporter fran disk i stallet for
+    att bygga om dem fran CSV vid varje oppning.
+    """
+    tag = str(business_id) if business_id is not None else "default"
+    return productivity_snapshot_dir(snapshot_date, reference_dir) / f"overview-report-{tag}.json.gz"
+
+
+def _read_gzip_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return json.loads(handle.read())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _atomic_write_gzip_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with gzip.open(tmp_path, "wt", encoding="utf-8", newline="") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False))
+    tmp_path.replace(path)
+
+
+def _overview_report_envelope_is_current(
+    envelope: dict[str, Any] | None,
+    *,
+    snapshot_signature: str,
+    schedule_signature: str,
+) -> bool:
+    if not isinstance(envelope, dict):
+        return False
+    if int(envelope.get("schema_version") or 0) != OVERVIEW_REPORT_SCHEMA_VERSION:
+        return False
+    return (
+        str(envelope.get("snapshot_signature") or "") == str(snapshot_signature or "")
+        and str(envelope.get("schedule_signature") or "") == str(schedule_signature or "")
+    )
+
+
+def overview_report_cache_is_current(
+    snapshot_date: date,
+    business_id: int | None,
+    *,
+    snapshot_signature: str,
+    schedule_signature: str,
+    reference_dir: Path | str | None = None,
+) -> bool:
+    envelope = _read_gzip_json(productivity_overview_report_path(snapshot_date, business_id, reference_dir))
+    return _overview_report_envelope_is_current(
+        envelope,
+        snapshot_signature=snapshot_signature,
+        schedule_signature=schedule_signature,
+    )
+
+
+def read_overview_report_cache(
+    snapshot_date: date,
+    business_id: int | None,
+    *,
+    snapshot_signature: str,
+    schedule_signature: str,
+    reference_dir: Path | str | None = None,
+) -> dict[str, Any] | None:
+    """Returnera den forbyggda dagrapporten bara nar snapshot- och schemasignatur
+
+    fortfarande stammer, annars None sa anroparen bygger om fran CSV.
+    """
+    envelope = _read_gzip_json(productivity_overview_report_path(snapshot_date, business_id, reference_dir))
+    if not _overview_report_envelope_is_current(
+        envelope,
+        snapshot_signature=snapshot_signature,
+        schedule_signature=schedule_signature,
+    ):
+        return None
+    report = envelope.get("report")
+    return report if isinstance(report, dict) else None
+
+
+def write_overview_report_cache(
+    snapshot_date: date,
+    business_id: int | None,
+    report: dict[str, Any],
+    *,
+    snapshot_signature: str,
+    schedule_signature: str,
+    reference_dir: Path | str | None = None,
+) -> None:
+    # Skriv bara bredvid en faktisk snapshot-katalog. Det haller cachen kopplad
+    # till riktiga snapshots och undviker att skapa katalogtrad pa default-roten
+    # nar snapshotfilerna egentligen ligger nagon annanstans (t.ex. i tester).
+    if not productivity_snapshot_dir(snapshot_date, reference_dir).is_dir():
+        return
+    from fastapi.encoders import jsonable_encoder
+
+    envelope = {
+        "schema_version": OVERVIEW_REPORT_SCHEMA_VERSION,
+        "snapshot_signature": str(snapshot_signature or ""),
+        "schedule_signature": str(schedule_signature or ""),
+        "business_id": business_id,
+        "written_at": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
+        "report": jsonable_encoder(report),
+    }
+    _atomic_write_gzip_json(
+        productivity_overview_report_path(snapshot_date, business_id, reference_dir),
+        envelope,
+    )
+
+
 def productivity_snapshot_status(
     snapshot_date: date | None = None,
     *,

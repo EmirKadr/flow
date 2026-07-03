@@ -80,3 +80,6 @@ build/
 dist/
 release/
 artifacts/
+
+# Engångs-migreringsskript med DB-lösenord i klartext – aldrig i repo
+migrate_postgres_to_mssql.py
