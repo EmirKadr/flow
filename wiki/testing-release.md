@@ -51,6 +51,23 @@ python -m tools.desktop_shell_screens
 python -m tools.desktop_app_probe
 ```
 
+## Serversmoke efter deploy (läs-bara)
+
+`tools.server_smoke` loggar in på en riktig miljö, öppnar varje vy i
+sidregistret (visual_smoke:s PAGES + Sankey) och rapporterar JS-fel,
+API-svar >= 400 och skärmdumpar. Skriver ingen data — säker mot delade
+miljöer, till skillnad från `tools.interactive_e2e` som skapar poster och
+bara fungerar mot sin lokala engångsdatabas.
+
+```powershell
+python -m tools.server_smoke --base-url https://flow-development.nowastelogistics.com --username ANVANDARE --password ***
+python -m tools.server_smoke --base-url http://127.0.0.1:8000 --username admin --password admin123 --pages oversikt,flow
+```
+
+Körningen 2026-07-04 hittade två riktiga fel direkt: skriptordningen i
+overblick.html (`state is not defined`) och att Sankey utan lokal arkivcache
+OOM-dödar podden (minnet klättrade 132->449+ MB pa 20 s vid ett dagsanrop).
+
 ## Nar olika tester behovs
 
 | Andring | Minsta rimliga verifiering |

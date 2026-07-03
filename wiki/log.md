@@ -1,11 +1,25 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-03
+updated: 2026-07-04
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-04] fix | Serversmoke-verktyg, Översiktens skriptordning och Sankey-OOM-diagnos
+
+Nytt läs-bara verktyg `tools.server_smoke` (loggar in mot riktig miljö, öppnar
+alla vyer i sidregistret, rapporterar JS-fel/HTTP>=400/skärmdumpar; se
+[testing-release.md](testing-release.md)). Första körningen mot
+flow-development hittade två skarpa fel: (1) `overblick.html` laddade
+`overview.js` före `overview_state.js` — IIFE:n i overview.js kräver `state`
+vid laddning → `ReferenceError: state is not defined` och sidan dog; ordningen
+rättad + cache-busting tillagd på overview.js. (2) Sankey — Inbound utan lokal
+DuckDB-arkivcache (produktionsläget) drar hela dblog/live-datat i minnet:
+lokal repro visade 132→449+ MB på 20 s för ett dagsanrop → podden (1 Gi-tak)
+OOM-dödas och allt svarar 502. Åtgärdsbeslut kvarstår: arkivcache i prod (PVC
+finns), minnesbudget i sankey-hämtningen, eller höjt poddtak.
 
 ## [2026-07-03] fix | MSSQL-härdning: dialektsäkra migrationer, startup-migrering och CI-gate
 
