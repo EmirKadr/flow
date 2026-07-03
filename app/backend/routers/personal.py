@@ -67,7 +67,7 @@ def _segment_time(hour: int, minute: int) -> str:
 
 
 def _person_query(db: Session):
-    return select(Person).where(Person.is_active.is_(True)).order_by(Person.business_id, Person.sort_order, Person.name)
+    return select(Person).where(Person.is_active).order_by(Person.business_id, Person.sort_order, Person.name)
 
 
 def _person_out(person: Person, businesses_by_id: dict[int, Business], areas_by_id: dict[int, Area]) -> PersonalPersonOut:
@@ -96,7 +96,7 @@ def _match_person_by_noman(db: Session, username: str) -> Person | None:
         return None
     matches = (
         db.query(Person)
-        .filter(Person.is_active.is_(True), func.lower(func.trim(Person.noman)) == cleaned.lower())
+        .filter(Person.is_active, func.lower(func.trim(Person.noman)) == cleaned.lower())
         .order_by(Person.id.asc())
         .all()
     )
@@ -144,14 +144,14 @@ def _resolve_person(db: Session, user: User, person_id: int | None) -> Person:
 
 
 def _activities_for_business(db: Session, business_id: int | None) -> list[Activity]:
-    query = select(Activity).where(Activity.is_active.is_(True))
+    query = select(Activity).where(Activity.is_active)
     if business_id is not None:
         query = query.where(Activity.business_id == business_id)
     return db.execute(query.order_by(Activity.sort_order, Activity.label)).scalars().all()
 
 
 def _areas_for_business(db: Session, business_id: int | None) -> list[Area]:
-    query = select(Area).where(Area.is_active.is_(True))
+    query = select(Area).where(Area.is_active)
     if business_id is not None:
         query = query.where(Area.business_id == business_id)
     return db.execute(query.order_by(Area.sort_order, Area.name)).scalars().all()

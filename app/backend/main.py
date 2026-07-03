@@ -159,7 +159,7 @@ def _allocation_observation_business_codes() -> list[str]:
     try:
         rows = (
             db.query(Business.code)
-            .filter(Business.is_active.is_(True))
+            .filter(Business.is_active)
             .order_by(Business.sort_order, Business.id)
             .all()
         )

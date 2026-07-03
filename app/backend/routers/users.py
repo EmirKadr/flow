@@ -107,7 +107,7 @@ def _find_username_conflict(db: Session, username: str, *, exclude_user_id: int 
 
 
 def _active_admin_count(db: Session, *, business_id: int | None = None, exclude_user_id: int | None = None) -> int:
-    query = db.query(User).filter(User.is_active.is_(True))
+    query = db.query(User).filter(User.is_active)
     if business_id is not None:
         query = query.filter(User.business_id == business_id)
     if exclude_user_id is not None:
@@ -263,7 +263,7 @@ def _parse_user_import_values(raw_rows: list[tuple[int, dict[str, object]]]) -> 
 
 def _area_lookup(db: Session, business_id: int | None) -> dict[str, Area]:
     lookup: dict[str, Area] = {}
-    query = db.query(Area).filter(Area.is_active.is_(True))
+    query = db.query(Area).filter(Area.is_active)
     if business_id is not None:
         query = query.filter(Area.business_id == business_id)
     for area in query.all():

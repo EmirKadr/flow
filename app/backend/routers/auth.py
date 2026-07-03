@@ -23,7 +23,7 @@ def _auto_create_person_user(db: Session, username: str) -> User | None:
         return None
     matches = (
         db.query(Person)
-        .filter(Person.is_active.is_(True), func.lower(func.trim(Person.noman)) == cleaned.lower())
+        .filter(Person.is_active, func.lower(func.trim(Person.noman)) == cleaned.lower())
         .order_by(Person.id.asc())
         .all()
     )

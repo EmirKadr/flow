@@ -210,7 +210,7 @@ def _visible_kpi_businesses(
         return scoped_business_id, [business] if business is not None else []
     return (
         scoped_business_id,
-        db.query(Business).filter(Business.is_active.is_(True)).order_by(Business.sort_order, Business.id).all(),
+        db.query(Business).filter(Business.is_active).order_by(Business.sort_order, Business.id).all(),
     )
 
 
@@ -248,7 +248,7 @@ def _activity_kpi_process_options(
     for row in SQL_REFERENCE_KPI_RULE_ROWS:
         _add_kpi_process_option(options, row.get("process"))
     query = filter_query_for_business(db.query(Activity), Activity, db, user, scoped_business_id)
-    for activity in query.filter(Activity.is_active.is_(True)).order_by(Activity.sort_order, Activity.label).all():
+    for activity in query.filter(Activity.is_active).order_by(Activity.sort_order, Activity.label).all():
         for process in split_process_names(activity.kpi_process_name):
             _add_kpi_process_option(options, process)
     return [
@@ -535,7 +535,7 @@ def _import_activity_rows(
 ) -> ActivityImportResult:
     errors = list(errors)
     default_business_id = visible_business_id(db, admin)
-    area_query = db.query(Area).filter(Area.is_active.is_(True))
+    area_query = db.query(Area).filter(Area.is_active)
     activity_query = db.query(Activity)
     if default_business_id is not None:
         area_query = area_query.filter(Area.business_id == default_business_id)
@@ -669,7 +669,7 @@ def list_activities(
         scoped_business_id = business_id_from_area_focus(db, area_focus)
     q = filter_query_for_business(db.query(Activity), Activity, db, user, scoped_business_id)
     if not include_inactive:
-        q = q.filter(Activity.is_active.is_(True))
+        q = q.filter(Activity.is_active)
     return q.order_by(Activity.sort_order, Activity.label).all()
 
 

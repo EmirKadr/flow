@@ -107,7 +107,7 @@ def list_businesses(
 ) -> list[Business]:
     query = db.query(Business)
     if not include_inactive:
-        query = query.filter(Business.is_active.is_(True))
+        query = query.filter(Business.is_active)
     return query.order_by(Business.sort_order, Business.name).all()
 
 

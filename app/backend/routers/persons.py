@@ -438,8 +438,8 @@ def _import_person_rows(
 ) -> PersonImportResult:
     errors = list(errors)
     default_business_id = visible_business_id(db, user)
-    area_query = db.query(Area).filter(Area.is_active.is_(True))
-    activity_query = db.query(Activity).filter(Activity.is_active.is_(True))
+    area_query = db.query(Area).filter(Area.is_active)
+    activity_query = db.query(Activity).filter(Activity.is_active)
     if default_business_id is not None:
         area_query = area_query.filter(Area.business_id == default_business_id)
         activity_query = activity_query.filter(Activity.business_id == default_business_id)
@@ -571,7 +571,7 @@ def list_persons(
     q = db.query(Person)
     q = filter_query_for_business(q, Person, db, user, business_id)
     if not include_inactive:
-        q = q.filter(Person.is_active.is_(True))
+        q = q.filter(Person.is_active)
     if area_id is not None:
         area = scoped_get(db, Area, area_id, user, detail="Område hittades inte")
         if area.is_active is not True:
@@ -629,7 +629,7 @@ def _can_sort_person_order_across_areas(user: User) -> bool:
 
 
 def _person_sort_scope_query(db: Session, user: User, requested_people: list[Person]):
-    query = db.query(Person).filter(Person.is_active.is_(True))
+    query = db.query(Person).filter(Person.is_active)
     if _can_sort_person_order_across_areas(user):
         business_id = visible_business_id(db, user)
         if business_id is not None:
