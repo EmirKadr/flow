@@ -18,6 +18,7 @@ from app.backend.coredata_service import CoreDataError
 from app.backend.database import Base
 from app.backend.models import AllocationUserFilterProfile, Area, Business, User
 from app.backend.routers import allocation as allocation_router
+from app.backend.routers import allocation_helpers
 from app.backend.settings_service import get_json_setting, set_json_setting
 
 
@@ -66,7 +67,7 @@ def business_user(user_id: int, business_id: int, role: str = "super_user"):
 
 
 def disable_allocation_api_sources(monkeypatch):
-    monkeypatch.setattr(allocation_router, "allocation_api_source_map", lambda _flow_id: {})
+    monkeypatch.setattr(allocation_helpers, "allocation_api_source_map", lambda _flow_id: {})
 
 
 class FakeQuery:
@@ -412,13 +413,13 @@ def test_filter_profiles_are_saved_per_user_and_importable(monkeypatch):
             }
         }
 
-        saved = allocation_router._set_user_filter_profile(session, alice, profile)
+        saved = allocation_helpers._set_user_filter_profile(session, alice, profile)
         session.commit()
 
         assert bridge.user_filter_profile_count(saved) == 1
         assert session.query(AllocationUserFilterProfile).filter_by(user_id=bob.id).first() is None
         response = allocation_router.import_filter_profile(
-            allocation_router.AllocationFilterProfileImport(user_id=alice.id),
+            allocation_helpers.AllocationFilterProfileImport(user_id=alice.id),
             db=session,
             user=bob,
         )
@@ -538,8 +539,7 @@ def test_process_matrix_response_uses_active_business_areas(monkeypatch):
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
-    monkeypatch.setattr(
-        allocation_router,
+    monkeypatch.setattr(allocation_helpers,
         "_allocation_process_matrix_flows",
         lambda: [{"id": "allocate", "label": "Allokering", "category": "Allokering"}],
     )
@@ -560,7 +560,7 @@ def test_process_matrix_response_uses_active_business_areas(monkeypatch):
         )
         session.commit()
 
-        response = allocation_router._process_matrix_response(session, user)
+        response = allocation_helpers._process_matrix_response(session, user)
 
         assert [area["code"] for area in response["areas"]] == ["PACK", "SHIP", "ALLT"]
         assert "AS" not in response["matrix"]
@@ -581,7 +581,7 @@ def test_update_process_matrix_preserves_rules_outside_visible_areas(monkeypatch
         {"id": "allocate", "label": "Allokering", "category": "Allokering"},
         {"id": "ordersaldo", "label": "Ordersaldo", "category": "Saldo"},
     ]
-    monkeypatch.setattr(allocation_router, "_allocation_process_matrix_flows", lambda: flows)
+    monkeypatch.setattr(allocation_helpers, "_allocation_process_matrix_flows", lambda: flows)
     monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: None)
     try:
         t3 = Business(id=10, code="T3", name="T3", sort_order=1)
@@ -608,7 +608,7 @@ def test_update_process_matrix_preserves_rules_outside_visible_areas(monkeypatch
         session.commit()
 
         allocation_router.update_process_matrix(
-            allocation_router.AllocationProcessMatrixUpdate(
+            allocation_helpers.AllocationProcessMatrixUpdate(
                 matrix={"PACK": {"visibleFlowIds": []}, "AS": {"visibleFlowIds": []}},
             ),
             db=session,
@@ -633,7 +633,7 @@ def test_process_matrix_is_stored_per_requested_business(monkeypatch):
         {"id": "allocate", "label": "Allokering", "category": "Allokering"},
         {"id": "ordersaldo", "label": "Ordersaldo", "category": "Saldo"},
     ]
-    monkeypatch.setattr(allocation_router, "_allocation_process_matrix_flows", lambda: flows)
+    monkeypatch.setattr(allocation_helpers, "_allocation_process_matrix_flows", lambda: flows)
     monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: None)
     try:
         stigamo = Business(id=10, code="STIGAMO", name="Stigamo", sort_order=1)
@@ -674,7 +674,7 @@ def test_process_matrix_is_stored_per_requested_business(monkeypatch):
         assert "AS" not in response["matrix"]
 
         allocation_router.update_process_matrix(
-            allocation_router.AllocationProcessMatrixUpdate(
+            allocation_helpers.AllocationProcessMatrixUpdate(
                 matrix={"R3": {"visibleFlowIds": ["ordersaldo"]}},
             ),
             area_focus="AREA:201",
@@ -758,11 +758,11 @@ def test_process_matrix_empty_visible_flow_list_hides_all_flows():
 def test_allocation_result_session_is_limited_to_owner_user():
     owner = business_user(1, 10)
     other_same_business = business_user(2, 10)
-    bridge.SESSIONS["sid"] = {"owner": allocation_router._session_owner_payload(owner)}
+    bridge.SESSIONS["sid"] = {"owner": allocation_helpers._session_owner_payload(owner)}
 
-    allocation_router._assert_session_allowed("sid", owner)
+    allocation_helpers._assert_session_allowed("sid", owner)
     with pytest.raises(HTTPException) as exc_info:
-        allocation_router._assert_session_allowed("sid", other_same_business)
+        allocation_helpers._assert_session_allowed("sid", other_same_business)
 
     assert exc_info.value.status_code == 404
 
@@ -784,8 +784,8 @@ def test_allocation_run_flow_stores_session_owner(monkeypatch):
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
-    monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_business_coredata_default_files", lambda *args, **kwargs: {})
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=object()))
@@ -823,7 +823,7 @@ def test_allocation_run_flow_uses_business_article_max_when_missing_upload(monke
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeDb()))
@@ -859,7 +859,7 @@ def test_allocation_run_flow_uses_area_focus_business_for_super_user(monkeypatch
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ordersaldo", FakeRequest(), user=user, db=FakeBusinessScopeDb()))
@@ -890,7 +890,7 @@ def test_allocation_run_flow_requires_bufferpall_history_when_article_max_is_mis
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "business_article_max_path_for_flow", fake_article_max_path)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -931,9 +931,9 @@ def test_allocation_run_flow_uses_business_coredata_item_option(monkeypatch, tmp
         return {"flow_id": flow_id, "tables": [], "summary": {}}
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
-    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+    monkeypatch.setattr(allocation_helpers, "find_coredata_file", fake_find_coredata_file)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("allocate", FakeRequest(), user=user, db=FakeDb()))
@@ -994,7 +994,7 @@ def test_allocation_run_flow_filters_uploaded_files_from_user_profile(monkeypatc
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("vecka27-check", FakeRequest(), user=user, db=FakeDb()))
@@ -1048,9 +1048,9 @@ def test_allocation_run_flow_skips_api_for_upload_source_mode(monkeypatch, tmp_p
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "resolve_sources", lambda *args, **kwargs: pytest.fail("API-resolver ska hoppas over"))
-    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "resolve_sources", lambda *args, **kwargs: pytest.fail("API-resolver ska hoppas over"))
+    monkeypatch.setattr(allocation_helpers, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
 
     result = asyncio.run(allocation_router.run_flow("hib-koppling", FakeRequest(), user=user, db=FakeDb()))
 
@@ -1106,9 +1106,9 @@ def test_allocation_run_flow_passes_area_focus_to_ytgenerering(monkeypatch, tmp_
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "get_json_setting", lambda _db, _key, **kwargs: kwargs.get("default"))
-    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "get_json_setting", lambda _db, _key, **kwargs: kwargs.get("default"))
+    monkeypatch.setattr(allocation_helpers, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
@@ -1155,7 +1155,7 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
     }
 
     def fake_get_json_setting(_db, key, **kwargs):
-        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+        if key == allocation_helpers.YTGENERERING_MAP_LAYOUT_KEY:
             captured["map_business_id"] = kwargs.get("business_id")
             return saved_layout
         if key == allocation_router.ALLOCATION_PROCESS_MATRIX_KEY:
@@ -1164,10 +1164,10 @@ def test_allocation_run_flow_passes_saved_ytgenerering_map_rows(monkeypatch, tmp
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
-    monkeypatch.setattr(allocation_router, "_business_coredata_default_files", lambda *args, **kwargs: {})
-    monkeypatch.setattr(allocation_router, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_helpers, "_business_coredata_default_files", lambda *args, **kwargs: {})
+    monkeypatch.setattr(allocation_helpers, "_attach_required_session_artifacts", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("ytgenerering", FakeRequest(), user=user, db=FakeDb()))
@@ -1192,7 +1192,7 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
     }
 
     def fake_get_json_setting(_db, key, **kwargs):
-        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+        if key == allocation_helpers.YTGENERERING_MAP_LAYOUT_KEY:
             captured["settings_business_id"] = kwargs.get("business_id")
             return saved_layout
         return kwargs.get("default")
@@ -1206,9 +1206,9 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
         captured["business_code"] = business_code
         return location_path
 
-    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
-    monkeypatch.setattr(allocation_router, "_allocation_business_code", fake_allocation_business_code)
-    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+    monkeypatch.setattr(allocation_helpers, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_helpers, "_allocation_business_code", fake_allocation_business_code)
+    monkeypatch.setattr(allocation_helpers, "find_coredata_file", fake_find_coredata_file)
 
     response = allocation_router.get_ytgenerering_map_layout(area_focus="MG", db=object(), user=user)
 
@@ -1228,14 +1228,14 @@ def test_ytgenerering_map_layout_response_includes_available_u_locations(monkeyp
 
 
 def test_ytgenerering_location_options_reuses_file_version_cache(monkeypatch, tmp_path):
-    allocation_router._clear_ytgenerering_location_options_cache()
+    allocation_helpers._clear_ytgenerering_location_options_cache()
     user = business_user(7, 20)
     location_path = tmp_path / "location.csv"
     location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL01\tU\t1\n", encoding="utf-8")
     calls = {"count": 0}
 
-    monkeypatch.setattr(allocation_router, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
-    monkeypatch.setattr(allocation_router, "find_coredata_file", lambda *_args, **_kwargs: location_path)
+    monkeypatch.setattr(allocation_helpers, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
+    monkeypatch.setattr(allocation_helpers, "find_coredata_file", lambda *_args, **_kwargs: location_path)
 
     def fake_location_rows(path):
         calls["count"] += 1
@@ -1244,37 +1244,37 @@ def test_ytgenerering_location_options_reuses_file_version_cache(monkeypatch, tm
 
     monkeypatch.setattr(bridge, "ytgenerering_location_option_rows", fake_location_rows)
 
-    first = allocation_router._ytgenerering_location_options(object(), user)
-    second = allocation_router._ytgenerering_location_options(object(), user)
+    first = allocation_helpers._ytgenerering_location_options(object(), user)
+    second = allocation_helpers._ytgenerering_location_options(object(), user)
 
     assert first == [{"location": "UTL01", "maxPall": 1.0}]
     assert second == first
     assert calls["count"] == 1
 
     location_path.write_text("Lagerplats\tTyp\tMax pall\nUTL020\tU\t2.5\n", encoding="utf-8")
-    allocation_router._ytgenerering_location_options(object(), user)
+    allocation_helpers._ytgenerering_location_options(object(), user)
 
     assert calls["count"] == 2
-    allocation_router._clear_ytgenerering_location_options_cache()
+    allocation_helpers._clear_ytgenerering_location_options_cache()
 
 
 def test_ytgenerering_location_options_negative_caches_missing_coredata(monkeypatch):
-    allocation_router._clear_ytgenerering_location_options_cache()
+    allocation_helpers._clear_ytgenerering_location_options_cache()
     user = business_user(7, 20)
     calls = {"count": 0}
 
-    monkeypatch.setattr(allocation_router, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
+    monkeypatch.setattr(allocation_helpers, "_allocation_business_code", lambda *_args, **_kwargs: "STIGAMO")
 
     def fake_find_coredata_file(*_args, **_kwargs):
         calls["count"] += 1
         raise CoreDataError("missing location")
 
-    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+    monkeypatch.setattr(allocation_helpers, "find_coredata_file", fake_find_coredata_file)
 
-    assert allocation_router._ytgenerering_location_options(object(), user) == []
-    assert allocation_router._ytgenerering_location_options(object(), user) == []
+    assert allocation_helpers._ytgenerering_location_options(object(), user) == []
+    assert allocation_helpers._ytgenerering_location_options(object(), user) == []
     assert calls["count"] == 1
-    allocation_router._clear_ytgenerering_location_options_cache()
+    allocation_helpers._clear_ytgenerering_location_options_cache()
 
 
 def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(monkeypatch):
@@ -1298,7 +1298,7 @@ def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(mo
             captured["committed"] = True
 
     def fake_get_json_setting(_db, key, **kwargs):
-        if key == allocation_router.YTGENERERING_MAP_LAYOUT_KEY:
+        if key == allocation_helpers.YTGENERERING_MAP_LAYOUT_KEY:
             captured.setdefault("get_business_ids", []).append(kwargs.get("business_id"))
             return saved_by_business.get(kwargs.get("business_id"), kwargs.get("default"))
         return kwargs.get("default")
@@ -1308,14 +1308,14 @@ def test_update_ytgenerering_map_layout_saves_and_returns_area_business_scope(mo
         captured["set_user_id"] = kwargs.get("user_id")
         saved_by_business[kwargs.get("business_id")] = value
 
-    monkeypatch.setattr(allocation_router, "_business_id_from_area_focus", lambda _db, _user, area_focus: 20 if area_focus == "MG" else None)
-    monkeypatch.setattr(allocation_router, "get_json_setting", fake_get_json_setting)
-    monkeypatch.setattr(allocation_router, "set_json_setting", fake_set_json_setting)
+    monkeypatch.setattr(allocation_helpers, "_business_id_from_area_focus", lambda _db, _user, area_focus: 20 if area_focus == "MG" else None)
+    monkeypatch.setattr(allocation_helpers, "get_json_setting", fake_get_json_setting)
+    monkeypatch.setattr(allocation_helpers, "set_json_setting", fake_set_json_setting)
     monkeypatch.setattr(allocation_router.audit, "log", lambda *args, **kwargs: captured.setdefault("audit_business_id", kwargs.get("business_id")))
-    monkeypatch.setattr(allocation_router, "_ytgenerering_location_options", lambda *args, **kwargs: [])
+    monkeypatch.setattr(allocation_helpers, "_ytgenerering_location_options", lambda *args, **kwargs: [])
 
     response = allocation_router.update_ytgenerering_map_layout(
-        allocation_router.YtgenereringMapLayoutUpdate(
+        allocation_helpers.YtgenereringMapLayoutUpdate(
             locations=[
                 {"location": "UTL312", "x": -3320, "y": 220, "w": 240, "h": 80, "maxPall": 2, "loadDirection": "left"},
             ],
@@ -1365,8 +1365,7 @@ def test_allocation_run_flow_uses_saved_process_matrix_for_visibility_only(monke
 
     monkeypatch.setattr(bridge, "form_to_flow_payload", fake_form_to_flow_payload)
     monkeypatch.setattr(bridge, "run_flow_handler", fake_run_flow_handler)
-    monkeypatch.setattr(
-        allocation_router,
+    monkeypatch.setattr(allocation_helpers,
         "get_json_setting",
         lambda *args, **kwargs: {
             "AS": {
@@ -1376,7 +1375,7 @@ def test_allocation_run_flow_uses_saved_process_matrix_for_visibility_only(monke
             }
         },
     )
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
     disable_allocation_api_sources(monkeypatch)
 
     result = asyncio.run(allocation_router.run_flow("vecka27-check", FakeRequest(), user=user, db=FakeDb()))
@@ -1513,11 +1512,11 @@ def test_ytgenerering_attaches_forecast_dataframe_fast_path():
             "forecast_json": {"rows": [{"Sändningsnr": "S1"}]},
             "carrier_clusters": {"rows": [{"alias": "Schenker", "clusterGroup": "Schenker"}]},
         },
-        "owner": allocation_router._session_owner_payload(user),
+        "owner": allocation_helpers._session_owner_payload(user),
     }
     params = {"forecast_session_id": "forecast-session"}
 
-    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+    allocation_helpers._attach_required_session_artifacts("ytgenerering", params, user)
 
     assert params["__forecast_df"] is table
     assert "__forecast_json" not in params
@@ -1529,11 +1528,11 @@ def test_ytgenerering_falls_back_to_forecast_json_artifact():
     bridge.SESSIONS["forecast-session"] = {
         "flow_id": "forecast",
         "artifacts": {"forecast_json": {"rows": [{"Sändningsnr": "S1"}]}},
-        "owner": allocation_router._session_owner_payload(user),
+        "owner": allocation_helpers._session_owner_payload(user),
     }
     params = {"forecast_session_id": "forecast-session"}
 
-    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+    allocation_helpers._attach_required_session_artifacts("ytgenerering", params, user)
 
     assert '"S1"' in params["__forecast_json"]
 
@@ -1549,14 +1548,14 @@ def test_ytgenerering_uses_submitted_transport_clusters_over_session_artifact():
             "forecast_json": {"rows": [{"Sändningsnr": "S1"}]},
             "carrier_clusters": {"rows": [{"alias": "Schenker", "clusterGroup": "Original"}]},
         },
-        "owner": allocation_router._session_owner_payload(user),
+        "owner": allocation_helpers._session_owner_payload(user),
     }
     params = {
         "forecast_session_id": "forecast-session",
         "carrier_clusters_json": '{"rows":[{"alias":"Schenker","clusterGroup":"Redigerad"}]}',
     }
 
-    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+    allocation_helpers._attach_required_session_artifacts("ytgenerering", params, user)
 
     assert params["__forecast_df"] is table
     assert "Redigerad" in params["__carrier_clusters_json"]
@@ -1567,7 +1566,7 @@ def test_ytgenerering_session_artifacts_are_optional_for_combined_flow():
     user = business_user(1, 10)
     params = {}
 
-    allocation_router._attach_required_session_artifacts("ytgenerering", params, user)
+    allocation_helpers._attach_required_session_artifacts("ytgenerering", params, user)
 
     assert params == {}
 
@@ -1581,11 +1580,11 @@ def test_forecast_and_ytgenerering_coredata_defaults_are_business_scoped(monkeyp
         path.write_text("x\n", encoding="utf-8")
         return path
 
-    monkeypatch.setattr(allocation_router, "find_coredata_file", fake_find_coredata_file)
+    monkeypatch.setattr(allocation_helpers, "find_coredata_file", fake_find_coredata_file)
 
-    forecast_defaults = allocation_router._business_coredata_default_files("forecast", {}, "R3")
-    ytgenerering_defaults = allocation_router._business_coredata_default_files("ytgenerering", {}, "R3")
-    goods_declaration_defaults = allocation_router._business_coredata_default_files("goods-declaration", {}, "R3")
+    forecast_defaults = allocation_helpers._business_coredata_default_files("forecast", {}, "R3")
+    ytgenerering_defaults = allocation_helpers._business_coredata_default_files("ytgenerering", {}, "R3")
+    goods_declaration_defaults = allocation_helpers._business_coredata_default_files("goods-declaration", {}, "R3")
 
     assert set(forecast_defaults) == {
         "custom",
@@ -1649,7 +1648,7 @@ def test_update_observations_writes_to_user_business_paths(monkeypatch, tmp_path
     fake_available(monkeypatch, engine_module=engine)
     monkeypatch.setattr(bridge, "save_upload", fake_save_upload)
     monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
 
     response = asyncio.run(
         allocation_router.update_observations(
@@ -1714,7 +1713,7 @@ def test_update_observations_uses_area_focus_business_for_super_user(monkeypatch
     fake_available(monkeypatch, engine_module=engine)
     monkeypatch.setattr(bridge, "save_upload", fake_save_upload)
     monkeypatch.setattr(bridge, "business_allocation_data_paths", fake_business_paths)
-    monkeypatch.setattr(allocation_router, "_audit_allocation_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(allocation_helpers, "_audit_allocation_event", lambda *args, **kwargs: None)
 
     response = asyncio.run(
         allocation_router.update_observations(
@@ -2256,8 +2255,7 @@ def test_allocation_router_honors_bearbeta_view_access_for_lagerkontorist(monkey
         ],
     )
     monkeypatch.setattr(bridge, "public_pool", lambda: [{"key": "orders", "label": "Bestallningslinjer"}])
-    monkeypatch.setattr(
-        allocation_router,
+    monkeypatch.setattr(allocation_helpers,
         "get_role_view_access",
         lambda _db, business_id=None: {"warehouse_clerk": {"allocationProcess": "edit"}},
     )

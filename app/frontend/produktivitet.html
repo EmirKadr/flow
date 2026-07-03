@@ -16,6 +16,22 @@
 <body class="with-sidebar">
   <header class="topbar"></header>
 
+  <section class="staffing-page-head" aria-labelledby="staffing-title">
+    <div class="section-title" id="staffing-title">Bemanning</div>
+    <nav class="staffing-tabs" aria-label="Bemanning">
+      <a class="staffing-tab" href="/index.html" data-staffing-tab-view="schedule">Bemanning</a>
+      <a class="staffing-tab" href="/overblick.html" data-staffing-tab-view="overview">Översikt</a>
+      <a class="staffing-tab active" href="/produktivitet.html" aria-current="page" data-staffing-tab-view="productivity">Produktivitet</a>
+      <a class="staffing-tab" href="/sankey-inbound.html" data-staffing-tab-view="sankeyInbound">Sankey</a>
+      <a class="staffing-tab" href="/aktiviteter.html" data-staffing-tab-view="activities">Aktiviteter</a>
+      <a class="staffing-tab" href="/personer.html" data-staffing-tab-view="persons">Personer</a>
+      <a class="staffing-tab" href="/anvandare.html" data-staffing-tab-view="users">Användare</a>
+      <a class="staffing-tab" href="/verksamheter.html" data-staffing-tab-view="businesses">Verksamheter</a>
+      <a class="staffing-tab" href="/mitt-schema.html" data-staffing-tab-view="mySchedule">Mitt schema</a>
+      <a class="staffing-tab" href="/min-produktivitet.html" data-staffing-tab-view="myProductivity">Min produktivitet</a>
+    </nav>
+  </section>
+
   <section class="controls">
     <div class="productivity-overview-period-toggle" role="group" aria-label="Period">
       <button type="button" class="active" data-period="day">Dag</button>
@@ -28,7 +44,7 @@
         <button id="productivityOverviewPrevDate" class="date-nav-btn" type="button" aria-label="Föregående datum" title="Föregående datum">‹</button>
         <div class="date-display-wrap" title="Välj datum">
           <span class="date-display-text" id="productivityOverviewDateDisplayText">YYYY-MM-DD</span>
-          <input id="productivityOverviewDate" type="date" class="date-display-overlay" aria-label="Välj datum" />
+          <input id="productivityOverviewDate" type="date" class="date-display-overlay" aria-label="Välj datum" data-flow-context-date />
         </div>
         <button id="productivityOverviewNextDate" class="date-nav-btn" type="button" aria-label="Nästa datum" title="Nästa datum">›</button>
       </span>
@@ -64,5 +80,8 @@
   <script src="/js/common/period_picker.js?v=20260624-period-picker"></script>
   <script src="/js/common.js?v=20260616-speed-common"></script>
   <script src="/js/productivity_overview.js?v=20260625-productivity-parallel-days"></script>
+  <script src="/js/productivity_overview_core.js?v=20260702-arch-split"></script>
+  <script src="/js/productivity_overview_tree.js?v=20260702-arch-split"></script>
+  <script src="/js/productivity_overview_render.js?v=20260702-arch-split"></script>
 </body>
 </html>

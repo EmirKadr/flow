@@ -514,7 +514,10 @@ class InteractiveRun:
             raise AssertionError("Drag fill did not copy the expected activity")
         self.record("drag_fill_schedule_cells", screenshot=self.screenshot("14b-schedule-drag-fill"))
 
-        self.schedule_cell(9).dblclick()
+        self.schedule_cell(9).click(button="right")
+        self.page.get_by_role("menuitem", name="Dela").click()
+        self.page.wait_for_selector("#scheduleSplitContinue", timeout=15000)
+        self.page.click("#scheduleSplitContinue")
         self.page.wait_for_selector(
             f"#scheduleBody tr:has-text('{self.agent_person_updated}') td[data-hour='9'][data-split='1']",
             timeout=15000,

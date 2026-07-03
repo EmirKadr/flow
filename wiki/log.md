@@ -1,11 +1,390 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-03
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-03] refactor | Render-sanering: legacy-drift borttagen ur repot
+
+Migreringen till nowasteserver (k8s + MSSQL via Octopus) ar klar och verifierad,
+sa all Render-specifik kod och konfiguration togs bort: `render.yaml` och
+`backend.migrate_pg_to_mssql` raderade (finns i git-historiken),
+RenderClient/deploy-/logg-/metrics-checks borttagna ur `healthcheck_service.py`,
+`RENDER_*`-settings ur `config.py`/`.env.example`, `--no-render`-flaggan ur
+`tools.healthcheck`, `include_render` ur `/api/healthcheck`, och Render-kortet/
+tabellen ur Historik-Halsa (`historik.html` + `analytics.js`). Single-worker-
+kontraktet vaktar nu Dockerfile-CMD i stallet for `render.yaml`; CI-steget heter
+`Simulate Alembic build (Postgres)`. Alembic + Postgres-simuleringen i CI ar
+kvar (schemahistorik och dialektneutral migrationsvag). k8s/-manifesten och
+`APP_MIGRATION_PLAN.md` behalls. Uppdaterade sidor: [api.md](api.md),
+[architecture.md](architecture.md), [history-audit.md](history-audit.md),
+[testing-release.md](testing-release.md), [data-fetch.md](data-fetch.md),
+[error-reference.md](error-reference.md), [meta-upload.md](meta-upload.md),
+[nowaste-git-release.md](nowaste-git-release.md) samt root-dokumenten
+`AGENTS.md`, `TESTPROTOCOL.md`, `DEPLOY.md`, `app/README.md`, `k8s/README.md`.
+
+## [2026-07-03] ingest | NoWaste kallkodshantering och release via Octopus
+
+Ingest av internt NoWaste-dokument "Kallkodshantering (GitHub)" (PDF) plus
+muntlig releaseinstruktion: commits till `release/*`-branchar bygger
+automatiskt releaser i Octopus; releaser deployas darifran till
+development/production. Flow har officiellt gatt over till NoWaste-servern
+(k8s, Octopus-projektet Flow, MSSQL). Ny sida
+[nowaste-git-release.md](nowaste-git-release.md) med branchmodell
+(master/develop/feature/release/hotfix/patch), releaseflode steg 1-10 och
+Flow-specifika avvikelser (huvudbranch `main`, processen ar vagledande, inte
+tvingande). Uppdaterade: [index.md](index.md),
+[architecture.md](architecture.md) (drift + databas till k8s/MSSQL, Render
+legacy), [testing-release.md](testing-release.md) (releasekontroll +
+driftgrind) samt root-`AGENTS.md` (ny sektion om NoWaste-release).
+
+## [2026-07-03] fix | Forbyggd overview-report-cache for Produktivitets periodoversikt
+
+Produktivitets ar-/manadsvy raknade om varje dag fran snapshot-CSV vid varje
+oppning, aven for dagar som redan byggts via produktivitets-CLI:t. Orsak:
+overview-vyn kan inte anvanda `person_productivity_daily` som fullrapport (saknar
+komplett tim-/process-/diff-detalj) och hade ingen persistent cache av det tunga
+dagbygget. Losning: persistera den exakta dagrapporten (samma byggare som dag-vyn)
+som gzip-JSON bredvid snapshoten (`overview-report-<business_id>.json.gz`),
+signaturvaktad pa snapshot- + schemasignatur. Warm-vagen
+(`productivity_cache_warm.ensure_person_and_overview_caches`) bygger dagrapporten
+en gang och matar bade `person_productivity_daily` och `overview-report`, sa
+CLI:ts `--with-productivity`/prebuild och nattjobbet forbygger aven oversikten.
+Overview-lasvagen laser cachen forst och self-healar vid miss. Berorda sidor:
+[productivity.md](productivity.md), [local-archive-cache.md](local-archive-cache.md),
+[index.md](index.md).
+
+## [2026-07-02] fix | Sankey helarsfilter ateranvander hamtad data
+
+Sankey - Inbound forbattrar client_filters for helarsrapporter: arsvyn och
+manadsvyer per bolag och `Visa endast forverkade` byggs fran samma branchunderlag
+nar vybudgeten racker. Det gor att bolag, manadsdatum och forverkad-filter kan
+vaxla lokalt efter att hela aret har hamtats, i stallet for att starta en ny
+API/SSE-hamtning. Payloadschemat ar bumpat sa gamla servercacher inte ateranvands.
+
+## [2026-07-02] ux | Sankey som Bemanning-flik
+
+Sankey - Inbound ligger nu som fliken `Sankey` i Bemanning-gruppen och visas
+for anvandare med `sankeyInbound=view`. Hogerklicksvagen fran Produktivitet
+finns kvar, men normal ingang ar nu Bemanning -> Sankey.
+
+## [2026-07-02] ux | Installningar i sidebarens hogerklicksmeny
+
+Hogerklick pa `Installningar` i sidebaren visar nu installningssidans flikar:
+Ytkarta, Bearbeta, Bemanning och Intakt/utgift, filtrerat efter vybehorighet.
+Menyvalen oppnar `installningar.html` direkt pa vald flik via `tab`-parametern.
+
+## [2026-07-02] ux | Profilnamnsfalt borttaget i label editor
+
+Etiketteditorns mattpanel har inte langre ett separat profilnamnsfalt. `Spara`
+skapar fortsatt en lokal profil, men namnet tas automatiskt fran aktuellt matt,
+till exempel `104 x 200 mm`.
+
+## [2026-07-02] ux | Resize-handtag i label editor
+
+Etiketteditorn visar nu resize-handtag runt valt objekt. Anvandaren kan dra i
+sidor eller horn for att andra bredd och hojd direkt i etikettytan; B/H-falten
+uppdateras live och andringen kan backas via `Ctrl+Z`. Bakgrunds- och ritlager forblir
+helcanvas-lager utan resize-handtag.
+
+## [2026-07-02] lint | Arkitektursanering: vendor-krympning och radtaksfria splittar
+
+Stor refaktorserie utan produktbeteendeandringar (18 commits). Vendor-motorn
+warehouse_tools/vendor/allokering12.1.py sanerad fran dott Tkinter-GUI,
+analytics och CLI-wrappers: 9490 -> 4250 rader, skyddad av nya
+karakteriseringstester (10 floden mot lokala golden-snapshots) och en
+krympnings-ratchet i arkitektur-kontraktet. wms_sok79.py och headless_tk.py
+raderade (eftersok fanns aldrig i FLOW_BY_ID). Alla sju backendfiler pa
+radtaksundantagslistan splittade (routrar till *_helpers-moduler med
+kvalificerade patch-seams; productivity_kpi_rules till paket;
+productivity_sync till modul + paths-modul). Sju av atta frontendfiler
+splittade i globala moduler med script-taggar i alla berorda sidor;
+map_settings.js kvar pa sankt tak 1060 (en enda mount-funktion, closure-lyft
+ar uppfoljning). Statiska frontendtester laser nu via kanoniska fillistor i
+tools/frontend_sources.py. Repo-roten stadad (pag.docx avsparad, tmp-filer
+borta, pytest-tempkataloger gitignorerade).
+
+
+## [2026-07-02] ux | Huvudmenyer for Bemanning och Verktyg
+
+Sidebaren samlar nu bemanningsrelaterade vyer under huvudmenyn `Bemanning`
+och verktygsrelaterade vyer under `Verktyg`. Sidorna visar flikar for sina
+grupper, filtrerade efter vybehorighet. Hogerklick pa `Bemanning` visar
+Bemanning, Oversikt, Produktivitet, Sankey, Aktiviteter, Personer, Anvandare,
+Verksamheter, Mitt schema och Min produktivitet. Hogerklick pa `Verktyg`
+visar Dela, Etiketter, MCP, Hamta data, Historik och Meta.
+
+## [2026-07-02] feature | Anmarkning pa bemanningscell
+
+Bemanningens hogerklicksmeny for celler har nu `Anmarkning`. Valet oppnar en
+modal for fri text pa hel timme eller vald del av en delad timme. Texten sparas
+i `schedule_cells.remark`, visas med en liten hornmarkering i cellen och foljer
+med vid split, merge, copy och undo/redo. API:t ar
+`PUT /api/schedule/cell/remark`. Audit sparar bara `remark_present` och
+`remark_length`, inte sjalva anmarkningstexten.
+
+## [2026-07-02] ux | Bemanningscell delar via hogerklicksmeny
+
+Bemanningens timceller har bytt klickmonster: hogerklick oppnar nu en
+cellmeny med `Dela` for hel timme och `Sla ihop` for redan delad timme.
+Dubbelklick oppnar i stallet cellens aktivitetsdropdown for vald timme eller
+del. Split-dialogen, minutvalen och samma `/api/schedule/cell/split`-mutation
+anvands fortfarande.
+
+## [2026-07-02] change | Tydligare produktivitetslogg i arkiv-CLI
+
+Produktivitetsdelen i `archive_cache_cli` skriver nu chunk-progressbar och
+visar fore varje intervall hur manga snapshotdagar som redan finns sparade,
+hur manga som saknas/ar gamla och hur manga rader som finns i sparad metadata.
+Efter varje chunk visas om API hamtades, hur manga sparade snapshotdatum som
+ateranvandes och hur manga `person_productivity_daily`-dagar som redan var
+aktuella eller byggdes. History-syncens resultat skickar nu med personcache-
+utfallet sa CLI:n kan skilja pa sparad snapshot och byggd persondag.
+
+## [2026-07-02] change | Produktivitets-CLI använder seed-fönster som default
+
+`archive_cache_cli --with-productivity` och `--productivity-only` använder nu
+`ARCHIVE_CACHE_SEED_DAYS` när inget produktivitetsdatum anges: intervallet går
+till och med igår och bakåt lika långt som arkivseedens standardfönster. Gamla
+läget "bygg bara befintliga snapshots" finns kvar som
+`--productivity-prebuild-existing`.
+
+## [2026-07-02] fix | Produktivitets-CLI återupptar utan dubbeljobb
+
+Produktivitetsdelen i `archive_cache_cli` går nu från slutdatumet bakåt i
+chunkar och skickar `skip_ready=True` till history-syncen. Redan kompletta
+snapshotdagar hämtas inte om; personcachen i appdatabasen kontrolleras via
+`person_productivity_daily`-signatur och byggs bara om när snapshot eller schema
+har ändrats. CLI-raden visar `hämtar`, `kontrollerar sparade snapshots/persondagar` eller `redan klar`
+per chunk.
+
+## [2026-07-02] ingest | Strukturrefaktorering: paketsplit, bakgrundsregister och arkitekturkontrakt
+
+De tre storsta servicefilerna ar uppdelade i paket med bakatkompatibla fasader:
+`data_fetch_service` -> `app/backend/data_fetch/`, `mcp_service` ->
+`app/backend/mcp/`, `sankey_inbound_service` -> `app/backend/sankey_inbound/`.
+Alla uppstartsjobb gar nu via jobbregistret i `app/backend/background.py` och
+FastAPI-lifespan (deprecated `on_event` borta); jobbstatus syns i healthcheck.
+Nya kontraktstester i `tests/tools/test_architecture_contracts.py` haller
+radtak per fil, skyddar single-worker-antagandet i `render.yaml` och vaktar
+domangranser mellan servicemoduler. Se [Arkitektur](architecture.md).
+Wikisidornas `status`-falt anvands nu som funktionslivscykel:
+`aktiv` / `experiment` / `frys` / `avveckla` (se index och AGENTS.md).
+
+## [2026-07-02] fix | Arkivcache stoppar efter lång tom historik
+
+Bakåtseed i lokal DuckDB-arkivcache räknar nu tomma kalenderdagar och stoppar
+när `ARCHIVE_CACHE_EMPTY_STOP_DAYS` nås (default 300). Vyn markeras då som
+täckt/tom för det äldre begärda intervallet, så stora seeds som 10 000 dagar
+inte behöver hämta hela vägen bak när API:t slutat hitta rader. Status visar nu
+både `ingested_start/end` (faktiska rader) och `covered_start/end` (rader plus
+kontrollerat tomma dagar). CLI-slutrapporten skriver dessutom en `INFO`-rad med
+antal tomma dagar när tomstoppet används.
+
+## [2026-07-02] feature | Arkivcache-CLI kan fylla produktivitet
+
+`python -m app.backend.archive_cache_cli` kan nu aven kora Produktivitetens
+API-dagfyllning: `--productivity-start` utan `--productivity-end` hamtar till
+och med igar, aldrig dagens datum, och bygger normalt
+`person_productivity_daily`. `--with-productivity` kor produktiviteten efter
+DuckDB-arkivseed. `item_alias` ligger kvar som DuckDB-stodvy i samma CLI.
+CLI:t chunkar produktivitetsintervall (default 31 dagar), faller tillbaka till
+standardtenant nar DB-uppslag for tenant inte svarar och stoppar tydligt fore
+lang hamtning om `person_productivity_daily` ska byggas men `DATABASE_URL` inte
+gar att ansluta.
+
+## [2026-07-02] fix | Arkivcache-CLI kan koera snapshotdelen separat
+
+`python -m app.backend.archive_cache_cli` fyller nu tydligt bade arkivvyer och
+snapshotvyer som default. CLI-hjalpen namner `item_alias`, och nya
+`--snapshots-only` kor bara snapshotrefreshen for att fylla DuckDB med nattens
+stoddata utan att starta en arkivseed.
+
+## [2026-07-01] perf | Sankey alias-snapshot och nattlig produktivitets-prebuild
+
+Den lokala DuckDB-cachen har nu datumslosa snapshots for stodvyer. `item_alias`
+refreshas av archive-cache-jobbet/CLI och Sankey laser den lokalt som
+`local_snapshot`, medan buffertpall fortsatt hamtas live vid berakning.
+Produktivitetens scheduler hamtar dagens snapshot utan att bygga dagens
+personcache; historiska snapshotdagar prebyggs i `person_productivity_daily`
+en gang per dag efter backfill/snapshot-sync och dagens datum byggs on-demand.
+
+## [2026-07-01] fix | Sankey behaller lokala filtervyer for manad/vecka/dag
+
+Sankey - Inbound prebygger ater lokala `client_filters.views` for interaktiva
+dag-/vecko-/manadsladdningar aven nar kallaraderna ar manga, sa bolagsbyte och
+datumbyte inom redan hamtat omfang inte triggar en ny full hamtning. Trace-
+lazyloaden behaller en server-side radtoken men skickar nu `trace_filter`
+(`company`, `start_date`, `end_date`, `only_consumed`) till `/trace` och
+`/trace.csv`, sa drilldown/export foljer den lokalt valda vyn utan att
+`trace_rows` skickas i huvudpayloaden.
+
+## [2026-07-01] perf | Sankey använder toppad arkiv-cache
+
+Sankey - Inbound läser nu även den toppade delen av live-retention-segment från
+lokal DuckDB-arkivcache. För en äldre inboundkohort betyder det att receive,
+trans och pick kan tas lokalt fram till cache-max (normalt igår) och bara den
+färska resten hämtas via live-API. Cacheträffar syns i `source_status` som
+`local_archive`. `dblog_dispatch_pallet_log` ingår nu också i
+`archive_cache_sync.SYNC_ARCHIVE_VIEWS`, så Dispatchpallslogg kan seedas lokalt
+i stället för att varje historisk Sankey-körning går mot dblog/API. CLI:t har
+även `--view`, till exempel
+`python -m app.backend.archive_cache_cli --tenant frey --view dblog_dispatch_pallet_log`.
+
+## [2026-07-01] fix | Sankey lazy-laddar spårningsrader
+
+Sankey - Inbound skickar inte längre spårningsraderna som en stor JSON-del i
+huvudpayloaden. Rapporten får `trace_token`, `trace_total` och `trace_counts`;
+detaljpanelen hämtar en liten preview via `/api/sankey/inbound/trace`, och
+exporten går via streamad `/api/sankey/inbound/trace.csv`. Om trace-cachen har
+gått ut visar UI:t att rapporten behöver köras om.
+
+## [2026-07-01] feature | CLI-seed med progressbar + parallell/återupptagningsbar fyllning
+
+Djup-seeden av DuckDB-cachen körs nu via CLI (`python -m app.backend.archive_cache_cli`)
+istället för vid serverstart: parallellt per vy, chunkat, med live progressbar per
+tenant/vy (visar hämtade dagar, rader och pågående chunk) + TOTALT-rad. Återupptagningsbart
+(Ctrl+C → kör igen). Servern seedar inte längre tungt vid start – schemaläggaren toppar bara
+på redan seedade vyer (`ARCHIVE_CACHE_SEED_ON_START`, default av). Store gjord parallell-säker
+(lås per DB-fil runt varje anslutning) och `append_rows_by_date` skriver en hel chunk i EN
+anslutning (seed ~9× snabbare). Ny fil `archive_cache_cli.py`; nya settings
+`ARCHIVE_CACHE_SEED_ON_START`/`_SEED_WORKERS`. Se [local-archive-cache.md](local-archive-cache.md).
+
+## [2026-07-01] feature | Lokal arkiv-cache (DuckDB)
+
+Ny per-tenant DuckDB-cache som speglar `dblog_*`-arkiven lokalt: seed en gång från
+dblog, topp-på dagligen ur live-vyerna (rikare kolumner, dblog rörs inte i normal drift).
+Sankey, Produktivitet och Hämta data läser lokal-DB först och faller tillbaka till dblog/API.
+Endast lokal dev (`ARCHIVE_CACHE_ENABLED`), startar aldrig i produktion. Kod i
+`local_archive_store.py` + `archive_cache_sync.py`; synk-logg + status-endpoint/CLI.
+Dessutom: förpacknings-uppdelningens item_alias-hämtning smalnas nu av till plockradernas
+item_num (batchat) så datakällans 50k-tak inte längre kapar bort faktorer. Se
+[local-archive-cache.md](local-archive-cache.md) och [data-fetch.md](data-fetch.md).
+
+## [2026-07-01] change | Dispatchlogg ersatter Dispatchpallar i outbound
+
+Produktivitetens forifyllda intaktsrad `Utlastade pallar` och Sankeys outbound-
+hamtning laser nu `dispatch_pallet_log` i stallet for nulagesvyn
+`v_ask_dispatch_pallet`. `DISPATCH_PALLET_LOG` har 14 dagars operativ retention
+pa `created` och arkiveras till `dblog_dispatch_pallet_log`; Flow har darfor
+lagt till paret i live-/arkivstyrningen sa aldre perioder hamtas fran arkivet. Warehouse-
+flodet Dispatchkontroll och Meta-uppslag behaller `v_ask_dispatch_pallet`.
+
+## [2026-07-01] fix | Sankey hämtar plocklogg live igen
+
+Sankey - Inbound återanvänder inte längre Produktivitetens dags-snapshots för
+`pick`/Plocklogg Full. Juniavstämning visade att snapshots kunde sakna PR-rader
+för vissa datum trots att live-vyn hade dem, vilket gjorde E-handelns plockade
+orders för låga mot WMS. `receive` och `trans` kan fortsatt återanvända
+snapshots, men Plocklogg Full går via Sankeys live-/`dblog_*`-hämtning.
+
+## [2026-07-01] fix | Sankey orders kräver plockat antal
+
+Outboundmåtten `store_picked_orders` och `ecom_picked_orders` räknar nu bara
+unika ordernummer där minst en plockloggsrad har `qty_suf`/`Plockat >= 1`.
+Regeln är synkad mellan Sankeys backendräkning och de seedade
+Intäkt/utgift-planerna. Orders har fortfarande inget zonfilter, så helpallsrader
+med plockat antal räknas som plockade orders.
+
+## [2026-07-01] fix | Sankey matchar buffertuppdatering via pall
+
+Sankey - Inbound tappar inte längre en `type = 91`-buffertuppdatering bara för
+att plats-/artikelnyckeln inte träffar plockplats-FIFO. Om raden har ett
+pallnummer som redan finns i den spårade inboundkedjan används pallmatchning som
+fallback och processen `Buffer Update` får då intäktsandel enligt KPI-poängen.
+
+## [2026-07-01] feature | Sankey outbound visar plockade pcs
+
+Outbound-kartan i Sankey - Inbound har nu `Plockade pcs` för både Butik och
+E-handel. Backend hämtar `item_alias` som stöddata och använder samma
+`package_breakdown`-logik som Intäkt/utgift: `qty_suf` delas upp per plockrad
+med `conversion_factor` störst först och faktor `1` som `ST`, innan priset
+multipliceras mot antalet plockenheter.
+
+## [2026-07-01] change | Sankey visar outbound som egen karta
+
+Sankey - Inbound renderar nu inbound och outbound som separata kartor i samma
+vy. Inbound-kartan visar mottagning, processer och statusar. Outbound-kartan
+borjar pa `Outbound` och delar sig till `Butik` och `E-handel` innan
+debiteringsraderna, sa outboundflodet inte blandas visuellt med inboundkedjan.
+
+## [2026-07-01] fix | Produktivitet bygger manad fran snapshots igen
+
+Produktivitetens periodoversikt anvander inte langre `person_productivity_daily`
+som full dagsrapport. Den snabba cachevagen kunde gora manadsvyn for tunn i
+process-/timdetalj, sa `/api/productivity/overview` bygger ater fulla
+dagsrapporter fran snapshotfilerna. Filbaserad SQLite behaller begransad
+dagparallellism och daglage vantar fortsatt pa dagens startup-snapshot.
+
+## [2026-07-01] perf | Sankey hoppar tunga klientvyer
+
+Sankey - Inbound/Outbound bygger inte langre alla lokala `client_filters.views`
+for stora payloads. Nar kallaraderna eller antalet filtervyer blir for stort
+returnerar API:t aktuell vy med `client_filters.prebuilt=false` och
+`omitted_reason=large_payload`; frontend hamtar da nasta bolags-/period- eller
+forverkad-variant via vanlig API/SSE-fallback. Juni-test med cirka 39k receive,
+124k trans, 234k pick, 37k dispatch och 57k buffer gick fran att inte bli klart
+efter drygt 10 minuter i byggfasen till 32,7 sekunder.
+
+## [2026-07-01] feature | Sankey foljer outbound
+
+Sankey - Inbound visar nu aven outbounddebitering for Butik och E-handel.
+Backend hamtar `v_ask_dispatch_pallet` som extra kalla, bygger noder for
+`Outbound -> Butik/E-handel -> debiteringsrad` och returnerar
+`outbound_metrics`, `outbound_income` och outboundspår i `trace_rows`. Reglerna
+foljer Plocklogg Full med `TO` for Butik, `PR` for E-handel, zon `H` for
+helpallar, `qty_suf`/`Plockat >= 1` for rad/helpall och Dispatchpallar med tomt
+`parent_pick_pall_num` for utlastade pallar. Intakt/utgift-defaultsen har samma
+berakningsplaner for GG och E-handel-raderna ar forifyllda.
+
+## [2026-06-30] perf | Sankey ateranvander Produktivitetens snapshots
+
+Sankey - Inbound laser nu Produktivitetens befintliga API-snapshotfiler for
+`receive` och `trans` nar hela foljfonstret redan finns lokalt. Om nagon
+dag saknas faller Sankey tillbaka till sin tidigare live-/`dblog_*`-hamtning.
+Kallstatus markerar ateranvandningen med `status=productivity_snapshot`, sa
+Historik/audit och felsokning kan se nar extern API-hamtning undveks.
+
+## [2026-06-30] perf | Produktivitetens manadsoversikt laser dags-cache
+
+`GET /api/productivity/overview` ateranvander nu aktuell
+`person_productivity_daily` for varje dag i perioden innan den faller tillbaka
+till snapshotfilerna. Den materialiserade cachen sparar aven timcellernas
+processpoang som `cell_process`, sa framtida cachetraffar kan rita samma
+processnoder utan att bygga om dagen. Filbaserad lokal SQLite far dessutom
+anvanda samma begransade dagparallellism som Postgres, medan in-memory
+testsessioner kor seriellt.
+
+## [2026-06-30] fix | Produktivitet vantar pa dags-snapshot efter lokal start
+
+Produktivitetens daglage invantar nu den begarda dagens API-snapshot innan
+periodtradet byggs. Det gor att `/produktivitet.html` inte direkt visar
+"Produktivitetens API-snapshot saknas eller ar inte komplett" nar anvandaren
+oppnar vyn precis efter `start_local.bat` och startup-synken fortfarande haller
+pa. Vecka, manad, ar och custom-perioder fortsatter lasa befintliga snapshots
+utan att trigga historikhamtning vid periodbyte.
+
+## [2026-06-26] fix | MCP/OpenAI far separata env-namn
+
+MCP-vyn visar nu NoWaste och OpenAI som separata providers. NoWaste anvander den
+OpenAI-kompatibla `MCP_LLM_OPENAI_API_KEY`, `MCP_LLM_OPENAI_MODEL` och
+`MCP_LLM_OPENAI_API_BASE_URL`, men far bara sin defaultmodell, normalt `gpt-4o`.
+OpenAI anvander separat `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_API_BASE_URL`
+och modellistan `MCP_OPENAI_MODELS`. Ingen provider faller tillbaka till den
+andras nyckel. OpenAI-modellistan ar en inbyggd standardlista, inte en livefraga
+mot OpenAI `/models`, sa statusvyn gor inga extra provideranrop for att bygga
+dropdownen. Standardlistan innehaller nu aven GPT-5-serien (`gpt-5.5`,
+`gpt-5.4`, `gpt-5.2`, `gpt-5`) sa nyare modeller syns utan liveanrop.
+
+## [2026-07-01] fix | CI-kontrakt for Personer och Produktivitet
+
+Personer-vyn hamtar ater om listan med `area_id` nar omradesfokus andras, sa
+Super User inte ser personer fran fel verksamhet nar fokus star pa ett specifikt
+omrade. Wikin markerar ocksa att Produktivitetens MG/IT-rad defaultar till 0 kr
+i repot och far riktiga priser via lokal/secret overlay.
 
 ## [2026-06-25] fix | Produktivitet bygger perioddagar parallellt
 
@@ -1997,3 +2376,73 @@ Ytgenereringens interaktiva resultatkarta visar nu ytkoden pa lediga ytor med
 samma dynamiska textstorlek som kundnamn pa placerade ytor. Staende lediga ytor
 roterar ytkoden langs ytan, sa platsnumret forblir tydligt vid utzoomad karta.
 Skyddas av riktat Playwright-test i `test_allocation_split_browser.py`.
+
+## [2026-06-29] docs | K8s-databasfel pekar mot fel DATABASE_URL
+
+K8s-secretmallen visar nu Azure SQL-URL aven i kubectl-kommandot, sa den inte
+langre ger en Postgres-URL som kopieringsforslag. `k8s/README.md` och
+`DEPLOY.md` forklarar att loggen `PostgreSQL: kor alembic upgrade head ...` i
+K8s betyder att `DATABASE_URL` fortfarande ar Postgres, ofta en Render-intern
+URL som inte kan slas upp utanfor Render. `wiki/testing-release.md` skiljer nu
+pa Render/Postgres och K8s/Azure SQL vid driftkontroller.
+
+## [2026-07-01] fix | Tom huvudaktivitet forblir tom i Bemanning
+
+Schemalagda malltimmar far inte langre en automatisk huvudaktivitet fran
+personens hemomrade. Om personen saknar huvudaktivitet visas timmen tom med
+diskret schemalagd-markering; explicit huvudaktivitet och explicita celler
+fungerar fortsatt som tidigare. Seed/backfill lamnar befintliga tomma
+huvudaktiviteter tomma sa valet styrs fran Personer.
+
+## [2026-07-01] ux | Summering per aktivitet kan kopiera och lokalgruppera
+
+Bemanningens `Summering per aktivitet` kopierar nu timtalet till clipboard nar
+anvandaren klickar i `Timmar`-kolumnen. Aktivitetsrader kan markeras med
+vanligt klick, Ctrl-/Cmd-klick och Shift-klick; hogerklick visar `Summera` for
+flera markerade aktiviteter och `Dela` pa en summerad rad. Grupperingen ar lokal
+for aktuell anvandare, dag och omradesvy, gar att angra med Ctrl+Z och skriver
+ingen backend-audit eftersom den inte andrar schema eller serverdata.
+
+## [2026-07-01] fix | Summeringsmeny foljer musklicket
+
+Kontextmenyn for `Summering per aktivitet` positioneras nu i dokumentets
+koordinatsystem med scroll-offset och faller tillbaka till den hogerklickade
+raden om browsern ger ett avvikande contextmenu-varde. Det gor att `Summera`
+och `Dela` oppnas vid raden i stallet for hogt upp i Bemanning.
+
+## [2026-07-01] ux | Summeringsrader kan markeras med drag
+
+`Summering per aktivitet` har nu klick-drag over rader for att markera flera
+aktiviteter utan Ctrl-/Cmd-klick. Kontextmenyn monteras i summary-kortet och
+positioneras fran den hogerklickade radens nederkant, sa `Summera`/`Dela` inte
+langre hamnar vid schematabellens scrollbar.
+
+## [2026-07-02] ux | Etiketter som experimentvy
+
+Lade till `Etiketter` som skyddad experimentvy (`labelEditor`) for lokal
+label-design med millimetermatt, text, QR, Code128, former, symboler, drag och
+utskrift. Vyn ar Super User/opt-in via Vybehorigheter och skriver ingen sparad
+audit-logg eftersom etikettlayout och streckkodsvarden inte skickas till
+backend; dokumentloggen visar lokala tillagg/rensning/utskrift.
+
+## [2026-07-02] ux | Etikettprofiler och A-format
+
+Etiketter har nu standardprofiler for `104 x 199`, vanliga fraktetiketter samt
+A6/A5/A4/A3 i staende och liggande lage. Anvandaren kan spara egna lokala
+profiler i browserns `localStorage` och ta bort sparade profiler utan att
+etikettmatt eller profilnamn skickas till backend.
+
+## [2026-07-02] ux | Etikettkortkommandon
+
+Etiketter kan nu ta bort valt objekt med `Delete`/`Backspace`, kopiera/klippa
+ut/klistra in objekt med `Ctrl+C`/`Ctrl+X`/`Ctrl+V` och angra/gora om lokala
+layoutandringar med `Ctrl+Z`, `Ctrl+Y` eller `Ctrl+Shift+Z`. Kortkommandona
+ignoreras i redigerbara falt sa textredigering fungerar normalt, och
+etikettvarden skickas fortsatt inte till backend eller system-clipboard.
+
+## [2026-07-02] ux | Etiketter far symbol- och emojivaljare
+
+`Symbol` i Etiketter oppnar nu en dialog med flera SVG-symboler och emojis.
+Valet laggs in som ett vanligt symbolobjekt, kan andras i egenskapspanelen och
+foljer samma lokala dokumentlogg, kortkommandon och read-only/audit-undantag som
+ovriga etikettobjekt.

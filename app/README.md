@@ -20,15 +20,15 @@ Webbaserad ersättning för Excel-bemanningsfilen. Arbetsledare planerar flow pe
 ## Stack
 
 - **Backend:** Python 3 + FastAPI + SQLAlchemy 2 + Alembic
-- **Databas:** PostgreSQL (Render managed)
+- **Databas:** MSSQL/Azure SQL i produktion (SQLite lokalt)
 - **Frontend:** Vanilla HTML/CSS/JS, ingen build-process
 - **Auth:** Session-cookie (FastAPI SessionMiddleware) + bcrypt
-- **Hosting:** Render via `render.yaml` Blueprint
+- **Hosting:** Företagets Kubernetes via Octopus (manifest i `../k8s/`, se `../DEPLOY.md`)
 
 ## Windows-klient
 
 Repo-roten innehaller nu aven en PyQt6-baserad Windows-klient som laddar den
-centrala Render-hostade appen i ett eget skrivbordsfonster.
+centralt hostade appen i ett eget skrivbordsfonster.
 
 - **Desktop shell:** PyQt6 + Qt WebEngine
 - **Uppdateringar:** GitHub Releases + `Setup.exe`
@@ -37,11 +37,11 @@ centrala Render-hostade appen i ett eget skrivbordsfonster.
 
 Desktop-klienten innehaller ingen lokal databas och ingen lokal FastAPI-server i
 steg 1. All affarslogik, auth och delad data ligger fortsatt i den centrala
-Render-miljon.
+servermiljon.
 
 ## Apphjälp / MiniMax
 
-Chattknappen i sidomenyn fungerar när backend har en MiniMax-nyckel. Sätt `MINIMAX_API_KEY` i `.env` lokalt eller som hemlig miljövariabel på Render. Standardmodellen är `MiniMax-M2.7` och endpointen är `https://api.minimax.io/v1/chat/completions`.
+Chattknappen i sidomenyn fungerar när backend har en MiniMax-nyckel. Sätt `MINIMAX_API_KEY` i `.env` lokalt eller som hemlighet i driftens secret store. Standardmodellen är `MiniMax-M2.7` och endpointen är `https://api.minimax.io/v1/chat/completions`.
 
 ## Meta-analys / Gemini
 
@@ -54,7 +54,7 @@ uppladdad data. Automatisk analys efter upload är avstängd som standard med
 eller plockas av `python -m tools.meta_analysis_worker --loop --limit 1` när
 driftmiljön har lagring som workern kan läsa.
 Lägg Gemini-nyckeln i `.env` lokalt eller i
-Render secrets:
+driftens secret store:
 
 - `GEMINI_API_KEY`
 - `GEMINI_MODEL` (standard `gemini-2.5-pro`)
@@ -94,7 +94,7 @@ Bygg vy-/kolumnkatalogen med:
 python tools/build_external_data_catalog.py --views <views.xlsx> --columns <columns.xlsx>
 ```
 
-Den skriver `data/external_data_catalog.json`, som commitas så Render får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/Render secrets.
+Den skriver `data/external_data_catalog.json`, som commitas så servern får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/driftens secret store.
 
 ## RFID-moduler
 
@@ -105,32 +105,25 @@ till `POST /api/rfid/scans`. Lokalt ar standarden `COM9 -> MG Plock` och
 
 ## Halsa
 
-Historik-fliken Halsa kan kora server-, databas- och Render-kontroller. Lokalt
-fungerar app- och databaskontroller utan extra nycklar. For Render-data behovs
-hemliga miljo variabler i driftens secret store:
-
-- `RENDER_API_KEY`
-- `RENDER_SERVICE_ID`
-- `RENDER_OWNER_ID` (valfri fallback; Halsa forsoker annars lasa ownerId fran service-svaret)
-- `RENDER_POSTGRES_ID`
-- `HEALTHCHECK_PUBLIC_URL` (valfri publik ping-URL)
+Historik-fliken Halsa kor server- och databaskontroller samt vantetidsanalys.
+Lokalt fungerar app- och databaskontroller utan extra nycklar.
+`HEALTHCHECK_PUBLIC_URL` (valfri) later rapporten aven pinga en publik URL.
 
 Efter storre pushar/deploys ska agenter anvanda samma signaler via CLI:
 
 ```powershell
-python -m tools.healthcheck report --local --no-render
+python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Produktionens databas ar Postgres via Render. SQLite anvands bara for lokal
-utveckling och temporara tester. Render build-loggar hamtas via Render Logs API
-med `ownerId`, `resource=<service-id>` och `type=build`. Om du bara vill hamta
-Render deploy/loggar utan
-att koppla verktyget mot en databas kan du kora:
+Produktionens databas ar MSSQL pa foretagets k8s. SQLite anvands bara for lokal
+utveckling och temporara tester. Utan lokal databaskoppling kan du kora:
 
 ```powershell
 python -m tools.healthcheck report --local --skip-db
 ```
+
+Serverloggar hamtas med `kubectl -n flow logs deploy/flow-web`.
 
 ## Lokal seed-inlogg
 
@@ -140,26 +133,17 @@ När du kör `python -m backend.seed` lokalt skapas en admin-användare:
 
 **Byt lösenordet direkt efter första inloggning** och lägg gärna upp minst en extra administratör i adminvyn.
 
-I produktion kör Render inte seed. Live-data är användarstyrd och första admin-kontot ska redan finnas eller skapas via en kontrollerad engångsbootstrap.
-`backend.seed` stoppar dessutom körning när `ENVIRONMENT=production` eller databasen ser ut att vara en Render-databas.
+I produktion körs inte seed. Live-data är användarstyrd och första admin-kontot ska redan finnas eller skapas via en kontrollerad engångsbootstrap.
+`backend.seed` stoppar dessutom körning när `ENVIRONMENT=production`.
 
-## Deploya till Render
+## Deploya till produktion (k8s via Octopus)
 
-1. Initiera git-repo och pusha till GitHub:
-   ```powershell
-   cd "C:\Users\emikad\OneDrive - Dole Nordic AB\Skrivbordet\projects\flow"
-   git init
-   git add app/ desktop/ wiki/ warehouse_tools/ tests/
-   git commit -m "Initial commit: flow MVP"
-   git remote add origin https://github.com/<DITT_NAMN>/flow.git
-   git push -u origin main
-   ```
-2. På [render.com](https://render.com): **New → Blueprint** → välj GitHub-repot. Render läser `app/render.yaml` automatiskt.
-3. Render skapar databasen `flow-db` och web-servicen `flow-web`, sätter `DATABASE_URL` och auto-genererar `SECRET_KEY`.
-4. Build-steget kör `pip install` och `alembic upgrade head`. Seed körs inte i produktion, så raderade verksamheter, områden, aktiviteter, personer eller användare återskapas inte av deployen.
-5. När deploy är klar: öppna `https://stigamo.nu` och logga in.
-
-**Kostnad:** Starter web (~7 USD/mån) + PostgreSQL free 90 dagar → basic-256mb (~7 USD/mån).
+Deployen sker via Octopus-projektet **Flow** till företagets Kubernetes.
+Commits till en `release/*`-branch bygger automatiskt en release i Octopus,
+som sedan deployas till development respektive production därifrån. Se
+`../DEPLOY.md` för imagen/miljövariabler, `../k8s/README.md` för manifesten
+och `../wiki/nowaste-git-release.md` för hela releaseflödet. Seed körs inte i
+produktion — schema skapas av `backend.prestart` vid containerstart.
 
 ## Lokal utveckling (kräver Python + Docker)
 
@@ -199,7 +183,7 @@ Om du utvecklar kod och vill att servern ska ladda om automatiskt använder du
 `start_dev.bat`. Den startar samma RFID-bryggor men kor backend med
 `uvicorn --reload`.
 
-Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa Render-URL som en lokal miljövariabel och kör den explicita syncen medan lokal server är stängd:
+Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa URL som en lokal miljövariabel och kör den explicita syncen medan lokal server är stängd:
 
 ```powershell
 setx LIVE_DATABASE_URL "postgresql://..."
@@ -241,8 +225,7 @@ app/
 │   ├── css/styles.css
 │   └── js/{api,common,schedule,persons,activities}.js
 ├── alembic/                migrations
-├── requirements.txt
-└── render.yaml             Render Blueprint
+└── requirements.txt
 ```
 
 ## Multi-user-modell

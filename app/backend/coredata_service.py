@@ -272,7 +272,13 @@ def find_coredata_file(
     if spec is None:
         raise CoreDataError("Okänd kärnfil")
 
-    db_row = _coredata_db_row(db, file_type, business_code)
+    try:
+        db_row = _coredata_db_row(db, file_type, business_code)
+    except Exception:
+        rollback = getattr(db, "rollback", None)
+        if callable(rollback):
+            rollback()
+        db_row = None
     if db_row is not None:
         return _materialize_coredata_row(db_row, reference_dir)
 

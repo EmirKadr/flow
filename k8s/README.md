@@ -2,7 +2,7 @@
 
 Färdiga manifest för att köra Flow i Kubernetes. Komplement till
 [../DEPLOY.md](../DEPLOY.md), som har den fulla bakgrunden (env-variabler,
-databasmigrering från Render, resurser m.m.).
+databas, resurser m.m.).
 
 ## Filer
 
@@ -61,10 +61,8 @@ kubectl -n flow logs -f deployment/flow-web
 
 Vid start kör containern `python -m backend.prestart`, som mot Azure SQL
 skapar schemat från modellerna och stämplar alembic (migrationerna är
-PG-specifika och spelas inte upp mot MSSQL). För att flytta över befintlig
-data från Render-Postgres — se [../DEPLOY.md](../DEPLOY.md) avsnitt 4
-(skriptet `backend.migrate_pg_to_mssql`, eftersom pg_restore inte funkar mot
-SQL Server).
+PG-specifika och spelas inte upp mot MSSQL). Datamigreringen från den gamla
+Render-Postgres-driften gjordes i juli 2026; skriptet finns i git-historiken.
 
 ## Verifiera
 
@@ -72,6 +70,15 @@ SQL Server).
 kubectl -n flow port-forward svc/flow-web 8080:80
 curl http://localhost:8080/api/health    # ska ge {"status":"ok",...}
 ```
+
+## Felsökning: startup försöker nå PostgreSQL
+
+Om podloggen visar `PostgreSQL: kör alembic upgrade head ...` i K8s betyder
+det att `DATABASE_URL` börjar med `postgres...`. Den här K8s-deployen är
+skriven för Azure SQL, så `flow-secrets` ska i normalfallet innehålla en
+`mssql+pyodbc://...`-URL och podden ska startas om efter ändringen. Om ni
+avsiktligt kör Postgres behöver `DATABASE_URL` peka på en Postgres-instans
+som är nåbar från klustret (service/DNS-namn).
 
 ## Att tänka på
 

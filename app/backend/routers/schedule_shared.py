@@ -28,6 +28,7 @@ from ..user_access import is_super_user
 from ..schemas import (
     BulkCellRequest,
     CellOut,
+    CellRemarkUpdate,
     CellUpdate,
     PersonOut,
     PresenceBusinessGroup,
@@ -291,11 +292,48 @@ def _cell_to_dict(cell: ScheduleCell) -> dict:
         "minute_end": cell.minute_end,
         "activity_id": cell.activity_id,
         "loan_area_id": cell.loan_area_id,
+        "remark": cell.remark,
         "empty_override": cell.empty_override,
         "version": cell.version,
         "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
         "updated_by": cell.updated_by,
     }
+
+
+def _cell_audit_dict(cell: ScheduleCell) -> dict:
+    remark = str(cell.remark or "")
+    return {
+        "person_id": cell.person_id,
+        "hour": cell.hour,
+        "minute_start": cell.minute_start,
+        "minute_end": cell.minute_end,
+        "activity_id": cell.activity_id,
+        "loan_area_id": cell.loan_area_id,
+        "remark_present": bool(remark),
+        "remark_length": len(remark),
+        "empty_override": cell.empty_override,
+        "version": cell.version,
+        "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
+        "updated_by": cell.updated_by,
+    }
+
+
+def _normalize_cell_remark(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _merged_cell_remark(cells: list[ScheduleCell]) -> str | None:
+    values: list[str] = []
+    seen: set[str] = set()
+    for cell in sorted(cells, key=lambda item: (item.minute_start, item.minute_end)):
+        remark = _normalize_cell_remark(cell.remark)
+        if remark is None or remark in seen:
+            continue
+        seen.add(remark)
+        values.append(remark)
+    merged = "\n".join(values)
+    return merged[:500] or None
 
 
 def _empty_segment_dict(person_id: int, hour: int, minute_start: int, minute_end: int) -> dict:
@@ -306,6 +344,7 @@ def _empty_segment_dict(person_id: int, hour: int, minute_start: int, minute_end
         "minute_end": minute_end,
         "activity_id": None,
         "loan_area_id": None,
+        "remark": None,
         "empty_override": False,
         "version": 0,
         "updated_at": None,

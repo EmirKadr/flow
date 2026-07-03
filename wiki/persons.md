@@ -1,7 +1,7 @@
 ---
 title: Personer
 status: aktiv
-updated: 2026-06-15
+updated: 2026-07-01
 tags: [personer, register, ui, import]
 ---
 
@@ -20,13 +20,14 @@ Kort svar: Personer ar registret over alla planerbara personer. Sidan stoder ny 
 | Hjalp med import | Oppnar hjalpmodal | Visar generell importhjalp | `setupImportHelpButton` | Ingen serverkoppling. |
 | Sorteringsrubriker | Klick pa rubrik | Sorterar tabellen | `sortKey/sortAsc` | Bara klient-side. |
 | Filterrad | Skriver soktext | Filtrerar tabellen | `passesFilter` | Kombinerar flera filter. |
+| Omradesfokus | Vaxlar omrade i sidebar | Hamter om personlistan med valt `area_id` och filtrerar aven klient-side | `GET /api/persons?area_id=...`, `flow:areaFocusChanged` | Skyddar Super User fran att se personer i fel verksamhet nar fokus star pa ett specifikt omrade. |
 | Kolumnen Verksamhet | Laser, sorterar eller filtrerar personens verksamhet | Visar namn fran personens `business_id`, verksamhetslistan eller aktuell anvandares verksamhet | `businessName`, `PersonOut.business_id` | Gamla rader utan verksamhet visas som `Utan verksamhet`. |
 | Klick pa Namn | Inline-redigera namn | Sparar vid blur/Enter | `PUT /api/persons/{id}` | Escape avbryter; tomt/dubblett kan nekas. |
 | Klick pa NoMan | Inline-redigera WMS-anvandarnamn | Sparar obligatoriskt textfalt vid blur/Enter | `PUT /api/persons/{id}` | Tomt varde stoppas med `NoMan kravs`. Faltet anvands inte i planering eller forecast annu. |
 | Klick pa RFID | Inline-redigera brickkod | Sparar valfri RFID-kod vid blur/Enter | `PUT /api/persons/{id}` | Tomt varde tar bort brickkopplingen. Dubblett inom samma verksamhet nekas. |
 | Klick pa Arbetstyp | Inline-select | Sparar `Blue collar` eller `White collar` pa personen | `PUT /api/persons/{id}`, `Person.collar_type` | Befintliga och nya personer defaultar till `Blue collar` tills de andras. |
 | Klick pa Hemomrade | Inline-select | Sparar nytt hemomrade | `PUT /api/persons/{id}` | Omrade styr sort/fokus och standardplacering. |
-| Klick pa Huvudaktivitet | Inline-select | Sparar huvudaktivitet | `PUT /api/persons/{id}` | Visas i schema som personens standardaktivitet. |
+| Klick pa Huvudaktivitet | Inline-select | Sparar huvudaktivitet | `PUT /api/persons/{id}` | Visas i schema som personens standardaktivitet. Tomt varde betyder att schemalagda malltimmar ar tomma tills anvandaren valjer aktivitet. |
 | Klick pa Sortering | Inline-number | Sparar sorteringsnummer | `PUT /api/persons/{id}` | Ctrl+Z kan angra senaste personandring. |
 | Dubbelklick pa personrad | Oppnar produktivitetsdialog | Hamter personens aktivitetssnitt for vecka som standard; anvandaren kan byta till manad, ar eller datumperiod | `GET /api/productivity/persons/{id}` | Kraver produktivitetsatkomst; dagar utan global snapshot visas som saknade och fylls av bakgrundshamtningen. |
 | Dra personnamn i Bemanning/Oversikt | Drar ett namn upp eller ned i planeringsvyn | Uppdaterar samma sorteringsnummer som visas i Personer | `PUT /api/persons/sort-order` | Kraver Personsortering=Redigera. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer. |
@@ -69,6 +70,9 @@ implicita malltimmar. Om anvandaren tittar pa ett datum fore skapandedatumet
 visas personen utan standardtimmar, aven om personen har fast veckomall.
 Explicita schemaceller som nagon faktiskt har lagt in pa gamla datum visas
 fortfarande.
+Om personen saknar huvudaktivitet visas malltimmar i Bemanning som tomma med
+diskret schemalagd-markering. Systemet tilldelar inte langre automatiskt en
+aktivitet fran hemomradet.
 
 ## Produktivitetsdialog
 
@@ -103,7 +107,9 @@ successivt av Produktivitetens globala historik-backfill.
 | "Vad betyder Arbetstyp?" | Det ar personens `Blue collar`/`White collar`-klassning. Alla gamla och nya personer far `Blue collar` som standard och kan andras inline i Personer. |
 | "Varfor kan jag inte spara ny person?" | Kontrollera att bade Namn och NoMan ar ifyllda. NoMan ar obligatoriskt i ny person, direktimport och Excelimport. |
 | "Varfor kan jag inte spara schema?" | Kontrollera att tider ligger 06-24, att Fran ar mindre an Till och att personen finns. |
+| "Varfor syns inte en person i Personer?" | Kontrollera omradesfokus i sidebar. Nar fokus star pa ett omrade hamtar sidan bara personer med det hemomradet; `∞` visar alla synliga personer i anvandarens scope. |
 | "Varfor far den nya personen inga timmar i gamla veckor?" | Implicita malltimmar borjar pa personens skapandedatum. Gamla datum visar bara explicita celler som lagts in manuellt. |
+| "Varfor ar schemat tomt fast personen ar schemalagd?" | Personen saknar huvudaktivitet. Veckomallen markerar tiden som schemalagd, men aktivitet maste valjas i Personer eller direkt i Bemanning. |
 | "Varfor forsvann personen?" | Ta bort inaktiverar personen. Hamta med `include_inactive=true` for att se den. |
 
 ## Kallor

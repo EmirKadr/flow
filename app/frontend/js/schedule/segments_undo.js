@@ -119,6 +119,7 @@ function setAllSegments(cells) {
       minute_end: Number(cell.minute_end),
       activity_id: cell.activity_id == null ? null : Number(cell.activity_id),
       loan_area_id: cell.loan_area_id == null ? null : Number(cell.loan_area_id),
+      remark: cell.remark == null ? null : String(cell.remark),
       empty_override: !!cell.empty_override,
       version: Number(cell.version) || 0,
       updated_at: cell.updated_at || null,
@@ -150,6 +151,7 @@ function replaceHourSegments(personId, hour, segments) {
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
     loan_area_id: segment.loan_area_id == null ? null : Number(segment.loan_area_id),
+    remark: segment.remark == null ? null : String(segment.remark),
     empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
@@ -178,6 +180,7 @@ function currentSegment(personId, hour, minuteStart, minuteEnd) {
     minute_end: minuteEnd,
     activity_id: null,
     loan_area_id: null,
+    remark: null,
     empty_override: false,
     version: 0,
   };
@@ -217,6 +220,7 @@ function cloneSegment(segment) {
     minute_end: Number(segment.minute_end),
     activity_id: segment.activity_id == null ? null : Number(segment.activity_id),
     loan_area_id: segment.loan_area_id == null ? null : Number(segment.loan_area_id),
+    remark: segment.remark == null ? null : String(segment.remark),
     empty_override: !!segment.empty_override,
     version: Number(segment.version) || 0,
     updated_at: segment.updated_at || null,
@@ -269,7 +273,7 @@ function pushScheduleUndo(label, snapshots) {
     }));
 
   if (!normalized.length) return;
-  state.undoStack.push({ label, snapshots: normalized });
+  state.undoStack.push({ kind: "schedule", label, snapshots: normalized });
   if (state.undoStack.length > 50) state.undoStack.shift();
   state.redoStack = [];
   updateUndoRedoButtons();
@@ -279,8 +283,10 @@ function updateUndoRedoButtons() {
   const undoBtn = document.getElementById("undoBtn");
   const redoBtn = document.getElementById("redoBtn");
   const readOnly = scheduleIsReadOnly();
-  if (undoBtn) undoBtn.disabled = readOnly || state.undoStack.length === 0;
-  if (redoBtn) redoBtn.disabled = readOnly || state.redoStack.length === 0;
+  const undoAction = state.undoStack[state.undoStack.length - 1];
+  const redoAction = state.redoStack[state.redoStack.length - 1];
+  if (undoBtn) undoBtn.disabled = !undoAction || (readOnly && undoAction.kind !== "summary");
+  if (redoBtn) redoBtn.disabled = !redoAction || (readOnly && redoAction.kind !== "summary");
 }
 
 function segmentVersionRefs(segments) {
@@ -297,6 +303,7 @@ function restoreSegmentPayload(segments) {
     minute_end: segment.minute_end,
     activity_id: segment.activity_id,
     loan_area_id: segment.loan_area_id,
+    remark: segment.remark,
     empty_override: !!segment.empty_override,
   }));
 }
@@ -351,7 +358,7 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
     const resp = await api.put("/api/schedule/hours/restore", { action: "undo_restore", hours });
     invalidateScheduleAllCache();
     applyRestoredHours(resp.hours);
-    oppositeStack.push({ label: action.label, snapshots: inverseSnapshots });
+    oppositeStack.push({ kind: "schedule", label: action.label, snapshots: inverseSnapshots });
     if (oppositeStack.length > 50) oppositeStack.shift();
     scheduleSummaryRefresh(0, { refreshCalculator: true });
     showToast(`${oppositeLabel}: ${action.label}`);
@@ -370,13 +377,22 @@ async function applyHistoryAction(action, { historyLabel, oppositeStack, opposit
 }
 
 async function undoLastScheduleAction() {
-  if (scheduleIsReadOnly()) {
-    showReadOnlyToast();
-    return;
-  }
   const action = state.undoStack[state.undoStack.length - 1];
   if (!action) {
     showToast("Inget att ångra.", "warn");
+    return;
+  }
+  if (action.kind === "summary") {
+    if (applySummaryHistoryAction(action, "undo")) {
+      state.undoStack.pop();
+      state.redoStack.push(action);
+      if (state.redoStack.length > 50) state.redoStack.shift();
+    }
+    updateUndoRedoButtons();
+    return;
+  }
+  if (scheduleIsReadOnly()) {
+    showReadOnlyToast();
     return;
   }
   const ok = await applyHistoryAction(action, {
@@ -389,11 +405,16 @@ async function undoLastScheduleAction() {
 }
 
 async function redoLastScheduleAction() {
-  if (scheduleIsReadOnly()) {
-    showReadOnlyToast();
+  const action = state.redoStack[state.redoStack.length - 1];
+  if (action?.kind === "summary") {
+    if (applySummaryHistoryAction(action, "redo")) {
+      state.redoStack.pop();
+      state.undoStack.push(action);
+      if (state.undoStack.length > 50) state.undoStack.shift();
+    }
+    updateUndoRedoButtons();
     return;
   }
-  const action = state.redoStack[state.redoStack.length - 1];
   if (!action) {
     showToast("Inget att göra om.", "warn");
     return;
@@ -444,6 +465,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_end: 60,
         activity_id: items[0].activity_id == null ? null : Number(items[0].activity_id),
         loan_area_id: items[0].loan_area_id == null ? null : Number(items[0].loan_area_id),
+        remark: current[0]?.remark ?? null,
         empty_override: items[0].activity_id == null && scheduled,
         version: current[0]?.version || 0,
         updated_at: current[0]?.updated_at || null,
@@ -462,6 +484,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_end,
         activity_id: null,
         loan_area_id: null,
+        remark: null,
         empty_override: scheduled,
         version: 0,
         updated_at: null,
@@ -480,6 +503,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_end,
         activity_id: source.activity_id,
         loan_area_id: source.loan_area_id,
+        remark: source.remark ?? null,
         empty_override: source.empty_override,
         version: source.version,
         updated_at: source.updated_at || null,
@@ -502,6 +526,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
         minute_end,
         activity_id: null,
         loan_area_id: null,
+        remark: null,
         empty_override: scheduled,
         version: 0,
         updated_at: null,
@@ -519,6 +544,7 @@ function optimisticSegmentsForHour(personId, hour, items) {
       minute_end: Number(item.minute_end),
       activity_id: null,
       loan_area_id: null,
+      remark: null,
       empty_override: scheduled,
       version: 0,
       updated_at: null,

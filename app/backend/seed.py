@@ -1,12 +1,11 @@
 """Seed initial data: areas, activities, admin-user, demo persons.
 
 Idempotent – kan köras flera gånger utan att duplicera rader.
-Får inte köras mot production/live. Render kör bara migrations.
+Får inte köras mot production/live.
 """
 from __future__ import annotations
 
 from sqlalchemy import func
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from .business_scope import DEFAULT_BUSINESS_CODE, R3_BUSINESS_CODE, ensure_seed_businesses
@@ -88,13 +87,6 @@ PERSONS: list[str] = [
 def _seed_target_block_reason() -> str | None:
     if settings.is_production:
         return "ENVIRONMENT=production"
-    try:
-        url = make_url(settings.DATABASE_URL)
-    except Exception:
-        return None
-    host = str(url.host or "").lower()
-    if "render.com" in host:
-        return "Render-databas"
     return None
 
 
@@ -272,30 +264,6 @@ def seed_persons(db: Session, business: Business, areas: dict[str, Area]) -> Non
                     competencies=[],
                 )
             )
-        elif existing.home_area_id == gg and existing.home_activity_id is None:
-            existing.home_activity_id = gg_vm_id
-
-
-def backfill_home_activities(db: Session) -> None:
-    activities_by_business_code = {
-        (activity.business_id, activity.code): activity for activity in db.query(Activity).all()
-    }
-    fallback_by_area: dict[int, Activity] = {}
-    for activity in sorted(activities_by_business_code.values(), key=lambda a: (a.sort_order, a.label)):
-        if activity.area_id is None or activity.category == "absence":
-            continue
-        fallback_by_area.setdefault(activity.area_id, activity)
-
-    areas = db.query(Area).all()
-    area_by_id = {area.id: area for area in areas}
-    for person in db.query(Person).filter(Person.home_activity_id.is_(None)).all():
-        home_area = area_by_id.get(person.home_area_id)
-        if home_area is None:
-            continue
-        preferred = activities_by_business_code.get((person.business_id, f"{home_area.code}_VM"))
-        fallback = preferred or fallback_by_area.get(home_area.id)
-        if fallback is not None:
-            person.home_activity_id = fallback.id
 
 
 def run() -> None:
@@ -315,7 +283,6 @@ def run() -> None:
         seed_demo_user(db, stigamo)
         remove_duplicate_persons(db)
         seed_persons(db, stigamo, stigamo_areas)
-        backfill_home_activities(db)
         db.commit()
         print("Seed OK")
     except Exception:

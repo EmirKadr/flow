@@ -309,7 +309,7 @@ def test_allocate_flow_reuses_cached_outputs_for_same_file_versions(monkeypatch,
         return pd.DataFrame({"Artikel": ["A1"], "Källtyp": ["HELPALL"]}), pd.DataFrame()
 
     monkeypatch.setattr(flows.E, "allocate", fake_allocate)
-    monkeypatch.setattr(flows.E.App, "_reclassify_skrymmande", lambda result, _saldo: result)
+    monkeypatch.setattr(flows.E, "reclassify_skrymmande", lambda result, _saldo: result)
     monkeypatch.setattr(flows.E, "_merge_item_flags", lambda result, _items: result)
     monkeypatch.setattr(
         flows.E,
@@ -443,7 +443,8 @@ def test_warehouse_tool_testdata_is_local_to_flow():
         pytest.skip("Lokala warehouse-regressionsfiler saknas.")
     assert WAREHOUSE_TESTDATA.is_dir()
     assert any(WAREHOUSE_TESTDATA.glob("v_ask_pick_log_full-*.csv"))
-    assert ROOT.name == "flow"
+    # Testdatan ska bo i det här repot, oavsett vad repomappen råkar heta lokalt.
+    assert WAREHOUSE_TESTDATA.resolve().is_relative_to(ROOT.resolve())
 
 
 def test_warehouse_registry_is_loaded_from_flow_package():

@@ -5,7 +5,13 @@ import time
 from datetime import date
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.backend.database import Base
 from app.backend.routers import productivity as productivity_router
+from app.backend.routers import productivity_helpers
+from app.backend.routers import productivity_finance_helpers
 
 
 def route_user():
@@ -15,6 +21,13 @@ def route_user():
 class _FakeSession:
     def close(self):
         pass
+
+
+def _sqlite_session(database_url: str = "sqlite+pysqlite:///:memory:"):
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
+    return engine, session
 
 
 async def _collect_sse(response):
@@ -36,8 +49,8 @@ def test_productivity_overview_stream_emits_progress_then_done(monkeypatch):
             progress_callback({"step": 1, "total": 2, "key": "2026-06-01", "label": "2026-06-01 klar", "done": True})
         return {"summary": {"days_with_data": 1}, "period": {"type": "day"}}
 
-    monkeypatch.setattr(productivity_router, "_run_productivity_overview", fake_run)
-    monkeypatch.setattr(productivity_router, "SessionLocal", lambda: _FakeSession())
+    monkeypatch.setattr(productivity_helpers, "_run_productivity_overview", fake_run)
+    monkeypatch.setattr(productivity_helpers, "SessionLocal", lambda: _FakeSession())
 
     response = asyncio.run(
         productivity_router.stream_productivity_overview(
@@ -81,7 +94,7 @@ def test_productivity_finance_is_hidden_without_finance_permission():
         ],
     }
 
-    productivity_router._attach_productivity_finance(report, {"visible": False})
+    productivity_finance_helpers._attach_productivity_finance(report, {"visible": False})
 
     assert report["finance"] == {"visible": False}
     assert "finance" not in report["people"][0]["time_cells"][0]
@@ -115,7 +128,7 @@ def test_productivity_finance_calculates_cost_revenue_and_result():
         },
     }
 
-    productivity_router._attach_productivity_finance(report, context)
+    productivity_finance_helpers._attach_productivity_finance(report, context)
 
     vas_cell = report["people"][0]["time_cells"][0]["finance"]
     support_cell = report["people"][0]["time_cells"][1]["finance"]
@@ -162,7 +175,7 @@ def test_productivity_finance_does_not_treat_non_company_area_as_company():
         },
     }
 
-    productivity_router._attach_productivity_finance(report, context)
+    productivity_finance_helpers._attach_productivity_finance(report, context)
 
     finance = report["people"][0]["time_cells"][0]["finance"]
     assert finance["company"] is None
@@ -196,7 +209,7 @@ def test_productivity_finance_uses_person_collar_from_context():
         "person_collar_by_id": {4: "white_collar"},
     }
 
-    productivity_router._attach_productivity_finance(report, context)
+    productivity_finance_helpers._attach_productivity_finance(report, context)
 
     finance = report["people"][0]["time_cells"][0]["finance"]
     assert finance["collar_type"] == "white_collar"
@@ -238,7 +251,7 @@ def test_productivity_finance_adds_linked_process_revenue_to_report_summary():
         ],
     }
 
-    productivity_router._attach_productivity_finance(report, context)
+    productivity_finance_helpers._attach_productivity_finance(report, context)
 
     assert report["finance"]["revenue"] == 65.0
     assert report["finance"]["cost"] == 200.0
@@ -304,12 +317,11 @@ def test_productivity_overview_business_summary_groups_finance_and_zero_pick_row
         ],
     }
 
-    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
-    monkeypatch.setattr(productivity_router, "_productivity_business_code", lambda _db, _user: "STIGAMO")
-    monkeypatch.setattr(productivity_router, "_productivity_finance_context", lambda _db, _user, _business_id: finance_context)
-    monkeypatch.setattr(productivity_router, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
-    monkeypatch.setattr(
-        productivity_router,
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_code", lambda _db, _user: "STIGAMO")
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_finance_context", lambda _db, _user, _business_id: finance_context)
+    monkeypatch.setattr(productivity_helpers, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
+    monkeypatch.setattr(productivity_helpers,
         "_build_productivity_report_for_date",
         lambda *_args, **_kwargs: (report.copy(), [{"key": "pick", "status": "api"}]),
     )
@@ -350,9 +362,9 @@ def test_productivity_report_uses_api_snapshot_and_audits(monkeypatch, tmp_path)
         path.write_text(f"{key}\n", encoding="utf-8")
     audits = []
 
-    monkeypatch.setattr(productivity_router, "_productivity_business_code", lambda _db, _user: "STIGAMO")
-    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
-    monkeypatch.setattr(productivity_router, "sources_available", lambda _keys: True)
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_code", lambda _db, _user: "STIGAMO")
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_helpers, "sources_available", lambda _keys: True)
     monkeypatch.setattr(
         productivity_router,
         "ensure_productivity_snapshot",
@@ -364,14 +376,12 @@ def test_productivity_report_uses_api_snapshot_and_audits(monkeypatch, tmp_path)
             ],
         },
     )
-    monkeypatch.setattr(productivity_router, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
-    monkeypatch.setattr(
-        productivity_router,
+    monkeypatch.setattr(productivity_helpers, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
+    monkeypatch.setattr(productivity_helpers,
         "productivity_snapshot_status",
         lambda *_args, **_kwargs: {"source": "api_snapshot", "status": "ok", "last_sync_at": "2026-06-08T10:00:00"},
     )
-    monkeypatch.setattr(
-        productivity_router,
+    monkeypatch.setattr(productivity_helpers,
         "build_person_productivity_report_from_files",
         lambda _db, files, report_date=None, business_id=None, sync=None: {
             "sources": {},
@@ -405,17 +415,15 @@ def test_productivity_overview_period_reads_existing_snapshots_without_history_s
     history_calls = []
     audits = []
 
-    monkeypatch.setattr(productivity_router, "_productivity_business_code", lambda _db, _user: "STIGAMO")
-    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
-    monkeypatch.setattr(productivity_router, "sources_available", lambda _keys: True)
-    monkeypatch.setattr(productivity_router, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
-    monkeypatch.setattr(
-        productivity_router,
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_code", lambda _db, _user: "STIGAMO")
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_helpers, "sources_available", lambda _keys: True)
+    monkeypatch.setattr(productivity_helpers, "productivity_snapshot_files", lambda *_args, **_kwargs: source_files)
+    monkeypatch.setattr(productivity_helpers,
         "productivity_snapshot_status",
         lambda day=None, **_kwargs: {"source": "api_snapshot", "status": "ok", "ready": True, "date": str(day or "")},
     )
-    monkeypatch.setattr(
-        productivity_router,
+    monkeypatch.setattr(productivity_helpers,
         "build_person_productivity_report_from_files",
         lambda _db, files, report_date=None, business_id=None, sync=None: {
             "date": report_date.isoformat(),
@@ -451,6 +459,77 @@ def test_productivity_overview_period_reads_existing_snapshots_without_history_s
     assert payload["summary"]["points_per_hour"] == 10
     assert history_calls == []
     assert audits and audits[0]["status"] == "ok"
+
+
+def test_productivity_overview_day_waits_for_snapshot_when_opened_after_startup(monkeypatch):
+    calls = []
+
+    def fake_build(_request, _db, _user, report_date, *, ensure_snapshot=True, wait_seconds=10):
+        calls.append(
+            {
+                "date": report_date,
+                "ensure_snapshot": ensure_snapshot,
+                "wait_seconds": wait_seconds,
+            }
+        )
+        return (
+            {
+                "date": report_date.isoformat(),
+                "available_dates": [report_date.isoformat()],
+                "summary": {
+                    "people": 1,
+                    "kpi_points": 12,
+                    "planned_kpi_points": 24,
+                    "kpi_minutes": 60,
+                    "diff_count": 0,
+                    "unmatched_event_count": 0,
+                },
+                "people": [],
+                "sync": {"source": "api_snapshot"},
+            },
+            [{"status": "ok"}],
+        )
+
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_finance_context", lambda _db, _user, _business_id: {"visible": False})
+    monkeypatch.setattr(productivity_helpers, "_build_productivity_report_for_date", fake_build)
+    monkeypatch.setattr(productivity_helpers, "productivity_snapshot_status", lambda *_args, **_kwargs: {"ready": True})
+    monkeypatch.setattr(productivity_helpers, "productivity_backfill_status", lambda: {})
+    monkeypatch.setattr(productivity_helpers, "_audit_productivity_report_sources", lambda *_args, **_kwargs: None)
+
+    payload = productivity_helpers._run_productivity_overview(
+        SimpleNamespace(session={}),
+        object(),
+        route_user(),
+        period="day",
+        date_filter=date(2026, 6, 30),
+        start_date=None,
+        end_date=None,
+    )
+
+    assert payload["period"]["requested_days"] == 1
+    assert calls == [
+        {
+            "date": date(2026, 6, 30),
+            "ensure_snapshot": True,
+            "wait_seconds": productivity_helpers._PRODUCTIVITY_OVERVIEW_DAY_SNAPSHOT_WAIT_SECONDS,
+        }
+    ]
+
+
+def test_productivity_overview_uses_workers_for_file_sqlite_and_not_memory_sqlite(tmp_path):
+    memory_engine, memory_db = _sqlite_session()
+    file_engine, file_db = _sqlite_session(f"sqlite+pysqlite:///{(tmp_path / 'flow.db').as_posix()}")
+    try:
+        assert productivity_helpers._productivity_overview_day_worker_count(31, memory_db) == 1
+        assert productivity_helpers._productivity_overview_day_worker_count(31, file_db) == productivity_helpers._PRODUCTIVITY_OVERVIEW_DAY_WORKERS
+    finally:
+        memory_db.close()
+        file_db.close()
+        Base.metadata.drop_all(memory_engine)
+        Base.metadata.drop_all(file_engine)
+        memory_engine.dispose()
+        file_engine.dispose()
 
 
 def test_productivity_overview_period_uses_limited_parallel_day_workers(monkeypatch):
@@ -504,17 +583,17 @@ def test_productivity_overview_period_uses_limited_parallel_day_workers(monkeypa
             [{"status": "ok"}],
         )
 
-    monkeypatch.setattr(productivity_router, "_productivity_overview_day_worker_count", lambda _count, _db: 2)
-    monkeypatch.setattr(productivity_router, "_productivity_overview_day_session_factory", fake_session_factory)
-    monkeypatch.setattr(productivity_router, "_productivity_business_id", lambda _db, _user: 1)
-    monkeypatch.setattr(productivity_router, "_productivity_finance_context", lambda _db, _user, _business_id: {"visible": False})
-    monkeypatch.setattr(productivity_router, "_build_productivity_report_for_date", fake_build)
-    monkeypatch.setattr(productivity_router, "productivity_snapshot_status", lambda *_args, **_kwargs: {"ready": True})
-    monkeypatch.setattr(productivity_router, "productivity_backfill_status", lambda: {})
-    monkeypatch.setattr(productivity_router, "_audit_productivity_report_sources", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(productivity_helpers, "_productivity_overview_day_worker_count", lambda _count, _db: 2)
+    monkeypatch.setattr(productivity_helpers, "_productivity_overview_day_session_factory", fake_session_factory)
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_business_id", lambda _db, _user: 1)
+    monkeypatch.setattr(productivity_finance_helpers, "_productivity_finance_context", lambda _db, _user, _business_id: {"visible": False})
+    monkeypatch.setattr(productivity_helpers, "_build_productivity_report_for_date", fake_build)
+    monkeypatch.setattr(productivity_helpers, "productivity_snapshot_status", lambda *_args, **_kwargs: {"ready": True})
+    monkeypatch.setattr(productivity_helpers, "productivity_backfill_status", lambda: {})
+    monkeypatch.setattr(productivity_helpers, "_audit_productivity_report_sources", lambda *_args, **_kwargs: None)
 
     progress = []
-    payload = productivity_router._run_productivity_overview(
+    payload = productivity_helpers._run_productivity_overview(
         SimpleNamespace(session={}),
         root_db,
         route_user(),
@@ -577,10 +656,10 @@ def test_person_productivity_aggregates_activity_cells_for_period(monkeypatch):
             ],
         }
 
-    monkeypatch.setattr(productivity_router, "scoped_get", lambda *_args, **_kwargs: person)
-    monkeypatch.setattr(productivity_router, "_person_productivity_files_for_date", fake_files)
-    monkeypatch.setattr(productivity_router, "build_person_productivity_report_from_files", fake_report)
-    monkeypatch.setattr(productivity_router, "productivity_backfill_status", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(productivity_helpers, "scoped_get", lambda *_args, **_kwargs: person)
+    monkeypatch.setattr(productivity_helpers, "_person_productivity_files_for_date", fake_files)
+    monkeypatch.setattr(productivity_helpers, "build_person_productivity_report_from_files", fake_report)
+    monkeypatch.setattr(productivity_helpers, "productivity_backfill_status", lambda *_args, **_kwargs: {"status": "ok"})
 
     result = productivity_router.get_person_productivity(
         4,

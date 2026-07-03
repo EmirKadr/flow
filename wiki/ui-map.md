@@ -1,7 +1,7 @@
 ---
 title: UI-karta och alla kontroller
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-02
 tags: [ui, knappar, funktioner, chat-stod]
 ---
 
@@ -15,11 +15,12 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 
 | Kontroll | Var | Vem ser/far | Vad hander | Vanliga fel/fragor |
 | --- | --- | --- | --- | --- |
-| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Navigerar till Mitt schema, Min produktivitet, Bemanning, Oversikt, Produktivitet, Hamta data, MCP, Bearbeta, Dela, Personer, Aktiviteter, Historik, Anvandare | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
+| Sidebar-lankar | Vanster meny | Filtreras per vybehorighet | Visar huvudmenyer som `Bemanning`, `Verktyg`, `Bearbeta` och `Installningar`. `Bemanning`, `Verktyg` och `Installningar` leder till forsta atkomliga flik i respektive grupp. | Om en vy saknas har rollen troligen `none` for vyn. Be admin/Super User kontrollera `Vybehorigheter`; vanlig anvandare kan ofta inte gora det sjalv. |
+| Hogerklick pa `Bemanning`, `Verktyg` eller `Installningar` i sidebar | Vanster meny | Filtreras per vybehorighet | Oppnar en snabbmeny med gruppens flikar. `Bemanning` visar Bemanning, Oversikt, Produktivitet, Sankey, Aktiviteter, Personer, Anvandare, Verksamheter, Mitt schema och Min produktivitet. `Verktyg` visar Dela, Etiketter, MCP, Hamta data, Historik och Meta. `Installningar` visar Ytkarta, Bearbeta, Bemanning och Intakt/utgift. | Om bara en delmangd syns saknar rollen atkomst till ovriga vyer. |
 | Hamburgare | Sidebar topp | Alla inloggade | Faller ihop/oppnar sidebar och sparar `sidebar-collapsed` i `localStorage` | Om menyn ser "for liten" ut ar den troligen hopfallen. |
 | Appzoom | Sidebar topp, forstoringsglas med minus/plus | Alla inloggade | Zoomar hela appytan ut/in. Reset finns pa `Ctrl+0`; zoom kan ocksa andras med `Ctrl+-`, `Ctrl++` och `Ctrl+scroll`, och sparas lokalt i `flow-app-zoom`. | Om tabeller eller text kanns for stora/sma kan anvandaren justera utan webblasarmenyn. |
 | Redigera meny | Sidebar topp, pennikon | Anvandare med edit pa `sidebarLayout` | Oppnar modal dar menyordning, rubriker och undervyer kan andras for aktuell verksamhet | Andringen galler aktuell verksamhet efter sparning. |
-| Omradesfokus | Sidebar footer | Alla inloggade | Byggs dynamiskt fran synliga omraden. Vanligt klick stegar mellan fokuslagen; hogerklick oppnar en meny dar anvandaren kan valja omrade direkt. Menyn kan scrollas utan att stangas nar manga omraden finns. Vanliga anvandare ser omraden i egen verksamhet och far `∞` om verksamheten har aktivt `ANNAT`; Super User ser alla aktiva omraden plus globalt `∞`. Filtrerar Bemanning, Oversikt, Aktiviteter och Anvandare. Produktivitet visar alla personer i verksamheten. | Om "fel" omrade visas kan fokus ligga pa annat omrade eller verksamhet an forvantat. Gammalt lokalt fokus migreras fran kod till omrades-id. |
+| Omradesfokus | Sidebar footer | Alla inloggade | Byggs dynamiskt fran synliga omraden. Vanligt klick stegar mellan fokuslagen; hogerklick oppnar en meny dar anvandaren kan valja omrade direkt. Menyn kan scrollas utan att stangas nar manga omraden finns. Vanliga anvandare ser omraden i egen verksamhet och far `∞` om verksamheten har aktivt `ANNAT`; Super User ser alla aktiva omraden plus globalt `∞`. Filtrerar Bemanning, Oversikt, Personer, Aktiviteter och Anvandare. Produktivitet visar alla personer i verksamheten. | Om "fel" omrade visas kan fokus ligga pa annat omrade eller verksamhet an forvantat. Gammalt lokalt fokus migreras fran kod till omrades-id. |
 | Apphjalp/pratbubblor | Sidebar footer, direkt under omradesfokus/infinity | Alla inloggade | Oppnar/stanger en liten chattpanel. Dialog, oppet lage och utkast sparas i aktuell session. | Max 10 lyckade fragor per session. `Rensa dialog` nollstaller dialog och kvot. Se [Apphjalp och LLM-chatt](app-chat.md). |
 | Logg | Sidebar footer | Alla inloggade | Oppnar sidopanel med app-logg for t.ex. observations-uppdatering. Ikonen visar en kort pil- och bubbelsignal varje gang nagot loggas, utan att spara eller visa en raknare efterat. | Tom logg betyder bara att inget har loggats i aktuell session. Sjalva loggraderna sparas i aktuell browserflik tills anvandaren rensar loggen. |
 | Uppladdningar/databasikon | Sidebar utility | Roller med `allocationUploads` | Genvag till `uppladdningar.html`; visar badge nar filer lagts in | Hogerklick pa ikonen visar "Rensa filer". |
@@ -47,8 +48,9 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera, Funktioner, Knappar, Kolumner, Floden, AI-analys | [Historik och audit](history-audit.md) |
 | Hamta data | `hamta-data.html` | Prompt, max rader, Tolka, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
 | MCP | `mcp.html` | Status, LLM-hjarna, fraga, Uppdatera, Rensa, Skicka, svar och MCP-kontext | [MCP](mcp.md) |
+| Etiketter | `label-editor.html` | Profil, bredd/höjd i mm, spara/ta bort profil, Text, QR, Code128, Rektangel, Ellips, Linje, Symbol, Penna/Fyll/Sudd, dra objekt, dra kanter/hörn, Duplicera, Ta bort, Delete/Backspace, Ctrl+C/X/V, Ctrl+Z/Y, Rensa, Skriv ut | [Etiketter](label-editor.md) |
 | Produktivitet | `produktivitet.html` | Periodval Dag/Vecka/Manad/Ar, datumankare, prev/next, Helbild, Exportera flowchart med nivaval, hierarkitrad for verksamhet, omrade, aktivitet, person, timme och processpoang | [Produktivitet](productivity.md) |
-| Sankey - Inbound | `sankey-inbound.html` | Periodval Dag/Vecka/Manad/Ar, datum, bolag, Visa endast forverkade, Aterstall vy, Exportera SVG, Exportera sparning, klickbara Sankey-noder och lankar med pallgrenstabell/export i detaljpanelen | [Sankey - Inbound](sankey-inbound.md) |
+| Sankey - Inbound | `sankey-inbound.html` | Periodval Dag/Vecka/Manad/Ar, datum, bolag, Visa endast forverkade, Aterstall vy, Exportera SVG, Exportera sparning, klickbara Sankey-noder och lankar med pallgrenstabell/export i detaljpanelen, outboundtabell for Butik/E-handel | [Sankey - Inbound](sankey-inbound.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
 | Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |

@@ -34,14 +34,23 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "js/allocation/state.js",
+    "js/allocation/state_carrier_clusters.js",
+    "js/allocation/state_filters.js",
     "js/allocation/files.js",
     "js/allocation/api.js",
     "js/allocation/uploads_view.js",
     "js/allocation/results.js",
+    "js/allocation/results_flows.js",
+    "js/allocation/results_warehouse_map.js",
+    "js/allocation/results_carrier_clusters.js",
     "js/allocation/process_view.js",
     "js/allocation/process_matrix.js",
     "js/allocation/map_settings.js",
     "js/allocation/settings_view.js",
+    "js/allocation/settings_staffing.js",
+    "js/allocation/settings_finance.js",
+    "js/allocation/settings_finance_check.js",
+    "js/allocation/map_settings_layout.js",
     "js/allocation/split_view.js",
     "js/allocation/boot.js",
     "js/allocation_tools.js",
@@ -160,11 +169,98 @@ def test_user_admin_role_access_labels_follow_terminology_contracts():
 def test_sidebar_layout_only_uses_known_canonical_views():
     common = read_common_frontend()
     sidebar_view_ids = extract_ids_from_object_array(common, "SIDEBAR_DEFAULT_LAYOUT")
+    virtual_sidebar_ids = {"tools", "staffing"}
 
-    assert set(sidebar_view_ids) <= ROLE_VIEW_IDS
-    assert "activities" in sidebar_view_ids
+    assert set(sidebar_view_ids) <= ROLE_VIEW_IDS | virtual_sidebar_ids
+    assert "staffing" in sidebar_view_ids
+    assert "tools" in sidebar_view_ids
+    assert "schedule" not in sidebar_view_ids
+    assert "overview" not in sidebar_view_ids
+    assert "productivity" not in sidebar_view_ids
+    assert "allocationSplit" not in sidebar_view_ids
+    assert "labelEditor" not in sidebar_view_ids
+    assert "mcp" not in sidebar_view_ids
+    assert "dataFetch" not in sidebar_view_ids
+    assert "activities" not in sidebar_view_ids
     assert "stallen" not in sidebar_view_ids
     assert len(sidebar_view_ids) == len(set(sidebar_view_ids))
+
+
+def test_sidebar_main_menus_render_tabs_and_context_menus():
+    common = read_common_frontend()
+    split_html = read_frontend("dela.html")
+    label_html = read_frontend("label-editor.html")
+    mcp_html = read_frontend("mcp.html")
+    data_fetch_html = read_frontend("hamta-data.html")
+    history_html = read_frontend("historik.html")
+    meta_html = read_frontend("meta.html")
+    schedule_html = read_frontend("index.html")
+    overview_html = read_frontend("overblick.html")
+    productivity_html = read_frontend("produktivitet.html")
+    sankey_html = read_frontend("sankey-inbound.html")
+    activities_html = read_frontend("aktiviteter.html")
+    persons_html = read_frontend("personer.html")
+    users_html = read_frontend("anvandare.html")
+    businesses_html = read_frontend("verksamheter.html")
+    my_schedule_html = read_frontend("mitt-schema.html")
+    my_productivity_html = read_frontend("min-produktivitet.html")
+
+    assert 'id: "staffing"' in common
+    assert 'label: "Bemanning"' in common
+    assert 'id: "tools"' in common
+    assert 'label: "Verktyg"' in common
+    assert "function sidebarToolsHref" in common
+    assert "function sidebarStaffingHref" in common
+    assert "function sidebarSettingsHref" in common
+    assert "contextMenuViewIds: SIDEBAR_TOOLS_TAB_VIEW_IDS" in common
+    assert "contextMenuViewIds: SIDEBAR_STAFFING_TAB_VIEW_IDS" in common
+    assert "contextMenuViewIds: SIDEBAR_SETTINGS_TAB_VIEW_IDS" in common
+    assert '"allocationMapSettings"' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.allocationMapSettings' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.allocationProcessMatrix' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.staffingSettings' in common
+    assert 'href: SIDEBAR_VIEW_HREFS.productivityFinanceSettings' in common
+    assert '"/installningar.html?tab=map"' in common
+    assert '"/installningar.html?tab=process-matrix"' in common
+    assert '"/installningar.html?tab=staffing"' in common
+    assert '"/installningar.html?tab=productivity-finance"' in common
+    assert "function openSidebarContextMenu" in common
+    assert 'data-sidebar-context-menu="true"' in common
+    assert ".sidebar-context-menu" in read_frontend("css/styles.css")
+    assert 'sidebar: false' in common
+    for html in (split_html, label_html, mcp_html, data_fetch_html, history_html, meta_html):
+        assert 'data-tools-tab-view="allocationSplit"' in html
+        assert 'data-tools-tab-view="labelEditor"' in html
+        assert 'data-tools-tab-view="mcp"' in html
+        assert 'data-tools-tab-view="dataFetch"' in html
+        assert 'data-tools-tab-view="analytics"' in html
+        assert 'data-tools-tab-view="meta"' in html
+    staffing_html_pages = (
+        schedule_html,
+        overview_html,
+        productivity_html,
+        sankey_html,
+        activities_html,
+        persons_html,
+        users_html,
+        businesses_html,
+        my_schedule_html,
+        my_productivity_html,
+    )
+    for html in staffing_html_pages:
+        assert 'data-staffing-tab-view="schedule"' in html
+        assert 'data-staffing-tab-view="overview"' in html
+        assert 'data-staffing-tab-view="productivity"' in html
+        assert 'data-staffing-tab-view="sankeyInbound"' in html
+        assert 'data-staffing-tab-view="activities"' in html
+        assert 'data-staffing-tab-view="persons"' in html
+        assert 'data-staffing-tab-view="users"' in html
+        assert 'data-staffing-tab-view="businesses"' in html
+        assert 'data-staffing-tab-view="mySchedule"' in html
+        assert 'data-staffing-tab-view="myProductivity"' in html
+    assert 'class="staffing-tab active" href="/sankey-inbound.html" aria-current="page" data-staffing-tab-view="sankeyInbound"' in sankey_html
+    assert "function syncViewTabs" in common
+    assert "function syncToolsTabs" in common
 
 
 def test_legacy_view_aliases_match_between_frontend_and_backend():

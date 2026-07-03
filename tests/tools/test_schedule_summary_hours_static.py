@@ -35,4 +35,27 @@ def test_schedule_summary_hours_use_up_to_two_decimals():
     assert "rounded.toFixed(2)" in format_hours
     assert 'replace(/\\.?0+$/, "")' in format_hours
     assert "toFixed(1)" not in format_hours
-    assert "<td>${formatHours(row.hours)}</td>" in schedule
+    assert "hours.textContent = formatHours(row.hours)" in schedule
+
+
+def test_schedule_summary_supports_copy_group_split_and_local_undo():
+    schedule = read_schedule_frontend()
+
+    assert "writeSummaryClipboardText" in schedule
+    assert "navigator.clipboard.writeText" in schedule
+    assert 'hours.dataset.summaryHours = "1"' in schedule
+    assert "summaryGroupsByScope" in schedule
+    assert "selectedScheduleYmdString()" in schedule
+    assert "summarizeSelectedSummaryRows" in schedule
+    assert "splitSummaryGroup" in schedule
+    assert 'kind: "summary"' in schedule
+    assert "applySummaryHistoryAction(action, \"undo\")" in schedule
+    assert "applySummaryHistoryAction(action, \"redo\")" in schedule
+    assert "readOnlyAllowsHistoryShortcut" in schedule
+    assert "historyShortcutAction(key, shiftKey)?.kind === \"summary\"" in schedule
+    assert "summaryContextMenuHost" in schedule
+    assert "host.appendChild(menu)" in schedule
+    assert "openSummaryContextMenu(event, found.row, found.tr)" in schedule
+    assert "summaryDragSelection" in schedule
+    assert "handleSummaryMouseDown" in schedule
+    assert "selectSummaryRowRange" in schedule

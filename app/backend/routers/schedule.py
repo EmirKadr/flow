@@ -14,6 +14,7 @@ from .schedule_mutation_routes import (
     restore_hours,
     split_cell,
     update_cell,
+    update_cell_remark,
 )
 from .schedule_productivity_routes import (
     router as productivity_router,

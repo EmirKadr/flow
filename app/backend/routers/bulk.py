@@ -22,10 +22,24 @@ def _segment_to_dict(cell: ScheduleCell) -> dict:
         "minute_end": cell.minute_end,
         "activity_id": cell.activity_id,
         "loan_area_id": cell.loan_area_id,
+        "remark": cell.remark,
         "empty_override": cell.empty_override,
         "version": cell.version,
         "updated_at": cell.updated_at.isoformat() if cell.updated_at else None,
         "updated_by": cell.updated_by,
+    }
+
+
+def _segment_audit_dict(cell: ScheduleCell) -> dict:
+    remark = str(cell.remark or "")
+    return {
+        "minute_start": cell.minute_start,
+        "minute_end": cell.minute_end,
+        "activity_id": cell.activity_id,
+        "loan_area_id": cell.loan_area_id,
+        "remark_present": bool(remark),
+        "remark_length": len(remark),
+        "version": cell.version,
     }
 
 
@@ -109,13 +123,7 @@ def copy_schedule(
                         entity_type="schedule_cell",
                         entity_id=target.id,
                         action="bulk_copy_clear",
-                        old_value={
-                            "minute_start": target.minute_start,
-                            "minute_end": target.minute_end,
-                            "activity_id": target.activity_id,
-                            "loan_area_id": target.loan_area_id,
-                            "version": target.version,
-                        },
+                        old_value=_segment_audit_dict(target),
                         new_value=None,
                         user_id=user.id,
                     )
@@ -133,6 +141,7 @@ def copy_schedule(
                         person_id=src.person_id,
                         activity_id=src.activity_id,
                         loan_area_id=src.loan_area_id,
+                        remark=src.remark,
                         empty_override=src.empty_override,
                         version=1,
                         updated_by=user.id,
@@ -154,13 +163,7 @@ def copy_schedule(
                     entity_id=new_cell.id,
                     action="bulk_copy",
                     old_value=None,
-                    new_value={
-                        "minute_start": new_cell.minute_start,
-                        "minute_end": new_cell.minute_end,
-                        "activity_id": new_cell.activity_id,
-                        "loan_area_id": new_cell.loan_area_id,
-                        "version": 1,
-                    },
+                    new_value=_segment_audit_dict(new_cell),
                     user_id=user.id,
                 )
                 copied += 1
@@ -198,7 +201,7 @@ def clear_schedule(
             entity_type="schedule_cell",
             entity_id=c.id,
             action="clear",
-            old_value={"activity_id": c.activity_id, "loan_area_id": c.loan_area_id, "version": c.version},
+            old_value=_segment_audit_dict(c),
             new_value=None,
             user_id=user.id,
         )
@@ -259,13 +262,7 @@ def fill_from_left(
                 existing = existing_by_start.get(minute_start)
                 if existing:
                     assert_can_modify_schedule_cells([existing], user, owner_lock_enabled)
-                    old = {
-                        "minute_start": existing.minute_start,
-                        "minute_end": existing.minute_end,
-                        "activity_id": existing.activity_id,
-                        "loan_area_id": existing.loan_area_id,
-                        "version": existing.version,
-                    }
+                    old = _segment_audit_dict(existing)
                     existing.minute_end = minute_end
                     existing.activity_id = activity_id
                     existing.loan_area_id = None
@@ -278,13 +275,7 @@ def fill_from_left(
                         entity_id=existing.id,
                         action="fill_left",
                         old_value=old,
-                        new_value={
-                            "minute_start": existing.minute_start,
-                            "minute_end": existing.minute_end,
-                            "activity_id": existing.activity_id,
-                            "loan_area_id": existing.loan_area_id,
-                            "version": existing.version,
-                        },
+                        new_value=_segment_audit_dict(existing),
                         user_id=user.id,
                     )
                     new_segments_for_hour.append(existing)
@@ -312,13 +303,7 @@ def fill_from_left(
                         entity_id=new_cell.id,
                         action="fill_left",
                         old_value=None,
-                        new_value={
-                            "minute_start": new_cell.minute_start,
-                            "minute_end": new_cell.minute_end,
-                            "activity_id": new_cell.activity_id,
-                            "loan_area_id": new_cell.loan_area_id,
-                            "version": 1,
-                        },
+                        new_value=_segment_audit_dict(new_cell),
                         user_id=user.id,
                     )
                     new_segments_for_hour.append(new_cell)
@@ -333,13 +318,7 @@ def fill_from_left(
                     entity_type="schedule_cell",
                     entity_id=existing.id,
                     action="fill_left_clear",
-                    old_value={
-                        "minute_start": existing.minute_start,
-                        "minute_end": existing.minute_end,
-                        "activity_id": existing.activity_id,
-                        "loan_area_id": existing.loan_area_id,
-                        "version": existing.version,
-                    },
+                    old_value=_segment_audit_dict(existing),
                     new_value=None,
                     user_id=user.id,
                 )

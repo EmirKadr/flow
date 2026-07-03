@@ -4,10 +4,10 @@ Det här dokumentet beskriver hur appen `flow` paketeras som en Docker-image
 och vad som krävs för att köra den i ett Kubernetes-kluster. Riktar sig till
 den som sätter upp deploymenten på företagets sida.
 
-Nuvarande produktion ligger på [Render](render.yaml) (Python web service +
-managed Postgres). Migrationen byter ut Render mot Kubernetes + en **Azure SQL**
-som ni tillhandahåller. Koden är oförändrad — skillnaden är packaging,
-miljövariabler och databasdriver (ODBC Driver 18, ingår i imagen).
+Produktionen kör sedan 2026-07 i företagets Kubernetes (namespace `flow`,
+manifest i `k8s/`) med en **MSSQL/Azure SQL**-databas, och deployas via
+Octopus-projektet Flow (se `wiki/nowaste-git-release.md`). Databasdrivern
+är ODBC Driver 18 och ingår i imagen.
 
 ---
 
@@ -122,12 +122,6 @@ Spans får inte innehålla promptar, svarstext, request bodies, tokens, cookies,
 filnamn/filsökvägar, order-/kunddata eller privata externa URL:er. Använd
 `trace_id` i Historik/Hälsa för att koppla användarhändelser till tekniska traces.
 
-### Får inte tas med
-
-`RENDER_*`-variablerna används bara av administrativa endpoints som pratar
-med Renders eget API (omstart, db-status). De är meningslösa i K8s och kan
-hoppas över.
-
 ### Hantering i K8s
 
 Allt som är hemligt (`SECRET_KEY`, `DATABASE_URL`, alla `*_API_KEY`)
@@ -158,49 +152,14 @@ görs ingenting.
 > dialekt-neutralt (undvik `JSONB`, `jsonb_build_array`, `USING`-clauses)
 > för att kunna köras mot Azure SQL.
 
-### Migrera data från Render (Postgres → Azure SQL)
+Om K8s-podden loggar `PostgreSQL: kör alembic upgrade head ...` är
+`DATABASE_URL` fel för den här målmiljön eller så kör ni avsiktligt Postgres.
+Standardvägen för företagsservern är Azure SQL (`mssql+pyodbc://...`).
 
-`pg_dump`/`pg_restore` fungerar **inte** mot SQL Server. Datan kopieras
-istället radvis via `backend.migrate_pg_to_mssql`, som bevarar id:n
-(`IDENTITY_INSERT`), stänger av FK-kontroller under inläsningen och
-serialiserar JSONB-värden till JSON-text.
-
-1. **Skapa schemat på en tom Azure SQL-databas:**
-
-   ```bash
-   DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
-     python -m backend.prestart
-   ```
-
-2. **Kopiera över datan** (källan = Render-Postgrens "External Database URL"):
-
-   ```bash
-   SOURCE_DATABASE_URL='postgresql+psycopg://USER:PASS@HOST:5432/flow' \
-   DATABASE_URL='mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no' \
-     python -m backend.migrate_pg_to_mssql
-   ```
-
-   Skriptet skriver ut antal kopierade rader per tabell. Kör enklast inuti
-   appens container (har både drivrutiner): `kubectl -n flow exec -it deploy/flow-web -- sh`.
-
-3. **Starta appen normalt.** `prestart` ser att schemat redan finns och gör
-   ingenting; appen kör vidare mot den ifyllda databasen.
-
-> **Testa mot en kopia först.** Kopieringen är inte verifierad skarpt mot er
-> Azure SQL-instans ännu. Kör den mot en tom test-databas och jämför radantal
-> innan ni gör cut-over på riktigt.
-
-### Tidsplan för cut-over
-
-Eftersom kopieringen lägger in *en ögonblicksbild* av Render-databasen är det
-viktigt att inte ta den för tidigt — annars förloras allt som skrivs under
-tiden. Föreslagen ordning:
-
-1. K8s-deploymenten reses upp med en *tom* Azure SQL-databas och röktestas.
-2. När allt fungerar: stoppa Render-instansen (eller frys via ett
-   "underhåll pågår"-meddelande), kör `backend.migrate_pg_to_mssql` (se
-   avsnitt 4), starta om K8s-podden.
-3. Pekas DNS/intern URL om från Render till K8s-tjänsten.
+> Historik: datan migrerades från den tidigare Render-Postgres-driften till
+> MSSQL i juli 2026 (radvis kopiering med bevarade id:n). Migrationsskriptet
+> `backend.migrate_pg_to_mssql` togs bort ur repot efter verifierad cut-over —
+> finns vid behov i git-historiken.
 
 ---
 
@@ -238,8 +197,7 @@ automatiskt — den behöver ingen persistens.
 
 ## 6. Resurser och skalning
 
-Riktvärden baserat på Render Starter-planen (0.5 CPU, 512 MB) som klarar
-nuvarande last:
+Riktvärden (tidigare drift klarade nuvarande last på 0.5 CPU, 512 MB):
 
 | Resurs | Request | Limit |
 |---|---|---|

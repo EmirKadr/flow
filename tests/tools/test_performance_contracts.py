@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from app.backend.models import PersonProductivityDaily, ScheduleCell, UserWaitMetric
+from tools.frontend_sources import read_overview_frontend, read_persons_frontend, read_productivity_overview_frontend
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,10 +16,16 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "js/allocation/state.js",
+    "js/allocation/state_carrier_clusters.js",
+    "js/allocation/state_filters.js",
     "js/allocation/api.js",
     "js/allocation/boot.js",
     "js/allocation/map_settings.js",
+    "js/allocation/map_settings_layout.js",
     "js/allocation/settings_view.js",
+    "js/allocation/settings_staffing.js",
+    "js/allocation/settings_finance.js",
+    "js/allocation/settings_finance_check.js",
 ]
 SCHEDULE_SCRIPT_FILES = [
     "js/schedule/state.js",
@@ -77,8 +84,8 @@ def test_critical_user_waits_are_cached_prefetched_or_backgrounded():
     personal = read_frontend("js/personal_views.js")
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
-    persons = read_frontend("js/persons.js")
-    productivity_overview = read_frontend("js/productivity_overview.js")
+    persons = read_persons_frontend()
+    productivity_overview = read_productivity_overview_frontend()
     personal_router = (ROOT / "app" / "backend" / "routers" / "personal.py").read_text(encoding="utf-8")
 
     assert "PERSONAL_PRODUCTIVITY_CACHE_TTL_MS = 25 * 1000" in personal
@@ -118,8 +125,8 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
     common = read_sources(COMMON_SCRIPT_FILES)
     schedule = read_sources(SCHEDULE_SCRIPT_FILES)
     allocation = read_sources(ALLOCATION_SCRIPT_FILES)
-    overview = read_frontend("js/overview.js")
-    productivity_overview = read_frontend("js/productivity_overview.js")
+    overview = read_overview_frontend()
+    productivity_overview = read_productivity_overview_frontend()
 
     assert "requestIdleCallback" in common
     assert "BACKGROUND_PREFETCH_INITIAL_DELAY_MS" in common
@@ -149,7 +156,10 @@ def test_heavy_views_render_incrementally_and_cancel_stale_work():
 
 
 def test_same_server_heavy_external_work_is_offloaded_from_async_routes():
+    # Routern ar splittad: endpoints i allocation.py, hjalpare/cachar i
+    # allocation_helpers.py. Kontraktet galler helheten.
     allocation = (ROOT / "app" / "backend" / "routers" / "allocation.py").read_text(encoding="utf-8")
+    allocation += (ROOT / "app" / "backend" / "routers" / "allocation_helpers.py").read_text(encoding="utf-8")
     data_fetch = (ROOT / "app" / "backend" / "routers" / "data_fetch.py").read_text(encoding="utf-8")
     assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
     audit_logs = (ROOT / "app" / "backend" / "routers" / "audit_logs.py").read_text(encoding="utf-8")

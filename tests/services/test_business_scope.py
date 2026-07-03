@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.models import Activity, AppSetting, Area, Business, Person, PersonScheduleTemplate, ScheduleCell, User
+from app.backend.models import Activity, AppSetting, Area, AuditLog, Business, Person, PersonScheduleTemplate, ScheduleCell, User
 from app.backend.routers import businesses as businesses_router
 from app.backend.routers import public
 from app.backend.routers.activities import create_activity, list_activities, update_activity
@@ -14,10 +14,10 @@ from app.backend.routers.areas import create_area, delete_area, list_areas
 from app.backend.routers.businesses import create_business, update_business
 from app.backend.routers.overview import get_overview_revision
 from app.backend.routers.persons import create_person, get_person, list_persons, update_person
-from app.backend.routers.schedule import bulk_update_cells, get_schedule, get_schedule_revision, get_summary, update_cell
+from app.backend.routers.schedule import bulk_update_cells, get_schedule, get_schedule_revision, get_summary, update_cell, update_cell_remark
 from app.backend.routers.settings import get_app_settings, get_staffing_settings, update_app_settings, update_staffing_settings
 from app.backend.routers.users import create_user, list_users, update_user
-from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, BusinessUpdate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
+from app.backend.schemas import ActivityCreate, ActivityUpdate, AreaCreate, BulkCellItem, BulkCellRequest, BusinessCreate, BusinessUpdate, CellRemarkUpdate, CellUpdate, PersonCreate, PersonUpdate, UserCreate, UserUpdate
 from app.backend.schemas import AppSettingsUpdate, StaffingSettingsUpdate
 
 
@@ -172,6 +172,82 @@ def test_schedule_update_rejects_cross_business_activity():
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_schedule_cell_remark_is_saved_and_audited_without_text(business_session):
+    session, data = business_session
+
+    noop = update_cell_remark(
+        CellRemarkUpdate(
+            year=2026,
+            week=21,
+            weekday=1,
+            hour=7,
+            minute_start=0,
+            minute_end=60,
+            person_id=data["stigamo_person"].id,
+            remark="",
+            expected_version=0,
+        ),
+        session,
+        data["user"],
+    )
+    assert noop["cell"]["remark"] is None
+    assert noop["cell"]["version"] == 0
+    assert session.query(ScheduleCell).filter_by(person_id=data["stigamo_person"].id, hour=7).count() == 0
+
+    created = update_cell_remark(
+        CellRemarkUpdate(
+            year=2026,
+            week=21,
+            weekday=1,
+            hour=7,
+            minute_start=0,
+            minute_end=60,
+            person_id=data["stigamo_person"].id,
+            remark="Kontrollera truckplats",
+            expected_version=0,
+        ),
+        session,
+        data["user"],
+    )
+
+    assert created["cell"]["remark"] == "Kontrollera truckplats"
+    assert created["cell"]["version"] == 1
+    schedule = get_schedule(
+        year=2026,
+        week=21,
+        weekday=1,
+        area_id=None,
+        business_id=None,
+        db=session,
+        user=data["user"],
+    )
+    assert schedule.cells[0].remark == "Kontrollera truckplats"
+    audit = session.query(AuditLog).filter_by(entity_type="schedule_cell", action="remark_create").one()
+    assert audit.new_value["remark_present"] is True
+    assert audit.new_value["remark_length"] == len("Kontrollera truckplats")
+    assert "Kontrollera truckplats" not in str(audit.new_value)
+
+    cleared = update_cell_remark(
+        CellRemarkUpdate(
+            year=2026,
+            week=21,
+            weekday=1,
+            hour=7,
+            minute_start=0,
+            minute_end=60,
+            person_id=data["stigamo_person"].id,
+            remark="",
+            expected_version=created["cell"]["version"],
+        ),
+        session,
+        data["user"],
+    )
+
+    assert cleared["cell"]["remark"] is None
+    assert cleared["cell"]["version"] == 0
+    assert session.query(ScheduleCell).filter_by(person_id=data["stigamo_person"].id, hour=7).count() == 0
 
 
 def test_many_users_are_hidden_between_businesses(business_session):

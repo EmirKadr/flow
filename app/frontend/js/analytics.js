@@ -697,37 +697,14 @@ function renderHealthRecommendations(items = []) {
   });
 }
 
-function renderHealthRender(report = {}) {
-  const body = document.getElementById("healthRenderBody");
-  const render = report.render || {};
-  const rows = [
-    ["API", render.configured?.api_key ? "Konfigurerad" : "Saknas"],
-    ["Service", render.service?.resource?.status || render.service?.error || "-"],
-    ["Deploy", render.deploys?.items?.[0]?.status || render.deploys?.error || "-"],
-    ["Loggar", render.logs?.error_count != null ? `${render.logs.error_count} fel, ${render.logs.warning_count || 0} varningar` : (render.logs?.error || "-")],
-    ["Databas", render.database?.resource?.status || render.database?.error || "-"],
-  ];
-  body.innerHTML = rows.map(([label, value]) => `
-    <tr>
-      <td>${escapeHtml(label)}</td>
-      <td>${escapeHtml(value)}</td>
-    </tr>
-  `).join("");
-}
-
 function renderHealthReport(report) {
   const safeReport = report || {};
   document.getElementById("healthStatus").textContent = String(safeReport.status || "-").toUpperCase();
   document.getElementById("healthDbLatency").textContent = safeReport.database?.latency_ms != null
     ? formatMs(safeReport.database.latency_ms)
     : "-";
-  const renderStatus = safeReport.render?.enabled === false
-    ? "Av"
-    : (safeReport.render?.configured?.api_key ? "API" : "Ej kopplad");
-  document.getElementById("healthRenderStatus").textContent = renderStatus;
   renderHealthChecks(safeReport.checks || []);
   renderHealthRecommendations(safeReport.recommendations || []);
-  renderHealthRender(safeReport);
 }
 
 async function loadHealthReport(force = false) {
@@ -735,7 +712,7 @@ async function loadHealthReport(force = false) {
   if (!force && healthReportCache && now - healthReportLoadedAt < 30000) {
     return healthReportCache;
   }
-  healthReportCache = await api.get("/api/healthcheck?include_render=true", {
+  healthReportCache = await api.get("/api/healthcheck", {
     skipCache: true,
     logGetUserEvent: false,
     telemetryEventType: "healthcheck",

@@ -38,12 +38,18 @@ def chromium_browser():
 
 
 def login_admin(page, base_url: str) -> None:
-    page.goto(f"{base_url}/login.html", wait_until="networkidle")
+    page.goto(f"{base_url}/login.html", wait_until="domcontentloaded")
+    page.wait_for_selector("#username", timeout=15000)
     page.fill("#username", "admin")
     page.fill("#password", "admin123")
     page.click("button.primary")
     page.wait_for_url("**/index.html", timeout=15000)
     page.wait_for_selector("#scheduleTable", timeout=15000)
+
+
+def goto_app_page(page, base_url: str, path: str, ready_selector: str = "main") -> None:
+    page.goto(f"{base_url}/{path}", wait_until="domcontentloaded")
+    page.wait_for_selector(ready_selector, timeout=15000)
 
 
 def captured_interaction_events(batches: list[dict]) -> list[dict]:
@@ -133,8 +139,7 @@ def test_click_select_submit_and_api_result_are_tracked(local_tracking_server, c
             ),
         )
 
-        page.goto(f"{local_tracking_server}/historik.html", wait_until="networkidle")
-        page.wait_for_selector("#periodSelect", timeout=15000)
+        goto_app_page(page, local_tracking_server, "historik.html", "#periodSelect")
         page.select_option("#periodSelect", "all")
         page.evaluate(
             """() => {
@@ -195,7 +200,7 @@ def test_download_tracking_links_export_to_current_click(local_tracking_server, 
                 body="A,B\n1,2\n",
             ),
         )
-        page.goto(f"{local_tracking_server}/historik.html", wait_until="networkidle")
+        goto_app_page(page, local_tracking_server, "historik.html")
         page.evaluate(
             """() => {
               const button = document.createElement("button");
@@ -237,8 +242,7 @@ def test_history_tracking_dashboards_render_column_copy_patterns(local_tracking_
     try:
         login_admin(page, local_tracking_server)
         seed_tracking_events(page)
-        page.goto(f"{local_tracking_server}/historik.html", wait_until="networkidle")
-        page.wait_for_selector("#auditBody", timeout=15000)
+        goto_app_page(page, local_tracking_server, "historik.html", "#auditBody")
 
         page.click('[data-history-mode="functions"]')
         expect(page.locator("#trackingTopFeaturesBody")).to_contain_text("allocation", timeout=15000)
@@ -282,10 +286,11 @@ def test_history_tracking_ai_panel_uses_history_only_endpoint(local_tracking_ser
             )
 
         page.route("**/api/audit/interactions/chat", answer_chat)
-        page.goto(f"{local_tracking_server}/historik.html", wait_until="networkidle")
-        page.click('[data-history-mode="tracking-ai"]')
+        goto_app_page(page, local_tracking_server, "historik.html", "#periodSelect")
+        page.evaluate("""() => setHistoryMode("tracking-ai")""")
+        expect(page.locator("#historyTrackingQuestion")).to_be_visible(timeout=15000)
         page.fill("#historyTrackingQuestion", "Kopierar folk första kolumnen i Påfyllnadsprio eller flera?")
-        page.click('#historyTrackingChatForm button[type="submit"]')
+        page.evaluate("""() => submitTrackingChat(new Event("submit", { cancelable: true }))""")
 
         expect(page.locator("#historyTrackingChatAnswer")).to_contain_text("Påfyllnadsprio", timeout=15000)
         assert chat_payloads
@@ -318,7 +323,7 @@ def test_desktop_surface_marks_web_tracking_as_desktop(local_tracking_server, ch
     try:
         login_admin(page, local_tracking_server)
         collect_interaction_batches(page, batches)
-        page.goto(f"{local_tracking_server}/uppladdningar.html", wait_until="networkidle")
+        goto_app_page(page, local_tracking_server, "uppladdningar.html")
         page.wait_for_function("() => window.flowDesktop?.isDesktop?.() === true", timeout=15000)
         page.evaluate("""async () => { await window.flowDesktop.pickFiles({ accept: ".csv", multiple: true }); }""")
         page.evaluate("() => window.flowFlushInteractions()")

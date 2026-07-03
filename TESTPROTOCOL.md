@@ -23,14 +23,14 @@ Get-ChildItem -Path app\frontend\js -Filter *.js | ForEach-Object { node --check
 python -m tools.flow_cli routes --format table
 python desktop\main.py --smoke-test
 python -m tools.performance_benchmark --runs 1
-python -m tools.healthcheck report --local --no-render
+python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
 Samma skydd finns i GitHub Actions pa varje push och pull request via
 `.github/workflows/test.yml`. Den kor pytest, JS-syntaxkontroll, desktop smoke
-och en testdatabas-build med Alembic + lokal/test-seed. Render production kor
-bara Alembic och far inte kora seed.
+och en testdatabas-build med Alembic + lokal/test-seed. Produktionen (k8s/MSSQL)
+skapar schema via `backend.prestart` och far inte kora seed.
 
 For release eller desktop-andringar:
 
@@ -54,35 +54,33 @@ poll:a sparsamt:
 3. om inte klart: vanta 1 minut och kolla igen
 4. darefter var 30:e sekund tills workflowen ar bekraftat klar eller failad
 
-Syftet ar att lata GitHub/Render arbeta asynkront utan onodiga statusanrop,
+Syftet ar att lata GitHub/Octopus arbeta asynkront utan onodiga statusanrop,
 logghamtningar och token-/kontextkostnad.
 
 ## Halsa efter storre push eller deploy
 
 Halsa och vantetider ar en driftgrind for agentarbete. Efter storre pushar,
-backend-/frontendandringar, cache/bakgrundsladdning, databas, Render-konfiguration,
+backend-/frontendandringar, cache/bakgrundsladdning, databas, drift-/k8s-konfiguration,
 import/export, Bearbeta-floden eller releasefiler ska agenten verifiera att app,
 databas och anvandarnas vantan fortfarande ser rimlig ut.
 
 Lokal grind:
 
 ```powershell
-python -m tools.healthcheck report --local --no-render
+python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Produktionens databas ar Postgres. Nar production/Render kontrolleras ska
-`DATABASE_URL` darfor peka mot Render Postgres eller sa ska serverns
-`/api/healthcheck` anvandas efter deploy. SQLite anvands bara for lokal
-utveckling och temporara tester. Om agenten bara ska hamta Render deploy/loggar
-utan databaskoppling kan den kora:
+Produktionens databas ar MSSQL pa foretagets k8s (`mssql+pyodbc://...`).
+Efter deploy kontrolleras servern via `/api/healthcheck` (kraver inloggning).
+SQLite anvands bara for lokal utveckling och temporara tester. Utan lokal
+databaskoppling kan agenten kora:
 
 ```powershell
 python -m tools.healthcheck report --local --skip-db
 ```
 
-Server-/deploygrind nar agenten har inloggning/cookie och Render-secrets ar
-konfigurerade:
+Server-/deploygrind nar agenten har inloggning/cookie:
 
 ```powershell
 python -m tools.healthcheck report --base-url <url>
@@ -143,7 +141,7 @@ testet och dokumentationen visa det undantaget.
 | `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, karnfilsfallback och sammanstallda produktivitetsloggar. | Produktivitet, snapshot-/compiled-loggar eller KPI-filer. |
 | `tests/services/test_productivity_v2.py` | Dagens produktivitetsrapport, KPI-mal fran `v_ask_kpi_target`, intern `kpi.sql`-logik, personmatchning och snapshot-backfill. | Produktivitet, KPI-mal, persondialog eller Min produktivitet. |
 | `tests/services/test_public_api.py` | Public API:s datum-/vecko-tolkning och tokenhantering. | Public endpoints, datumparametrar eller publika tokenregler. |
-| `tests/services/test_healthcheck_service.py` | Halsa-service, SQLite-databaskontroll, vantetidsinsamling och sammanfattning. | `/api/healthcheck`, `UserWaitMetric`, Render-/databashalsa eller vantetidsanalys. |
+| `tests/services/test_healthcheck_service.py` | Halsa-service, SQLite-databaskontroll, vantetidsinsamling och sammanfattning. | `/api/healthcheck`, `UserWaitMetric`, databashalsa eller vantetidsanalys. |
 | `tests/services/test_meta_uploads.py` | Meta-uppladdning, audio-only-analys, ASK-uppslag, media/content, koer och Excel-export. | `meta_uploads`, `meta_analysis_service`, Meta-vyn, nedladdningar eller Dispatchpallar-berikning. |
 | `tests/services/test_role_access.py` | Roll- och vybehorighet, Super User, starkaste roll och view/edit-nivaer. | Roller, `user_access`, vybehorigheter eller sidebar-atkomst. |
 | `tests/services/test_schedule_locks.py` | Lasning av schemaceller mellan anvandare och admin-/bemanningsansvarig-bypass. | Schemalas, celluppdatering eller installningen for lasning. |
@@ -515,9 +513,9 @@ Innan ny release:
 6. `python -m tools.interactive_e2e`
 7. `python -m tools.desktop_shell_screens`
 8. `python -m tools.desktop_app_probe`
-9. `python -m tools.healthcheck report --local --no-render`
+9. `python -m tools.healthcheck report --local`
 10. `python -m tools.healthcheck waits --local --period 24h`
 11. `cmd /c build_windows.bat`
 12. Skapa och pusha release-tagg enligt `RELEASE.md`.
 13. Efter deploy: kor `python -m tools.healthcheck report --base-url <url>`
-    nar servern ar uppe och auth/Render-secrets finns.
+    nar servern ar uppe och agenten har inloggning.

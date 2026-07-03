@@ -42,7 +42,7 @@ class ApiRoute:
 
 ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("health", "GET", "/api/health", "Server health"),
-    ApiRoute("healthcheck.report", "GET", "/api/healthcheck", "Server-, Render- och databashalsa"),
+    ApiRoute("healthcheck.report", "GET", "/api/healthcheck", "Server- och databashalsa"),
     ApiRoute("healthcheck.wait_metrics", "POST", "/api/healthcheck/wait-metrics", "Samla vantetidsmatningar"),
     ApiRoute("healthcheck.wait_summary", "GET", "/api/healthcheck/wait-metrics/summary", "Analysera anvandarvantetider"),
     ApiRoute("businesses.list", "GET", "/api/businesses", "Lista verksamheter"),
@@ -135,6 +135,7 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("schedule.get", "GET", "/api/schedule", "Hämta dagsschema"),
     ApiRoute("schedule.set_cell", "PUT", "/api/schedule/cell", "Sätt schemacell"),
     ApiRoute("schedule.split_cell", "PUT", "/api/schedule/cell/split", "Dela/slå ihop schemacell"),
+    ApiRoute("schedule.cell_remark", "PUT", "/api/schedule/cell/remark", "Sätt anmärkning på schemacell"),
     ApiRoute("schedule.bulk_cells", "POST", "/api/schedule/cells", "Sätt flera schemaceller"),
     ApiRoute("schedule.restore_hours", "PUT", "/api/schedule/hours/restore", "Återställ timmar"),
     ApiRoute("schedule.summary", "GET", "/api/schedule/summary", "Schema-summering"),
@@ -178,6 +179,9 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("productivity.report", "GET", "/api/productivity", "Produktivitetsrapport"),
     ApiRoute("sankey.inbound", "GET", "/api/sankey/inbound", "Sankey - Inbound"),
     ApiRoute("sankey.inbound_stream", "GET", "/api/sankey/inbound/stream", "Streama Sankey - Inbound med progress"),
+    ApiRoute("sankey.inbound_trace", "GET", "/api/sankey/inbound/trace", "Hämta trace-rader för Sankey - Inbound via token"),
+    ApiRoute("sankey.inbound_trace_csv", "GET", "/api/sankey/inbound/trace.csv", "Streama trace-rader för Sankey - Inbound som CSV"),
+    ApiRoute("query_data.archive_cache_status", "GET", "/api/query-data/archive-cache/status", "Status för lokal arkiv-cache"),
     ApiRoute("public.hours", "GET", "/api/public/hours", "Publika timmar för dag"),
     ApiRoute("public.hours_week", "GET", "/api/public/hours/week", "Publika timmar för vecka"),
     ApiRoute("public.persons", "GET", "/api/public/persons", "Publika FTE för dag"),
