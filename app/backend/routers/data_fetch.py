@@ -18,7 +18,9 @@ from starlette.concurrency import run_in_threadpool
 from ..audit import log as audit_log
 from ..business_scope import visible_business_id
 from ..config import settings
+from .. import archive_cache_sync, local_archive_store
 from ..data_fetch_service import (
+    ARCHIVE_TO_LIVE,
     DataFetchConfigError,
     DataFetchPlanError,
     apply_local_filters,
@@ -41,6 +43,7 @@ from ..data_fetch_service import (
     PACKAGE_ALIAS_ITEM_FIELD,
     PACKAGE_ALIAS_VIEW,
     PACKAGE_JOIN_COMPANY_FIELD,
+    PACKAGE_JOIN_ITEM_FIELD,
 )
 from ..deps import get_db, require_view_access
 from ..external_data_client import (
@@ -334,8 +337,19 @@ def _fetch_external_rows(
 
 
 def _fetch_rows(plan: dict, error_id: str, tenant: str | None = None) -> list[dict]:
-    client = _api_client_or_503(tenant=tenant)
     filters = plan.get("filters") or []
+    view = plan.get("view")
+    # Lokal arkiv-cache först för dblog-vyer (segment eller direkt vald arkivvy).
+    # Returnerar None => cachen kan inte svara helt, fall tillbaka till API/dblog.
+    if view in ARCHIVE_TO_LIVE and local_archive_store.is_enabled():
+        try:
+            cached = local_archive_store.query_rows(tenant, view, filters)
+        except Exception:  # noqa: BLE001 – cache-fel får aldrig fälla frågan
+            logger.warning("Lokal arkiv-cache misslyckades för %s, faller tillbaka till API.", view, exc_info=True)
+            cached = None
+        if cached is not None:
+            return cached
+    client = _api_client_or_503(tenant=tenant)
     external_filters = external_filters_for_api(filters)
     try:
         rows = _fetch_external_rows(
@@ -396,23 +410,62 @@ def _plan_company_value(plan: dict) -> str | None:
     return None
 
 
-def _fetch_package_alias_rows(plan: dict, error_id: str, tenant: str | None) -> list[dict]:
+# item_alias är stor (>50k rader/bolag) och datakällan kapar ett svar vid radtaket.
+# Utan att smalna av träffas taket och faktorer tappas tyst -> fel förpacknings-uppdelning.
+# Vi hämtar därför bara faktorerna för de artiklar som faktiskt förekommer i plockraderna,
+# i lagom stora Terms-batchar så varje svar hålls långt under taket.
+PACKAGE_ALIAS_ITEM_BATCH = 400
+
+
+def _distinct_item_nums(rows: list[dict]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for row in rows:
+        value = row.get(PACKAGE_JOIN_ITEM_FIELD)
+        if value is None:
+            lower = {str(key).lower(): key for key in row}
+            actual = lower.get(PACKAGE_JOIN_ITEM_FIELD.lower())
+            value = row.get(actual) if actual is not None else None
+        if value in (None, ""):
+            continue
+        key = str(value)
+        if key not in seen:
+            seen.add(key)
+            ordered.append(key)
+    return ordered
+
+
+def _fetch_package_alias_rows(plan: dict, rows: list[dict], error_id: str, tenant: str | None) -> list[dict]:
     """Hämta omräkningsfaktorer (item alias) för förpacknings-uppdelningen.
 
-    Filtrerar på samma bolag som plockplanen så GG-faktorer inte blandas med MG.
+    Filtrerar på samma bolag som plockplanen så GG-faktorer inte blandas med MG, och
+    smalnar av till de item_num som finns i plockraderna (batchat) så datakällans radtak
+    aldrig kapar bort faktorer. Se wiki-notering om item_alias-trunkering.
     """
     company = _plan_company_value(plan)
-    alias_filters: list[dict] = []
+    base_filters: list[dict] = []
     if company is not None:
-        alias_filters.append(
+        base_filters.append(
             {"id": PACKAGE_ALIAS_COMPANY_FIELD, "operator": "EQ", "value": company}
         )
-    alias_plan = {
-        "view": PACKAGE_ALIAS_VIEW,
-        "filters": alias_filters,
-        "identifiers": [],
-    }
-    return _fetch_rows(alias_plan, error_id, tenant)
+
+    item_nums = _distinct_item_nums(rows)
+    if not item_nums:
+        # Inga artiklar att slå upp – dra inte hela item_alias (den kapas ändå vid taket).
+        return []
+
+    alias_rows: list[dict] = []
+    for start in range(0, len(item_nums), PACKAGE_ALIAS_ITEM_BATCH):
+        batch = item_nums[start : start + PACKAGE_ALIAS_ITEM_BATCH]
+        alias_plan = {
+            "view": PACKAGE_ALIAS_VIEW,
+            "filters": base_filters + [
+                {"id": PACKAGE_ALIAS_ITEM_FIELD, "operator": "Terms", "value": batch}
+            ],
+            "identifiers": [],
+        }
+        alias_rows.extend(_fetch_rows(alias_plan, error_id, tenant))
+    return alias_rows
 
 
 async def compute_calculation(
@@ -428,7 +481,7 @@ async def compute_calculation(
         return None
     if str(calculation.get("metric") or "") == "package_breakdown":
         with start_span("data_fetch.package_alias_fetch", {"data_fetch.view": PACKAGE_ALIAS_VIEW}):
-            alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, error_id, tenant)
+            alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, rows, error_id, tenant)
         return execute_package_breakdown(rows, alias_rows, plan)
     return execute_calculation(rows, plan)
 
@@ -494,6 +547,20 @@ def data_fetch_health(
         "minimax_configured": minimax_configured,
         "message": message,
     }
+
+
+@router.get("/archive-cache/status")
+def archive_cache_status(
+    _: User = Depends(require_view_access("dataFetch", "view")),
+) -> dict:
+    """Lokal arkiv-cache: täckning per tenant/vy + senaste synk-logg.
+
+    Visar bl.a. vilka dagar som saknas (t.ex. efter en eller flera natters nedtid)
+    och som fylls på vid nästa/pågående synk. Läsbart även när cachen är av.
+    """
+    if not local_archive_store.is_enabled():
+        return {"enabled": False, "today": None, "views": [], "tenants": []}
+    return archive_cache_sync.coverage_report()
 
 
 @router.post("/catalog/reload")

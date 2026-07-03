@@ -38,7 +38,7 @@ from ..schemas import (
 from ..template_service import get_template_hours_map_for_dates
 from ..user_access import PERSON_ROLE, can_view_personal_pages, is_super_user, user_roles
 from ..workflow_data import productivity_api_source_map, sources_available
-from .productivity import _aggregate_person_activity_stats, _date_span, _period_bounds
+from .productivity_helpers import _aggregate_person_activity_stats, _date_span, _period_bounds
 from .schedule import HOURS, _covered_intervals, _schedule_date, _uncovered_intervals
 
 router = APIRouter(prefix="/api/personal", tags=["personal"])

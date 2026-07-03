@@ -1,7 +1,7 @@
 ---
 title: Test och release
 status: aktiv
-updated: 2026-06-14
+updated: 2026-07-03
 tags: [test, release, agent]
 ---
 
@@ -16,7 +16,7 @@ python -m pytest
 Get-ChildItem -Path app\frontend\js -Filter *.js | ForEach-Object { node --check $_.FullName }
 python -m tools.flow_cli routes --format table
 python desktop\main.py --smoke-test
-python -m tools.healthcheck report --local --no-render
+python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
@@ -36,11 +36,11 @@ python -m tools.desktop_app_probe
 | Andring | Minsta rimliga verifiering |
 | --- | --- |
 | Backendregel/API | Relevant `pytest` + `flow_cli routes` om API-vag andras |
-| Databas/Alembic/Render | `tests/tools/test_alembic_migrations.py` for revisionslangd, unikhet, down_revision-kedja och head; `tests/tools/test_ci_workflows.py` for Render-build, Postgres-simulering och secret-backed env. Vid ny migration ska ett test laggas for den felklass som annars skulle kunna stoppa `alembic upgrade head`. |
+| Databas/Alembic/CI | `tests/tools/test_alembic_migrations.py` for revisionslangd, unikhet, down_revision-kedja och head; `tests/tools/test_ci_workflows.py` for Postgres-simulering av alembic-bygget och k8s-secretmallen. Vid ny migration ska ett test laggas for den felklass som annars skulle kunna stoppa `alembic upgrade head`. |
 | Frontend-JS | `node --check`, visuell smoke eller interaktiv E2E beroende pa risk |
 | Laddning/cache/UX-hastighet | `tools.performance_benchmark` for kall/varm navigation, bakgrundsladdning, toggle, import, drag och copy |
 | Anvandarsynlig loggning | `tests/tools/test_sidebar_user_browser.py` for dokumentlogg i browser + `tests/tools/test_visual_tools.py` for global logg-/API-wiring |
-| Halsa/vantetid/drift | `tools.healthcheck report --local --no-render` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar auth och Render-secrets finns. Kontrollera `Serverminne` efter cache-, Bearbeta-, Meta- eller Forecast-andringar. |
+| Halsa/vantetid/drift | `tools.healthcheck report --local` + `tools.healthcheck waits --local --period 24h`; efter deploy aven servercheck med `--base-url` nar agenten har inloggning. Kontrollera `Serverminne` efter cache-, Bearbeta-, Meta- eller Forecast-andringar. |
 | flow/Oversikt | Interaktiv E2E for celler, drag, undo/redo och roller |
 | Sidebar/roller | Rolltester + visual smoke for flera roller |
 | Ny handelse/integration/hardvara | API-/domantest for handelsen, audit-test for `entity_type`/`action`, obligatorisk Historik/Analys-label i frontend/backend, verksamhetsscope och minst ett fel-/okant-lage. Hardvara far mockas; manuell scanning ar bara komplement. |
@@ -56,26 +56,27 @@ python -m tools.desktop_app_probe
 ## Driftgrind for agenter
 
 Halsa och Vantetider ar ett permanent arbetssatt. Efter storre pushar, deploys,
-databas-/Render-andringar, cache/bakgrundsladdning, import/export, Bearbeta-floden
+databas-/driftandringar, cache/bakgrundsladdning, import/export, Bearbeta-floden
 eller releasefiler ska agenten kontrollera lokal halsa och anvandarvantetider:
 
 ```powershell
-python -m tools.healthcheck report --local --no-render
+python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
-Produktionens databas ar Postgres. Nar production/Render kontrolleras ska
-`DATABASE_URL` peka mot Render Postgres eller sa ska serverns `/api/healthcheck`
-anvandas efter deploy. SQLite anvands bara for lokal utveckling och temporara
-tester. Om agenten bara ska hamta Render deploy/loggar utan databaskoppling kan
-den kora:
+Officiell drift ar sedan 2026-07 foretagets k8s (nowasteserver) med MSSQL
+(`mssql+pyodbc://...`) enligt `DEPLOY.md` och `k8s/README.md`; Render-driften
+ar avvecklad. Efter deploy kontrolleras servern via `/api/healthcheck`
+(kraver inloggning) och pod-loggar via `kubectl -n flow logs deploy/flow-web`.
+Nar K8s kontrolleras ska startup inte logga `PostgreSQL: kor alembic upgrade head`
+om malmiljon ar Azure SQL. SQLite anvands bara for lokal utveckling och
+temporara tester. Utan lokal databaskoppling kan agenten kora:
 
 ```powershell
 python -m tools.healthcheck report --local --skip-db
 ```
 
-Efter deploy ska agenten dessutom kora servercheck nar auth och Render-secrets
-finns:
+Efter deploy ska agenten dessutom kora servercheck nar auth finns:
 
 ```powershell
 python -m tools.healthcheck report --base-url <url>
@@ -87,6 +88,11 @@ och feltext innan arbetet betraktas som klart. Nar Historik paverkas ska flikarn
 `Halsa` och `Vantetider` verifieras visuellt eller via API.
 
 ## Releasekontroll
+
+Sedan 2026-07 ar den officiella driftvagen NoWaste-servern: releaser byggs
+automatiskt i Octopus av commits till `release/*`-branchar och deployas via
+Octopus-projektet Flow till development/production. Branchmodell och
+steg-for-steg-flode finns i [nowaste-git-release.md](nowaste-git-release.md).
 
 For release: folj `TESTPROTOCOL.md` och `RELEASE.md`. Kort version:
 
@@ -107,7 +113,7 @@ okej att avsluta har och be agenten kolla releasen senare. Om anvandaren
 uttryckligen ber agenten vanta kvar ska statuskoll ske enligt pollingtrappan:
 vanta 15 minuter, sedan 2 minuter, sedan 1 minut och darefter var 30:e sekund
 tills workflowen ar bekraftat klar eller failad. Syftet ar att undvika onodiga
-statusanrop, logghamtningar och token-/kontextkostnad medan GitHub/Render jobbar
+statusanrop, logghamtningar och token-/kontextkostnad medan GitHub/Octopus jobbar
 asynkront.
 
 ## Kallor

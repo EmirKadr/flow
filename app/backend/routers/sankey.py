@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import re
 import threading
 from datetime import date
 import logging
@@ -19,7 +20,10 @@ from ..models import Business, User
 from ..sankey_inbound_service import (
     SANKEY_SOURCE_VIEWS,
     SankeyInboundError,
+    filter_trace_rows,
+    get_trace_rows,
     load_sankey_inbound_payload,
+    trace_rows_to_csv_lines,
 )
 from ..settings_service import clean_productivity_finance_company_code, get_productivity_finance_settings
 
@@ -74,8 +78,15 @@ def _audit_sankey_report(
             "labels_traced": (payload.get("summary") or {}).get("labels_traced"),
             "labels_consumed": (payload.get("summary") or {}).get("labels_consumed"),
             "gross_income": (payload.get("summary") or {}).get("gross_income"),
+            "inbound_income": (payload.get("summary") or {}).get("inbound_income"),
+            "outbound_income": (payload.get("summary") or {}).get("outbound_income"),
             "gross_income_labels": (payload.get("summary") or {}).get("gross_income_labels"),
             "gross_income_purchase_lines": (payload.get("summary") or {}).get("gross_income_purchase_lines"),
+            "outbound_picked_orders": (payload.get("summary") or {}).get("outbound_picked_orders"),
+            "outbound_picked_rows": (payload.get("summary") or {}).get("outbound_picked_rows"),
+            "outbound_picked_pcs": (payload.get("summary") or {}).get("outbound_picked_pcs"),
+            "outbound_full_pallets": (payload.get("summary") or {}).get("outbound_full_pallets"),
+            "outbound_loaded_pallets": (payload.get("summary") or {}).get("outbound_loaded_pallets"),
         },
         "source_status": [
             {
@@ -265,4 +276,69 @@ async def stream_sankey_inbound(
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
+    )
+
+
+@router.get("/inbound/trace")
+def get_sankey_inbound_trace(
+    token: str = Query(...),
+    scope: str = Query(default="all", pattern="^(all|node|link)$"),
+    id: str | None = Query(default=None),
+    company: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    only_consumed: bool | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+    _: User = Depends(require_view_access("sankeyInbound", "view")),
+) -> dict:
+    """Paginerad drill-down av spårade pallgrenar för vald nod/länk (lazy-load)."""
+    rows = get_trace_rows(token)
+    if rows is None:
+        raise HTTPException(status_code=410, detail="Spårningen har gått ut. Kör om rapporten.")
+    filtered = filter_trace_rows(
+        rows,
+        scope,
+        id,
+        company=company,
+        start_date=start_date,
+        end_date=end_date,
+        only_consumed=only_consumed,
+    )
+    total = len(filtered)
+    page = filtered[offset : offset + limit]
+    return {"rows": page, "total": total, "offset": offset, "limit": limit}
+
+
+@router.get("/inbound/trace.csv")
+def export_sankey_inbound_trace(
+    token: str = Query(...),
+    scope: str = Query(default="all", pattern="^(all|node|link)$"),
+    id: str | None = Query(default=None),
+    company: str | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    only_consumed: bool | None = Query(default=None),
+    name: str = Query(default="urval"),
+    _: User = Depends(require_view_access("sankeyInbound", "view")),
+) -> StreamingResponse:
+    """Streamad CSV-export av spårade pallgrenar för urvalet (helår utan att spränga minnet)."""
+    rows = get_trace_rows(token)
+    if rows is None:
+        raise HTTPException(status_code=410, detail="Spårningen har gått ut. Kör om rapporten.")
+    filtered = filter_trace_rows(
+        rows,
+        scope,
+        id,
+        company=company,
+        start_date=start_date,
+        end_date=end_date,
+        only_consumed=only_consumed,
+    )
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", str(name or "urval")).strip("-") or "urval"
+    filename = f"sankey-inbound-sparning-{safe}.csv"
+    return StreamingResponse(
+        trace_rows_to_csv_lines(filtered),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -10,6 +10,12 @@ from pathlib import Path
 from tools import interactive_e2e
 from tools import desktop_app_probe
 from tools import visual_smoke
+from tools.frontend_sources import (
+    read_overview_frontend,
+    read_persons_frontend,
+    read_productivity_overview_frontend,
+    read_sankey_inbound_frontend,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,14 +36,23 @@ COMMON_SCRIPT_FILES = [
 ]
 ALLOCATION_SCRIPT_FILES = [
     "state.js",
+    "state_carrier_clusters.js",
+    "state_filters.js",
     "files.js",
     "api.js",
     "uploads_view.js",
     "results.js",
+    "results_flows.js",
+    "results_warehouse_map.js",
+    "results_carrier_clusters.js",
     "process_view.js",
     "process_matrix.js",
     "map_settings.js",
+    "map_settings_layout.js",
     "settings_view.js",
+    "settings_staffing.js",
+    "settings_finance.js",
+    "settings_finance_check.js",
     "split_view.js",
     "boot.js",
 ]
@@ -103,6 +118,7 @@ def test_visual_smoke_covers_expected_routes():
         "uppladdningar",
         "bearbeta",
         "dela",
+        "etiketter",
     }
     assert pages_by_name["mitt-schema"].roles == ("admin", "person")
     assert pages_by_name["min-produktivitet"].roles == ("admin", "person")
@@ -116,6 +132,7 @@ def test_visual_smoke_covers_expected_routes():
     assert pages_by_name["uppladdningar"].roles == ("admin", "warehouse", "article")
     assert pages_by_name["bearbeta"].roles == ("admin",)
     assert pages_by_name["dela"].roles == ("admin", "warehouse", "article")
+    assert pages_by_name["etiketter"].roles == ("admin",)
 
 
 def test_schedule_view_uses_bemanning_label_in_visible_navigation():
@@ -167,7 +184,7 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert 'params.set("business_id", businessId)' in analytics
     assert 'api.get(`/api/audit/errors?${params.toString()}`)' in analytics
     assert 'api.get(`/api/healthcheck/wait-metrics/summary?${waitMetricParams().toString()}`)' in analytics
-    assert 'api.get("/api/healthcheck?include_render=true"' in analytics
+    assert 'api.get("/api/healthcheck"' in analytics
     assert "function renderErrorDashboard" in analytics
     assert "function renderWaitMetrics" in analytics
     assert "function renderHealthReport" in analytics
@@ -406,7 +423,7 @@ def test_testprotocol_documents_agent_test_tools():
         "python -m tools.visual_smoke",
         "python -m tools.interactive_e2e",
         "python -m tools.performance_benchmark",
-        "python -m tools.healthcheck report --local --no-render",
+        "python -m tools.healthcheck report --local",
         "python -m tools.healthcheck waits --local --period 24h",
         "python -m tools.desktop_shell_screens",
         "python -m tools.desktop_app_probe",
@@ -476,7 +493,10 @@ def test_allocation_observations_github_sync_is_wired():
     assert "ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS" in main
     assert "ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS" in main
     assert "_allocation_observation_business_codes" in main
-    assert "sync_allocation_observations_on_startup" in main
+    # Uppstartsjobbet går via det centrala bakgrundsregistret, inte en egen hook.
+    assert '"allocation_observations_sync"' in main
+    assert "BACKGROUND_JOBS" in main
+    assert "background.BackgroundJob" in main
     assert '"OBSERVATIONS_GITHUB_TOKEN"' in engine
     assert '"FLOW_GITHUB_TOKEN"' in engine
     assert "github_sent_rows" in engine
@@ -683,7 +703,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
-    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
+    productivity_overview = read_productivity_overview_frontend()
     allocation_tools = read_allocation_frontend(frontend)
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     productivity_html = (frontend / "produktivitet.html").read_text(encoding="utf-8")
@@ -1013,9 +1033,9 @@ def test_area_focus_toggle_is_wired_to_views():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
-    productivity_overview = (frontend / "js" / "productivity_overview.js").read_text(encoding="utf-8")
-    persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
+    productivity_overview = read_productivity_overview_frontend()
+    persons = read_persons_frontend()
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
@@ -1525,7 +1545,7 @@ def test_planning_views_cache_all_scope_and_have_top_scrollbars():
     common = read_common_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
 
@@ -1581,7 +1601,7 @@ def test_presence_print_is_wired_to_both_planning_views():
     schedule_html = (frontend / "index.html").read_text(encoding="utf-8")
     overview_html = (frontend / "overblick.html").read_text(encoding="utf-8")
     schedule = read_schedule_frontend(frontend)
-    overview = (frontend / "js" / "overview.js").read_text(encoding="utf-8")
+    overview = read_overview_frontend()
     presence = (frontend / "js" / "presence_print.js").read_text(encoding="utf-8")
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
@@ -1658,7 +1678,7 @@ def test_presence_print_is_wired_to_both_planning_views():
 
 def test_super_user_business_fields_are_wired_in_register_ui():
     frontend = ROOT / "app" / "frontend"
-    persons = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons = read_persons_frontend()
     activities = (frontend / "js" / "activities.js").read_text(encoding="utf-8")
     users = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     activities_html = (frontend / "aktiviteter.html").read_text(encoding="utf-8")
@@ -1680,7 +1700,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert "businessName(a.business_id)" in activities
     assert "businessName(user)" in users
     assert 'initPage("businesses", { requireSuperUser: true })' in businesses
-    assert 'api.get(`/api/businesses?include_inactive=${includeInactive}`)' in businesses
+    assert 'api.get("/api/businesses?include_inactive=true")' in businesses
     assert 'api.get("/api/areas?include_inactive=true")' in businesses
     assert 'api.post("/api/businesses", payload)' in businesses
     assert 'api.put(`/api/businesses/${record.id}`, payload)' in businesses
@@ -1704,7 +1724,7 @@ def test_super_user_business_fields_are_wired_in_register_ui():
     assert "normalizeTenant" in businesses
     assert 'company_codes: companyCodes' in businesses
     assert 'tenant: tenant || null' in businesses
-    assert '/js/businesses.js?v=20260615-tenant' in businesses_html
+    assert '/js/businesses.js?v=20260624-showinactive-clientfilter' in businesses_html
     assert 'data-new-area="${business.id}"' in businesses
     assert 'api.post("/api/areas", payload)' in businesses
     assert 'api.put(`/api/areas/${record.id}`, payload)' in businesses
@@ -1785,7 +1805,7 @@ def test_import_views_have_templates_and_help_buttons():
     common = read_common_frontend(frontend)
     api_js = (frontend / "js" / "api.js").read_text(encoding="utf-8")
     persons_html = (frontend / "personer.html").read_text(encoding="utf-8")
-    persons_js = (frontend / "js" / "persons.js").read_text(encoding="utf-8")
+    persons_js = read_persons_frontend()
     users_html = (frontend / "anvandare.html").read_text(encoding="utf-8")
     users_js = (frontend / "js" / "users.js").read_text(encoding="utf-8")
     activities_html = (frontend / "aktiviteter.html").read_text(encoding="utf-8")
@@ -1843,7 +1863,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="activity-import-help"' in activities_html
     assert "<th>KPI Mål</th>" in activities_html
     assert "<th>Arbetstyp</th>" in activities_html
-    assert '/js/activities.js?v=20260615-kpi-process-picker' in activities_html
+    assert '/js/activities.js?v=20260624-areafocus-clientfilter' in activities_html
     assert "/api/activities/kpi-process-options" in activities_js
     assert "/api/activities/import-template" in activities_js
     assert "/api/activities/import-rows" in activities_js

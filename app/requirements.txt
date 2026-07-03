@@ -23,5 +23,6 @@ opentelemetry-instrumentation-requests>=0.50b0,<1
 opentelemetry-instrumentation-httpx>=0.50b0,<1
 numpy>=1.24
 pyarrow>=14
+duckdb>=1.1,<2
 xgboost-cpu==3.2.0
 lightgbm==4.6.0

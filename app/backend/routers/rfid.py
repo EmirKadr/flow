@@ -15,7 +15,7 @@ from ..config import settings
 from ..deps import get_db, require_view_access
 from ..models import Activity, Person, RfidDevice, RfidScanEvent, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
-from .schedule_shared import HOURS, _cell_to_dict, _load_hour_segments, _schedule_date
+from .schedule_shared import HOURS, _cell_audit_dict, _cell_to_dict, _load_hour_segments, _schedule_date
 
 
 router = APIRouter(prefix="/api/rfid", tags=["rfid"])
@@ -351,6 +351,7 @@ def _implicit_segment(person_id: int, hour: int, minute_start: int, minute_end: 
         "minute_end": minute_end,
         "activity_id": None,
         "loan_area_id": None,
+        "remark": None,
         "empty_override": False,
     }
 
@@ -363,6 +364,7 @@ def _segment_from_cell(cell: ScheduleCell, minute_start: int, minute_end: int) -
         "minute_end": minute_end,
         "activity_id": cell.activity_id,
         "loan_area_id": cell.loan_area_id,
+        "remark": cell.remark,
         "empty_override": cell.empty_override,
     }
 
@@ -383,6 +385,7 @@ def _rfid_schedule_segments(
             "minute_end": 60,
             "activity_id": activity_id,
             "loan_area_id": None,
+            "remark": None,
             "empty_override": False,
         }]
     before: list[dict] = []
@@ -470,7 +473,7 @@ def apply_rfid_event(
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
     assert_can_modify_schedule_cells(current, user, owner_lock_enabled)
     old_event = _serialize_event(event)
-    old_cells = [(cell, _cell_to_dict(cell)) for cell in current]
+    old_cells = [(cell, _cell_audit_dict(cell)) for cell in current]
     for cell, old_cell in old_cells:
         audit_log(
             db,
@@ -504,6 +507,7 @@ def apply_rfid_event(
             person_id=person.id,
             activity_id=segment["activity_id"],
             loan_area_id=segment["loan_area_id"],
+            remark=segment.get("remark"),
             empty_override=segment["empty_override"],
             version=1,
             updated_by=user.id,
@@ -518,7 +522,7 @@ def apply_rfid_event(
             entity_id=cell.id,
             action="rfid_apply_create",
             old_value=None,
-            new_value=_cell_to_dict(cell),
+            new_value=_cell_audit_dict(cell),
             user_id=user.id,
             business_id=person.business_id,
         )

@@ -88,7 +88,7 @@ function ensureDemoBanner() {
 
 function _demoTourSteps(user, activePage) {
   const pageSteps = sidebarPageDefinitions(user, activePage)
-    .filter((page) => page.visible)
+    .filter((page) => page.visible && page.sidebar !== false)
     .map((page) => ({
       view_id: page.id,
       label: page.label,
@@ -505,6 +505,7 @@ async function initPage(activePage, options = {}) {
   const cachedUser = readCachedSidebarUser();
   if (cachedUserCanRenderPage(cachedUser, activePage, options)) {
     renderSidebar(cachedUser, activePage);
+    syncToolsTabs(cachedUser);
   }
 
   const user = await loadCurrentUser();
@@ -559,6 +560,7 @@ async function initPage(activePage, options = {}) {
   }
   cacheSidebarUser(user);
   renderSidebar(user, activePage);
+  syncToolsTabs(user);
   reportPageOpen(user, activePage);
   reportPageLoadWaitMetric(activePage);
   void refreshRoleViewAccess(user, activePage);

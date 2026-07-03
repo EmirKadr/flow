@@ -4,13 +4,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_push_ci_runs_core_test_gates_against_postgres_render_simulation():
+def test_push_ci_runs_core_test_gates_against_postgres_alembic_simulation():
     workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
 
     assert "postgres:16" in workflow
     assert "flow_test" in workflow
     assert "postgresql+psycopg://postgres:postgres@localhost:5432/flow_test" in workflow
-    assert "Simulate Render build" in workflow
+    assert "Simulate Alembic build" in workflow
     assert "alembic upgrade head" in workflow
     assert workflow.index("alembic upgrade head") < workflow.index("python -m pytest")
     assert "python -m backend.seed" not in workflow
@@ -20,47 +20,22 @@ def test_push_ci_runs_core_test_gates_against_postgres_render_simulation():
     assert "python desktop/main.py --smoke-test" in workflow
 
 
-def test_render_production_build_does_not_run_seed():
-    blueprint = (ROOT / "render.yaml").read_text(encoding="utf-8")
+def test_k8s_secret_example_uses_azure_sql_database_url():
+    secret_example = (ROOT / "k8s" / "secret.example.yaml").read_text(encoding="utf-8")
+    expected_prefix = "mssql+pyodbc://USER:PASS@SERVER.database.windows.net:1433/DBNAME"
 
-    assert "buildCommand:" in blueprint
-    assert "pip install -r requirements.txt" in blueprint
-    assert "alembic upgrade head" in blueprint
-    assert blueprint.index("pip install -r requirements.txt") < blueprint.index("alembic upgrade head")
-    assert "python -m backend.seed" not in blueprint
+    assert "--from-literal=DATABASE_URL='mssql+pyodbc://" in secret_example
+    assert f'DATABASE_URL: "{expected_prefix}' in secret_example
+    assert "postgresql+psycopg://USER:PASS@HOST:5432/flow" not in secret_example
 
 
-def test_render_sensitive_env_vars_are_secret_backed():
-    blueprint = (ROOT / "render.yaml").read_text(encoding="utf-8")
-    sensitive_keys = [
-        "SECRET_KEY",
-        "RENDER_API_KEY",
-        "RENDER_SERVICE_ID",
-        "RENDER_OWNER_ID",
-        "RENDER_POSTGRES_ID",
-        "HEALTHCHECK_PUBLIC_URL",
-        "EXCEL_API_TOKEN",
-        "RFID_DEVICE_TOKEN",
-        "MINIMAX_API_KEY",
-        "GEMINI_API_KEY",
-        "DATA_SOURCE_API_BASE_URL",
-        "DATA_SOURCE_API_KEY",
-        "DATA_SOURCE_API_CLIENT",
-        "DATA_SOURCE_API_KEY_HEADER",
-        "DATA_SOURCE_API_CLIENT_HEADER",
-        "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE",
-        "DATA_SOURCE_CA_BUNDLE",
-        "DATA_SOURCE_CATALOG_JSON",
-    ]
+def test_k8s_docs_explain_postgres_startup_mismatch():
+    readme = (ROOT / "k8s" / "README.md").read_text(encoding="utf-8")
+    deploy = (ROOT / "DEPLOY.md").read_text(encoding="utf-8")
 
-    for key in sensitive_keys:
-        marker = f"- key: {key}"
-        start = blueprint.find(marker)
-        assert start != -1, key
-        next_key = blueprint.find("\n      - key:", start + len(marker))
-        block = blueprint[start: next_key if next_key != -1 else len(blueprint)]
-        assert "sync: false" in block or "generateValue: true" in block, key
-        assert "\n        value:" not in block, key
+    for document in (readme, deploy):
+        assert "PostgreSQL: kör alembic upgrade head" in document
+        assert "mssql+pyodbc://..." in document
 
 
 def test_windows_release_is_blocked_by_tests_before_packaging():

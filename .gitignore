@@ -1,5 +1,10 @@
 # Lokala exempeldata
 demo/
+# Lokal arkiv-cache (DuckDB, per tenant) – aldrig i repo
+archive_cache/
+**/archive_cache/
+*.duckdb
+*.duckdb.wal
 referens/*
 !referens/
 !referens/kpi.sql
@@ -61,6 +66,14 @@ hardware/MG_VM/MG_VM.ino
 *.log
 .DS_Store
 Thumbs.db
+
+# Lokala arbetsfiler och pytest-tempkataloger
+påg.docx
+.pytest-tmp/
+.pytest-label-editor-browser-temp/
+
+# Lokala golden-snapshots for karakteriseringstester (bygger pa privat testdata)
+tests/services/golden/
 
 # Desktop build artifacts
 build/

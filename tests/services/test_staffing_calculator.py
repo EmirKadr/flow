@@ -449,6 +449,9 @@ def test_materialize_person_productivity_daily_stores_report_rows(db_session, mo
                         "expected_points": 100.0,
                         "event_count": 2,
                         "diff_count": 0,
+                        "process_points": [
+                            {"process": "Manual_Pick", "process_key": "MANUAL_PICK", "points": 80.0, "event_count": 2}
+                        ],
                     },
                     {
                         "kind": "kpi",
@@ -476,14 +479,17 @@ def test_materialize_person_productivity_daily_stores_report_rows(db_session, mo
         report=report,
     )
 
-    assert result["rows"] == 4
+    assert result["rows"] == 5
     rows = db_session.query(PersonProductivityDaily).order_by(PersonProductivityDaily.row_type, PersonProductivityDaily.start_minute).all()
-    assert [row.row_type for row in rows] == ["activity", "cell", "cell", "person"]
+    assert [row.row_type for row in rows] == ["activity", "cell", "cell", "cell_process", "person"]
     activity_row = next(row for row in rows if row.row_type == "activity")
     assert activity_row.kpi_points == 160.0
     assert activity_row.kpi_minutes == 120
     assert activity_row.source_snapshot_at == "2026-06-09T11:30:00"
     assert activity_row.schedule_signature == "schedule-test"
+    process_row = next(row for row in rows if row.row_type == "cell_process")
+    assert process_row.process_key == "MANUAL_PICK"
+    assert process_row.kpi_points == 80.0
 
 
 def test_schedule_productivity_summary_reads_materialized_cell_cache(db_session, monkeypatch):

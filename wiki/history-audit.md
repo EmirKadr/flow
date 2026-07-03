@@ -1,4 +1,4 @@
----
+﻿---
 title: Historik och audit
 status: aktiv
 updated: 2026-06-25
@@ -37,7 +37,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `AI-analys`: MiniMax-fragor om trackinghistorik, till exempel "Vilka funktioner anvands minst?", "Kopierar folk forsta kolumnen i Pafyllnadsprio eller flera?" och "Vilka vyer anvands i Windows men inte webben?".
 - `Felkoder`: statkort for felkoder, topplistor for felkod, vy/API och felatgard samt senaste felhandelser.
 - `Vantetider`: p50/p95/max for vyload, API-anrop, nedladdningar och bakgrundsladdning, sa flaskhalsar syns utan manuell magkansla.
-- `Halsa`: app-, databas- och Render-status for lokal/serverdrift; samma signal anvands av `tools.healthcheck`, visar processens RSS-minne och varnar nar webprocessen nar hog minnesniva. Render-loggar laser app-loggar forst och build-loggar som fallback nar API-nyckel, service-id och ownerId finns.
+- `Halsa`: app-, databas- och bakgrundsjobbsstatus for lokal/serverdrift; samma signal anvands av `tools.healthcheck`, visar processens RSS-minne och varnar nar webprocessen nar hog minnesniva. Serverloggar hamtas med `kubectl -n flow logs deploy/flow-web` (Render-loggintegrationen togs bort 2026-07-03).
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, produktivitetens snapshot-/rapportstatus och korda lagerverktygsfloden.
 - Misslyckade filuppladdningar som hinner na backend loggas som `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
@@ -77,7 +77,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `GET /api/audit/interactions`, `/summary` och `/coverage` driver de nya trackingpanelerna i Historik.
 - `POST /api/audit/interactions/chat` bygger en sanerad MiniMax-kontext av aggregeringar och raw events inom query-limit. Den far anvanda raw trackingevents men systemprompten forbjuder fragor om hemligheter, provider-detaljer, filnamn, filvagar och request bodies.
 - `POST /api/audit/interactions/chat/clear` rensar chattvyn.
-- `GET /api/healthcheck` visar Halsa-fliken med app-, databas- och Render-status for Super User.
+- `GET /api/healthcheck` visar Halsa-fliken med app-, databas- och bakgrundsjobbsstatus for Super User.
 - `POST /api/healthcheck/wait-metrics` samlar tysta vantetidsmatningar fran klienten utan att skriva i dokumentloggen.
 - `GET /api/healthcheck/wait-metrics/summary` driver Vantetider-fliken och CLI-analys for var anvandare vantar mest. Historik skickar valt `business_id` hit, men `GET /api/healthcheck` for Halsa forblir global.
 - Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget och exponerar `window.reportApiError` for sidmoduler med egna wrappers. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar. Icke-JSON/HTML-felsidor visas som kort HTTP-status och lagras inte som raw HTML.

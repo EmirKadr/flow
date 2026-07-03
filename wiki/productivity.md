@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-02
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -41,19 +41,20 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   nollade plockrader per bolag. Nollade rader ar poster i plockloggen dar
   `Plockat`/`qty_suf` ar `0`.
 - Verksamhetsnoden har ocksa hogerklickskommandot `Sankey - Inbound` om rollen
-  har `sankeyInbound=view`. Kommandot oppnar en separat vy och skickar med
-  Produktivitetens period/datum som starturval.
+  har `sankeyInbound=view`. Kommandot oppnar samma vy som Bemanning-fliken
+  `Sankey` och skickar med Produktivitetens period/datum som starturval.
 - Vyn renderar kontroller, sammanfattningsskal och tradyta direkt. Rapporten
   hamtas sedan i bakgrunden och statusraden visar forst hamtning och sedan
   berakning/ritning innan korten fylls pa. Detta ar medvetet read-only
   laddbeteende och skapar ingen ny audit-rad; befintlig produktivitetsrapport-
   audit och vantetidsmatning fortsatter galla.
-- Periodoversikten bygger dagrapporter fran befintliga snapshots med
-  begransad parallellism pa Postgres, hogst fyra dagar samtidigt. Varje dagjobb
-  anvander en egen kort DB-session och svaret sorteras fortfarande per datum.
-  SQLite och fake-sessioner faller tillbaka till seriell byggning. Progressen
-  raknar fardiga dagar, sa dagar kan bli klara i annan ordning utan att
-  slutresultatet andrar ordning.
+- Periodoversikten bygger dagrapporter fran befintliga snapshotfiler.
+  `person_productivity_daily` anvands inte som fullrapport for tradet, eftersom
+  Produktivitet behover komplett tim-/processdetalj per dag. Postgres och
+  filbaserad SQLite bygger dagar med begransad parallellism, hogst fyra dagar
+  samtidigt; in-memory SQLite och fake-sessioner kor seriellt. Progressen raknar
+  fardiga dagar, sa dagar kan bli klara i annan ordning utan att slutresultatet
+  andrar ordning.
 - Noder for verksamhet, omrade, aktivitet, person, timme och processpoang.
 - Barnnoder visas som en sammanhangande horisontell tradgren. Nar det finns
   manga barn scrollas tradytan i sidled i stallet for att bryta upp grenlinjen.
@@ -94,10 +95,12 @@ datum sa framtida dagar inte ingar.
 ## Global snapshot
 
 Nar `DATA_SOURCE_*` och extern datakatalog ar konfigurerade ar serverns globala
-API-snapshot primar sanning. Forsta startup-syncen fyller 13 dagar bakat plus
-dagens datum. Efter det uppdateras dagens snapshot vid varje hel- och halvtimme
-i Europe/Berlin-tid. En global historik-backfill hamtar sedan en aldre dag per
-kalenderdag tills historiken ar fylld.
+API-snapshot primar sanning. Forsta startup-syncen fyller bootstrap-historiken
+till och med gardagens datum. Efter det uppdateras dagens snapshot vid varje
+hel- och halvtimme i Europe/Berlin-tid, men dagens `person_productivity_daily`
+byggs inte av bakgrundsjobbet utan nar anvandaren oppnar dagens datum. En global
+historik-backfill hamtar sedan en aldre dag per kalenderdag tills historiken ar
+fylld.
 
 Snapshotens API-kallor (`pick`, `trans`, `pallet`, `receive`, `order_log` m.fl.)
 hamtas via `ExternalDataClient.fetch_all` (delad `fetch_all_rows`). Nar en dag
@@ -112,11 +115,48 @@ dagsmappar rensas inte av produktivitetsflodet; dagens filer kan ersattas
 atomiskt nar dagens data uppdateras, medan aldre datum ligger kvar.
 `backfill.json` i samma rot sparar hur langt den langsamma historikhamtningen
 har kommit.
+`prebuild.json` sparar nattjobbet som bygger `person_productivity_daily` for
+alla snapshotdatum som redan finns och ar aldre an idag. Eftersom
+cache-current-kontrollen jamfor snapshot- och schemasignatur byggs bara datum
+om nar underlaget har andrats.
+
+Samma fyllning kan koras manuellt via arkivcache-CLI:t nar DB:n ska fyllas:
+`python -m app.backend.archive_cache_cli --tenant frey --with-productivity --business-code STIGAMO`
+hamtar standardfonstret fran `ARCHIVE_CACHE_SEED_DAYS`, till och med igar, och
+bygger normalt `person_productivity_daily` direkt.
+`python -m app.backend.archive_cache_cli --productivity-only --productivity-start 2025-01-01 --business-code STIGAMO`
+hamtar ett explicit API-dagintervall fran startdatumet till och med igar och bygger normalt
+`person_productivity_daily` direkt. Intervallkörningen går från slutdatumet
+bakåt i chunkar, hoppar över snapshotdagar som redan är kompletta och använder
+cache-current-kontrollen innan personcachen byggs. Det betyder att en omkörning
+inte hämtar eller materialiserar datum som redan är aktuella. `--productivity-no-prebuild`
+hamtar bara filerna och kraver inte att appdatabasen kan skriva personcachen.
+Bygglaget kraver fungerande `DATABASE_URL`; om DB:n ar nere stoppar CLI:t innan
+den hamtar en lang period. `--productivity-prebuild-existing` kor gamla prebuild-laget
+for alla snapshotdagar som redan finns, ar kompletta och ar aldre an dagens datum,
+utan att hamta ett seed-intervall.
+Produktivitets-CLI:n skriver en chunk-progressbar och visar per intervall hur
+manga snapshotdagar som redan hittades sparade, hur manga som saknas/ar gamla,
+hur manga rader som finns i sparade snapshotmetadata, om API hamtades, samt hur
+manga `person_productivity_daily`-dagar som redan var aktuella eller byggdes.
+Det ar medvetet formulerat som sparade snapshots/persondagar i stallet for
+generell cache, eftersom snapshotfilerna ligger pa disk och persondagarna ligger
+i appdatabasen.
+
+Sankey - Inbound kan ateranvanda samma snapshotfiler for de gemensamma
+datumstyrda loggkallorna `receive` och `trans` nar hela Sankeys foljfonster
+redan finns lokalt. `pick` gar via Sankeys egen live-/arkivhamtning for att
+behalla outboundavstamningen mot WMS. Saknas nagon dag gar Sankey tillbaka till
+sin egen live-/arkivhamtning for att undvika halva underlag.
 
 Nar en vy behover snabba person-/dagssvar kan backend materialisera snapshoten
 till `person_productivity_daily`. Det ar beraknad cache, inte masterdata pa
-personen. Bemanningens cell-hover-snitt och produktivitetskolumn laser denna cache och bygger
-om en dag nar snapshot- eller schemasignaturen andras.
+personen. Bemanningens cell-hover-snitt och produktivitetskolumn laser denna
+cache och bygger om en dag nar snapshot- eller schemasignaturen andras.
+Nattjobbet prebygger historiska snapshotdagar efter backfill/snapshot-sync.
+Dagens datum ar undantaget: dagens snapshot far vara farskt, men dagens
+personcache byggs on-demand nar dagrapporten eller bemanningssammanfattningen
+begar den.
 
 Snapshoten innehaller kallorna:
 
@@ -147,14 +187,19 @@ Produktivitet.
 ## API-kontrakt
 
 - `GET /api/productivity` returnerar personbaserad dagrapport med `people[]`,
-  `summary`, `sync`, `backfill`, `available_dates` och `source_status`.
+  `summary`, `sync`, `backfill`, `prebuild`, `available_dates` och `source_status`.
 - `GET /api/productivity/overview` returnerar periodpaketet som
   `produktivitet.html` anvander: `reports[]`, `period`, `summary`,
-  `missing_dates`, `source_status`, `sync` och `backfill`. Endpointen laser
-  befintliga snapshots for perioden och triggar inte extern historikhamtning vid
-  varje periodbyte. Nar databasen stodjer det byggs dagrapporterna med max fyra
-  parallella dagjobb; varje jobb har egen session och payloaden ordnas per
-  datum innan den returneras.
+  `missing_dates`, `source_status`, `sync`, `backfill` och `prebuild`. Daglage for ett
+  enskilt datum kan trigga och vanta upp till nagra minuter pa just den dagens
+  snapshot, sa Produktivitet inte faller direkt nar anvandaren oppnar vyn
+  precis efter lokal/server-start. Vecka, manad, ar och custom-perioder laser
+  fortsatt befintliga snapshots for perioden och triggar inte extern
+  historikhamtning vid varje periodbyte. Varje dagsrapport byggs fran
+  snapshotfilerna, inte fran `person_productivity_daily`, sa full tim- och
+  processdetalj finns kvar. Nar databasen stodjer det byggs dagrapporterna med
+  max fyra parallella dagjobb; varje jobb har egen session och payloaden ordnas
+  per datum innan den returneras.
   Med `productivityFinance=view` innehaller payloaden aven `finance` pa
   periodniva, personniva och relevanta `time_cells`; kopplade intaktsrader
   visas som `finance.process_revenues` pa periodniva. Utan behorighet ar
@@ -182,9 +227,14 @@ Produktivitet.
   visa radens intakt i Produktivitetens processnoder. `GG` fylls
   forvalt med Grann-garden-priserna for Inbound, BUTIK, E-handel, VAS, IT och
   Ovrigt. `GG` har forifylld utrakningsprompt, plan och SQL/querytext for
-  `Mottagna etiketter`, `Mottagna artikelrader` och BUTIK-raderna `Plockade
-  orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`. `MG` fylls bara med VAS-raderna, med samma VAS-priser som `GG`, plus
-  IT-raden med 445 kr per timme. VAS-raderna har separata `blue_collar`- och `white_collar`-varden for
+  `Mottagna etiketter`, `Mottagna artikelrader`, BUTIK-raderna `Plockade
+  orders`, `Plockade rader`, `Antal helpallar` och `Utlastade pallar`, samt
+  E-handel-raderna `Plockade orders`, `Plockade rader` och `Antal helpallar`.
+  `Utlastade pallar` raknar Dispatchpallslogg (`dispatch_pallet_log` och vid
+  aldre perioder `dblog_dispatch_pallet_log`) dar `parent_pick_pall_num` ar tomt.
+  `MG` fylls bara med VAS-raderna, med samma VAS-priser som `GG`, plus
+  IT-raden som defaultar till 0 kr i repot och far riktiga priser via
+  lokal/secret overlay. VAS-raderna har separata `blue_collar`- och `white_collar`-varden for
   `normal`, `ot_50`, `ob1_40`, `ob2_70` och `ob3_100`. Endpointen kraver
   `productivityFinanceSettings=view|edit` och foljer samma `business_id` /
   `area_focus`-scope som Bemanningens installningar.
@@ -276,7 +326,9 @@ och statusen aven nar rapporten ar tung.
 | --- | --- |
 | "Varfor saknas dagar?" | Historik-backfillen har inte hunnit hamta alla datum an. Saknade dagar visas i `missing_dates`. |
 | "Hamtas data varje gang jag oppnar en person?" | Nej. Persondialogen laser sparade globala snapshots och klienten cachar nyligen hamtade perioder kort. Om datum saknas beror det pa att backfill/snapshot inte ar klar. |
-| "Varfor ska periodbyte i Produktivitet inte starta en stor API-korning?" | Periodbyte ska bara lasa de snapshots som redan finns. API-syncen sker vid startup, hel-/halvtimme, manuell sync eller historik-backfill. |
+| "Varfor visar Produktivitet fel direkt efter start local?" | Dagvyn vantar nu pa dagens startup-snapshot i stallet for att direkt visa saknad API-snapshot. Om fel anda visas ar snapshot-syncen antingen fortfarande upptagen for lange eller sa felar extern datakalla. |
+| "Varfor kan Manad ta langre tid lokalt?" | Periodoversikten bygger fulla dagsrapporter fran snapshotfiler for att behalla komplett tim- och processdata. Filbaserad SQLite far anvanda samma begransade dagparallellism som Postgres, men `person_productivity_daily` anvands inte som ersattning for hela Produktivitetstradet. |
+| "Varfor ska periodbyte i Produktivitet inte starta en stor API-korning?" | Vecka, manad, ar och custom-perioder ska bara lasa de snapshots som redan finns. API-syncen sker vid startup, hel-/halvtimme, manuell sync eller historik-backfill. Daglage kan bara sakra den enskilda dagens snapshot. |
 | "Varfor gar det inte att ladda upp produktivitetsfiler?" | Den manuella produktivitetsuppladdningen ar borttagen. Produktivitet bygger pa global API-snapshot. |
 | "Vilken KPI-fil kravs for poang?" | `v_ask_kpi_target`/`kpi` kravs. Den gamla separata regelfilen anvands inte. |
 | "Varfor kan desktop inte visa rapport offline?" | Den nya rapporten kraver central schema- och snapshotdata. |

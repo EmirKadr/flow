@@ -158,6 +158,7 @@ class ScheduleCell(Base):
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
     activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     loan_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
+    remark: Mapped[str | None] = mapped_column(Text)
     empty_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(

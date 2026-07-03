@@ -250,7 +250,9 @@ Typ\tTill\tAntal\tAnvÃ¤ndare\tTimestamp\tBolag\tLager
     assert status_by_cell["10:00-11:00"] is None
     support_cell = next(cell for cell in alvin["time_cells"] if cell["start"] == "10:00")
     assert support_cell["diff_count"] == 0
-    assert support_cell["process_points"] == [{"process": "Manual_Pick", "points": 100.0, "event_count": 1}]
+    assert support_cell["process_points"] == [
+        {"process": "Manual_Pick", "process_key": "MANUAL_PICK", "points": 100.0, "event_count": 1}
+    ]
     support_only = next(person for person in report["people"] if person["name"] == "StÃ¶d Hela Dagen")
     assert support_only["kpi_points"] == 0
     assert support_only["planned_kpi_points"] == 0
@@ -469,6 +471,39 @@ def test_productivity_snapshot_sync_is_half_hourly_and_atomic(monkeypatch, tmp_p
     assert second_pick == first_pick
 
 
+def test_productivity_snapshot_can_skip_person_cache_warm(monkeypatch, tmp_path):
+    warm_calls = []
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None):
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        warm_calls.append(snapshot_date)
+        return {"date": snapshot_date.isoformat(), "status": "materialized", "rows": 1}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+
+    productivity_sync.sync_productivity_snapshot(
+        date(2026, 6, 8),
+        reference_dir=tmp_path,
+        warm_cache=False,
+    )
+    productivity_sync.sync_productivity_snapshot(
+        date(2026, 6, 9),
+        reference_dir=tmp_path,
+        warm_cache=True,
+    )
+
+    assert warm_calls == [date(2026, 6, 9)]
+
+
 def test_productivity_snapshot_history_bootstraps_13_days_and_preserves_old_days(monkeypatch, tmp_path):
     source_calls = []
     version = {"value": "first"}
@@ -522,6 +557,206 @@ def test_productivity_snapshot_history_bootstraps_13_days_and_preserves_old_days
     assert "pick-2026-06-09-second" in today_pick_after
     assert yesterday_pick_after == yesterday_pick_before
     assert {str(filters[0]["value"][0])[:10] for source, filters in source_calls if source != "kpi"} == {"2026-06-09"}
+
+
+def test_productivity_history_uses_default_tenant_when_db_lookup_fails(monkeypatch, tmp_path):
+    tenants = []
+
+    class BrokenDb:
+        def execute(self, *_args, **_kwargs):
+            raise RuntimeError("db offline")
+
+        def rollback(self):
+            tenants.append("rollback")
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        tenants.append(tenant)
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=0,
+        reference_dir=tmp_path,
+        business_code="STIGAMO",
+        db=BrokenDb(),
+        warm_cache=False,
+    )
+
+    assert result["status"] == "ok"
+    assert "rollback" in tenants
+    assert {"frey"} <= {tenant for tenant in tenants if tenant}
+    assert productivity_sync.productivity_snapshot_source_path(date(2026, 6, 8), "pick", tmp_path).is_file()
+
+
+def test_productivity_history_returns_person_cache_result(monkeypatch, tmp_path):
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        return {"date": snapshot_date.isoformat(), "status": "materialized", "rows": 7}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=0,
+        reference_dir=tmp_path,
+        db=object(),
+        warm_cache=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["person_cache"]["status"] == "materialized"
+    assert result["results"][0]["person_cache"]["rows"] == 7
+
+
+def test_productivity_history_skip_ready_does_not_refetch_snapshots(monkeypatch, tmp_path):
+    warm_calls = []
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fail_fetch(*_args, **_kwargs):
+        raise AssertionError("redan klara snapshots ska inte hamtas om")
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        warm_calls.append(snapshot_date)
+        return {"date": snapshot_date.isoformat(), "status": "current", "rows": 0}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+    productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=1,
+        reference_dir=tmp_path,
+        warm_cache=False,
+    )
+
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fail_fetch)
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=1,
+        reference_dir=tmp_path,
+        db=object(),
+        warm_cache=True,
+        skip_ready=True,
+    )
+
+    assert result["status"] == "ok"
+    assert result["synced_dates"] == []
+    assert result["skipped_dates"] == ["2026-06-07", "2026-06-08"]
+    assert warm_calls == [date(2026, 6, 7), date(2026, 6, 8)]
+
+
+def test_productivity_kpi_coredata_fallback_works_when_db_is_down(monkeypatch, tmp_path):
+    kpi_dir = tmp_path / "coredata" / "stigamo"
+    kpi_dir.mkdir(parents=True)
+    kpi_file = write(kpi_dir / "v_ask_kpi_target-20260101000000.csv", "Bolag\tProcessnamn\tRader\nMG\tManual_Pick\t1")
+
+    class BrokenDb:
+        def execute(self, *_args, **_kwargs):
+            raise RuntimeError("db offline")
+
+        def query(self, *_args, **_kwargs):
+            raise RuntimeError("db offline")
+
+        def rollback(self):
+            pass
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None, tenant=None):
+        if source_key == "kpi":
+            raise WorkflowDataError("Extern datakälla svarade med HTTP 403.")
+        path = tmp_path / f"{source_key}.csv"
+        write(path, "col\nvalue")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+
+    result = productivity_sync.sync_productivity_snapshot_history(
+        date(2026, 6, 8),
+        days_back=0,
+        reference_dir=tmp_path,
+        business_code="STIGAMO",
+        db=BrokenDb(),
+        warm_cache=False,
+    )
+
+    assert result["status"] == "ok"
+    assert kpi_file.read_text(encoding="utf-8-sig")
+    sources = result["results"][0]["sources"]
+    assert [item for item in sources if item["key"] == "kpi"][0]["status"] == "coredata_fallback"
+
+
+def test_prebuild_ready_productivity_days_skips_today_and_runs_once(monkeypatch, tmp_path):
+    warm_calls = []
+
+    def fake_sources_available(_keys):
+        return True
+
+    def fake_fetch(source_key, filters=None):
+        filter_date = "target"
+        if filters:
+            filter_date = str(filters[0]["value"][0])[:10]
+        path = tmp_path / f"{source_key}-{filter_date}.csv"
+        write(path, f"col\n{source_key}-{filter_date}")
+        return path, WorkflowSourceEntry(key=source_key, label=source_key, view=f"v_{source_key}", status="api", row_count=1)
+
+    def fake_warm(_db, snapshot_date, **_kwargs):
+        warm_calls.append(snapshot_date)
+        return {"date": snapshot_date.isoformat(), "status": "materialized", "rows": 1}
+
+    monkeypatch.setattr(productivity_sync, "sources_available", fake_sources_available)
+    monkeypatch.setattr(productivity_sync, "fetch_source_to_temp", fake_fetch)
+
+    for snapshot_date in (date(2026, 6, 7), date(2026, 6, 8), date(2026, 6, 9)):
+        productivity_sync.sync_productivity_snapshot(
+            snapshot_date,
+            reference_dir=tmp_path,
+            warm_cache=False,
+        )
+
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+    result = productivity_sync.prebuild_ready_productivity_days(
+        now=datetime(2026, 6, 9, 1, 0, tzinfo=productivity_sync.LOCAL_TZ),
+        reference_dir=tmp_path,
+        db=object(),
+    )
+    second = productivity_sync.prebuild_ready_productivity_days(
+        now=datetime(2026, 6, 9, 2, 0, tzinfo=productivity_sync.LOCAL_TZ),
+        reference_dir=tmp_path,
+        db=object(),
+    )
+
+    assert result["status"] == "ok"
+    assert result["dates"] == ["2026-06-07", "2026-06-08"]
+    assert warm_calls == [date(2026, 6, 7), date(2026, 6, 8)]
+    assert second["skipped"] is True
+    assert warm_calls == [date(2026, 6, 7), date(2026, 6, 8)]
 
 
 def test_productivity_historical_backfill_fetches_one_older_day_per_run_day(monkeypatch, tmp_path):

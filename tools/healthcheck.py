@@ -62,13 +62,13 @@ def local_report(args: argparse.Namespace) -> dict[str, Any]:
     from app.backend.healthcheck_service import run_healthcheck
 
     if args.skip_db:
-        return run_healthcheck(db=None, include_render=args.include_render, base_url=args.public_url)
+        return run_healthcheck(db=None, base_url=args.public_url)
 
     from app.backend.database import SessionLocal
 
     db = SessionLocal()
     try:
-        return run_healthcheck(db=db, include_render=args.include_render, base_url=args.public_url)
+        return run_healthcheck(db=db, base_url=args.public_url)
     finally:
         db.close()
 
@@ -130,14 +130,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--password", help="Losenord for --username.")
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--json", action="store_true", help="Skriv full JSON.")
-    parser.add_argument("--no-render", dest="include_render", action="store_false", help="Hoppa over Render API.")
-    parser.add_argument("--skip-db", action="store_true", help="Hoppa over lokal databaskoppling, t.ex. nar bara Render-loggar ska hamtas.")
+    parser.add_argument("--skip-db", action="store_true", help="Hoppa over lokal databaskoppling.")
     parser.add_argument("--public-url", help="Publik URL for lokal extern ping.")
     parser.add_argument("--period", default="24h", choices=("1h", "24h", "7d", "30d", "all"))
     parser.add_argument("--limit", type=int, default=10000)
     parser.add_argument("--user-id", type=int)
     parser.add_argument("--query", help="Filtrera vantetider pa vy/steg/event.")
-    parser.set_defaults(include_render=True)
     return parser.parse_args(argv)
 
 
@@ -153,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             "q": args.query,
         })
     else:
-        payload = get_remote(args, "/api/healthcheck", {"include_render": args.include_render})
+        payload = get_remote(args, "/api/healthcheck")
 
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))

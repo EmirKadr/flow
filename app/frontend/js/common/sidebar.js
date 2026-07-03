@@ -1,5 +1,7 @@
 let sidebarProductivityContextMenu = null;
 let sidebarProductivityContextMenuListenersInstalled = false;
+let sidebarContextMenu = null;
+let sidebarContextMenuListenersInstalled = false;
 
 function renderSidebarLink(page, { active = false, subview = false } = {}) {
   const classes = [
@@ -10,12 +12,97 @@ function renderSidebarLink(page, { active = false, subview = false } = {}) {
   ].filter(Boolean).join(" ");
   const idAttr = page.linkId ? ` id="${page.linkId}"` : "";
   const icon = page.iconHtml || escapeHtml(page.icon || "");
+  const contextMenuAttr = Array.isArray(page.contextMenuViewIds) && page.contextMenuViewIds.length
+    ? ' data-sidebar-context-menu="true" aria-haspopup="menu"'
+    : "";
   return `
-    <a href="${page.href}"${idAttr} class="${classes}" title="${escapeHtml(page.label)}" data-sidebar-view-id="${escapeHtml(page.id || "")}">
+    <a href="${page.href}"${idAttr} class="${classes}" title="${escapeHtml(page.label)}" data-sidebar-view-id="${escapeHtml(page.id || "")}"${contextMenuAttr}>
       <span class="icon" aria-hidden="true">${icon}${page.trailingHtml || ""}</span>
       <span>${escapeHtml(page.label)}</span>
     </a>
   `;
+}
+
+function closeSidebarContextMenu() {
+  sidebarContextMenu?.remove();
+  sidebarContextMenu = null;
+}
+
+function positionSidebarContextMenu(menu, x, y) {
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
+  const top = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function openSidebarContextMenu(event, user, activePage, pageId) {
+  const pages = sidebarPageDefinitions(user, activePage);
+  const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
+  const sourcePage = pageById[pageId];
+  const items = (sourcePage?.contextMenuViewIds || [])
+    .map((viewId) => pageById[viewId])
+    .filter((page) => page?.visible && page.href && page.href !== "#");
+  if (!items.length) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  closeSidebarContextMenu();
+  closeSidebarProductivityContextMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "sidebar-context-menu";
+  menu.dataset.sidebarContextMenu = "true";
+  menu.setAttribute("role", "menu");
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.dataset.sidebarContextTarget = item.id;
+    button.textContent = item.label;
+    button.classList.toggle("active", Boolean(item.active));
+    button.addEventListener("click", () => {
+      closeSidebarContextMenu();
+      if (typeof flowTrack === "function") {
+        flowTrack("navigate", {
+          control_id: `sidebar-${pageId}-${item.id}`,
+          view: "sidebar",
+          target_view: item.id,
+        });
+      }
+      window.location.href = item.href;
+    });
+    menu.appendChild(button);
+  });
+
+  document.body.appendChild(menu);
+  positionSidebarContextMenu(menu, event.clientX, event.clientY);
+  sidebarContextMenu = menu;
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function ensureSidebarContextMenuListeners() {
+  if (sidebarContextMenuListenersInstalled) return;
+  document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-sidebar-context-menu]")) return;
+    closeSidebarContextMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebarContextMenu();
+  });
+  window.addEventListener("blur", closeSidebarContextMenu);
+  sidebarContextMenuListenersInstalled = true;
+}
+
+function initSidebarContextMenus(user, activePage) {
+  closeSidebarContextMenu();
+  ensureSidebarContextMenuListeners();
+  document.querySelectorAll("[data-sidebar-context-menu]").forEach((link) => {
+    link.addEventListener("contextmenu", (event) => {
+      openSidebarContextMenu(event, user, activePage, link.dataset.sidebarViewId);
+    });
+  });
 }
 
 function closeSidebarProductivityContextMenu() {
@@ -50,7 +137,7 @@ function sidebarSankeyInboundPeriodValue() {
 
 function sidebarSankeyInboundDateValue() {
   const params = new URLSearchParams(window.location.search || "");
-  return document.getElementById("productivityOverviewDate")?.value
+  return document.querySelector("[data-flow-context-date]")?.value
     || params.get("date")
     || sidebarTodayIsoDate();
 }
@@ -484,7 +571,7 @@ function initAssistantChatToggle() {
 function renderSidebarNav(user, activePage) {
   const pages = sidebarPageDefinitions(user, activePage);
   const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
-  const visibleIds = new Set(pages.filter((page) => page.visible).map((page) => page.id));
+  const visibleIds = new Set(pages.filter((page) => page.visible && page.sidebar !== false).map((page) => page.id));
   const layout = normalizeSidebarLayout(sidebarLayoutForRender())
     .filter((item) => visibleIds.has(item.id))
     .map((item) => ({
@@ -517,7 +604,7 @@ function renderSidebarNav(user, activePage) {
 }
 
 function openSidebarEditor(user, activePage) {
-  const pages = sidebarPageDefinitions(user, activePage).filter((page) => page.visible);
+  const pages = sidebarPageDefinitions(user, activePage).filter((page) => page.visible && page.sidebar !== false);
   const pageById = Object.fromEntries(pages.map((page) => [page.id, page]));
   let draft = normalizeSidebarLayout(sidebarLayoutForRender()).filter((item) => pageById[item.id]);
 
@@ -770,6 +857,7 @@ function renderSidebar(user, activePage) {
   initAssistantChatToggle();
   updateAllocationUploadIndicator();
   document.body.classList.add("sidebar-hydrated");
+  initSidebarContextMenus(user, activePage);
   initSidebarProductivityContextMenu(user);
   const allocationUploadLink = document.getElementById("allocation-upload-link");
   if (allocationUploadLink) {

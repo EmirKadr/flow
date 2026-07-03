@@ -29,14 +29,6 @@ def test_seed_is_blocked_in_production(monkeypatch):
         seed.assert_seed_target_allowed()
 
 
-def test_seed_is_blocked_for_render_database_url(monkeypatch):
-    monkeypatch.setattr(seed.settings, "ENVIRONMENT", "development")
-    monkeypatch.setattr(seed.settings, "DATABASE_URL", "postgresql://user:pass@example.render.com/db")
-
-    with pytest.raises(RuntimeError, match="Render-databas"):
-        seed.assert_seed_target_allowed()
-
-
 def test_local_bootstrap_refuses_non_sqlite_engine():
     class Dialect:
         name = "postgresql"
@@ -103,7 +95,7 @@ def test_seed_removes_existing_duplicate_person_names():
         duplicates = session.query(Person).filter_by(name=duplicate_name).all()
         assert len(duplicates) == 1
         assert duplicates[0].id == kept.id
-        assert duplicates[0].home_activity_id == activity.id
+        assert duplicates[0].home_activity_id is None
         assert session.query(ScheduleCell).filter_by(person_id=duplicate.id).count() == 0
         assert session.query(PersonScheduleTemplate).filter_by(person_id=duplicate.id).count() == 0
     finally:

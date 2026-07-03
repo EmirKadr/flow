@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
 from app.backend.models import AuditLog, Business, User, UserInteractionEvent
-from app.backend.routers import allocation, audit_logs
+from app.backend.routers import allocation, allocation_helpers, audit_logs
 from app.backend.schemas import AuditClientErrorIn, AuditClientEventIn, InteractionChatRequest, InteractionEventBatchIn, InteractionEventIn
 
 
@@ -62,7 +62,7 @@ def add_audit_user(session):
 
 
 def test_allocation_flow_audit_payload_omits_file_and_param_values():
-    payload = allocation._flow_audit_payload(
+    payload = allocation_helpers._flow_audit_payload(
         "split-values",
         files={"orders": "C:/hemlig/kundorder.xlsx"},
         params={"values": "A\nB\nC"},
@@ -82,7 +82,7 @@ def test_allocation_flow_audit_payload_omits_file_and_param_values():
 
 
 def test_allocation_flow_failed_payload_includes_error_context_without_values():
-    payload = allocation._flow_audit_payload(
+    payload = allocation_helpers._flow_audit_payload(
         "forecast",
         files={"orders": "C:/hemlig/kundorder.xlsx"},
         params={"secret_value": "A\nB\nC"},
@@ -117,7 +117,7 @@ def test_allocation_flow_failed_payload_includes_error_context_without_values():
 
 
 def test_allocation_upload_failure_payload_omits_file_and_param_values():
-    payload = allocation._upload_failure_payload(
+    payload = allocation_helpers._upload_failure_payload(
         flow_id="allocate",
         stage="parse_upload",
         error_type="OSError",

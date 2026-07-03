@@ -63,6 +63,22 @@
 <body class="with-sidebar">
   <header class="topbar"></header>
 
+  <section class="staffing-page-head" aria-labelledby="staffing-title">
+    <div class="section-title" id="staffing-title">Bemanning</div>
+    <nav class="staffing-tabs" aria-label="Bemanning">
+      <a class="staffing-tab" href="/index.html" data-staffing-tab-view="schedule">Bemanning</a>
+      <a class="staffing-tab active" href="/overblick.html" aria-current="page" data-staffing-tab-view="overview">Översikt</a>
+      <a class="staffing-tab" href="/produktivitet.html" data-staffing-tab-view="productivity">Produktivitet</a>
+      <a class="staffing-tab" href="/sankey-inbound.html" data-staffing-tab-view="sankeyInbound">Sankey</a>
+      <a class="staffing-tab" href="/aktiviteter.html" data-staffing-tab-view="activities">Aktiviteter</a>
+      <a class="staffing-tab" href="/personer.html" data-staffing-tab-view="persons">Personer</a>
+      <a class="staffing-tab" href="/anvandare.html" data-staffing-tab-view="users">Användare</a>
+      <a class="staffing-tab" href="/verksamheter.html" data-staffing-tab-view="businesses">Verksamheter</a>
+      <a class="staffing-tab" href="/mitt-schema.html" data-staffing-tab-view="mySchedule">Mitt schema</a>
+      <a class="staffing-tab" href="/min-produktivitet.html" data-staffing-tab-view="myProductivity">Min produktivitet</a>
+    </nav>
+  </section>
+
   <section class="controls">
     <label>Vy
       <select id="viewMode">
@@ -115,5 +131,8 @@
   <script src="/js/common.js?v=20260616-speed-common"></script>
   <script src="/js/presence_print.js"></script>
   <script src="/js/overview.js"></script>
+  <script src="/js/overview_state.js?v=20260702-arch-split"></script>
+  <script src="/js/overview_dates_cells.js?v=20260702-arch-split"></script>
+  <script src="/js/overview_grid.js?v=20260702-arch-split"></script>
 </body>
 </html>

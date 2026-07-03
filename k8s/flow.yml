@@ -1,0 +1,279 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+  namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # One replica + Recreate because the PVCs are ReadWriteOnce.
+  labels:
+    app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/component: "service"
+    nowaste.se/tenant: "common"
+    nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+  template:
+    metadata:
+      labels:
+        app: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+        app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+        app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+        app.kubernetes.io/component: "service"
+        nowaste.se/tenant: "common"
+        nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # Seed bundled reference data on first start; cp -rn never overwrites uploads.
+        - name: seed-data
+          image: "ghcr.io/nowastelogistics/flow@#{Octopus.Release.CustomFields[ImageDigest]}"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          command: ["sh", "-c", "cp -rn /repo/data/. /persistent-data/ || true"]
+          resources:
+            requests:
+              cpu: "#{JOB_CPU}m"
+              memory: "#{JOB_MEMORY}Mi"
+            limits:
+              cpu: "300m"
+              memory: "#{JOB_MEMORY_MAX}Mi"
+          volumeMounts:
+            - name: flow-data
+              mountPath: /persistent-data
+      containers:
+        - name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+          image: "ghcr.io/nowastelogistics/flow@#{Octopus.Release.CustomFields[ImageDigest]}"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8000
+          # The image's CMD runs backend.prestart before uvicorn.
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: PORT
+              value: "8000"
+            - name: DATABASE_URL
+              value: "#{DATABASE_URL}"
+            - name: SECRET_KEY
+              value: "#{SECRET_KEY}"
+            - name: SUPER_USER_USERNAMES
+              value: "#{SUPER_USER_USERNAMES}"
+            - name: EXCEL_API_TOKEN
+              value: "#{EXCEL_API_TOKEN}"
+            - name: MEDIA_STORE_BACKEND
+              value: "filesystem"
+            - name: MEDIA_STORE_ROOT
+              value: "/var/flow-media"
+            - name: MINIMAX_API_KEY
+              value: "#{MINIMAX_API_KEY}"
+            - name: MINIMAX_MODEL
+              value: "MiniMax-M2.7"
+            - name: GEMINI_API_KEY
+              value: "#{GEMINI_API_KEY}"
+            - name: GEMINI_MODEL
+              value: "gemini-2.5-pro"
+            - name: GEMINI_API_BASE_URL
+              value: "#{GEMINI_API_BASE_URL}"
+            - name: RFID_DEVICE_TOKEN
+              value: "#{RFID_DEVICE_TOKEN}"
+            - name: DATA_SOURCE_API_BASE_URL
+              value: "#{DATA_SOURCE_API_BASE_URL}"
+            - name: DATA_SOURCE_API_KEY
+              value: "#{DATA_SOURCE_API_KEY}"
+            - name: DATA_SOURCE_API_CLIENT
+              value: "#{DATA_SOURCE_API_CLIENT}"
+            - name: DATA_SOURCE_API_KEY_HEADER
+              value: "#{DATA_SOURCE_API_KEY_HEADER}"
+            - name: DATA_SOURCE_API_CLIENT_HEADER
+              value: "#{DATA_SOURCE_API_CLIENT_HEADER}"
+            - name: DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE
+              value: "#{DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE}"
+            - name: DATA_SOURCE_VERIFY_SSL
+              value: "true"
+            - name: DATA_SOURCE_MAX_ROWS
+              value: "1000"
+            - name: DATA_SOURCE_RESPONSE_ROW_CAP
+              value: "50000"
+            - name: TRACKING_ALLOW_VALUE_SAMPLES
+              value: "false"
+            - name: ALLOCATION_OBSERVATIONS_STARTUP_SYNC
+              value: "false"
+            - name: ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS
+              value: "180"
+            - name: ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS
+              value: "30"
+            - name: META_ANALYSIS_TIMEOUT_SECONDS
+              value: "120"
+            - name: META_ANALYSIS_AUTO_START
+              value: "false"
+            - name: META_ANALYSIS_MAX_VIDEO_BYTES
+              value: "268435456"
+            - name: META_ANALYSIS_START_DELAY_SECONDS
+              value: "30"
+            - name: META_ANALYSIS_SPACING_SECONDS
+              value: "15"
+            - name: META_LABEL_STILL_TIME_SECONDS
+              value: "1.0"
+            # HTTPS is required in production because session cookies are Secure.
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: "flow-web"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "#{OPENTELEMETRY_URL}"
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: "X-Seq-ApiKey=#{OPENTELEMETRY_TOKEN}"
+            - name: OTEL_TRACES_SAMPLE_RATE
+              value: "0.5"
+          volumeMounts:
+            - name: flow-data
+              mountPath: /repo/data
+            - name: flow-media
+              mountPath: /var/flow-media
+          resources:
+            requests:
+              cpu: "#{JOB_CPU}m"
+              memory: "#{JOB_MEMORY}Mi"
+            limits:
+              cpu: "300m"
+              memory: "#{JOB_MEMORY_MAX}Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: flow-data
+          persistentVolumeClaim:
+            claimName: flow-data
+        - name: flow-media
+          persistentVolumeClaim:
+            claimName: flow-media
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flow-data
+  namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # flow-data mounts at /repo/data. Add storageClassName only if the cluster has no default.
+  labels:
+    app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/component: "service"
+    nowaste.se/tenant: "common"
+    nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flow-media
+  namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  # flow-media mounts at /var/flow-media. Add storageClassName only if the cluster has no default.
+  labels:
+    app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/component: "service"
+    nowaste.se/tenant: "common"
+    nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+  namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  labels:
+    app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/component: "service"
+    nowaste.se/tenant: "common"
+    nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+spec:
+  selector:
+    app: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+  namespace: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}-common"
+  labels:
+    app.kubernetes.io/name: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/instance: "#{Octopus.Project.Name | ToLower}"
+    app.kubernetes.io/component: "service"
+    nowaste.se/tenant: "common"
+    nowaste.se/environment: "#{if Octopus.Environment.Name != \"Production\"}dev#{else}prod#{/if}"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "256k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "256k"
+    nginx.ingress.kubernetes.io/proxy-body-size: "256m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}.nowastelogistics.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}"
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - "flow#{if Octopus.Environment.Name != \"Production\"}-development#{/if}.nowastelogistics.com"
+      secretName: nowastelogistics

@@ -10,6 +10,7 @@ import requests
 
 from app.backend import external_data_client as external_data_client_module
 from app.backend import data_fetch_service as service
+from app.backend.data_fetch import core as data_fetch_core
 from app.backend.config import settings
 from app.backend.external_data_client import (
     ExternalDataClient,
@@ -421,7 +422,7 @@ def test_catalog_context_includes_month_period_hint_for_date_columns():
 
 def test_catalog_context_sends_current_app_clock(monkeypatch):
     monkeypatch.setattr(
-        service,
+        data_fetch_core,
         "_app_now",
         lambda: datetime(2026, 5, 22, 9, 30, tzinfo=timezone.utc),
     )
@@ -459,7 +460,7 @@ def test_prompt_period_hint_replaces_misread_order_filter():
 
 def test_prompt_period_hint_uses_app_clock_for_today_and_normalizes_company(monkeypatch):
     monkeypatch.setattr(
-        service,
+        data_fetch_core,
         "_app_now",
         lambda: datetime(2026, 5, 22, 9, 30, tzinfo=timezone.utc),
     )
@@ -499,7 +500,7 @@ def test_prompt_period_hint_uses_app_clock_for_today_and_normalizes_company(monk
 
 def test_relative_days_period_uses_app_clock(monkeypatch):
     monkeypatch.setattr(
-        service,
+        data_fetch_core,
         "_app_now",
         lambda: datetime(2026, 5, 22, 9, 30, tzinfo=timezone.utc),
     )

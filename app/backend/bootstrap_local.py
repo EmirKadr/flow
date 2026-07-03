@@ -5,8 +5,8 @@ cleanly on SQLite. For the local preview stack we instead create tables
 straight from the model metadata (which uses portable type variants) and run
 the idempotent seed.
 
-Production deploys (Render) still go through `alembic upgrade head` from
-render.yaml — this module is local-dev only.
+Production (k8s/MSSQL) skapar schema via `backend.prestart` vid containerstart
+— this module is local-dev only.
 """
 from __future__ import annotations
 
@@ -78,6 +78,8 @@ def _sync_lightweight_sqlite_columns(target_engine=engine) -> None:
             )
         if schedule_columns and "loan_area_id" not in schedule_columns:
             connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN loan_area_id INTEGER REFERENCES areas(id)")
+        if schedule_columns and "remark" not in schedule_columns:
+            connection.exec_driver_sql("ALTER TABLE schedule_cells ADD COLUMN remark TEXT")
         if audit_columns and "business_id" not in audit_columns:
             connection.exec_driver_sql("ALTER TABLE audit_log ADD COLUMN business_id INTEGER REFERENCES businesses(id)")
         if settings_columns and "business_id" not in settings_columns:

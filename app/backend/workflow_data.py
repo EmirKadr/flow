@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import local_archive_store
 from .config import settings
-from .data_fetch_service import DataFetchConfigError, DataFetchPlanError, DataView, load_catalog
+from .data_fetch_service import (
+    LIVE_ARCHIVE_PAIRS,
+    DataFetchConfigError,
+    DataFetchPlanError,
+    DataView,
+    load_catalog,
+)
 from .external_data_client import ExternalDataClient, ExternalDataClientError, data_source_base_url_for_tenant
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowDataError(RuntimeError):
@@ -349,6 +360,18 @@ def fetch_source_to_temp(
         raise WorkflowDataError(str(exc), status_code=503) from exc
     except DataFetchPlanError as exc:
         raise WorkflowDataError(str(exc), status_code=503) from exc
+    # Lokal arkiv-cache först: om hela det begärda datumfönstret är äldre än
+    # live-retentionen läser vi arkivraderna ur DuckDB istället för via API/dblog.
+    cached_rows = _archive_cached_rows(spec.view, filters, tenant)
+    if cached_rows is not None:
+        path = _materialize_csv(spec, cached_rows, view)
+        return path, WorkflowSourceEntry(
+            key=spec.key,
+            label=spec.label,
+            view=spec.view,
+            status="local_archive",
+            row_count=len(cached_rows),
+        )
     try:
         client = _api_client(tenant=tenant) if tenant else _api_client()
         rows = client.fetch_all(spec.view, filters=filters)
@@ -362,6 +385,34 @@ def fetch_source_to_temp(
         status="api",
         row_count=len(rows),
     )
+
+
+def _archive_cached_rows(
+    live_view: str, filters: list[dict[str, Any]] | None, tenant: str | None
+) -> list[dict[str, Any]] | None:
+    """Rader ur lokal arkiv-cache när hela fönstret ligger bortom live-retentionen.
+
+    Returnerar None (fall tillbaka till API) om cachen är av, tenant saknas, vyn inte
+    har en arkivpartner, fönstret överlappar aktiv data, eller cachen inte täcker det.
+    """
+    if not (tenant and local_archive_store.is_enabled()):
+        return None
+    pair = LIVE_ARCHIVE_PAIRS.get(live_view)
+    if pair is None:
+        return None
+    days, archive_id = pair
+    window = local_archive_store.window_from_filters(filters)
+    if window is None:
+        return None
+    cutoff = date.today() - timedelta(days=days)
+    if window[1] >= cutoff:
+        # Fönstret rör aktiv data – låt API-vägen hantera det (som idag).
+        return None
+    try:
+        return local_archive_store.query_rows(tenant, archive_id, filters)
+    except Exception:  # noqa: BLE001 – cache-fel får aldrig fälla produktivitetssynken
+        logger.warning("Lokal arkiv-cache misslyckades för %s, faller tillbaka till API.", archive_id, exc_info=True)
+        return None
 
 
 def _fallback_status(has_file: bool, *, local_ref: bool = False) -> str | None:

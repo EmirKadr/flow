@@ -67,7 +67,7 @@ anvandarnara test som verifierar knappens enabled/disabled-lage eller inskickad
 session-parameter.
 
 Halsa och Vantetider ar en del av arbetsmetoden. Nar en agent andrar drift,
-databas, Render, cache, bakgrundsladdning, import/export, Bearbeta-floden eller
+databas, k8s-drift, cache, bakgrundsladdning, import/export, Bearbeta-floden eller
 releasefiler ska `AGENTS.md`, `TESTPROTOCOL.md` och `testing-release.md` hallas
 i synk om healthcheck-regeln paverkas. Efter storre push/deploy ska agenten
 normalt kora eller verifiera `tools.healthcheck report` och

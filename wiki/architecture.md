@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-06-16
+updated: 2026-07-03
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -14,7 +14,7 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - Backend: Python, FastAPI, SQLAlchemy 2, Alembic.
 - Frontend: statiska HTML/CSS/JS-filer utan buildsteg.
 - Auth: session-cookie via FastAPI `SessionMiddleware`.
-- Databas: PostgreSQL i produktion; SQLite anvands for lokal test/probe.
+- Databas: MSSQL (`mssql+pyodbc`) pa foretagets k8s-drift; SQLite anvands for lokal test/probe.
 - Static serving: FastAPI serverar `app/frontend`.
 - Webbfavicon och brandlogga ar SVG som primarkalla. PNG/ICO ligger kvar som fallback for PWA, Apple touch och aldre plattformar.
 
@@ -25,6 +25,48 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - Desktop ska bete sig som webben eftersom den anvander samma frontend och samma API.
 - Fonsterikonen laddas primart fran `desktop/assets/flow_icon.svg`. `.ico` ligger kvar for exe-/genvagsikon och fallback.
 - Tillatna desktop-specifika skillnader ar installation, auto-update, genvagar, lokalt skal och serverdrift.
+
+## Backend-paket och fasader
+
+De tre storsta servicefilerna ar uppdelade i paket med bakatkompatibla fasader
+(2026-07-02). Fasaden (gamla modulvagen) re-exporterar alla namn sa befintliga
+imports fungerar, men ny kod ska importera direkt fran paketet och tester ska
+monkeypatcha implementationsmodulen, inte fasaden.
+
+- `app/backend/data_fetch/`: `core` (konstanter, katalogtyper, primitiver),
+  `catalog` (katalogladdning/kontext), `plan` (MiniMax-payload och validering),
+  `segments` (retention-/arkivsegmentering), `engine` (deterministiska filter
+  och berakningar inkl. package breakdown), `present` (SQL-text och kolumner).
+  Fasad: `data_fetch_service.py`.
+- `app/backend/mcp/`: `protocol` (MCP-konfig, fel, HTTP-session), `tooling`
+  (tool-/resurs-/promptsummering och kontextinsamling), `providers`
+  (LLM-providerval), `chat` (provideranrop och meddelandebyggare), `service`
+  (orkestrering `ask_mcp`/`list_mcp_tools`). Fasad: `mcp_service.py`.
+- `app/backend/sankey_inbound/`: `common` (konstanter, dataklasser), `cache`
+  (payload-/kallradscache), `trace` (trace-tokens och CSV), `rows`
+  (radnormalisering, perioder, priser), `build` (grafbygget), `fetch`
+  (datahamtning/segment/snapshots), `service` (orkestrering
+  `load_sankey_inbound_payload`). Fasad: `sankey_inbound_service.py`.
+
+## Bakgrundsjobb
+
+Alla uppstartsjobb registreras i `BACKGROUND_JOBS` i `app/backend/main.py` och
+startas av FastAPI-lifespan via runnern i `app/backend/background.py`. Runnern
+ager tradar, felhantering och status; jobbstatus visas i healthcheck-rapporten
+under `background_jobs`. Nya bakgrundsjobb ska registreras dar, inte skapas som
+egna tradar eller startup-hooks. Registret antar exakt en uvicorn-worker -
+kontraktstest skyddar Dockerfile-CMD mot `--workers`.
+
+## Arkitektur-kontraktstester
+
+`tests/tools/test_architecture_contracts.py` haller tre invariants:
+
+- Radtak (1000) for backend-Python och frontend-JS, med undantagslista dar
+  befintliga for stora filer far krympa men inte vaxa.
+- Dockerfile-CMD far inte fa `--workers`/gunicorn utan ledarlas for schedulerna.
+- Domangranser: servicemoduler far importera delad grund och sin egen doman;
+  nya beroenden mellan domaner maste laggas till medvetet i
+  `ALLOWED_DOMAIN_EDGES`.
 
 ## Backend-routerkarta
 
@@ -51,7 +93,13 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 
 ## Deployment och lokal drift
 
-- `render.yaml` beskriver Render-drift.
+- Officiell drift sedan 2026-07 ar foretagets Kubernetes (nowasteserver):
+  manifest i `k8s/` (namespace `flow`, 1 replika, PVC:er for data/media),
+  deploy via Octopus-projektet **Flow**, databas MSSQL. Development-miljon ar
+  `flow-development.nowastelogistics.com`. Release- och branchmodellen
+  beskrivs i [nowaste-git-release.md](nowaste-git-release.md).
+- Render-driften ar avvecklad (2026-07-03); `render.yaml` och
+  `backend.migrate_pg_to_mssql` ar borttagna ur repot och finns i git-historiken.
 - `start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
 - `start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
 - `sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.

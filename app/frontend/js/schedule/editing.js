@@ -227,23 +227,42 @@ async function pasteFocused() {
   }
 }
 
+function historyShortcutAction(key, shiftKey = false) {
+  if (key === "z" && !shiftKey) return state.undoStack[state.undoStack.length - 1];
+  if (key === "z" && shiftKey) return state.redoStack[state.redoStack.length - 1];
+  if (key === "y") return state.redoStack[state.redoStack.length - 1];
+  return null;
+}
+
+function readOnlyAllowsHistoryShortcut(key, shiftKey = false) {
+  return historyShortcutAction(key, shiftKey)?.kind === "summary";
+}
+
 function handleSelectClipboardKeys(e) {
   if (!(e.ctrlKey || e.metaKey)) return;
   const key = e.key.toLowerCase();
   if (!["c", "x", "v", "z", "y"].includes(key)) return;
   e.preventDefault();
   e.stopPropagation();
-  if (scheduleIsReadOnly() && key !== "c") {
-    showReadOnlyToast();
-    return;
-  }
   if (key === "z") {
+    if (scheduleIsReadOnly() && !readOnlyAllowsHistoryShortcut(key, e.shiftKey)) {
+      showReadOnlyToast();
+      return;
+    }
     if (e.shiftKey) void redoLastScheduleAction();
     else void undoLastScheduleAction();
     return;
   }
   if (key === "y") {
+    if (scheduleIsReadOnly() && !readOnlyAllowsHistoryShortcut(key, e.shiftKey)) {
+      showReadOnlyToast();
+      return;
+    }
     void redoLastScheduleAction();
+    return;
+  }
+  if (scheduleIsReadOnly() && key !== "c") {
+    showReadOnlyToast();
     return;
   }
   if (!state.focusedCell) return;
@@ -263,7 +282,7 @@ function setupKeyboard() {
     if (key === "z") {
       e.preventDefault();
       e.stopPropagation();
-      if (scheduleIsReadOnly()) {
+      if (scheduleIsReadOnly() && !readOnlyAllowsHistoryShortcut(key, e.shiftKey)) {
         showReadOnlyToast();
         return;
       }
@@ -274,7 +293,7 @@ function setupKeyboard() {
     if (key === "y") {
       e.preventDefault();
       e.stopPropagation();
-      if (scheduleIsReadOnly()) {
+      if (scheduleIsReadOnly() && !readOnlyAllowsHistoryShortcut(key, e.shiftKey)) {
         showReadOnlyToast();
         return;
       }
@@ -561,6 +580,22 @@ function setupDrag() {
     if (!td) return;
     if (td.dataset.split === "1") {
       const part = splitPartFromEvent(td, e);
+      if (!part) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (part) openScheduleCellContextMenu(e, td, part);
+      return;
+    }
+    openScheduleCellContextMenu(e, td);
+  }, true);
+
+  body.addEventListener("dblclick", (e) => {
+    const td = e.target.closest("td[data-hour]");
+    if (!td) return;
+    if (td.dataset.split === "1") {
+      const part = splitPartFromEvent(td, e);
       if (part) {
         openSplitSegmentSelect(
           e,
@@ -573,25 +608,6 @@ function setupDrag() {
       return;
     }
     openFullHourSelect(e, td);
-  }, true);
-
-  body.addEventListener("dblclick", (e) => {
-    const td = e.target.closest("td[data-hour]");
-    if (!td) return;
-    if (td.dataset.split === "1") {
-      const part = splitPartFromEvent(td, e);
-      if (part) {
-        toggleSplitSegmentFromEvent(
-          e,
-          td,
-          part,
-          Number(part.dataset.minuteStart),
-          Number(part.dataset.minuteEnd),
-        );
-      }
-      return;
-    }
-    toggleFullHourSplitFromEvent(e, td);
   }, true);
 
   document.addEventListener("mousemove", (e) => {

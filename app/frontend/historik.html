@@ -13,6 +13,18 @@
 <body class="with-sidebar">
   <header class="topbar"></header>
 
+  <section class="tools-page-head" aria-labelledby="tools-title">
+    <div class="section-title" id="tools-title">Verktyg</div>
+    <nav class="tools-tabs" aria-label="Verktyg">
+      <a class="tools-tab" href="/dela.html" data-tools-tab-view="allocationSplit">Dela</a>
+      <a class="tools-tab" href="/label-editor.html" data-tools-tab-view="labelEditor">Etiketter</a>
+      <a class="tools-tab" href="/mcp.html" data-tools-tab-view="mcp">MCP</a>
+      <a class="tools-tab" href="/hamta-data.html" data-tools-tab-view="dataFetch">Hämta data</a>
+      <a class="tools-tab active" href="/historik.html" aria-current="page" data-tools-tab-view="analytics">Historik</a>
+      <a class="tools-tab" href="/meta.html" data-tools-tab-view="meta">Meta</a>
+    </nav>
+  </section>
+
   <section class="controls">
     <label>Period
       <select id="periodSelect">
@@ -389,10 +401,6 @@
           <div class="stat-value" id="healthDbLatency">-</div>
           <div class="stat-label">Databaslatens</div>
         </div>
-        <div class="card stat-card">
-          <div class="stat-value" id="healthRenderStatus">-</div>
-          <div class="stat-label">Render</div>
-        </div>
       </div>
 
       <div class="analytics-split">
@@ -408,15 +416,6 @@
         <div class="card">
           <h3>Rekommendationer</h3>
           <div id="healthRecommendations" class="health-list"></div>
-        </div>
-        <div class="card">
-          <h3>Render</h3>
-          <table class="small-table">
-            <thead>
-              <tr><th>Del</th><th>Status</th></tr>
-            </thead>
-            <tbody id="healthRenderBody"></tbody>
-          </table>
         </div>
       </div>
     </section>

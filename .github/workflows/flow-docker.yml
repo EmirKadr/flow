@@ -1,0 +1,42 @@
+name: Flow Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+      - '!main'
+    tags:
+      - '**'
+    paths:
+      - '.github/workflows/flow-docker.yml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'app/**'
+      - 'data/**'
+      - 'warehouse_tools/**'
+      - 'k8s/**'
+
+permissions:
+  checks: write
+  contents: write
+  id-token: write
+  packages: write
+  pull-requests: write
+
+jobs:
+  flow:
+    uses: nowastelogistics/procedures/.github/workflows/docker.yml@master
+    with:
+      docker_file_path: Dockerfile
+      docker_image_name: flow
+      docker_has_tests: false
+    secrets:
+      docker_server_url: ${{ secrets.DOCKER_GITHUB_URL }}
+      docker_server_username: ${{ github.repository_owner }}
+      docker_server_password: ${{ secrets.GITHUB_TOKEN }}
+      nuget_github_server_url: ${{ secrets.NUGET_GITHUB_URL }}
+      nuget_github_server_username: ${{ secrets.NUGET_GITHUB_USERNAME }}
+      nuget_github_server_password: ${{ secrets.NUGET_GITHUB_PASSWORD }}
+      octopus_server_url: ${{ secrets.OCTOPUS_URL }}
+      octopus_server_apikey: ${{ secrets.OCTOPUS_APIKEY }}

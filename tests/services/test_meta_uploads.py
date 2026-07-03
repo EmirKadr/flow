@@ -20,6 +20,7 @@ from app.backend.main import app
 from app.backend.models import AuditLog, MetaMediaUpload, MetaShipmentObservation, User
 from app.backend import meta_analysis_service
 from app.backend.routers import meta_uploads
+from app.backend.routers import meta_uploads_helpers
 
 
 @pytest.fixture(autouse=True)
@@ -765,8 +766,8 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
         Path(command[-1]).write_bytes(b"playable-video")
         return SimpleNamespace(returncode=0, stderr=b"")
 
-    monkeypatch.setattr(meta_uploads, "_resolve_ffmpeg", lambda: "ffmpeg")
-    monkeypatch.setattr(meta_uploads.subprocess, "run", fake_run)
+    monkeypatch.setattr(meta_uploads_helpers, "_resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fake_run)
     queue_events = []
 
     class FakeSemaphore:
@@ -776,7 +777,7 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
         def __exit__(self, exc_type, exc, tb):
             queue_events.append("exit")
 
-    monkeypatch.setattr(meta_uploads, "_PLAYABLE_TRANSCODE_SEMAPHORE", FakeSemaphore())
+    monkeypatch.setattr(meta_uploads_helpers, "_PLAYABLE_TRANSCODE_SEMAPHORE", FakeSemaphore())
 
     def override_get_db():
         yield session

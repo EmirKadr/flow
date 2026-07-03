@@ -52,8 +52,10 @@ def assert_activity_ui_is_canonical(page) -> None:
 
     assert page.evaluate("location.pathname") == "/aktiviteter.html"
     assert "Ställen" not in page.title()
-    expect(page.locator(".section-title")).to_have_text("Aktiviteter")
-    expect(page.get_by_role("link", name="Aktiviteter")).to_be_visible()
+    # Sidhuvudet for Bemanning-gruppen har ocksa .section-title (#staffing-title),
+    # sa sidans egen rubrik pekas ut explicit.
+    expect(page.locator(".section-title:not(#staffing-title)")).to_have_text("Aktiviteter")
+    expect(page.get_by_role("link", name="Aktiviteter").first).to_be_visible()
 
     body_text = page.locator("body").inner_text(timeout=15000)
     assert "Ställen" not in body_text

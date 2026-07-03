@@ -1,7 +1,7 @@
 ---
 title: Sankey - Inbound
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-02
 tags: [sankey, inbound, produktivitet, ask, ekonomi]
 ---
 
@@ -9,14 +9,16 @@ tags: [sankey, inbound, produktivitet, ask, ekonomi]
 
 Kort svar: `Sankey - Inbound` är en separat vy för att följa inbound-intäkten
 från mottagna etiketter och unika inköpsrader genom pall-/saldokedjan tills
-pengarna är förverkade i plock. Den öppnas från högerklicksmenyn på
-`Produktivitet` i vänstermenyn eller på Produktivitetens verksamhetsnod och
-kräver egen vybehörighet `sankeyInbound=view`.
+pengarna är förverkade i plock, och från 2026-07-01 även outbounddebiteringen
+för Butik och E-handel. Den öppnas från Bemanning-fliken `Sankey`, från
+högerklicksmenyn på `Produktivitet` i vänstermenyn eller på Produktivitetens
+verksamhetsnod och kräver egen vybehörighet `sankeyInbound=view`.
 
 ## UI och behörighet
 
 Vyn ligger på `sankey-inbound.html` och använder samma skyddade webb/desktop-
-frontend som övriga sidor. Den läggs inte i standardmenyn; ingång är
+frontend som övriga sidor. Den visas som `Sankey` i Bemanning-flikarna när
+rollen har `sankeyInbound=view`. Alternativa ingångar finns kvar:
 `Produktivitet` -> högerklick i vänstermenyn eller högerklick på verksamheten i
 Produktivitetsträdet -> `Sankey - Inbound`.
 
@@ -28,15 +30,20 @@ Kontroller:
 - `Visa endast förverkade`, som filtrerar bort öppna etikettgrenar
 - `Återställ vy`, `Exportera SVG` och `Exportera spårning`
 
-Diagrammet visar noder och flöden per bolag. Klick på nod eller länk visar
-detaljer om intäkt, etiketter, poäng, processandel och de pallgrenar som ligger
-bakom urvalet. `Exportera urval` i detaljpanelen laddar ner just de
+Diagramytan visar två separata kartor: `Inbound` för mottagning, processer och
+status, och `Outbound` som egen karta där flödet delar sig i `Butik` och
+`E-handel` innan debiteringsraderna. Klick på nod eller länk visar detaljer om
+intäkt, etiketter, poäng, processandel och de pallgrenar som ligger bakom
+urvalet. `Exportera urval` i detaljpanelen laddar ner just de
 bakomliggande spårningsraderna; toppknappen `Exportera spårning` laddar ner
 hela rapportens spårningsunderlag. Processintäkt visas också i tabellen under
-diagrammet.
+diagrammet. Under den visas outboundtabellen med Butik/E-handel, debiteringsrad,
+antal, pris och intäkt.
 
 Sankey försöker återanvända redan hämtad data innan den startar en ny hämtning.
-`Visa endast förverkade` gör ingen ny API-hämtning. Om användaren först har
+`Visa endast förverkade` gör ingen ny API-hämtning och påverkar bara
+inboundgrenarna; outbound räknas periodbaserat oavsett om öppna inboundetiketter
+visas. Om användaren först har
 hämtat `Alla bolag` kan bolagsväljaren växla till ett enskilt bolag lokalt. Om
 en månad eller vecka är hämtad kan en dag i samma period visas lokalt, och om ett
 år är hämtat kan en månad i året visas lokalt. Saknas den begärda klientvyn
@@ -44,6 +51,23 @@ faller frontend tillbaka till vanlig API/SSE-hämtning.
 
 Varningsrutan normaliserar även äldre mojibake-strängar för vanliga svenska
 tecken, så varningar som kommit in som `Ã¥/Ã¤/Ã¶` visas som `å/ä/ö`.
+
+Backend ateranvander dessutom Produktivitetens fardiga API-snapshots for
+datumstyrda loggkallor nar hela Sankey-fonstret redan finns lokalt. Det galler
+`receive` och `trans`. Plocklogg Full (`pick`) hamtas via Sankeys live-/
+`dblog_*`-vag, eftersom Produktivitetens dags-snapshots kan sakna plockrader som
+behivs for outboundavstamning mot WMS. Nulageskallan `buffer` hamtas fortfarande
+via Sankeys egen vag, sa aktuell pallplats inte blir beroende av en aldre
+produktivitetssnapshot.
+Nar lokal DuckDB-arkivcache ar pa laser Sankey dblog-segment fran cachen och
+ateranvander aven toppade live-dagar som redan finns i arkivtabellen. I
+`source_status` syns detta som `status=local_archive`; annars faller kallan
+tillbaka till live-/dblog-API.
+`item_alias` ar en datumslos stodkalla och laser forst nattens DuckDB-snapshot
+(`status=local_snapshot`). Saknas snapshoten faller Sankey tillbaka till samma
+timestamp-split via API som tidigare. Buffertpall (`buffer` /
+`v_ask_article_buffertpallet`) hamtas alltid live vid berakning och ingar inte i
+00:01-snapshoten.
 
 ## API
 
@@ -56,26 +80,54 @@ Query:
 - `company=GG|MG|...` valfritt; saknas betyder alla bolag i verksamheten
 - `only_consumed=true|false`
 
-Perioden väljer mottagningskohorten. Backend följer sedan samma etiketter från
-periodstart fram till dagens datum via live-vyer och `dblog_*`-arkiv. Svaret
-innehåller `summary`, `companies`, `nodes`, `links`, `processes`,
-`trace_rows`, `warnings`, `source_status`, `period`, `filters`, `business` och
-`cache`.
-`summary` innehåller bland annat `gross_income`, `gross_income_labels`,
-`gross_income_purchase_lines`, `labels_received` och
-`purchase_lines_received`. Noder, länkar och processrader har motsvarande
-`label_revenue` och `purchase_line_revenue` så UI:t kan visa breakdown utan att
-behöva räkna om.
+Perioden väljer mottagningskohorten för inbound och räkneperioden för outbound.
+Backend följer inboundetiketter från periodstart fram till dagens datum via
+live-vyer och `dblog_*`-arkiv. Outbound räknas i vald period från Plocklogg Full
+och Dispatchpallslogg (`dispatch_pallet_log`/`dblog_dispatch_pallet_log`).
+Svaret innehåller `summary`, `companies`, `nodes`, `links`,
+`processes`, `outbound_metrics`, `trace_total`, `trace_counts`, `trace_token`, `trace_filter`,
+`warnings`, `source_status`, `period`, `filters`, `business` och `cache`.
+`trace_rows` ingår inte längre i huvudsvaret, eftersom helår kan ge mycket stora
+spårningsunderlag. Frontend visar antal direkt från `trace_total`/`trace_counts`
+och hämtar rader först när användaren öppnar detaljpanelen eller exporterar.
+`source_status` kan visa `status=productivity_snapshot` for `receive` och
+`trans` nar backend har ateranvant Produktivitetens snapshotfiler i stallet for
+att anropa extern API for samma vyer igen.
+`source_status` kan aven visa `status=local_snapshot` for `item_alias` nar
+forpackningsfaktorerna kommer fran nattens DuckDB-snapshot.
+`summary` innehåller bland annat `gross_income`, `inbound_income`,
+`outbound_income`, `gross_income_labels`, `gross_income_purchase_lines`,
+`labels_received`, `purchase_lines_received`, `outbound_picked_orders`,
+`outbound_picked_rows`, `outbound_picked_pcs`, `outbound_full_pallets` och
+`outbound_loaded_pallets`.
+Noder, länkar och processrader har motsvarande `label_revenue`,
+`purchase_line_revenue` och `outbound_revenue` så UI:t kan visa breakdown utan
+att behöva räkna om.
+`GET /api/sankey/inbound/trace?token=&scope=all|node|link&id=&company=&start_date=&end_date=&only_consumed=&offset=&limit=`
+returnerar paginerade spårningsrader för huvudrapporten eller vald nod/länk.
+`GET /api/sankey/inbound/trace.csv?token=&scope=&id=&company=&start_date=&end_date=&only_consumed=&name=` streamar samma
+urval som semikolonseparerad CSV med Excel-vänliga svenska rubriker. Om
+spårningstoken har gått ut svarar API:t med HTTP 410 och användaren behöver köra
+rapporten igen.
 När `only_consumed=false` innehåller svaret även `client_filters.only_consumed`
-med `summary`, `companies`, `nodes`, `links`, `processes` och `trace_rows` för
-förverkad-vyn. Vid direkt `only_consumed=true` finns motsvarande
+med `summary`, `companies`, `nodes`, `links`, `processes` och `outbound_metrics`
+för förverkad-vyn. Vid direkt `only_consumed=true` finns motsvarande
 `client_filters.all` för att kunna växla tillbaka lokalt.
 Nyare svar innehåller dessutom `client_filters.views`, en karta med
 färdigräknade klientvyer från samma branchunderlag. Nyckeln har formatet
 `period|periodstart|bolag|0/1`, till exempel `day|2026-06-25|GG|0`.
 All-bolag-payloads får vyer för `ALL` och varje bolag i underlaget. Månad och
-vecka får dagsvyer; år får månadsvyer. `0/1` anger om vyn är standard eller
-`Visa endast förverkade`.
+vecka får dagsvyer. År prioriterar alltid årsvyn och därefter månadsvyer för
+`ALL` och varje bolag, inklusive både standardvyn och `Visa endast
+förverkade`, så ett hämtat helår normalt kan byta bolag, månadsdatum och
+förverkad-filter lokalt. `0/1` anger om vyn är standard eller `Visa endast
+förverkade`. Stora rapporter kan sätta `client_filters.prebuilt=false`,
+`views={}` och `omitted_reason=too_many_views` eller `large_payload`.
+Dag/vecka/manad/ar prioriterar lokala klientvyer aven nar kallaraderna ar
+manga, sa lange vyantalet ryms.
+Det betyder att backend har byggt aktuell vy men hoppat över de extra
+klientvyerna; frontend faller då tillbaka till vanlig API/SSE-hämtning om
+användaren byter bolag, periodnivå eller `Visa endast förverkade`.
 
 Varje lyckad körning auditloggas som
 `sankey_inbound_report/run`. Misslyckad källhämtning auditloggas som
@@ -93,6 +145,13 @@ En mottagningsrad räknas som fakturerbar etikett när:
 - samma `company + pall_num` inte senare har en `type = 100`-rad som nollställer
   mottaget
 
+`type = 91` räknas alltså inte som en ny mottagen etikett, men kan lägga till
+processen `Buffer Update` på en befintlig inboundgren. Först försöker Sankey
+matcha raden mot plockplats-FIFO via `company + warehouse + item + location`.
+Om den nyckeln inte träffar används pallnumret som fallback, så en buffert-
+uppdatering inte tappas bara för att platsfältet inte är exakt samma som i
+plockplatskön.
+
 Gross income består av två inbound-intäkter:
 
 - etikettintäkt = antal fakturerbara mottagningsrader * priset på finance-raden
@@ -106,6 +165,31 @@ samma `company + book_num + line_num`. Därefter följer den med samma branch so
 etikettintäkten och delas på processerna med samma poängmodell. Om bolaget
 saknar prisrad för `inbound_labels` eller `inbound_article_rows` visas varning
 och just den intäktsdelen blir `0` tills priset konfigureras.
+
+Outbound består av två grenar:
+
+- Butik (`TO`): `store_picked_orders` räknar unika `order_num` som börjar på
+  `TO` och har minst en rad med `qty_suf`/`Plockat >= 1`;
+  `store_picked_rows` räknar plockloggsrader där `order_num` börjar på
+  `TO`, `pick_zone` inte är `H` och `qty_suf`/`Plockat` är minst `1`;
+  `store_picked_pcs` använder samma radfilter men delar upp `qty_suf` per
+  `item_num` via `item_alias.conversion_factor` störst först, med faktor `1`
+  som `ST`;
+  `store_full_pallets` räknar plockloggsrader där `pick_zone = H`, plockat är
+  minst `1` och ordern börjar på `TO`; `store_loaded_pallets` räknar
+  Dispatchpallslogg där `parent_pick_pall_num`/`Pappapallsnr` är tomt.
+- E-handel (`PR`): `ecom_picked_orders` räknar unika `order_num` som börjar på
+  `PR` och har minst en rad med `qty_suf`/`Plockat >= 1`;
+  `ecom_picked_rows` räknar plockloggsrader där `order_num` börjar på
+  `PR`, `pick_zone` inte är `H` och plockat är minst `1`;
+  `ecom_picked_pcs` använder samma `package_breakdown`-logik som butik fast för
+  `PR`-ordrar; `ecom_pallet` räknar helpallsrader där `pick_zone = H`,
+  plockat är minst `1` och ordern börjar på `PR`.
+
+Outboundintäkt per rad är `antal * pris` från motsvarande
+`invoice_rows_by_company`-rad i `Intäkt/utgift`. `gross_income` i Sankey är
+inbound plus outbound, medan `inbound_income` och `outbound_income` visar
+delarna separat.
 
 Processpoäng hämtas via samma KPI-target-parser som Produktivitet använder,
 inklusive `action_id`/`Processnamn` och API-kolumner som `loaded_rows`,
@@ -142,20 +226,25 @@ Backend följer:
 - mottagning: `v_ask_receive_log` / `dblog_receive_log`
 - transaktioner: `v_ask_trans_log` / `dblog_trans_log`
 - plock: `v_ask_pick_log_full` / `dblog_pick_log`
+- outbound dispatch: `dispatch_pallet_log` / `dblog_dispatch_pallet_log`
 - aktuell buffert: `v_ask_article_buffertpallet`
+- forpackningsfaktorer: `item_alias` (nattlig DuckDB-snapshot, API fallback)
 - KPI-poäng: Produktivitetens coredata-/fallbackfil för `v_ask_kpi_target`
 
 AutoStore-normalisering: transloggen kan visa `loc_to = AS1000160101`, medan
 buffertpall-vyn visar `1000160101`. Sankey matchar båda formerna.
 
-Varje aktiv branch skickas också som en rad i `trace_rows`. Raden innehåller
-bland annat `origin_pall`, `current_pall`, eventuell `current_location`,
-`purchase_number`, `purchase_line`, `source_row_id`, status, intäktsdelar,
-`received_date`, `path` och dynamiska `step_1`, `step_2` osv. `node_ids` och
-`link_keys` anger vilka diagramnoder/länkar branchen passerar, så frontend kan filtrera
-spårningslistan när användaren klickar på en misstänkt nod eller länk.
-CSV-exporten använder samma rader och är avsedd för snabb felsökning i Excel.
-Pallid och rad-id ligger i API-svaret/exporten men sparas inte i auditloggen.
+Varje aktiv branch lagras som en spårningsrad bakom rapportens `trace_token`.
+Raden innehåller bland annat `origin_pall`, `current_pall`, eventuell
+`current_location`, `purchase_number`, `purchase_line`, `source_row_id`, status,
+intäktsdelar, `received_date`, `path` och dynamiska `step_1`, `step_2` osv.
+`node_ids` och `link_keys` anger vilka diagramnoder/länkar branchen passerar.
+Frontend använder `trace_counts` för att visa antal utan att ladda alla rader,
+hämtar en liten preview via `/api/sankey/inbound/trace`, och låter
+CSV-exporten streamas från `/api/sankey/inbound/trace.csv` så stora helår inte
+behöver serialiseras som en enda JSON-payload. CSV-exporten är avsedd för snabb
+felsökning i Excel. Pallid och rad-id ligger i trace-API/exporten men sparas
+inte i auditloggen.
 
 Datakällejämförelse 2026-06-24 visade att `v_ask_palletloading_log` och
 `v_ask_item_summary_stock_automation` inte påverkade Sankey-resultatet och inte
@@ -202,13 +291,15 @@ vybehörighet/nyckelexponering. Äldre mottagningskohorter kräver åtkomst till
 för perioden.
 
 Första versionen är read/report-only: inga nya databastabeller, inga migreringar
-och ingen persistent materialisering. Endast en kort in-memory cache används för
-tunga rapportfrågor.
+och ingen persistent materialisering. Endast korta in-memory-cacher används för
+tunga rapportfrågor och för de spårningsrader som hör till en färsk
+`trace_token`.
 
 ## Källor
 
 - `../app/backend/sankey_inbound_service.py`
 - `../app/backend/routers/sankey.py`
+- `../app/backend/settings_service.py`
 - `../app/frontend/sankey-inbound.html`
 - `../app/frontend/js/sankey_inbound.js`
 - [Produktivitet](productivity.md)

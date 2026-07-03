@@ -238,6 +238,54 @@ def test_uploads_page_does_not_load_productivity_upload_sync(local_allocation_se
         context.close()
 
 
+def test_schedule_cell_right_click_splits_and_double_click_opens_activity_picker(local_allocation_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        login_admin(page, local_allocation_server)
+        page.wait_for_selector("#scheduleBody tr", timeout=15000)
+        cell = page.locator("#scheduleBody td[data-hour][data-split='0']:not(.locked-cell)").filter(
+            has=page.locator("select.cell-select:not(:disabled)")
+        ).first
+        expect(cell).to_be_visible(timeout=15000)
+        cell_key = cell.evaluate("""(el) => ({ personId: el.dataset.personId, hour: el.dataset.hour })""")
+        cell_selector = f'#scheduleBody td[data-person-id="{cell_key["personId"]}"][data-hour="{cell_key["hour"]}"]'
+        cell = page.locator(cell_selector)
+
+        cell.click(button="right")
+        expect(page.locator(".schedule-cell-context-menu")).to_be_visible(timeout=15000)
+        expect(page.get_by_role("menuitem", name="Dela")).to_be_visible()
+        expect(page.get_by_role("menuitem", name="Anmärkning")).to_be_visible()
+        page.get_by_role("menuitem", name="Dela").click()
+        expect(page.locator("#scheduleSplitContinue")).to_be_visible(timeout=15000)
+        page.click("#scheduleSplitCancel")
+        expect(page.locator(".modal-backdrop")).to_have_count(0)
+
+        cell.click(button="right")
+        page.get_by_role("menuitem", name="Anmärkning").click()
+        expect(page.locator("#scheduleRemarkInput")).to_be_visible(timeout=15000)
+        page.fill("#scheduleRemarkInput", "Behöver kollas")
+        page.click("#scheduleRemarkSave")
+        expect(page.locator(".modal-backdrop")).to_have_count(0)
+        page.wait_for_function(
+            """(selector) => document.querySelector(selector)?.classList.contains("has-remark") === true""",
+            arg=cell_selector,
+            timeout=15000,
+        )
+
+        cell.dblclick()
+        cell_handle = cell.element_handle()
+        page.wait_for_function(
+            """(cell) => cell.querySelector("select.cell-select")?.dataset.activityOptionsLoaded === "1" """,
+            arg=cell_handle,
+            timeout=15000,
+        )
+        expect(page.locator(".schedule-cell-context-menu")).to_have_count(0)
+        expect(page.locator("#scheduleSplitContinue")).to_have_count(0)
+    finally:
+        context.close()
+
+
 def test_split_values_result_headers_copy_whole_columns(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     context.grant_permissions(["clipboard-read", "clipboard-write"], origin=local_allocation_server)
@@ -1005,20 +1053,8 @@ def test_ytgenerering_map_settings_adds_series_and_saves(local_allocation_server
         )
         assert snap_result["lineCount"] > 0, snap_result
         page.locator('[data-map-setting-rect="UTL206"]').click()
-        page.evaluate(
-            """
-            () => {
-                const rect = document.querySelector('[data-map-setting-rect="UTL207"]');
-                if (!rect) throw new Error("Missing UTL207 rect");
-                rect.dispatchEvent(new MouseEvent("click", {
-                    bubbles: true,
-                    cancelable: true,
-                    button: 0,
-                    ctrlKey: true,
-                }));
-            }
-            """
-        )
+        if page.locator("[data-map-selection-count]").text_content().strip() != "2 valda":
+            page.locator('[data-map-setting-rect="UTL207"]').click(modifiers=["Control"])
         expect(page.locator("[data-map-selection-count]")).to_have_text("2 valda")
         page.locator('[data-map-setting-rect="UTL206"]').click(button="right")
         page.get_by_role("button", name="Byt riktning").click()

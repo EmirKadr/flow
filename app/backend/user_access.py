@@ -37,6 +37,7 @@ ROLE_VIEW_ORDER = (
     "productivityFinance",
     "dataFetch",
     "mcp",
+    "labelEditor",
     "allocationUploads",
     "allocationProcess",
     "allocationProcessMatrix",
@@ -70,6 +71,7 @@ ROLE_VIEW_LABELS = {
     "productivityFinance": "Intäkt/utgift",
     "dataFetch": "Hämta data",
     "mcp": "MCP",
+    "labelEditor": "Etiketter",
     "allocationUploads": "Uppladdningar",
     "allocationProcess": "Bearbeta",
     "allocationProcessMatrix": "Bearbeta-matris",
@@ -120,22 +122,10 @@ ROLE_ACCESS_LEVEL_OPTIONS = (
     {"value": "edit", "label": "Redigera"},
 )
 SIDEBAR_DEFAULT_LAYOUT = (
-    {"id": "mySchedule"},
-    {"id": "myProductivity"},
-    {"id": "schedule"},
-    {"id": "overview"},
-    {"id": "productivity"},
-    {"id": "dataFetch"},
-    {"id": "mcp"},
+    {"id": "staffing"},
+    {"id": "tools"},
     {"id": "allocationProcess"},
     {"id": "allocationSettings"},
-    {"id": "allocationSplit"},
-    {"id": "persons"},
-    {"id": "activities"},
-    {"id": "analytics"},
-    {"id": "meta"},
-    {"id": "users"},
-    {"id": "businesses"},
 )
 ROLE_VIEW_DEFAULT_ACCESS = {
     "leader": {

@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.database import Base
-from app.backend.healthcheck_service import clean_text, collect_render_logs, collect_render_resource, run_healthcheck
+from app.backend.healthcheck_service import clean_text, run_healthcheck
 from app.backend.models import Business, User, UserWaitMetric
 from app.backend.routers import healthcheck
 from app.backend.schemas import WaitMetricBatchIn, WaitMetricIn
@@ -15,10 +15,10 @@ def make_session():
     return engine, SessionLocal()
 
 
-def test_healthcheck_reports_sqlite_database_without_render():
+def test_healthcheck_reports_sqlite_database():
     engine, db = make_session()
     try:
-        report = run_healthcheck(db=db, include_render=False)
+        report = run_healthcheck(db=db)
     finally:
         db.close()
         Base.metadata.drop_all(engine)
@@ -30,8 +30,8 @@ def test_healthcheck_reports_sqlite_database_without_render():
     assert any(item["name"] == "Databas" for item in report["checks"])
 
 
-def test_healthcheck_can_skip_database_for_render_only_diagnostics():
-    report = run_healthcheck(db=None, include_render=False)
+def test_healthcheck_can_skip_database():
+    report = run_healthcheck(db=None)
 
     assert report["database"]["skipped"] is True
     assert report["database"]["connected"] is None
@@ -202,54 +202,3 @@ def test_wait_metric_summary_surfaces_critical_targets_and_long_tasks():
 def test_healthcheck_redacts_secret_like_text():
     assert "secret[redacted]" in clean_text("secret=abc123")
     assert "abc123" not in clean_text("token=abc123")
-
-
-def test_render_logs_use_owner_id_and_app_log_type_first():
-    calls = []
-
-    class FakeRenderClient:
-        def get(self, path, params=None):
-            calls.append((path, params))
-            return {
-                "logs": [
-                    {
-                        "timestamp": "2026-05-26T07:36:00Z",
-                        "message": "Build failed with traceback",
-                    }
-                ]
-            }, None
-
-    checks = []
-    result = collect_render_logs(FakeRenderClient(), "srv-test", "tea-test", checks)
-
-    assert calls[0][0] == "/logs"
-    assert calls[0][1]["ownerId"] == "tea-test"
-    assert calls[0][1]["resource"] == ["srv-test"]
-    assert calls[0][1]["type"] == ["app"]
-    assert result["error_count"] == 1
-    assert result["source"] == "/logs"
-
-
-def test_render_logs_explains_missing_owner_id():
-    class FakeRenderClient:
-        def get(self, path, params=None):  # pragma: no cover - should never be called
-            raise AssertionError("ownerId should be required before Render log calls")
-
-    checks = []
-    result = collect_render_logs(FakeRenderClient(), "srv-test", "", checks)
-
-    assert result["error"] == "owner_id_missing"
-    assert checks[0]["name"] == "Render loggar"
-    assert "ownerId" in checks[0]["message"]
-
-
-def test_render_service_not_suspended_is_ok():
-    class FakeRenderClient:
-        def get(self, path, params=None):
-            return {"suspended": "not_suspended"}, None
-
-    checks = []
-    result = collect_render_resource(FakeRenderClient(), "service", "srv-test", checks)
-
-    assert result["error"] is None
-    assert checks[0]["status"] == "ok"

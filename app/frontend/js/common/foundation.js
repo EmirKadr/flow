@@ -169,6 +169,28 @@ const MCP_ICON = `
   </svg>
 `;
 
+const LABEL_EDITOR_ICON = `
+  <svg class="sidebar-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 5.8A2.8 2.8 0 0 1 6.8 3h7.7L20 8.5v9.7a2.8 2.8 0 0 1-2.8 2.8H6.8A2.8 2.8 0 0 1 4 18.2Z"></path>
+    <path d="M14.5 3v5.5H20"></path>
+    <path d="M8 13h4"></path>
+    <path d="M8 17h8"></path>
+    <path d="M15.5 12h.01"></path>
+  </svg>
+`;
+
+const TOOLS_ICON = `
+  <svg class="sidebar-line-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9 6V4.8A1.8 1.8 0 0 1 10.8 3h2.4A1.8 1.8 0 0 1 15 4.8V6"></path>
+    <path d="M4 9.5h16"></path>
+    <rect x="3" y="6" width="18" height="15" rx="3"></rect>
+    <path d="M8 13h.01"></path>
+    <path d="M12 13h.01"></path>
+    <path d="M16 13h.01"></path>
+    <path d="M8 17h8"></path>
+  </svg>
+`;
+
 const ASSISTANT_CHAT_STORAGE_KEY = "flow-assistant-chat";
 const ASSISTANT_CHAT_OPEN_KEY = "flow-assistant-chat-open";
 const ASSISTANT_CHAT_COUNT_KEY = "flow-assistant-chat-count";
@@ -191,22 +213,10 @@ const SIDEBAR_MOVE_DOWN_ICON = `
 `;
 
 const SIDEBAR_DEFAULT_LAYOUT = [
-  { id: "mySchedule" },
-  { id: "myProductivity" },
-  { id: "schedule" },
-  { id: "overview" },
-  { id: "productivity" },
-  { id: "dataFetch" },
-  { id: "mcp" },
+  { id: "staffing" },
+  { id: "tools" },
   { id: "allocationProcess" },
   { id: "allocationSettings" },
-  { id: "allocationSplit" },
-  { id: "persons" },
-  { id: "activities" },
-  { id: "analytics" },
-  { id: "meta" },
-  { id: "users" },
-  { id: "businesses" },
 ];
 
 const VIEW_ID_ALIASES = {
@@ -224,6 +234,7 @@ const ROLE_VIEW_IDS = [
   "productivityFinance",
   "dataFetch",
   "mcp",
+  "labelEditor",
   "allocationUploads",
   "allocationProcess",
   "allocationProcessMatrix",

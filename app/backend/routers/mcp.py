@@ -25,6 +25,7 @@ from ..mcp_service import (
     mcp_brain_options,
     minimax_configured,
     normalize_thinking_mode,
+    nowaste_configured,
     openai_configured,
 )
 from ..models import Business, User
@@ -113,6 +114,7 @@ async def mcp_status(
                 "mcp_configured": True,
                 "brain_configured": brain_configured(),
                 "deepseek_configured": deepseek_configured(),
+                "nowaste_configured": nowaste_configured(),
                 "openai_configured": openai_configured(),
                 "gemini_configured": gemini_configured(),
                 "minimax_configured": minimax_configured(),

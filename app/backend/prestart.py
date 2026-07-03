@@ -2,7 +2,7 @@
 
 Körs av container-entrypoint före uvicorn (se Dockerfile CMD).
 
-- PostgreSQL: kör `alembic upgrade head` (den historiska Render-vägen).
+- PostgreSQL: kör `alembic upgrade head` (historisk Postgres-väg).
 - Azure SQL / övriga dialekter: migrationerna är skrivna för PostgreSQL
   (JSONB, jsonb_build_array, m.m.) och spelar inte upp rent. Skapa därför
   schemat direkt från ORM-modellernas metadata — som använder portabla

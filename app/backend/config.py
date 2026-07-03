@@ -12,7 +12,7 @@ def _load_env_files_into_environ(paths: tuple[str, ...]) -> None:
     Pydantic-settings laser bara deklarerade falt ur env_file och skriver aldrig
     tillbaka till os.environ. Dynamiskt namngivna nycklar (t.ex.
     NOEFFECT_<TENANT>_TOKEN) lases med os.getenv och blir annars osynliga lokalt.
-    Riktiga OS-miljovariabler (t.ex. i Render) skrivs aldrig over.
+    Riktiga OS-miljovariabler (t.ex. i k8s) skrivs aldrig over.
     """
     for path in paths:
         if not os.path.isfile(path):
@@ -60,8 +60,11 @@ class Settings(BaseSettings):
     MCP_LLM_PROVIDER: str = "auto"
     MCP_GEMINI_MODELS: str = "gemini-2.5-flash,gemini-2.5-pro"
     MCP_DEEPSEEK_MODELS: str = "deepseek-v4-pro,deepseek-chat,deepseek-reasoner"
-    MCP_OPENAI_MODELS: str = "gpt-4o-mini,gpt-4o"
+    MCP_OPENAI_MODELS: str = "gpt-5.5,gpt-5.4,gpt-5.2,gpt-5,gpt-4o-mini,gpt-4o,gpt-4.1-mini,gpt-4.1,gpt-4.1-nano,o4-mini,o3-mini,o3"
     MCP_MINIMAX_MODELS: str = "MiniMax-M2.7"
+    MCP_LLM_OPENAI_API_KEY: str = ""
+    MCP_LLM_OPENAI_MODEL: str = "gpt-4o"
+    MCP_LLM_OPENAI_API_BASE_URL: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-pro"
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
@@ -105,16 +108,23 @@ class Settings(BaseSettings):
     DATA_SOURCE_RESPONSE_ROW_CAP: int = 50000
     DATA_SOURCE_CATALOG_PATH: str = ""
     DATA_SOURCE_CATALOG_JSON: str = ""
+    # Lokal arkiv-cache (DuckDB). Speglar dblog_*-arkivvyer per tenant så lokala
+    # körningar av Sankey/Produktivitet/Hämta data läser historik lokalt istället
+    # för via API. Endast för lokal utveckling; default av. Se wiki/local-archive-cache.md.
+    ARCHIVE_CACHE_ENABLED: bool = False
+    ARCHIVE_CACHE_DIR: str = ""  # tom => <compiled_data_root>/archive_cache
+    ARCHIVE_CACHE_SEED_DAYS: int = 400  # hur långt bak den initiala dblog-seeden går
+    ARCHIVE_CACHE_CHUNK_DAYS: int = 14  # seeden hämtas/skrivs i bitar om N dagar (återupptagningsbart)
+    ARCHIVE_CACHE_EMPTY_STOP_DAYS: int = 300  # backfill stoppas nar N dagar i rad saknar rader
+    # Djup-seeden (hela dblog-historiken) körs via CLI (python -m app.backend.archive_cache_cli),
+    # inte vid serverstart. Serverns schemaläggare toppar bara på redan seedade vyer framåt.
+    # Sätt =1 bara om du vill att servern ska göra den tunga initiala seeden vid start.
+    ARCHIVE_CACHE_SEED_ON_START: bool = False
+    ARCHIVE_CACHE_SEED_WORKERS: int = 5  # parallella hämtningar (vyer/tenants) i CLI-seeden
+    ARCHIVE_CACHE_SYNC_HOUR: int = 0  # daglig topp-på-tid (lokal tid), 00:01 => hour 0
+    ARCHIVE_CACHE_SYNC_MINUTE: int = 1
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0
-    RENDER_API_KEY: str = ""
-    RENDER_API_BASE_URL: str = "https://api.render.com/v1"
-    RENDER_SERVICE_ID: str = ""
-    RENDER_WEB_SERVICE_ID: str = ""
-    RENDER_OWNER_ID: str = ""
-    RENDER_WORKSPACE_ID: str = ""
-    RENDER_POSTGRES_ID: str = ""
-    RENDER_DATABASE_ID: str = ""
     HEALTHCHECK_PUBLIC_URL: str = ""
     TRACKING_ALLOW_VALUE_SAMPLES: bool = False
     RFID_DEVICE_TOKEN: str = ""

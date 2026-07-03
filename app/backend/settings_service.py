@@ -22,6 +22,7 @@ STAFFING_HISTORY_HOURS_MIN = 1.0
 STAFFING_HISTORY_HOURS_MAX = 240.0
 PRODUCTIVITY_FINANCE_KEY = "productivity_finance"
 PRODUCTIVITY_FINANCE_PERIOD_FILTER_COLUMNS = {
+    "created",
     "time_stamp_int",
     "date",
     "timestamp",
@@ -121,7 +122,7 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
         "calculation_sql": "SELECT COUNT(*) AS st_antal FROM v_ask_receive_log WHERE type <> '45' AND type <> '91' AND type <> '100' AND company = 'GG';",
     },
     "store_picked_orders": {
-        "calculation_prompt": "antal unika ordernummer i plocklogg full som börjar på TO",
+        "calculation_prompt": "antal unika ordernummer i plocklogg full som börjar på TO\nexkludera rader med <1 i kolumn plockat",
         "calculation_plan": {
             "status": "ok",
             "view": "v_ask_pick_log_full",
@@ -129,11 +130,12 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
             "output_columns": ["order_num"],
             "filters": [
                 {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["order_num"], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND qty_suf >= 1 AND company = 'GG';",
     },
     "store_picked_rows": {
         "calculation_prompt": "antal poster i plocklogg full\ninkludera endast ordernummer som börjar på TO\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
@@ -152,6 +154,23 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
         },
         "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG';",
     },
+    "store_picked_pcs": {
+        "calculation_prompt": "antal förpackningar i plocklogg full uppdelat på plockat per artikel\ninkludera endast ordernummer som börjar på TO\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["item_num", "qty_suf"],
+            "filters": [
+                {"id": "order_num", "operator": "StartsWith", "value": "TO"},
+                {"id": "pick_zone", "operator": "NE", "value": "H"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "package_breakdown", "field": "qty_suf", "distinct_by": [], "group_by": ["item_num"], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "-- Förpacknings-uppdelning av qty_suf per rad.\n-- Hämtar v_ask_pick_log_full WHERE order_num LIKE 'TO%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG', joinar mot item_alias på item_num+company, delar upp qty_suf efter conversion_factor (störst först, faktor 1 = ST).\n-- Summerar antal förpackningar per item_num, unit.",
+    },
     "store_full_pallets": {
         "calculation_prompt": "antal poster i plocklogg full med zon = H\nexkludera rader med <1 i kolumn plockat\ninkludera endast ordernummer som börjar på TO",
         "calculation_plan": {
@@ -167,22 +186,89 @@ PRODUCTIVITY_FINANCE_GG_INVOICE_CALCULATIONS = {
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= '1' AND order_num LIKE 'TO%' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= 1 AND order_num LIKE 'TO%' AND company = 'GG';",
     },
     "store_loaded_pallets": {
-        "calculation_prompt": "antal poster i dispatchpallar utan värde i kolumnen pappapallsnr",
+        "calculation_prompt": "antal poster i dispatchpallslogg utan värde i kolumnen pappapallsnr",
         "calculation_plan": {
             "status": "ok",
-            "view": "v_ask_dispatch_pallet",
-            "view_label": "Dispatchpallar",
+            "view": "dispatch_pallet_log",
+            "view_label": "Dispatchpallslogg",
             "output_columns": ["parent_pick_pall_num"],
             "filters": [
-                {"id": "parent_pick_pall_num", "operator": "NE", "value": ""},
+                {"id": "parent_pick_pall_num", "operator": "EQ", "value": ""},
                 {"id": "company", "operator": "EQ", "value": "GG"},
             ],
             "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
         },
-        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_dispatch_pallet WHERE parent_pick_pall_num <> '' AND company = 'GG';",
+        "calculation_sql": "SELECT COUNT(*) AS value FROM dispatch_pallet_log WHERE parent_pick_pall_num = '' AND company = 'GG';",
+    },
+    "ecom_picked_orders": {
+        "calculation_prompt": "antal unika ordernummer i plocklogg full som börjar på PR\nexkludera rader med <1 i kolumn plockat",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["order_num"],
+            "filters": [
+                {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "count_distinct", "field": None, "distinct_by": ["order_num"], "group_by": [], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "SELECT COUNT(DISTINCT order_num) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'PR%' AND qty_suf >= 1 AND company = 'GG';",
+    },
+    "ecom_picked_rows": {
+        "calculation_prompt": "antal poster i plocklogg full\ninkludera endast ordernummer som börjar på PR\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["rowid"],
+            "filters": [
+                {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+                {"id": "pick_zone", "operator": "NE", "value": "H"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE order_num LIKE 'PR%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG';",
+    },
+    "ecom_picked_pcs": {
+        "calculation_prompt": "antal förpackningar i plocklogg full uppdelat på plockat per artikel\ninkludera endast ordernummer som börjar på PR\nexkludera poster med zon = H\nexkludera rader med <1 i kolumn plockat",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["item_num", "qty_suf"],
+            "filters": [
+                {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+                {"id": "pick_zone", "operator": "NE", "value": "H"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "package_breakdown", "field": "qty_suf", "distinct_by": [], "group_by": ["item_num"], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "-- Förpacknings-uppdelning av qty_suf per rad.\n-- Hämtar v_ask_pick_log_full WHERE order_num LIKE 'PR%' AND pick_zone <> 'H' AND qty_suf >= 1 AND company = 'GG', joinar mot item_alias på item_num+company, delar upp qty_suf efter conversion_factor (störst först, faktor 1 = ST).\n-- Summerar antal förpackningar per item_num, unit.",
+    },
+    "ecom_pallet": {
+        "calculation_prompt": "antal poster i plocklogg full med zon = H\nexkludera rader med <1 i kolumn plockat\ninkludera endast ordernummer som börjar på PR",
+        "calculation_plan": {
+            "status": "ok",
+            "view": "v_ask_pick_log_full",
+            "view_label": "Plocklogg Full",
+            "output_columns": ["rowid"],
+            "filters": [
+                {"id": "pick_zone", "operator": "EQ", "value": "H"},
+                {"id": "qty_suf", "operator": "GTE", "value": 1},
+                {"id": "order_num", "operator": "StartsWith", "value": "PR"},
+                {"id": "company", "operator": "EQ", "value": "GG"},
+            ],
+            "calculation": {"metric": "count", "field": None, "distinct_by": [], "group_by": [], "sort_by": None, "limit": None},
+        },
+        "calculation_sql": "SELECT COUNT(*) AS value FROM v_ask_pick_log_full WHERE pick_zone = 'H' AND qty_suf >= 1 AND order_num LIKE 'PR%' AND company = 'GG';",
     },
     "inbound_article_rows": {
         "calculation_prompt": "kolla i varumottagningslogg\nexkludera typ 23, 45, 46, 47, 63, 81, 91 & 100\nexkludera mottaget = 0\nsedan ta antal rader om vi tar bort dubletter för radnummer per inköpsnummer",
@@ -367,7 +453,7 @@ def _productivity_finance_invoice_template_rows() -> list[dict]:
         _productivity_finance_invoice_row("ecom_picked_orders", "E-handel", "Outbound", "Plockade orders", "Per order"),
         _productivity_finance_invoice_row("ecom_picked_rows", "E-handel", "Outbound", "Plockade rader", "Per rad"),
         _productivity_finance_invoice_row("ecom_picked_pcs", "E-handel", "Outbound", "Plockade pcs", "Per plockenhet (kartong/styck)"),
-        _productivity_finance_invoice_row("ecom_pallet", "E-handel", "Outbound", "Per pall", "Helpall"),
+        _productivity_finance_invoice_row("ecom_pallet", "E-handel", "Outbound", "Antal helpallar", "Helpall"),
         _productivity_finance_invoice_row("vas_blue_normal", "VAS", "Blue collar VAS", "Per timme", "Normal", collar_type="blue_collar", vas_rate_type="normal"),
         _productivity_finance_invoice_row("vas_blue_ot_50", "VAS", "Blue collar VAS", "Per timme", "ÖT 1 - 50%", collar_type="blue_collar", vas_rate_type="ot_50"),
         _productivity_finance_invoice_row("vas_blue_ob1_40", "VAS", "Blue collar VAS", "Per timme", "OB1 - 40%", collar_type="blue_collar", vas_rate_type="ob1_40"),

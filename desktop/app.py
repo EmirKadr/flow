@@ -374,7 +374,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("flow är redo.", 3000)
             return
         self._error_view.set_message(
-            "Render svarade på health check, men själva appen kunde inte laddas.\n\n"
+            "Servern svarade på health check, men själva appen kunde inte laddas.\n\n"
             "Försök igen eller öppna sidan i webbläsaren."
         )
         self._stack.setCurrentWidget(self._error_view)

@@ -1,4 +1,4 @@
----
+﻿---
 title: Felkoder och felmeddelanden
 status: aktiv
 updated: 2026-06-10
@@ -26,7 +26,7 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 413 | Request Entity Too Large | Excelimport ar for stor | Minska filen, dela upp importen. |
 | 422 | Validation Error | Pydantic/API-validering: fel typ, saknat falt, losenordslangd | Ratta formulardata eller API-payload. |
 | 500 | Server Error | Ohanterat serverfel, berakning eller datalasning misslyckades | Rapportera med exakt text, tidpunkt och vy. |
-| 502 | Bad Gateway | Proxy/server kunde inte na backend, ofta vid Render-omstart/OOM, eller extern modell/API gav fel svar, t.ex. MiniMax | Om flera vanliga API:er visar 502: kontrollera Render-events, minne, deploy och serverstatus. Om det bara galler modellflode: kontrollera API-nyckel, modellnamn, kvot och serverlogg. |
+| 502 | Bad Gateway | Proxy/server kunde inte na backend, ofta vid pod-omstart/OOM, eller extern modell/API gav fel svar, t.ex. MiniMax | Om flera vanliga API:er visar 502: kontrollera pod-events (`kubectl describe pod`), minne, deploy och serverstatus. Om det bara galler modellflode: kontrollera API-nyckel, modellnamn, kvot och serverlogg. |
 | 503 | Service Unavailable | Lagerverktyg/offentlig token/beroende saknas eller appchatten saknar API-nyckel | Kontrollera serverkonfiguration eller forsok senare. |
 | 504 | Gateway Timeout | Extern modell/API svarade inte i tid | Forsok igen och kontrollera natverk/MiniMax om det upprepas. |
 
@@ -159,10 +159,10 @@ Kort svar: frontend visar oftast serverns JSON-`detail` direkt, men sanerar HTML
 | 403 | "Sidan kraver behorighet" | Rollen saknar `dataFetch` | Be admin/Super User kontrollera Vybehorigheter. |
 | 404 | "Resultatet hittades inte..." | Export-sessionen saknas | Kor datahamtningen igen. |
 | 502 | "Extern datakälla kunde inte nås." | Extern datakälla svarade inte, URL/sökvägsmall var fel eller TLS-certifikatet kunde inte verifieras | Kontrollera serverns `DATA_SOURCE_*`-miljovarden, API-status och eventuell `DATA_SOURCE_CA_BUNDLE`/`DATA_SOURCE_VERIFY_SSL`. |
-| 502 | "Extern datakälla svarade med HTTP ..." | Extern datakälla nekade eller failade anropet | Använd fel-id i Hämta data-panelen och sök samma id i Render-loggen. |
-| 500 | "Datahämtningen stoppades..." | Oväntat backendfel i datahämtningen | Använd fel-id i Hämta data-panelen och sök samma id i Render-loggen. |
+| 502 | "Extern datakälla svarade med HTTP ..." | Extern datakälla nekade eller failade anropet | Använd fel-id i Hämta data-panelen och sök samma id i serverloggen (`kubectl logs`). |
+| 500 | "Datahämtningen stoppades..." | Oväntat backendfel i datahämtningen | Använd fel-id i Hämta data-panelen och sök samma id i serverloggen (`kubectl logs`). |
 | 503 | "Extern datakatalog saknas..." | Katalogfil/env saknas | Kontrollera att `data/external_data_catalog.json` ar deployad eller satt katalog som env-override. |
-| 503 | "Saknar DATA_SOURCE_..." | Ett eller flera externa API-env saknas i servermiljon | Satt alla `DATA_SOURCE_*`-varden som health-raden listar i Render/env. Provider-specifik endpointmall, headernamn, URL och nycklar ska inte ligga i git. |
+| 503 | "Saknar DATA_SOURCE_..." | Ett eller flera externa API-env saknas i servermiljon | Satt alla `DATA_SOURCE_*`-varden som health-raden listar i driftens env/secrets. Provider-specifik endpointmall, headernamn, URL och nycklar ska inte ligga i git. |
 | 503 | "Datahamtning saknar MINIMAX_API_KEY..." | MiniMax-nyckel saknas | Satt `MINIMAX_API_KEY` i servermiljon. |
 
 ## Lagerverktyg/allokering

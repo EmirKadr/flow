@@ -53,7 +53,7 @@ jobs:
           python -m pip install -r app/requirements.txt -r requirements-dev.txt
           python -m playwright install --with-deps chromium
 
-      - name: Simulate Render build
+      - name: Simulate Alembic build (Postgres)
         working-directory: app
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/flow_test
