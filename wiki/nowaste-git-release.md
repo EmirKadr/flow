@@ -19,6 +19,12 @@ korrekt och kunna hjälpa till när releaser görs mot NoWaste-miljöerna.
 **Alla commits till en `release/*`-branch bygger automatiskt en release i
 Octopus.** Det är hela triggern — ingen manuell "create release" behövs:
 
+Två hårda regler för agenter (beslut 2026-07-03, se `AGENTS.md`):
+
+- **Nytt arbete = ny feature-branch.** Committa aldrig direkt på `main`.
+- **Ny deploy = ny `release/*`-branch** (`release/{år}.{vecka}.{sekvens}`,
+  nästa lediga sekvens). Återanvänd aldrig en gammal release-branch.
+
 - Feature-ändring: merga feature-branchen till en `release/*`-branch → release byggs.
 - Ändring som redan ligger i `main`/`master`: merga `main` till `release/*`-branchen → release byggs.
 

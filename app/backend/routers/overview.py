@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
@@ -101,6 +101,19 @@ def _overview_revision_key_from_parts(
     )
 
 
+def _ywd_filter(year_week_weekdays: list[tuple[int, int, int]]):
+    """(år, vecka, veckodag)-filter som OR-kedja av AND-tripplar —
+    SQL Server stödjer inte tuple-IN. Listan är max en månads dagar."""
+    if not year_week_weekdays:
+        return false()
+    return or_(
+        *[
+            and_(ScheduleCell.year == year, ScheduleCell.week == week, ScheduleCell.weekday == weekday)
+            for year, week, weekday in year_week_weekdays
+        ]
+    )
+
+
 def _overview_revision_for_persons(
     db: Session,
     *,
@@ -124,7 +137,7 @@ def _overview_revision_for_persons(
         )
         .filter(
             ScheduleCell.person_id.in_(person_ids),
-            tuple_(ScheduleCell.year, ScheduleCell.week, ScheduleCell.weekday).in_(year_week_weekdays),
+            _ywd_filter(year_week_weekdays),
         )
         .one()
     )
@@ -756,7 +769,7 @@ def get_month_overview(
             )
             .where(
                 ScheduleCell.person_id.in_(person_ids),
-                tuple_(ScheduleCell.year, ScheduleCell.week, ScheduleCell.weekday).in_(ywd_tuples),
+                _ywd_filter(ywd_tuples),
             )
             .group_by(
                 ScheduleCell.person_id,

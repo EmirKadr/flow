@@ -31,6 +31,14 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
 - Viktigast: **commits till en `release/*`-branch bygger automatiskt en
   release i Octopus**. Feature mergas till release-branchen, eller `main`
   mergas dit om andringen redan ar i main.
+- **Skapa alltid en ny feature-branch for nytt arbete.** Committa aldrig
+  direkt pa `main`, och aterupplivade arbetsbranchar ersatter inte en
+  riktig feature-branch. Branchen `in_wait` ar **dod** (2026-07-03) och far
+  aldrig anvandas igen - varken for commits, merges eller releaser.
+- **Varje deploy far en ny `release/*`-branch** (namnschema
+  `release/{ar}.{vecka}.{sekvens}`, nasta lediga sekvens). Aterandvand aldrig
+  en gammal release-branch for en ny deploy - Octopus bygger per branch och
+  historiken ska visa exakt vad varje release innehall.
 - Emir behover inte folja NoWaste-processen till punkt och pricka i detta
   repo (huvudbranchen heter `main`), men agenter ska kanna till modellen,
   anvanda dess begrepp korrekt och hjalpa till nar releaser gors mot

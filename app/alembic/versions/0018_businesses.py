@@ -29,6 +29,26 @@ def _business_id(code: str) -> int:
     return int(row.id)
 
 
+def _pk_constraint_name(connection, table: str, default: str) -> str:
+    if connection.dialect.name != "mssql":
+        return default
+    row = connection.execute(
+        sa.text("SELECT name FROM sys.key_constraints WHERE type = 'PK' AND parent_object_id = OBJECT_ID(:t)"),
+        {"t": table},
+    ).first()
+    return row.name if row else default
+
+
+def _unique_constraint_name(connection, table: str, default: str) -> str:
+    if connection.dialect.name != "mssql":
+        return default
+    row = connection.execute(
+        sa.text("SELECT name FROM sys.key_constraints WHERE type = 'UQ' AND parent_object_id = OBJECT_ID(:t)"),
+        {"t": table},
+    ).first()
+    return row.name if row else default
+
+
 def upgrade() -> None:
     op.create_table(
         "businesses",
@@ -39,13 +59,15 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
     )
     connection = op.get_bind()
+    # true-literalen ar ogiltig T-SQL; anvand dialektens sanningsvarde.
+    true_lit = "true" if connection.dialect.name == "postgresql" else "1"
     connection.execute(
         sa.text(
-            """
+            f"""
             INSERT INTO businesses (code, name, sort_order, is_active)
             VALUES
-                ('STIGAMO', 'Stigamo', 1, true),
-                ('R3', 'R3', 2, true)
+                ('STIGAMO', 'Stigamo', 1, {true_lit}),
+                ('R3', 'R3', 2, {true_lit})
             """
         )
     )
@@ -77,14 +99,18 @@ def upgrade() -> None:
         sa.text("UPDATE app_settings SET business_id = :business_id WHERE business_id IS NULL"),
         {"business_id": stigamo_id},
     )
-    op.alter_column("app_settings", "business_id", nullable=False)
+    op.alter_column("app_settings", "business_id", nullable=False, existing_type=sa.Integer())
 
-    op.drop_constraint("areas_code_key", "areas", type_="unique")
-    op.drop_constraint("activities_code_key", "activities", type_="unique")
+    # Namnen areas_code_key/activities_code_key/app_settings_pkey ar PG:s
+    # auto-namn; pa MSSQL heter de UQ__/PK__<slump>. Sla upp dem dynamiskt.
+    op.drop_constraint(_unique_constraint_name(connection, "areas", "areas_code_key"), "areas", type_="unique")
+    op.drop_constraint(
+        _unique_constraint_name(connection, "activities", "activities_code_key"), "activities", type_="unique"
+    )
     op.create_unique_constraint("uq_areas_business_code", "areas", ["business_id", "code"])
     op.create_unique_constraint("uq_activities_business_code", "activities", ["business_id", "code"])
 
-    op.drop_constraint("app_settings_pkey", "app_settings", type_="primary")
+    op.drop_constraint(_pk_constraint_name(connection, "app_settings", "app_settings_pkey"), "app_settings", type_="primary")
     op.create_primary_key("app_settings_pkey", "app_settings", ["business_id", "key"])
     op.create_unique_constraint("uq_app_settings_business_key", "app_settings", ["business_id", "key"])
 

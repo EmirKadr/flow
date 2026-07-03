@@ -71,3 +71,59 @@ jobs:
 
       - name: Run desktop smoke test
         run: python desktop/main.py --smoke-test
+
+  # Produktionsdatabasen (NoWaste/Azure) ar SQL Server. Gaten bygger schemat
+  # fran noll med alembic mot en riktig MSSQL-instans sa dialektbrott i
+  # migrationer eller appimport fangas fore deploy (jfr remark/tuple-IN-incidenterna).
+  mssql-gate:
+    runs-on: ubuntu-latest
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Ci!Passw0rd123"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci!Passw0rd123' -C -Q 'SELECT 1' -b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+    env:
+      SECRET_KEY: test-secret
+      SUPER_USER_USERNAMES: admin,emikad,mikhal
+      EXCEL_API_TOKEN: test-token
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r app/requirements.txt pymssql
+
+      - name: Create test database
+        run: |
+          python -c "
+          import pymssql
+          conn = pymssql.connect(server='127.0.0.1', port=1433, user='sa', password='Ci!Passw0rd123', database='master', login_timeout=30, autocommit=True)
+          conn.cursor().execute('CREATE DATABASE flow_test')
+          conn.close()
+          "
+
+      - name: Simulate Alembic build (MSSQL)
+        working-directory: app
+        env:
+          DATABASE_URL: mssql+pymssql://sa:Ci!Passw0rd123@127.0.0.1:1433/flow_test?charset=utf8
+          ENVIRONMENT: production
+        run: |
+          alembic upgrade head
+          python -c "from backend.main import app; print(app.title)"

@@ -44,10 +44,48 @@ from .routers import (
     workflow_data,
 )
 
+def _run_startup_migrations() -> None:
+    """Kör alembic upgrade head vid appstart mot delade databaser.
+
+    SQLite (lokal dev) äger sitt schema via bootstrap_local och hoppas över.
+    Utan detta steg driftar deployade databaser ifrån modellerna så fort en
+    migration landar utan att någon kör alembic manuellt (jfr schedule_cells.remark
+    som saknades i MSSQL och gav 'Invalid column name'-krascher i produktion).
+    Stängs av med RUN_DB_MIGRATIONS_ON_START=0.
+    """
+    import os
+
+    if engine.dialect.name == "sqlite":
+        return
+    if os.getenv("RUN_DB_MIGRATIONS_ON_START", "1").lower() in {"0", "false", "no"}:
+        return
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        app_dir = Path(__file__).resolve().parents[1]
+        config = Config(str(app_dir / "alembic.ini"))
+        # script_location i ini:n ar relativ cwd; peka absolut sa det funkar i containern.
+        config.set_main_option("script_location", str(app_dir / "alembic"))
+        command.upgrade(config, "head")
+        logging.getLogger(__name__).info("Alembic-migrationer uppgraderade till head.")
+    except Exception:
+        logging.getLogger(__name__).error(
+            "Alembic-migrering vid start misslyckades - schemat kan drifta.", exc_info=True
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Startar alla registrerade bakgrundsjobb vid appstart (se BACKGROUND_JOBS)."""
-    background.start_background_jobs(BACKGROUND_JOBS)
+    """Kör migrationer och startar alla registrerade bakgrundsjobb vid appstart."""
+    import os
+
+    _run_startup_migrations()
+    # Testsviter sätter FLOW_DISABLE_BACKGROUND_JOBS=1 så att in-process-servrar
+    # (browser-/desktop-tester) inte startar schemaläggare som gör riktiga
+    # nätverksanrop och håller produktivitetssyncens lås över andra tester.
+    if os.getenv("FLOW_DISABLE_BACKGROUND_JOBS", "").lower() not in {"1", "true", "yes"}:
+        background.start_background_jobs(BACKGROUND_JOBS)
     yield
 
 
