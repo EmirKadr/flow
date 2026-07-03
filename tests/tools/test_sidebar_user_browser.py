@@ -142,7 +142,8 @@ def test_sidebar_main_menu_context_menus_show_group_tabs(local_sidebar_server, c
         tools_items = page.locator(".sidebar-context-menu button").evaluate_all(
             """(nodes) => nodes.map((node) => node.innerText.trim())"""
         )
-        assert tools_items == ["Dela", "Etiketter", "MCP", "Hämta data", "Historik", "Meta"]
+        # admin ar superuser i testmiljon (SUPER_USER_USERNAMES) och ser aven Arkivstatus.
+        assert tools_items == ["Dela", "Etiketter", "MCP", "Hämta data", "Historik", "Meta", "Arkivstatus"]
 
         page.mouse.click(1, 1)
         expect(page.locator(".sidebar-context-menu")).to_have_count(0)
