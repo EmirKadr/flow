@@ -7,6 +7,39 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-02] fix | Sankey helarsfilter ateranvander hamtad data
+
+Sankey - Inbound forbattrar client_filters for helarsrapporter: arsvyn och
+manadsvyer per bolag och `Visa endast forverkade` byggs fran samma branchunderlag
+nar vybudgeten racker. Det gor att bolag, manadsdatum och forverkad-filter kan
+vaxla lokalt efter att hela aret har hamtats, i stallet for att starta en ny
+API/SSE-hamtning. Payloadschemat ar bumpat sa gamla servercacher inte ateranvands.
+
+## [2026-07-02] ux | Sankey som Bemanning-flik
+
+Sankey - Inbound ligger nu som fliken `Sankey` i Bemanning-gruppen och visas
+for anvandare med `sankeyInbound=view`. Hogerklicksvagen fran Produktivitet
+finns kvar, men normal ingang ar nu Bemanning -> Sankey.
+
+## [2026-07-02] ux | Installningar i sidebarens hogerklicksmeny
+
+Hogerklick pa `Installningar` i sidebaren visar nu installningssidans flikar:
+Ytkarta, Bearbeta, Bemanning och Intakt/utgift, filtrerat efter vybehorighet.
+Menyvalen oppnar `installningar.html` direkt pa vald flik via `tab`-parametern.
+
+## [2026-07-02] ux | Profilnamnsfalt borttaget i label editor
+
+Etiketteditorns mattpanel har inte langre ett separat profilnamnsfalt. `Spara`
+skapar fortsatt en lokal profil, men namnet tas automatiskt fran aktuellt matt,
+till exempel `104 x 200 mm`.
+
+## [2026-07-02] ux | Resize-handtag i label editor
+
+Etiketteditorn visar nu resize-handtag runt valt objekt. Anvandaren kan dra i
+sidor eller horn for att andra bredd och hojd direkt i etikettytan; B/H-falten
+uppdateras live och andringen kan backas via `Ctrl+Z`. Bakgrunds- och ritlager forblir
+helcanvas-lager utan resize-handtag.
+
 ## [2026-07-02] lint | Arkitektursanering: vendor-krympning och radtaksfria splittar
 
 Stor refaktorserie utan produktbeteendeandringar (18 commits). Vendor-motorn
@@ -24,12 +57,13 @@ ar uppfoljning). Statiska frontendtester laser nu via kanoniska fillistor i
 tools/frontend_sources.py. Repo-roten stadad (pag.docx avsparad, tmp-filer
 borta, pytest-tempkataloger gitignorerade).
 
+
 ## [2026-07-02] ux | Huvudmenyer for Bemanning och Verktyg
 
 Sidebaren samlar nu bemanningsrelaterade vyer under huvudmenyn `Bemanning`
 och verktygsrelaterade vyer under `Verktyg`. Sidorna visar flikar for sina
 grupper, filtrerade efter vybehorighet. Hogerklick pa `Bemanning` visar
-Bemanning, Oversikt, Produktivitet, Aktiviteter, Personer, Anvandare,
+Bemanning, Oversikt, Produktivitet, Sankey, Aktiviteter, Personer, Anvandare,
 Verksamheter, Mitt schema och Min produktivitet. Hogerklick pa `Verktyg`
 visar Dela, Etiketter, MCP, Hamta data, Historik och Meta.
 

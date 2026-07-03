@@ -80,7 +80,7 @@ Om anvandaren bara har `view`:
 - Importknapp ar dold: importvyn saknar edit-atkomst.
 - Drag-sortering av personnamn i Bemanning/Oversikt fungerar inte: rollen saknar `personSortOrder=edit`, personfiltret ar aktivt, eller listan har andrats. Bemanningsansvarig/admin ar begransade till eget omrade; Super User och demo kan sortera alla synliga personer.
 - Historik eller Meta nekas: kraver Super User. Produktivitet nekas: rollen saknar `productivity` i vyatkomst.
-- Sankey - Inbound saknas i Produktivitetens hogerklicksmeny eller direktlank nekas: rollen saknar `sankeyInbound=view`. Vyn ar separat fran `productivity` och far ingen standardmenyrad.
+- Sankey - Inbound saknas som Bemanning-flik, i Produktivitetens hogerklicksmeny eller direktlank nekas: rollen saknar `sankeyInbound=view`. Vyn ar separat fran `productivity`.
 - Intakt/utgift saknas i Produktivitet: rollen saknar `productivityFinance=view`. Endast Super User har den seedad som full atkomst tills den ges till andra roller via Vybehorigheter.
 - Intakt/utgift-fliken i Installningar saknas eller kan inte sparas: rollen saknar `productivityFinanceSettings=view` eller `productivityFinanceSettings=edit`. Den styr kostnad per timme och intaktsunderlag per bolag; `GG` ar forifyllt med Grann-garden-priserna och `MG` med bara VAS + IT. Endast Super User har den seedad som full atkomst.
 - Hamta data saknas eller nekas: `dataFetch` saknas i vyatkomst. Eftersom vyn kan hamta data fran extern datakalla har inga basroller standardatkomst; Super User kan oppna den.

@@ -1,7 +1,7 @@
 ---
 title: Sankey - Inbound
 status: aktiv
-updated: 2026-07-01
+updated: 2026-07-02
 tags: [sankey, inbound, produktivitet, ask, ekonomi]
 ---
 
@@ -10,14 +10,15 @@ tags: [sankey, inbound, produktivitet, ask, ekonomi]
 Kort svar: `Sankey - Inbound` är en separat vy för att följa inbound-intäkten
 från mottagna etiketter och unika inköpsrader genom pall-/saldokedjan tills
 pengarna är förverkade i plock, och från 2026-07-01 även outbounddebiteringen
-för Butik och E-handel. Den öppnas från högerklicksmenyn på
-`Produktivitet` i vänstermenyn eller på Produktivitetens verksamhetsnod och
-kräver egen vybehörighet `sankeyInbound=view`.
+för Butik och E-handel. Den öppnas från Bemanning-fliken `Sankey`, från
+högerklicksmenyn på `Produktivitet` i vänstermenyn eller på Produktivitetens
+verksamhetsnod och kräver egen vybehörighet `sankeyInbound=view`.
 
 ## UI och behörighet
 
 Vyn ligger på `sankey-inbound.html` och använder samma skyddade webb/desktop-
-frontend som övriga sidor. Den läggs inte i standardmenyn; ingång är
+frontend som övriga sidor. Den visas som `Sankey` i Bemanning-flikarna när
+rollen har `sankeyInbound=view`. Alternativa ingångar finns kvar:
 `Produktivitet` -> högerklick i vänstermenyn eller högerklick på verksamheten i
 Produktivitetsträdet -> `Sankey - Inbound`.
 
@@ -116,12 +117,14 @@ Nyare svar innehåller dessutom `client_filters.views`, en karta med
 färdigräknade klientvyer från samma branchunderlag. Nyckeln har formatet
 `period|periodstart|bolag|0/1`, till exempel `day|2026-06-25|GG|0`.
 All-bolag-payloads får vyer för `ALL` och varje bolag i underlaget. Månad och
-vecka får dagsvyer; år får månadsvyer. `0/1` anger om vyn är standard eller
-`Visa endast förverkade`. Stora rapporter kan sätta
-`client_filters.prebuilt=false`, `views={}` och `omitted_reason=too_many_views`
-eller `large_payload`.
-Dag/vecka/manad prioriterar lokala klientvyer aven nar kallaraderna ar manga,
-sa lange vyantalet ryms.
+vecka får dagsvyer. År prioriterar alltid årsvyn och därefter månadsvyer för
+`ALL` och varje bolag, inklusive både standardvyn och `Visa endast
+förverkade`, så ett hämtat helår normalt kan byta bolag, månadsdatum och
+förverkad-filter lokalt. `0/1` anger om vyn är standard eller `Visa endast
+förverkade`. Stora rapporter kan sätta `client_filters.prebuilt=false`,
+`views={}` och `omitted_reason=too_many_views` eller `large_payload`.
+Dag/vecka/manad/ar prioriterar lokala klientvyer aven nar kallaraderna ar
+manga, sa lange vyantalet ryms.
 Det betyder att backend har byggt aktuell vy men hoppat över de extra
 klientvyerna; frontend faller då tillbaka till vanlig API/SSE-hämtning om
 användaren byter bolag, periodnivå eller `Visa endast förverkade`.

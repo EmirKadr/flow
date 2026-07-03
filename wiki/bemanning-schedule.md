@@ -10,9 +10,10 @@ tags: [bemanning, schema, ui, knappar]
 Kort svar: Bemanning ar huvudmatrisen. Anvandaren valjer ar/vecka/dag och styr omrade med omradesfokus i sidebar. Sedan satter anvandaren aktivitet per person och timme. Andringar sparas direkt till `/api/schedule/*` med versionsskydd.
 
 Bemanning ar ocksa en huvudmeny i sidebar. Samma grupp visas som flikar pa
-Bemanning-relaterade sidor: Bemanning, Oversikt, Produktivitet, Aktiviteter,
-Personer, Anvandare, Verksamheter, Mitt schema och Min produktivitet. Hogerklick
-pa `Bemanning` i sidebar visar samma lista, filtrerad efter vybehorighet.
+Bemanning-relaterade sidor: Bemanning, Oversikt, Produktivitet, Sankey,
+Aktiviteter, Personer, Anvandare, Verksamheter, Mitt schema och Min
+produktivitet. Hogerklick pa `Bemanning` i sidebar visar samma lista, filtrerad
+efter vybehorighet.
 
 ## Anvandarflode
 

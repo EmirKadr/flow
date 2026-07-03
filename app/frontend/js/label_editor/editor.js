@@ -1,99 +1,5 @@
 (function () {
-  const SYMBOLS = {
-    check: {
-      label: "Check",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    },
-    warning: {
-      label: "Varning",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 20H2Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8v6M12 17h.01" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
-    },
-    arrowRight: {
-      label: "Pil höger",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    },
-    cross: {
-      label: "Kryss",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>',
-    },
-    box: {
-      label: "Kolli",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8 12 4l8 4v9l-8 4-8-4Z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/><path d="m4 8 8 4 8-4M12 12v9" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/></svg>',
-    },
-    temp: {
-      label: "Temperatur",
-      svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14.5V5a3 3 0 1 1 6 0v9.5a5 5 0 1 1-6 0Z" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M13 7v9" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></svg>',
-    },
-  };
-  const SYMBOL_PICKER_GROUPS = [
-    {
-      label: "Symboler",
-      items: [
-        { value: "check", label: SYMBOLS.check.label, svg: SYMBOLS.check.svg },
-        { value: "warning", label: SYMBOLS.warning.label, svg: SYMBOLS.warning.svg },
-        { value: "arrowRight", label: SYMBOLS.arrowRight.label, svg: SYMBOLS.arrowRight.svg },
-        { value: "cross", label: SYMBOLS.cross.label, svg: SYMBOLS.cross.svg },
-        { value: "box", label: SYMBOLS.box.label, svg: SYMBOLS.box.svg },
-        { value: "temp", label: SYMBOLS.temp.label, svg: SYMBOLS.temp.svg },
-      ],
-    },
-    {
-      label: "Lager",
-      items: [
-        { value: "emoji-package", label: "Paket", glyph: "📦" },
-        { value: "emoji-label", label: "Etikett", glyph: "🏷️" },
-        { value: "emoji-truck", label: "Lastbil", glyph: "🚚" },
-        { value: "emoji-pallet", label: "Pall", glyph: "🧱" },
-        { value: "emoji-pin", label: "Plats", glyph: "📍" },
-        { value: "emoji-magnifier", label: "Sök", glyph: "🔍" },
-        { value: "emoji-lock", label: "Låst", glyph: "🔒" },
-        { value: "emoji-unlock", label: "Upplåst", glyph: "🔓" },
-      ],
-    },
-    {
-      label: "Status",
-      items: [
-        { value: "emoji-ok", label: "OK", glyph: "✅" },
-        { value: "emoji-no", label: "Nej", glyph: "❌" },
-        { value: "emoji-stop", label: "Stopp", glyph: "⛔" },
-        { value: "emoji-info", label: "Info", glyph: "ℹ️" },
-        { value: "emoji-star", label: "Stjärna", glyph: "⭐" },
-        { value: "emoji-fire", label: "Bråttom", glyph: "🔥" },
-        { value: "emoji-snow", label: "Kylt", glyph: "❄️" },
-        { value: "emoji-clock", label: "Tid", glyph: "⏱️" },
-        { value: "emoji-calendar", label: "Datum", glyph: "📅" },
-        { value: "emoji-note", label: "Notis", glyph: "📝" },
-      ],
-    },
-    {
-      label: "Riktning",
-      items: [
-        { value: "emoji-up", label: "Upp", glyph: "⬆️" },
-        { value: "emoji-down", label: "Ned", glyph: "⬇️" },
-        { value: "emoji-left", label: "Vänster", glyph: "⬅️" },
-        { value: "emoji-right", label: "Höger", glyph: "➡️" },
-        { value: "emoji-turn-left", label: "Sväng vänster", glyph: "↩️" },
-        { value: "emoji-turn-right", label: "Sväng höger", glyph: "↪️" },
-        { value: "emoji-recycle", label: "Återbruk", glyph: "♻️" },
-        { value: "emoji-target", label: "Mål", glyph: "🎯" },
-      ],
-    },
-    {
-      label: "Markörer",
-      items: [
-        { value: "emoji-one", label: "1", glyph: "①" },
-        { value: "emoji-two", label: "2", glyph: "②" },
-        { value: "emoji-three", label: "3", glyph: "③" },
-        { value: "emoji-four", label: "4", glyph: "④" },
-        { value: "emoji-five", label: "5", glyph: "⑤" },
-        { value: "emoji-plus", label: "Plus", glyph: "➕" },
-        { value: "emoji-minus", label: "Minus", glyph: "➖" },
-        { value: "emoji-heart", label: "Hjärta", glyph: "❤️" },
-      ],
-    },
-  ];
-  const SYMBOL_CHOICES = SYMBOL_PICKER_GROUPS.flatMap((group) => group.items);
-  const SYMBOL_CHOICE_BY_VALUE = new Map(SYMBOL_CHOICES.map((choice) => [choice.value, choice]));
+  const LABEL_SYMBOLS = window.FlowLabelSymbols;
   const LABEL_PROFILE_STORAGE_KEY = "flow-label-editor-profiles-v1";
   const LABEL_MIN_WIDTH_MM = 20;
   const LABEL_MAX_WIDTH_MM = 500;
@@ -101,6 +7,9 @@
   const LABEL_MAX_HEIGHT_MM = 500;
   const LABEL_HISTORY_LIMIT = 80;
   const LABEL_PASTE_OFFSET_MM = 4;
+  const LABEL_BACKGROUND_OBJECT_ID = "label-background";
+  const LABEL_OBJECT_MIN_SIZE_MM = 2;
+  const LABEL_RESIZE_DIRECTIONS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
   const BUILTIN_LABEL_PROFILES = [
     { id: "label-104x199", name: "Etikett 104 x 199", width: 104, height: 199 },
     { id: "label-100x150", name: "Etikett 100 x 150", width: 100, height: 150 },
@@ -123,8 +32,12 @@
     undoStack: [],
     redoStack: [],
     clipboard: null,
+    paintTool: "select",
+    paintColor: "#111827",
+    paintSize: 1.2,
   };
   let suppressInspector = false;
+  let paintTools = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -145,7 +58,11 @@
   }
 
   function cloneObject(object) {
-    return { ...object };
+    const clone = { ...object };
+    if (Array.isArray(object.points)) {
+      clone.points = object.points.map((point) => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
+    }
+    return clone;
   }
 
   function snapshotState() {
@@ -188,9 +105,13 @@
       qr: "QR",
       code128: "Code128",
       rect: "Rektangel",
-      ellipse: "Ellips",
+      ellipse: "Cirkel",
       line: "Linje",
       symbol: "Symbol",
+      drawing: "Ritning",
+      eraser: "Sudd",
+      paintFill: "Fyllning",
+      background: "Bakgrund",
     }[type] || type;
   }
 
@@ -276,12 +197,6 @@
     return allProfiles().find((profile) => profileValue(profile) === value) || null;
   }
 
-  function profileNameForCurrentSize() {
-    const width = Math.round(state.label.width * 10) / 10;
-    const height = Math.round(state.label.height * 10) / 10;
-    return `${width} x ${height} mm`;
-  }
-
   function renderProfileSelect(preferredValue = "") {
     const select = $("labelProfileSelect");
     if (!select) return;
@@ -302,10 +217,6 @@
     const selected = profileFromValue(select.value);
     const deleteButton = $("labelDeleteProfile");
     if (deleteButton) deleteButton.disabled = !selected?.custom;
-    const nameInput = $("labelProfileName");
-    if (nameInput && document.activeElement !== nameInput) {
-      nameInput.value = selected?.custom ? selected.name : profileNameForCurrentSize();
-    }
   }
 
   function applyLabelSize(width, height, options = {}) {
@@ -325,8 +236,7 @@
   function saveCurrentProfile() {
     const width = clamp($("labelWidth").value, LABEL_MIN_WIDTH_MM, LABEL_MAX_WIDTH_MM);
     const height = clamp($("labelHeight").value, LABEL_MIN_HEIGHT_MM, LABEL_MAX_HEIGHT_MM);
-    const rawName = $("labelProfileName").value.trim();
-    const name = (rawName || `${width} x ${height} mm`).slice(0, 40);
+    const name = `${width} x ${height} mm`.slice(0, 40);
     const profiles = readCustomProfiles();
     const existingIndex = profiles.findIndex((profile) => profile.name.toLowerCase() === name.toLowerCase());
     const profile = {
@@ -381,8 +291,15 @@
   }
 
   function fitObject(object) {
-    object.w = clamp(object.w, 2, state.label.width);
-    object.h = clamp(object.h, 2, state.label.height);
+    if (object.type === "background" || object.type === "drawing" || object.type === "eraser" || object.type === "paintFill") {
+      object.x = 0;
+      object.y = 0;
+      object.w = state.label.width;
+      object.h = state.label.height;
+      return object;
+    }
+    object.w = clamp(object.w, LABEL_OBJECT_MIN_SIZE_MM, state.label.width);
+    object.h = clamp(object.h, LABEL_OBJECT_MIN_SIZE_MM, state.label.height);
     object.x = clamp(object.x, 0, Math.max(0, state.label.width - object.w));
     object.y = clamp(object.y, 0, Math.max(0, state.label.height - object.h));
     return object;
@@ -408,16 +325,36 @@
     return `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="2" y="2" width="96" height="96" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth * 4}"/></svg>`;
   }
 
-  function symbolChoice(value) {
-    return SYMBOL_CHOICE_BY_VALUE.get(value) || SYMBOL_CHOICE_BY_VALUE.get("check");
+  function drawingPath(points) {
+    const safePoints = Array.isArray(points) ? points : [];
+    if (!safePoints.length) return "";
+    return safePoints
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${Number(point.x).toFixed(2)} ${Number(point.y).toFixed(2)}`)
+      .join(" ");
+  }
+
+  function drawingSvg(object) {
+    const points = Array.isArray(object.points) ? object.points : [];
+    const color = escapeHtml(object.color || object.stroke || "#111827");
+    const strokeWidth = clamp(object.strokeWidth || state.paintSize, 0.2, 20);
+    if (points.length === 1) {
+      const point = points[0];
+      return `
+        <svg viewBox="0 0 ${state.label.width} ${state.label.height}" preserveAspectRatio="none">
+          <circle cx="${Number(point.x).toFixed(2)}" cy="${Number(point.y).toFixed(2)}" r="${Math.max(0.1, strokeWidth / 2).toFixed(2)}" fill="${color}" />
+        </svg>
+      `;
+    }
+    return `
+      <svg viewBox="0 0 ${state.label.width} ${state.label.height}" preserveAspectRatio="none">
+        <path d="${drawingPath(points)}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    `;
   }
 
   function symbolMarkup(object) {
-    const choice = symbolChoice(object.symbol);
-    if (choice?.svg) return choice.svg;
-    const glyph = choice?.glyph || "✓";
     const fontSize = Math.max(10, Math.min(mmToPx(object.w), mmToPx(object.h)) * 0.78);
-    return `<span class="label-object-symbol-glyph" style="font-size:${fontSize}px">${escapeHtml(glyph)}</span>`;
+    return LABEL_SYMBOLS.markup(object.symbol, fontSize);
   }
 
   function objectHtml(object) {
@@ -433,7 +370,25 @@
     if (object.type === "symbol") {
       return `<div class="label-object-symbol" style="color:${escapeHtml(object.color)}">${symbolMarkup(object)}</div>`;
     }
+    if (object.type === "drawing" || object.type === "eraser") return drawingSvg(object);
+    if (object.type === "paintFill") {
+      return `<img class="label-object-paint-fill" src="${escapeHtml(object.dataUrl || "")}" alt="" draggable="false" />`;
+    }
+    if (object.type === "background") {
+      return `<div class="label-object-background-fill" style="background:${escapeHtml(object.fill || "#ffffff")}"></div>`;
+    }
     return shapeSvg(object);
+  }
+
+  function objectIsInteractive(object) {
+    return object.type !== "drawing" && object.type !== "eraser" && object.type !== "paintFill" && object.type !== "background";
+  }
+
+  function resizeHandlesHtml(object) {
+    if (object.id !== state.selectedId || !objectIsInteractive(object)) return "";
+    return LABEL_RESIZE_DIRECTIONS.map((direction) => (
+      `<span class="label-object-resize-handle" data-resize-direction="${direction}" aria-hidden="true"></span>`
+    )).join("");
   }
 
   function updateScale() {
@@ -465,16 +420,24 @@
     if (!canvas) return;
     canvas.style.width = `${mmToPx(state.label.width)}px`;
     canvas.style.height = `${mmToPx(state.label.height)}px`;
+    canvas.classList.toggle("paint-tool-pencil", state.paintTool === "pencil");
+    canvas.classList.toggle("paint-tool-fill", state.paintTool === "fill");
+    canvas.classList.toggle("paint-tool-eraser", state.paintTool === "eraser");
     canvas.innerHTML = state.objects.map((object) => `
-      <div class="label-object ${object.id === state.selectedId ? "selected" : ""}" data-object-id="${object.id}" data-object-type="${object.type}" role="button" tabindex="0" aria-label="${escapeHtml(objectName(object.type))}">
+      <div class="label-object ${object.id === state.selectedId ? "selected" : ""} ${objectIsInteractive(object) ? "" : "label-object-noninteractive"}" data-object-id="${object.id}" data-object-type="${object.type}" role="${objectIsInteractive(object) ? "button" : "presentation"}" tabindex="${objectIsInteractive(object) ? "0" : "-1"}" aria-label="${escapeHtml(objectName(object.type))}">
         ${objectHtml(object)}
+        ${resizeHandlesHtml(object)}
       </div>
     `).join("");
     canvas.querySelectorAll(".label-object").forEach((element) => {
       const object = state.objects.find((item) => item.id === element.dataset.objectId);
       if (!object) return;
       positionElement(element, object);
+      if (!objectIsInteractive(object)) return;
       element.addEventListener("pointerdown", startDragObject);
+      element.querySelectorAll(".label-object-resize-handle").forEach((handle) => {
+        handle.addEventListener("pointerdown", startResizeObject);
+      });
       element.addEventListener("click", (event) => {
         event.stopPropagation();
         selectObject(object.id);
@@ -598,12 +561,77 @@
     window.addEventListener("pointerup", stop, { once: true });
   }
 
+  function startResizeObject(event) {
+    if (event.button !== 0) return;
+    const handle = event.currentTarget;
+    const element = handle.closest(".label-object");
+    const object = state.objects.find((item) => item.id === element?.dataset.objectId);
+    const direction = handle.dataset.resizeDirection || "";
+    if (!object || !direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    element.focus({ preventScroll: true });
+    state.selectedId = object.id;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const initial = { x: object.x, y: object.y, w: object.w, h: object.h };
+    let moved = false;
+    const applyResize = (dx, dy) => {
+      let left = initial.x;
+      let top = initial.y;
+      let right = initial.x + initial.w;
+      let bottom = initial.y + initial.h;
+      if (direction.includes("w")) left = clamp(initial.x + dx, 0, right - LABEL_OBJECT_MIN_SIZE_MM);
+      if (direction.includes("e")) right = clamp(right + dx, left + LABEL_OBJECT_MIN_SIZE_MM, state.label.width);
+      if (direction.includes("n")) top = clamp(initial.y + dy, 0, bottom - LABEL_OBJECT_MIN_SIZE_MM);
+      if (direction.includes("s")) bottom = clamp(bottom + dy, top + LABEL_OBJECT_MIN_SIZE_MM, state.label.height);
+      object.x = left;
+      object.y = top;
+      object.w = right - left;
+      object.h = bottom - top;
+    };
+    const move = (moveEvent) => {
+      if (!moved && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 1) {
+        pushUndoSnapshot();
+        moved = true;
+      }
+      applyResize((moveEvent.clientX - startX) / state.scale, (moveEvent.clientY - startY) / state.scale);
+      positionElement(element, object);
+      updateInspector();
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      renderCanvas();
+      if (moved) track("resize-object", { objectType: object.type });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+
   function bindInspector() {
     [
       "labelObjectX", "labelObjectY", "labelObjectW", "labelObjectH", "labelObjectValue",
       "labelObjectFontSize", "labelObjectColor", "labelObjectFill", "labelObjectStroke",
       "labelObjectStrokeWidth", "labelObjectSymbol",
     ].forEach((id) => $(id)?.addEventListener("input", applyInspectorChange));
+  }
+
+  function setupPaintTools() {
+    paintTools = window.FlowLabelPaint.createPaintTools({
+      $,
+      state,
+      backgroundObjectId: LABEL_BACKGROUND_OBJECT_ID,
+      clamp,
+      positionElement,
+      drawingSvg,
+      fitObject,
+      snapshotState,
+      pushUndoSnapshot,
+      renderCanvas,
+      track,
+    });
+    paintTools.setupPaintTools();
   }
 
   function setupDimensions() {
@@ -744,6 +772,7 @@
     $("labelDuplicateObject").addEventListener("click", duplicateSelected);
     $("labelClear").addEventListener("click", clearLabel);
     $("labelPrint").addEventListener("click", printLabel);
+    $("labelCanvas").addEventListener("pointerdown", (event) => paintTools?.handlePaintPointerDown(event), true);
     $("labelCanvas").addEventListener("pointerdown", (event) => {
       if (event.target === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
     });
@@ -817,25 +846,7 @@
   }
 
   function setupSymbolOptions() {
-    $("labelObjectSymbol").innerHTML = SYMBOL_PICKER_GROUPS
-      .map((group) => `
-        <optgroup label="${escapeHtml(group.label)}">
-          ${group.items.map((choice) => `<option value="${escapeHtml(choice.value)}">${escapeHtml(choice.label)}</option>`).join("")}
-        </optgroup>
-      `)
-      .join("");
-  }
-
-  function symbolChoiceButton(choice) {
-    const preview = choice.svg
-      ? `<span class="label-symbol-choice-mark label-symbol-choice-svg">${choice.svg}</span>`
-      : `<span class="label-symbol-choice-mark label-symbol-choice-emoji">${escapeHtml(choice.glyph || "")}</span>`;
-    return `
-      <button type="button" class="label-symbol-choice" data-symbol-value="${escapeHtml(choice.value)}" aria-label="${escapeHtml(choice.label)}">
-        ${preview}
-        <span class="label-symbol-choice-label">${escapeHtml(choice.label)}</span>
-      </button>
-    `;
+    $("labelObjectSymbol").innerHTML = LABEL_SYMBOLS.selectOptionsHtml();
   }
 
   function openSymbolDialog() {
@@ -849,14 +860,7 @@
           <button type="button" class="label-symbol-picker-close" aria-label="Stäng">×</button>
         </div>
         <div class="label-symbol-picker-groups">
-          ${SYMBOL_PICKER_GROUPS.map((group) => `
-            <section class="label-symbol-picker-group" aria-label="${escapeHtml(group.label)}">
-              <h3>${escapeHtml(group.label)}</h3>
-              <div class="label-symbol-picker-grid">
-                ${group.items.map(symbolChoiceButton).join("")}
-              </div>
-            </section>
-          `).join("")}
+          ${LABEL_SYMBOLS.dialogGroupsHtml()}
         </div>
       </div>
     `;
@@ -889,6 +893,7 @@
     setupSymbolOptions();
     setupDimensions();
     bindInspector();
+    setupPaintTools();
     setupActions();
     setupKeyboardShortcuts();
     const object = fitObject(defaultObject("text"));

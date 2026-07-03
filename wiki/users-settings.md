@@ -9,6 +9,10 @@ tags: [anvandare, settings, roller, ui]
 
 Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager-, bemannings- och produktivitetsinstallningar: Ytkarta, Bearbeta-matris, Bemanningens historiska snitt och Produktivitetens intakt/utgift. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
 
+Hogerklick pa `Installningar` i sidebaren visar samma installningsflikar som
+sidan: Ytkarta, Bearbeta, Bemanning och Intakt/utgift, filtrerat efter rollens
+vybehorighet.
+
 Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `∞` visar alla omraden i den verksamheten nar verksamheten har aktivt `ANNAT`; for Super User betyder `∞` globalt allt. Nar en ny anvandare skapas forvalt valt omradesfokus som anvandarens omrade, men omradet kan fortfarande andras i modalen eller lamnas tomt.
 
 ## Knappar och kontroller

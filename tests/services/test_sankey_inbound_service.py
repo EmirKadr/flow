@@ -934,6 +934,45 @@ def test_month_client_filter_views_are_prebuilt_even_when_source_rows_are_large(
     assert "omitted_reason" not in client_filters
 
 
+def test_year_client_filter_views_keep_company_and_consumed_filters_when_source_rows_are_large(monkeypatch):
+    monkeypatch.setattr(sankey_build, "CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS", 0)
+    payload = build_sankey_inbound_payload(
+        source_rows={
+            "receive": [
+                receive("gg-june", "P1", company="GG", timestamp="2026-06-15T08:00:00"),
+                receive("mg-july", "P2", company="MG", timestamp="2026-07-02T08:00:00"),
+            ],
+            "trans": [trans("P1", "21", "A101", company="GG", timestamp="2026-06-15T09:00:00")],
+            "pick": [pick("A101", 10, company="GG", timestamp="2026-06-15T10:00:00")],
+            "kpi": [],
+        },
+        finance_settings=finance_for_companies("GG", "MG", price=10),
+        company_codes=["GG", "MG"],
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 12, 31),
+        follow_until=date(2026, 12, 31),
+        period_type="year",
+        period_label="Ar",
+        process_points={"RECEIVING": 2.5, "PUTAWAY_PICK": 1.0},
+    )
+
+    client_filters = payload["client_filters"]
+    views = client_filters["views"]
+    year_gg_key = sis._client_filter_view_key("year", date(2026, 1, 1), "GG", False)
+    consumed_gg_key = sis._client_filter_view_key("year", date(2026, 1, 1), "GG", True)
+    july_mg_key = sis._client_filter_view_key("month", date(2026, 7, 1), "MG", False)
+
+    assert client_filters["prebuilt"] is True
+    assert client_filters["estimated_views"] <= sankey_build.CLIENT_FILTER_PREBUILD_MAX_VIEWS
+    assert "omitted_reason" not in client_filters
+    assert views[year_gg_key]["filters"]["company"] == "GG"
+    assert views[year_gg_key]["summary"]["labels_received"] == 1
+    assert views[consumed_gg_key]["filters"]["only_consumed"] is True
+    assert views[consumed_gg_key]["summary"]["labels_consumed"] == 1
+    assert views[july_mg_key]["period"]["type"] == "month"
+    assert views[july_mg_key]["summary"]["labels_received"] == 1
+
+
 def test_client_filter_views_are_not_prebuilt_when_view_count_is_too_large(monkeypatch):
     monkeypatch.setattr(sankey_build, "CLIENT_FILTER_PREBUILD_MAX_VIEWS", 0)
     payload = build_sankey_inbound_payload(

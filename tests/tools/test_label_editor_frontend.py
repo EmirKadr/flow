@@ -32,9 +32,14 @@ def test_label_editor_page_loads_barcode_editor_contracts():
     html = read_frontend("label-editor.html")
     editor = read_frontend("js/label_editor/editor.js")
     barcodes = read_frontend("js/label_editor/barcodes.js")
+    symbols = read_frontend("js/label_editor/symbols.js")
+    paint = read_frontend("js/label_editor/paint.js")
+    styles = read_frontend("css/styles.css")
 
     assert 'initPage("labelEditor")' in editor
     assert "/js/label_editor/barcodes.js" in html
+    assert "/js/label_editor/symbols.js" in html
+    assert "/js/label_editor/paint.js" in html
     assert "/js/label_editor/editor.js" in html
     assert 'data-add-label-object="qr"' in html
     assert 'data-add-label-object="code128"' in html
@@ -43,22 +48,51 @@ def test_label_editor_page_loads_barcode_editor_contracts():
     assert 'id="labelProfileSelect"' in html
     assert 'id="labelSaveProfile"' in html
     assert 'id="labelDeleteProfile"' in html
+    assert 'id="labelProfileName"' not in html
     assert 'id="labelWidth" type="number" min="20" max="500"' in html
     assert 'id="labelHeight" type="number" min="10" max="500"' in html
+    assert 'data-paint-tool="pencil"' in html
+    assert 'data-paint-tool="fill"' in html
+    assert 'data-paint-tool="eraser"' in html
+    assert 'id="labelPaintColor"' in html
+    assert 'id="labelPaintSize"' in html
     assert 'LABEL_PROFILE_STORAGE_KEY = "flow-label-editor-profiles-v1"' in editor
+    assert 'LABEL_BACKGROUND_OBJECT_ID = "label-background"' in editor
     assert '{ id: "label-104x199", name: "Etikett 104 x 199", width: 104, height: 199 }' in editor
     assert '{ id: "a4-portrait", name: "A4 stående", width: 210, height: 297 }' in editor
     assert '{ id: "a5-portrait", name: "A5 stående", width: 148, height: 210 }' in editor
     assert '{ id: "a3-portrait", name: "A3 stående", width: 297, height: 420 }' in editor
     assert 'localStorage.setItem(LABEL_PROFILE_STORAGE_KEY' in editor
+    assert "const name = `${width} x ${height} mm`.slice(0, 40);" in editor
     assert 'state.label.width = clamp(width, LABEL_MIN_WIDTH_MM, LABEL_MAX_WIDTH_MM);' in editor
     assert 'state.label.height = clamp(height, LABEL_MIN_HEIGHT_MM, LABEL_MAX_HEIGHT_MM);' in editor
     assert "function setupKeyboardShortcuts()" in editor
-    assert "SYMBOL_PICKER_GROUPS" in editor
+    assert "function startPaintStroke" in paint
+    assert "function fillBackground" in paint
+    assert "function fillClosedRegion" in paint
+    assert "function createFloodFillDataUrl" in paint
+    assert "function handlePaintPointerDown" in paint
+    assert "type: isEraser ? \"eraser\" : \"drawing\"" in paint
+    assert 'type: "paintFill"' in paint
+    assert "window.FlowLabelPaint = { createPaintTools }" in paint
+    assert "label-object-noninteractive" in editor
+    assert "paintFill: \"Fyllning\"" in editor
+    assert "label-object-paint-fill" in editor
+    assert ".label-editor-paint-tools" in styles
+    assert ".label-canvas.paint-tool-pencil" in styles
+    assert ".label-object-paint-fill" in styles
+    assert "SYMBOL_PICKER_GROUPS" in symbols
+    assert "window.FlowLabelSymbols" in symbols
     assert "function openSymbolDialog()" in editor
     assert "label-symbol-picker" in editor
-    assert 'data-symbol-value="${escapeHtml(choice.value)}"' in editor
-    assert '{ value: "emoji-package", label: "Paket", glyph: "📦" }' in editor
+    assert 'LABEL_RESIZE_DIRECTIONS = ["nw", "n", "ne", "e", "se", "s", "sw", "w"]' in editor
+    assert 'data-resize-direction="${direction}"' in editor
+    assert "function startResizeObject(event)" in editor
+    assert 'track("resize-object"' in editor
+    assert ".label-object-resize-handle" in styles
+    assert '.label-object-resize-handle[data-resize-direction="e"]' in styles
+    assert 'data-symbol-value="${escapeHtml(item.value)}"' in symbols
+    assert '{ value: "emoji-package", label: "Paket", glyph: "📦" }' in symbols
     assert 'key === "delete" || key === "backspace"' in editor
     assert 'shortcut && key === "c"' in editor
     assert 'shortcut && key === "x"' in editor

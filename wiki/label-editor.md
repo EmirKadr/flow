@@ -19,10 +19,12 @@ webbläsarens skrivardialog.
 1. Öppna `Etiketter` i sidebaren.
 2. Välj en profil, till exempel `Etikett 104 x 199`, `A4 stående` eller
    `A5 liggande`, eller ange bredd och höjd i millimeter.
-3. Spara ofta använda egna mått med `Profilnamn` + `Spara`.
+3. Spara ofta använda egna mått med `Spara`; profilen får automatiskt måttet
+   som namn, till exempel `104 x 200 mm`.
 4. Lägg till objekt med verktygsknapparna. `Symbol` öppnar en dialog med
    symboler och emojis innan objektet läggs in.
-5. Klicka eller dra objekt på etiketten.
+5. Klicka, dra objekt på etiketten eller dra i valt objekts kanter/hörn för att
+   ändra storlek direkt i ytan.
 6. Ändra valt objekts position, storlek, värde och färger i sidopanelen.
 7. Använd `Delete`/`Backspace` för att ta bort valt objekt och
    `Ctrl+C`/`Ctrl+X`/`Ctrl+V` samt `Ctrl+Z`/`Ctrl+Y` för lokal
@@ -44,13 +46,14 @@ Vybehörigheter.
 | --- | --- | --- | --- | --- | --- |
 | Profil | Måttpanel | `labelEditor` | Väljer standardprofil eller sparad egen profil och sätter bredd/höjd | `label_editor/editor.js`, `localStorage` | Om en egen profil saknas används en annan browser/profil eller lokal lagring har rensats. |
 | Bredd/Höjd mm | Måttpanel | `labelEditor` | Ändrar etikettytans mått och håller objekt innanför ytan | `label_editor/editor.js` | Mycket små/stora värden klampas till tillåtna gränser. |
-| Profilnamn + Spara | Måttpanel | `labelEditor` | Sparar aktuellt bredd-/höjdmått som lokal profil | `flow-label-editor-profiles-v1` i `localStorage` | Sparas bara i aktuell browser/desktopprofil, inte på servern. |
+| Spara | Måttpanel | `labelEditor` | Sparar aktuellt bredd-/höjdmått som lokal profil med måttet som namn | `flow-label-editor-profiles-v1` i `localStorage` | Sparas bara i aktuell browser/desktopprofil, inte på servern. |
 | Ta bort | Måttpanel | `labelEditor` | Tar bort vald sparad profil | `flow-label-editor-profiles-v1` i `localStorage` | Standardprofiler kan inte tas bort. |
 | Text | Verktyg | `labelEditor` | Lägger till ett textobjekt som kan dras och ändras | `label_editor/editor.js` | Lång text kan behöva större ruta eller mindre textstorlek. |
 | QR | Verktyg | `labelEditor` | Skapar en QR-kod som SVG lokalt i browsern | `label_editor/barcodes.js` | För långt värde ger fel i objektet; korta texten. |
 | Code128 | Verktyg | `labelEditor` | Skapar en Code128-B-streckkod som SVG lokalt i browsern | `label_editor/barcodes.js` | Code128 stöder ASCII 32-126; å/ä/ö eller andra tecken ger fel. |
 | Rektangel/Ellips/Linje | Verktyg | `labelEditor` | Lägger till former med valbar linje/fyllnad | `label_editor/editor.js` | Fyllda former kan täcka andra objekt. |
-| Symbol | Verktyg | `labelEditor` | Öppnar en dialog med SVG-symboler och emojis; valt objekt läggs in på etiketten | `label_editor/editor.js` | Dialogen stängs med `Stäng` eller Escape. Byt symbol i egenskapspanelen efteråt. |
+| Symbol | Verktyg | `labelEditor` | Öppnar en dialog med SVG-symboler och emojis; valt objekt läggs in på etiketten | `label_editor/editor.js`, `label_editor/symbols.js` | Dialogen stängs med `Stäng` eller Escape. Byt symbol i egenskapspanelen efteråt. |
+| Kanter/hörn på valt objekt | Etikettyta | `labelEditor` | Ändrar objektets bredd/höjd genom drag i sidor eller hörn och håller objektet innanför etiketten | `label_editor/editor.js`, `.label-object-resize-handle` | Bakgrunds- och ritlager har inga resize-handtag eftersom de alltid fyller hela etiketten. |
 | Duplicera/Ta bort | Vald objektpanel | `labelEditor` | Kopierar eller tar bort valt objekt | `label_editor/editor.js` | Knapparna är låsta tills ett objekt är valt. |
 | Delete/Backspace | Etikettyta | `labelEditor` | Tar bort valt objekt och kan ångras med `Ctrl+Z` | `label_editor/editor.js` | Kortkommandot ignoreras i input/textarea/select så textredigering fungerar normalt. |
 | Ctrl+C/Ctrl+X/Ctrl+V | Etikettyta | `labelEditor` | Kopierar, klipper ut och klistrar in valt objekt med lokal intern clipboard | `label_editor/editor.js` | Objektdata skickas inte till system-clipboard; textfält behåller webbläsarens vanliga clipboard. |
@@ -68,13 +71,15 @@ Vybehörigheter.
   lokalt i `localStorage` under `flow-label-editor-profiles-v1`; de synkas inte
   mellan användare, browserprofiler eller datorer.
 - QR och Code128 ritas som lokala SVG-fragment. Symbolväljaren bygger på en
-  lokal `SYMBOL_PICKER_GROUPS`-lista med SVG-symboler och emojis. Ingen
+  lokal `SYMBOL_PICKER_GROUPS`-lista i `label_editor/symbols.js` med SVG-symboler
+  och emojis. Ingen
   etikettdata skickas till backend när användaren redigerar, drar, väljer
   symbol eller skriver ut.
 - Synlig sessionfeedback går till dokumentloggen vid tillägg, borttagning,
   kopiera/klipp ut/klistra in, ångra/gör om, symbolväljare, rensning och utskrift.
   Interaction tracking skickar bara handling, objekttyp, antal objekt och
-  etikettmått, inte streckkodsvärden eller textinnehåll.
+  etikettmått, inte streckkodsvärden eller textinnehåll. Resize i ytan trackas
+  som `resize-object`.
 - Eftersom flödet är lokalt/read-only och inte sparar eller ändrar data finns
   ingen sparad `audit_log`-rad för själva etikettlayouten. Sidöppning loggas som
   vanlig `view_open` client event.
@@ -97,6 +102,9 @@ Vybehörigheter.
 - "Varför tog Backspace inte bort objektet?" Fokus ligger troligen i ett
   textfält eller annan redigerbar kontroll. Klicka objektet eller etikettytan
   först och tryck sedan `Backspace` eller `Delete`.
+- "Hur gör jag ett objekt större utan sidopanelen?" Markera objektet och dra i
+  de blå handtagen på sidan eller i hörnet. Sidopanelens B/H-värden uppdateras
+  samtidigt.
 - "Varför klistras inte objektet in i ett annat program?" Etikettobjektens
   `Ctrl+C/X/V` är en intern editor-clipboard för att inte läcka etikettvärden
   till operativsystemets urklipp.
@@ -106,6 +114,8 @@ Vybehörigheter.
 - `../app/frontend/label-editor.html`
 - `../app/frontend/js/label_editor/editor.js`
 - `../app/frontend/js/label_editor/barcodes.js`
+- `../app/frontend/js/label_editor/symbols.js`
+- `../app/frontend/js/label_editor/paint.js`
 - `../app/frontend/css/styles.css`
 - `../app/backend/user_access.py`
 - `../tests/tools/test_label_editor_frontend.py`

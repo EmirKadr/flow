@@ -14,7 +14,7 @@ _CACHE_LOCK = threading.Lock()
 _CACHE_TTL_SECONDS = 15 * 60 if settings.is_production else 0
 _CACHE_MAX_ITEMS = 64
 _CACHE: dict[tuple[Any, ...], tuple[float, dict]] = {}
-SANKEY_INBOUND_PAYLOAD_SCHEMA = "client_filters_v7"
+SANKEY_INBOUND_PAYLOAD_SCHEMA = "client_filters_v8"
 
 # Källrads-cache (oberoende av only_consumed). only_consumed är bara ett efterfilter
 # i bygget – samma rader hämtas oavsett – så vi cachar de dyra hämtningarna separat

@@ -42,7 +42,6 @@
             </label>
           </div>
           <div class="label-editor-profile-save">
-            <input id="labelProfileName" type="text" maxlength="40" placeholder="Profilnamn" aria-label="Profilnamn" />
             <button id="labelSaveProfile" type="button">Spara</button>
             <button id="labelDeleteProfile" type="button" class="danger" disabled>Ta bort</button>
           </div>
@@ -55,9 +54,52 @@
             <button type="button" data-add-label-object="qr">QR</button>
             <button type="button" data-add-label-object="code128">Code128</button>
             <button type="button" data-add-label-object="rect">Rektangel</button>
-            <button type="button" data-add-label-object="ellipse">Ellips</button>
+            <button type="button" data-add-label-object="ellipse">Cirkel</button>
             <button type="button" data-add-label-object="line">Linje</button>
             <button type="button" data-add-label-object="symbol">Symbol</button>
+          </div>
+        </div>
+
+        <div class="label-editor-panel-section">
+          <h2>Rita</h2>
+          <div class="label-editor-paint-tools" role="toolbar" aria-label="Ritverktyg">
+            <button type="button" class="active" data-paint-tool="select" title="Markera" aria-label="Markera">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 4 17 16l-6 1.2L8.8 23Z"></path>
+              </svg>
+              <span>Markera</span>
+            </button>
+            <button type="button" data-paint-tool="pencil" title="Penna" aria-label="Penna">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4 20 4.8-1.1L20 7.7 16.3 4 5.1 15.2Z"></path>
+                <path d="m14.8 5.5 3.7 3.7"></path>
+              </svg>
+              <span>Penna</span>
+            </button>
+            <button type="button" data-paint-tool="fill" title="Fyll" aria-label="Fyll">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4 13 8-8 7 7-8 8Z"></path>
+                <path d="m4 13 7 7"></path>
+                <path d="M19 16c1.2 1.4 2 2.6 2 3.4a2 2 0 0 1-4 0c0-.8.8-2 2-3.4Z"></path>
+              </svg>
+              <span>Fyll</span>
+            </button>
+            <button type="button" data-paint-tool="eraser" title="Sudd" aria-label="Sudd">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4 15 8-8 8 8-5 5H9Z"></path>
+                <path d="m8 11 8 8"></path>
+                <path d="M9 20h11"></path>
+              </svg>
+              <span>Sudd</span>
+            </button>
+          </div>
+          <div class="label-editor-paint-controls">
+            <label>Färg
+              <input id="labelPaintColor" type="color" value="#111827" />
+            </label>
+            <label>Storlek mm
+              <input id="labelPaintSize" type="number" min="0.2" max="20" step="0.2" value="1.2" />
+            </label>
           </div>
         </div>
 
@@ -143,6 +185,8 @@
   <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
   <script src="/js/common.js?v=20260616-speed-common"></script>
   <script src="/js/label_editor/barcodes.js?v=20260702-label-editor"></script>
-  <script src="/js/label_editor/editor.js?v=20260702-label-editor"></script>
+  <script src="/js/label_editor/symbols.js?v=20260702-label-editor"></script>
+  <script src="/js/label_editor/paint.js?v=20260702-label-paint-fill"></script>
+  <script src="/js/label_editor/editor.js?v=20260702-label-paint-fill"></script>
 </body>
 </html>

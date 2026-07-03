@@ -144,12 +144,19 @@ const SIDEBAR_STAFFING_TAB_VIEW_IDS = [
   "schedule",
   "overview",
   "productivity",
+  "sankeyInbound",
   "activities",
   "persons",
   "users",
   "businesses",
   "mySchedule",
   "myProductivity",
+];
+const SIDEBAR_SETTINGS_TAB_VIEW_IDS = [
+  "allocationMapSettings",
+  "allocationProcessMatrix",
+  "staffingSettings",
+  "productivityFinanceSettings",
 ];
 const SIDEBAR_VIEW_HREFS = {
   allocationSplit: "/dela.html",
@@ -161,12 +168,17 @@ const SIDEBAR_VIEW_HREFS = {
   schedule: "/index.html",
   overview: "/overblick.html",
   productivity: "/produktivitet.html",
+  sankeyInbound: "/sankey-inbound.html",
   activities: "/aktiviteter.html",
   persons: "/personer.html",
   users: "/anvandare.html",
   businesses: "/verksamheter.html",
   mySchedule: "/mitt-schema.html",
   myProductivity: "/min-produktivitet.html",
+  allocationMapSettings: "/installningar.html?tab=map",
+  allocationProcessMatrix: "/installningar.html?tab=process-matrix",
+  staffingSettings: "/installningar.html?tab=staffing",
+  productivityFinanceSettings: "/installningar.html?tab=productivity-finance",
 };
 
 function sidebarDefaultLayout() {
@@ -193,6 +205,16 @@ function sidebarFirstGroupHref(user, viewIds) {
 
 function sidebarGroupActive(activePage, groupId, viewIds) {
   return activePage === groupId || viewIds.includes(activePage);
+}
+
+function sidebarSettingsTabVisible(user, viewId) {
+  const permissionViewId = viewId === "allocationMapSettings" ? "allocationSettings" : viewId;
+  return canViewPage(user, permissionViewId);
+}
+
+function sidebarSettingsHref(user) {
+  const viewId = SIDEBAR_SETTINGS_TAB_VIEW_IDS.find((candidate) => sidebarSettingsTabVisible(user, candidate));
+  return viewId ? SIDEBAR_VIEW_HREFS[viewId] || "/installningar.html" : "/installningar.html";
 }
 
 function sidebarToolsHref(user) {
@@ -264,6 +286,15 @@ function sidebarPageDefinitions(user, activePage) {
       sidebar: false,
     },
     {
+      id: "sankeyInbound",
+      label: "Sankey",
+      href: "/sankey-inbound.html",
+      icon: "S",
+      visible: canViewPage(user, "sankeyInbound"),
+      active: activePage === "sankeyInbound",
+      sidebar: false,
+    },
+    {
       id: "dataFetch",
       label: "Hämta data",
       href: "/hamta-data.html",
@@ -310,13 +341,50 @@ function sidebarPageDefinitions(user, activePage) {
     {
       id: "allocationSettings",
       label: "Inställningar",
-      href: "/installningar.html",
+      href: sidebarSettingsHref(user),
       icon: "⚙",
       visible: canViewPage(user, "allocationSettings")
         || canViewPage(user, "staffingSettings")
         || canViewPage(user, "allocationProcessMatrix")
         || canViewPage(user, "productivityFinanceSettings"),
       active: activePage === "allocationSettings",
+      contextMenuViewIds: SIDEBAR_SETTINGS_TAB_VIEW_IDS,
+    },
+    {
+      id: "allocationMapSettings",
+      label: "Ytkarta",
+      href: SIDEBAR_VIEW_HREFS.allocationMapSettings,
+      icon: "⚙",
+      visible: canViewPage(user, "allocationSettings"),
+      active: false,
+      sidebar: false,
+    },
+    {
+      id: "allocationProcessMatrix",
+      label: "Bearbeta",
+      href: SIDEBAR_VIEW_HREFS.allocationProcessMatrix,
+      icon: "⚙",
+      visible: canViewPage(user, "allocationProcessMatrix"),
+      active: false,
+      sidebar: false,
+    },
+    {
+      id: "staffingSettings",
+      label: "Bemanning",
+      href: SIDEBAR_VIEW_HREFS.staffingSettings,
+      icon: "⚙",
+      visible: canViewPage(user, "staffingSettings"),
+      active: false,
+      sidebar: false,
+    },
+    {
+      id: "productivityFinanceSettings",
+      label: "Intäkt/utgift",
+      href: SIDEBAR_VIEW_HREFS.productivityFinanceSettings,
+      icon: "⚙",
+      visible: canViewPage(user, "productivityFinanceSettings"),
+      active: false,
+      sidebar: false,
     },
     {
       id: "allocationSplit",

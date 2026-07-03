@@ -41,8 +41,8 @@ seedad till Super User tills en admin uttryckligen ger andra roller atkomst.
   nollade plockrader per bolag. Nollade rader ar poster i plockloggen dar
   `Plockat`/`qty_suf` ar `0`.
 - Verksamhetsnoden har ocksa hogerklickskommandot `Sankey - Inbound` om rollen
-  har `sankeyInbound=view`. Kommandot oppnar en separat vy och skickar med
-  Produktivitetens period/datum som starturval.
+  har `sankeyInbound=view`. Kommandot oppnar samma vy som Bemanning-fliken
+  `Sankey` och skickar med Produktivitetens period/datum som starturval.
 - Vyn renderar kontroller, sammanfattningsskal och tradyta direkt. Rapporten
   hamtas sedan i bakgrunden och statusraden visar forst hamtning och sedan
   berakning/ritning innan korten fylls pa. Detta ar medvetet read-only

@@ -90,6 +90,32 @@ from .build_graph import (  # noqa: F401
 from .build_outbound import _build_outbound_sankey  # noqa: F401
 
 
+def _budgeted_client_filter_period_specs(
+    period: str,
+    period_start: date,
+    period_end: date,
+    company_count: int,
+) -> list[tuple[str, date, date]]:
+    specs = _client_filter_period_specs(period, period_start, period_end)
+    if str(period or "").strip().lower() != "year":
+        return specs
+
+    views_per_period = max(1, company_count) * 2
+    max_periods = CLIENT_FILTER_PREBUILD_MAX_VIEWS // views_per_period
+    if len(specs) <= max_periods:
+        return specs
+    if max_periods <= 0:
+        return specs[:1]
+
+    selected: list[tuple[str, date, date]] = []
+    for period_type in ("year", "month", "week", "day"):
+        for spec in specs:
+            if spec[0] != period_type or len(selected) >= max_periods:
+                continue
+            selected.append(spec)
+    return selected or specs[:1]
+
+
 def build_sankey_inbound_payload(
     *,
     source_rows: dict[str, list[dict[str, Any]]],
@@ -693,16 +719,21 @@ def build_sankey_inbound_payload(
         client_companies = [current_view_company]
     else:
         client_companies = ["ALL", *available_companies]
-    client_period_specs = _client_filter_period_specs(
+    client_period_specs = _budgeted_client_filter_period_specs(
         requested_period_type,
         period_start,
         period_end,
+        len(client_companies),
     )
     source_row_count = sum(len(rows or []) for rows in source_rows.values())
     estimated_client_views = len(client_period_specs) * len(client_companies) * 2
     interactive_period = requested_period_type in {"day", "week", "month"}
     prebuild_client_filters = (
-        (interactive_period or source_row_count <= CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS)
+        (
+            interactive_period
+            or requested_period_type == "year"
+            or source_row_count <= CLIENT_FILTER_PREBUILD_MAX_SOURCE_ROWS
+        )
         and estimated_client_views <= CLIENT_FILTER_PREBUILD_MAX_VIEWS
     )
     alternate_key = "all" if only_consumed else "only_consumed"

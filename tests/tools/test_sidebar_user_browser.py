@@ -156,6 +156,7 @@ def test_sidebar_main_menu_context_menus_show_group_tabs(local_sidebar_server, c
             "Bemanning",
             "Översikt",
             "Produktivitet",
+            "Sankey",
             "Aktiviteter",
             "Personer",
             "Användare",
@@ -163,6 +164,21 @@ def test_sidebar_main_menu_context_menus_show_group_tabs(local_sidebar_server, c
             "Mitt schema",
             "Min produktivitet",
         ]
+
+        page.mouse.click(1, 1)
+        expect(page.locator(".sidebar-context-menu")).to_have_count(0)
+
+        page.wait_for_selector('[data-sidebar-view-id="allocationSettings"]', timeout=15000)
+        page.locator('[data-sidebar-view-id="allocationSettings"]').click(button="right")
+        expect(page.locator(".sidebar-context-menu")).to_be_visible()
+        settings_items = page.locator(".sidebar-context-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => node.innerText.trim())"""
+        )
+        assert settings_items == ["Ytkarta", "Bearbeta", "Bemanning", "Intäkt/utgift"]
+
+        page.get_by_role("menuitem", name="Bemanning").click()
+        page.wait_for_url("**/installningar.html?tab=staffing", timeout=15000)
+        expect(page.locator('[data-settings-tab="staffing"]')).to_have_attribute("aria-selected", "true")
     finally:
         context.close()
 
