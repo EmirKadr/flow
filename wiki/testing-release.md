@@ -20,6 +20,26 @@ python -m tools.healthcheck report --local
 python -m tools.healthcheck waits --local --period 24h
 ```
 
+## Hermetisk svit och riktiga API-tester (opt-in)
+
+Testsviten ar hermetisk som default: `tests/conftest.py` satter
+`FLOW_DISABLE_BACKGROUND_JOBS=1` (via `setdefault`) sa att in-process-servrar
+i browser-/desktop-tester inte startar schemalaggare som gor riktiga
+natverksanrop och haller produktivitetssyncens las over andra tester.
+
+Nar en agent uttryckligen ombeds testa **pa riktigt** finns tva opt-in-vagar:
+
+```powershell
+# Bakgrundsjobb/schemalaggare pa riktigt (satt flaggan sjalv fore pytest):
+$env:FLOW_DISABLE_BACKGROUND_JOBS = "0"; python -m pytest tests/tools/test_desktop_app_probe_runtime.py
+
+# Live-integrationstester mot externa datakallan (skipif-gatade):
+$env:RUN_DATA_SOURCE_INTEGRATION = "1"; python -m pytest tests/integration/test_data_source_live.py
+```
+
+Default ska forbli hermetiskt - riktiga anrop ar ett medvetet val per korning,
+aldrig nagot hela sviten gor implicit.
+
 ## Visuella tester
 
 ```powershell
