@@ -39,6 +39,10 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   `release/{ar}.{vecka}.{sekvens}`, nasta lediga sekvens). Aterandvand aldrig
   en gammal release-branch for en ny deploy - Octopus bygger per branch och
   historiken ska visa exakt vad varje release innehall.
+- **Kor hela testsviten fore push.** Pre-push-hooken (`.githooks/pre-push`)
+  gor det automatiskt; kringga den aldrig slentrianmassigt (nodfall:
+  `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i commit-texten). CI ar skyddsnatet,
+  inte forsta forsvarslinjen - roda pushar ska fangas lokalt.
 - Emir behover inte folja NoWaste-processen till punkt och pricka i detta
   repo (huvudbranchen heter `main`), men agenter ska kanna till modellen,
   anvanda dess begrepp korrekt och hjalpa till nar releaser gors mot
