@@ -11,6 +11,10 @@ som SQLite och PostgreSQL accepterar ar ogiltiga pa SQL Server och maste vaktas:
    SQL Server inte stodjer alls (`An expression of non-boolean type specified
    in a context where a condition is expected`). Anvand en OR-kedja av
    AND-uttryck i stallet (se `routers/overview._ywd_filter`).
+3. `GROUP BY` pa uttryck som innehaller Python-strangliteraler (t.ex.
+   `coalesce(col1, col2, "fallback")`) parametriseras av pyodbc och SQL Server
+   tillater inte bindparametrar i GROUP BY. pymssql interpolerar klientside
+   och doljer felet lokalt. Gor NULL-fallbacken i Python i stallet.
 """
 from __future__ import annotations
 
@@ -71,6 +75,32 @@ def test_no_tuple_in_in_backend_queries():
         "SQLAlchemy tuple-IN kraschar mot MSSQL (icke-boolskt uttryck i villkor). "
         "Skriv om till or_(and_(...), ...):\n  "
         + "\n  ".join(offenders)
+    )
+
+
+def test_personal_productivity_group_by_has_no_bind_params():
+    """GROUP BY med bindparameter kraschar pa MSSQL+pyodbc (pymssql doljer det).
+    Aktivitetsaggregatets grupputtryck ska rendera utan parametrar."""
+    import re
+    import sys
+
+    if str(ROOT / "app") not in sys.path:
+        sys.path.insert(0, str(ROOT / "app"))
+    from sqlalchemy import func, select
+    from sqlalchemy.dialects import mssql
+
+    from backend.models import PersonProductivityDaily
+
+    # Samma uttryck som person_productivity_period_stats_if_current grupperar pa.
+    activity_label = func.coalesce(
+        PersonProductivityDaily.activity_label,
+        PersonProductivityDaily.process_label,
+    )
+    query = select(activity_label, func.count()).group_by(activity_label)
+    compiled = str(query.compile(dialect=mssql.dialect()))
+    group_by_clause = compiled.split("GROUP BY", 1)[1]
+    assert not re.search(r"[:?]", group_by_clause), (
+        "Bindparameter i GROUP BY - SQL Server avvisar detta under pyodbc:\n" + compiled
     )
 
 
