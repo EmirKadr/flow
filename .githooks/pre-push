@@ -17,6 +17,37 @@ if [ "${FLOW_SKIP_PREPUSH_TESTS:-0}" = "1" ]; then
     exit 0
 fi
 
+# Dokument-endast-pushar (wiki/markdown) behover ingen testsvit. Kraver att
+# ALLA pushade refs bara innehaller dokumentandringar; nya branchar utan
+# kand bas kors alltid mot sviten.
+docs_only=1
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "$local_ref" ] && continue
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue  # ref-radering: inget att testa
+    fi
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        base="$(git merge-base origin/main "$local_sha" 2>/dev/null)"
+        [ -z "$base" ] && { docs_only=0; break; }
+    else
+        base="$remote_sha"
+    fi
+    changed="$(git diff --name-only "$base" "$local_sha" 2>/dev/null)"
+    [ -z "$changed" ] && continue
+    non_docs="$(printf '%s\n' "$changed" | grep -vE '^wiki/|\.md$' | head -1)"
+    if [ -n "$non_docs" ]; then
+        docs_only=0
+        break
+    fi
+done <<EOF
+$refs
+EOF
+
+if [ "$docs_only" = "1" ]; then
+    echo "  pre-push: endast dokumentandringar (wiki/markdown) – hoppar over testsviten." >&2
+    exit 0
+fi
+
 echo "  pre-push: kor testsviten (avbryt med Ctrl+C; nodfall: FLOW_SKIP_PREPUSH_TESTS=1) ..." >&2
 
 python -m pytest -x -q
