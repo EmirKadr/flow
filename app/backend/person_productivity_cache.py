@@ -497,10 +497,12 @@ def person_productivity_period_stats_if_current(
     support_minutes = int(person_summary[1] or 0)
     absence_minutes = int(person_summary[2] or 0)
 
+    # Ingen strangliteral i uttrycket: SQL Server tillater inte bindparametrar
+    # i GROUP BY (pyodbc parametriserar; pymssql interpolerar klientside, darfor
+    # bet felet bara i deployade miljon). NULL-fallbacken gors i Python nedan.
     activity_label = func.coalesce(
         PersonProductivityDaily.activity_label,
         PersonProductivityDaily.process_label,
-        "Okand aktivitet",
     )
     activity_rows = db.execute(
         select(
