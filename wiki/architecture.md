@@ -98,6 +98,19 @@ kontraktstest skyddar Dockerfile-CMD mot `--workers`.
   deploy via Octopus-projektet **Flow**, databas MSSQL. Development-miljon ar
   `flow-development.nowastelogistics.com`. Release- och branchmodellen
   beskrivs i [nowaste-git-release.md](nowaste-git-release.md).
+- **Miljotopologi och DB-latens (viktigt for prestandabedomning):**
+  development-miljons k8s-kluster kor i **Proacts datacenter** medan SQL
+  Servern (tst-effect40) ligger i **Azure northeurope** → ~37 ms natverkslatens
+  per databasfraga. I **produktionsmiljon ligger bada i samma datacenter**
+  (bekraftat av Mikael Hallin 2026-07-04), sa latensskatten finns inte dar.
+  Konsekvens: development ar 3–8× langsammare an prod pa fragetunga endpoints
+  (uppmatt 2026-07-04: `/api/schedule` 177 ms pa Render vs 1 007 ms i dev-k8s) —
+  extrapolera aldrig prestanda fran development till prod. Fragetunga vyer
+  (20+ sekventiella DB-fragor per klick) bor anda batchas pa sikt.
+  Benchmarka med `tools.api_benchmark` (se [testing-release.md](testing-release.md)).
+- **Octopus-projektvariabler blir inte automatiskt env i podden** — deploy-
+  processen maste mappa in dem (Mickes doman). Symptom nar mappning saknas:
+  `SUPER_USER_USERNAMES`/`ARCHIVE_CACHE_*` utan effekt, tom Seq (OTel-env).
 - Render-driften ar avvecklad (2026-07-03); `render.yaml` och
   `backend.migrate_pg_to_mssql` ar borttagna ur repot och finns i git-historiken.
 - `start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
