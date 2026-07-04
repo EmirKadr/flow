@@ -9,6 +9,14 @@ tags: [test, release, agent]
 
 Kort svar: vid produktbeteende ska agenten testa både webb och Windows-paritet sa langt rimligt. Dokumentationsandringar som bara lagger till wiki kraver normalt ingen testsvit, men kan verifieras med fil-/lankkontroll.
 
+## Pre-push-hooken kor sviten automatiskt
+
+`.githooks/pre-push` kor `python -m pytest -x -q` fore varje push och
+blockerar vid rott — CI-fel ska fangas lokalt i fortid, inte upptackas efter
+push. Nodfallsbypass: `FLOW_SKIP_PREPUSH_TESTS=1` (motivera i commit-texten).
+Kraver `git config core.hooksPath .githooks` (redan satt i repot via
+tools.agent_audit install-hooks).
+
 ## Snabbtest for kodandringar
 
 ```powershell
@@ -50,6 +58,23 @@ python -m tools.performance_benchmark --runs 1
 python -m tools.desktop_shell_screens
 python -m tools.desktop_app_probe
 ```
+
+## API-benchmark före/efter (prestandaändringar)
+
+`tools.api_benchmark` loggar in mot en miljö, mäter kärnendpoints N gånger
+och skriver JSON-rapport; `--compare` diffar mot en tidigare körning.
+Obligatorisk vid prestandapåverkande ändringar (regel i `AGENTS.md`):
+baslinje före, jämförelse efter, diff i commit-/PR-texten.
+
+```powershell
+python -m tools.api_benchmark --base-url https://flow-development.nowastelogistics.com --username X --password *** --label fore-min-andring
+python -m tools.api_benchmark --base-url ... --username X --password *** --label efter-min-andring --compare artifacts/api_benchmark/fore-min-andring.json
+```
+
+Baslinje 2026-07-04 (`baslinje-k8s-fore-optimering.json`): areas 214 ms,
+persons 426 ms, schedule 1018 ms, overview 1021 ms — mot Render-nivåerna
+70/82/177/133 ms. Rotorsak: ~37 ms DB-latens per fråga × många sekventiella
+frågor per request (se optimeringsplanen i chatthistoriken/log).
 
 ## Serversmoke efter deploy (läs-bara)
 
