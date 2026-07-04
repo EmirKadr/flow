@@ -43,6 +43,11 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   gor det automatiskt; kringga den aldrig slentrianmassigt (nodfall:
   `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i commit-texten). CI ar skyddsnatet,
   inte forsta forsvarslinjen - roda pushar ska fangas lokalt.
+- **Benchmarka fore och efter vid stora/prestandapaverkande andringar**
+  (query-/cache-/anslutnings-/arkitekturandringar): kor
+  `python -m tools.api_benchmark --label fore-<andring> ...` mot miljon innan,
+  samma med `--compare` efterat, och redovisa diffen i PR/commit-texten.
+  Effekt ska vara matt, inte gissad. Baslinjer ligger i `artifacts/api_benchmark/`.
 - Emir behover inte folja NoWaste-processen till punkt och pricka i detta
   repo (huvudbranchen heter `main`), men agenter ska kanna till modellen,
   anvanda dess begrepp korrekt och hjalpa till nar releaser gors mot

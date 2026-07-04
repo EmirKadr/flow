@@ -59,6 +59,23 @@ python -m tools.desktop_shell_screens
 python -m tools.desktop_app_probe
 ```
 
+## API-benchmark före/efter (prestandaändringar)
+
+`tools.api_benchmark` loggar in mot en miljö, mäter kärnendpoints N gånger
+och skriver JSON-rapport; `--compare` diffar mot en tidigare körning.
+Obligatorisk vid prestandapåverkande ändringar (regel i `AGENTS.md`):
+baslinje före, jämförelse efter, diff i commit-/PR-texten.
+
+```powershell
+python -m tools.api_benchmark --base-url https://flow-development.nowastelogistics.com --username X --password *** --label fore-min-andring
+python -m tools.api_benchmark --base-url ... --username X --password *** --label efter-min-andring --compare artifacts/api_benchmark/fore-min-andring.json
+```
+
+Baslinje 2026-07-04 (`baslinje-k8s-fore-optimering.json`): areas 214 ms,
+persons 426 ms, schedule 1018 ms, overview 1021 ms — mot Render-nivåerna
+70/82/177/133 ms. Rotorsak: ~37 ms DB-latens per fråga × många sekventiella
+frågor per request (se optimeringsplanen i chatthistoriken/log).
+
 ## Serversmoke efter deploy (läs-bara)
 
 `tools.server_smoke` loggar in på en riktig miljö, öppnar varje vy i
