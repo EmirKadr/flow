@@ -1,19 +1,19 @@
 """Local Windows runtime for file-backed Flow calculations."""
 from __future__ import annotations
 
-import cgi
 import json
 import mimetypes
 import os
 import queue
 import re
-import shutil
 import subprocess
 import tempfile
 import threading
 import time
 import uuid
 from dataclasses import dataclass
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urljoin
@@ -534,40 +534,66 @@ def _forward_headers(headers: dict[str, str], *, content_type: str | None = None
     return result
 
 
+def _multipart_boundary(content_type: str) -> bytes | None:
+    header = f"Content-Type: {content_type}\r\n\r\n".encode("latin-1")
+    message = BytesParser(policy=policy.HTTP).parsebytes(header)
+    if message.get_content_type() != "multipart/form-data":
+        return None
+    boundary = message.get_param("boundary")
+    if not boundary:
+        return None
+    return str(boundary).encode("latin-1")
+
+
 def parse_multipart(handler) -> tuple[dict[str, str], dict[str, Path], list[Path]]:
-    form = cgi.FieldStorage(
-        fp=handler.rfile,
-        headers=handler.headers,
-        environ={
-            "REQUEST_METHOD": handler.command,
-            "CONTENT_TYPE": handler.headers.get("Content-Type", ""),
-        },
-        keep_blank_values=True,
-    )
+    # cgi.FieldStorage togs bort i Python 3.13. email-parsern anvands bara for
+    # part-huvudena; filinnehallet delas byte-exakt manuellt eftersom
+    # email-payloaden normaliserar radslut och skulle korrumpera binara
+    # uppladdningar (t.ex. .xlsx).
     fields: dict[str, str] = {}
     uploads: dict[str, Path] = {}
     temp_paths: list[Path] = []
-    items = form.list or []
-    for item in items:
-        key = item.name
+
+    boundary = _multipart_boundary(handler.headers.get("Content-Type", ""))
+    if not boundary:
+        return fields, uploads, temp_paths
+    try:
+        length = int(handler.headers.get("Content-Length") or 0)
+    except (TypeError, ValueError):
+        length = 0
+    body = handler.rfile.read(length) if length > 0 else b""
+
+    for section in body.split(b"--" + boundary):
+        if not section or section.startswith(b"--"):
+            continue  # preamble eller avslutande "--"-delimiter
+        raw = section
+        if raw.startswith(b"\r\n"):
+            raw = raw[2:]
+        if raw.endswith(b"\r\n"):
+            raw = raw[:-2]
+        head, sep, content = raw.partition(b"\r\n\r\n")
+        if not sep:
+            continue
+        part_headers = BytesParser(policy=policy.HTTP).parsebytes(head + b"\r\n\r\n")
+        key = part_headers.get_param("name", header="content-disposition")
         if not key:
             continue
-        if item.filename:
-            suffix = Path(item.filename).suffix or ".csv"
+        key = str(key)
+        filename = part_headers.get_filename()
+        if filename:
+            suffix = Path(filename).suffix or ".csv"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             try:
-                shutil.copyfileobj(item.file, tmp)
+                tmp.write(content)
             finally:
                 tmp.close()
             path = Path(tmp.name)
             uploads[key] = path
             temp_paths.append(path)
         else:
-            value = item.value
-            if isinstance(value, bytes):
-                value = value.decode("utf-8", errors="replace")
-            if str(value or "").strip():
-                fields[key] = str(value)
+            value = content.decode("utf-8", errors="replace")
+            if value.strip():
+                fields[key] = value
     return fields, uploads, temp_paths
 
 
