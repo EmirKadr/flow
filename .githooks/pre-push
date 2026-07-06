@@ -50,6 +50,28 @@ fi
 
 echo "  pre-push: kor testsviten (avbryt med Ctrl+C; nodfall: FLOW_SKIP_PREPUSH_TESTS=1) ..." >&2
 
+# Frontend-kontrakt: typkontroll (JSDoc + tsc) och ESLint. Snabba, kors fore
+# pytest. Kraver Node + node_modules; varna och hoppa over annars sa pushar
+# fran maskiner utan Node inte blockeras (CI tar dem da).
+if command -v npx >/dev/null 2>&1 && [ -d node_modules ]; then
+    npx tsc -p jsconfig.json --noEmit
+    ts_status=$?
+    if [ $ts_status -ne 0 ]; then
+        echo "" >&2
+        echo "  ✖ PRE-PUSH BLOCKERAD: frontend-typkontrollen faller (npm run typecheck)." >&2
+        exit $ts_status
+    fi
+    npx eslint app/frontend/js
+    lint_status=$?
+    if [ $lint_status -ne 0 ]; then
+        echo "" >&2
+        echo "  ✖ PRE-PUSH BLOCKERAD: ESLint faller (npm run lint)." >&2
+        exit $lint_status
+    fi
+else
+    echo "  ⚠ pre-push: Node/node_modules saknas - hoppar over frontend-typkontroll och lint (kor npm install)." >&2
+fi
+
 python -m pytest -x -q
 status=$?
 if [ $status -ne 0 ]; then

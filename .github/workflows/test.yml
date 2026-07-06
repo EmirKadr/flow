@@ -69,6 +69,15 @@ jobs:
         run: |
           find app/frontend/js -name '*.js' -print0 | xargs -0 -n1 node --check
 
+      - name: Install frontend check dependencies
+        run: npm ci
+
+      - name: Frontend type check (JSDoc + tsc --checkJs)
+        run: npm run typecheck
+
+      - name: Frontend lint (ESLint)
+        run: npm run lint
+
       - name: Run desktop smoke test
         run: python desktop/main.py --smoke-test
 

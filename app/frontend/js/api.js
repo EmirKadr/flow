@@ -1,3 +1,4 @@
+// @ts-check
 // Tunn fetch-wrapper. Skickar med session-cookie. 401 -> /login.html.
 
 function isAuthPath(path) {
@@ -14,7 +15,7 @@ function connectionError(path, originalError) {
   const message = protocol === "file:"
     ? "Appen måste öppnas via servern, inte direkt från fil. Öppna https://stigamo.nu eller starta lokal testmiljö."
     : "Kunde inte ansluta till servern. Kontrollera att appen öppnas via rätt adress och att backend är igång.";
-  const err = new Error(message);
+  const err = /** @type {ApiError} */ (new Error(message));
   err.status = 0;
   err.path = path;
   err.originalError = originalError;
@@ -541,6 +542,10 @@ function logApiFailure(path, method, error, options = {}) {
   apiUserLog(`${label} misslyckades${error?.message ? `: ${error.message}` : ""}`, "error", "Fel");
 }
 
+/**
+ * @param {string} path
+ * @param {ApiRequestOptions} [options]
+ */
 async function request(path, options = {}) {
   const {
     headers = {},
@@ -649,7 +654,7 @@ async function request(path, options = {}) {
     }
 
     if (!resp.ok) {
-      const err = new Error(errorMessageFromBody(body, resp.status));
+      const err = /** @type {ApiError} */ (new Error(errorMessageFromBody(body, resp.status)));
       err.status = resp.status;
       err.body = body;
       reportApiError(path, {
@@ -763,7 +768,7 @@ async function downloadDirect(path, fallbackFilename = "download") {
 
   const ct = resp.headers.get("content-type") || "";
   if (!resp.ok || isHtmlContentType(ct)) {
-    const err = new Error(resp.ok ? htmlErrorMessage(resp.status) : httpStatusLabel(resp.status));
+    const err = /** @type {ApiError} */ (new Error(resp.ok ? htmlErrorMessage(resp.status) : httpStatusLabel(resp.status)));
     err.status = resp.status;
     reportApiError(path, {
       method,
@@ -841,7 +846,7 @@ async function download(path, fallbackFilename = "download", options = {}) {
   const ct = resp.headers.get("content-type") || "";
   if (!resp.ok) {
     const body = ct.includes("application/json") ? await resp.json() : await resp.text();
-    const err = new Error(errorMessageFromBody(body, resp.status));
+    const err = /** @type {ApiError} */ (new Error(errorMessageFromBody(body, resp.status)));
     err.status = resp.status;
     err.body = body;
     reportApiError(path, {

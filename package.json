@@ -1,0 +1,13 @@
+{
+  "name": "flow-frontend-checks",
+  "private": true,
+  "description": "Dev-verktyg för frontend-typkontroll (JSDoc + tsc --checkJs) och lint. Ingen build — appen serverar ren JS.",
+  "scripts": {
+    "typecheck": "tsc -p jsconfig.json --noEmit",
+    "lint": "eslint app/frontend/js"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2"
+  }
+}

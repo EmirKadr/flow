@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "es2021",
+    "lib": ["es2021", "dom", "dom.iterable"],
+    "module": "none",
+    "checkJs": false,
+    "allowJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["app/frontend/js/**/*.js", "app/frontend/js/types/*.d.ts"]
+}
