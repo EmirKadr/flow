@@ -698,3 +698,122 @@ def _run_productivity_overview(
 
 def _sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def build_business_summary_payload(
+    db: Session,
+    user: User,
+    *,
+    period: str = "day",
+    anchor_date: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    """Bolagsindelad intäkt/kostnad-summering för en period.
+
+    Delad implementation för endpointen /productivity/overview/business-summary
+    och apphjälpens finance_summary-tool. Request-objektet behövs inte —
+    rapportbyggaren använder det inte.
+    """
+    normalized_period = str(period or "day").strip().lower()
+    period_start, period_end, period_label = _overview_period_bounds(
+        normalized_period,
+        anchor_date=anchor_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    days = _date_span(period_start, period_end)
+    business_id = productivity_finance_helpers._productivity_business_id(db, user)
+    finance_context = productivity_finance_helpers._productivity_finance_context(db, user, business_id)
+    finance_visible = bool(finance_context.get("visible"))
+    currency = str(finance_context.get("currency") or "SEK")
+    summaries: dict[str, dict] = {}
+    errors: list[dict] = []
+    reports: list[dict] = []
+    source_status: list[dict] = []
+
+    for day in days:
+        try:
+            report, day_source_status = _build_productivity_report_for_date(
+                None,
+                db,
+                user,
+                day,
+                ensure_snapshot=False,
+                wait_seconds=0,
+            )
+            if finance_visible:
+                productivity_finance_helpers._attach_productivity_finance(report, finance_context, include_process_revenues=False)
+                productivity_finance_helpers._add_productivity_business_company_report_finance(
+                    summaries,
+                    report,
+                    finance_context,
+                    currency=currency,
+                    finance_visible=finance_visible,
+                )
+            productivity_finance_helpers._add_productivity_zero_pick_rows(
+                summaries,
+                productivity_finance_helpers._productivity_zero_pick_rows_by_company(productivity_snapshot_files(day)),
+                currency=currency,
+                finance_visible=finance_visible,
+            )
+            reports.append(report)
+            source_status.append({
+                "date": day.isoformat(),
+                "status": "ok",
+                "source": (report.get("sync") or {}).get("source"),
+                "sources": day_source_status,
+            })
+        except (ProductivitySourceError, ProductivitySyncError) as exc:
+            errors.append({"date": day.isoformat(), "error_type": type(exc).__name__, "message": str(exc)})
+
+    if not reports and errors:
+        first_error = errors[0]
+        status_code = (
+            status.HTTP_502_BAD_GATEWAY
+            if first_error.get("error_type") == "ProductivitySyncError"
+            else status.HTTP_404_NOT_FOUND
+        )
+        raise HTTPException(
+            status_code,
+            detail=str(first_error.get("message") or "Produktivitetsperioden kunde inte hämtas."),
+        )
+
+    if finance_visible:
+        productivity_finance_helpers._add_productivity_business_company_process_revenues(
+            summaries,
+            finance_context.get("process_revenue_rows") or [],
+            currency=currency,
+            finance_visible=finance_visible,
+        )
+
+    companies, totals = productivity_finance_helpers._finalize_productivity_business_company_summaries(
+        summaries,
+        company_codes=list(finance_context.get("company_codes") or []),
+        currency=currency,
+        finance_visible=finance_visible,
+    )
+    missing_dates = [
+        day.isoformat()
+        for day in days
+        if not any(str(report.get("date") or "") == day.isoformat() for report in reports)
+    ]
+    return {
+        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "business": productivity_finance_helpers._productivity_business_payload(db, user, business_id),
+        "period": {
+            "type": normalized_period,
+            "label": period_label,
+            "start_date": period_start.isoformat(),
+            "end_date": period_end.isoformat(),
+            "requested_days": len(days),
+            "days_with_data": len(reports),
+        },
+        "finance_visible": finance_visible,
+        "currency": currency,
+        "companies": companies,
+        "totals": totals,
+        "source_status": source_status,
+        "missing_dates": missing_dates,
+        "errors": errors[:20],
+    }

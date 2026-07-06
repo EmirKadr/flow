@@ -17,6 +17,7 @@ from . import person_tools  # noqa: F401
 from . import schedule_tools  # noqa: F401
 from . import productivity_tools  # noqa: F401
 from . import history_tools  # noqa: F401
+from . import finance_tools  # noqa: F401
 from . import system_tools  # noqa: F401
 from .runtime import ToolLoopResult, run_tool_loop
 
