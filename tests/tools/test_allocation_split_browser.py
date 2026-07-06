@@ -293,6 +293,10 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
     try:
         login_admin(page, local_allocation_server)
         page.goto(f"{local_allocation_server}/dela.html", wait_until="domcontentloaded")
+        # Stilkontraktet nedan läser getComputedStyle - vänta in stylesheets
+        # så CSS-laddningsracet inte ger falska mått på långsam/lastad maskin
+        # (rotorsaksanalys 2026-07-06: full-svit-flake under I/O-last).
+        page.wait_for_load_state("load")
         page.wait_for_selector('[data-flow-field="values"]', timeout=15000)
         page.fill('[data-flow-field="values"]', "A\nB\nC\nD\nE")
         page.fill('[data-flow-field="chunk_size"]', "2")
@@ -339,7 +343,10 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
         }
 
         copy_buttons.nth(1).click()
-        expect(page.locator(".toast.success")).to_have_text("Kolumn kopierad")
+        # Kopieringen gör en serverrundresa (GET table-column) före toasten -
+        # expects 5s-default är för snål på lastad maskin; följ filens
+        # 15s-konvention. Innehållskravet är oförändrat.
+        expect(page.locator(".toast.success")).to_have_text("Kolumn kopierad", timeout=15000)
         copied_text = page.evaluate("navigator.clipboard.readText()")
         assert copied_text.replace("\r\n", "\n") == "C\nD"
 

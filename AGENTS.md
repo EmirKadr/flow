@@ -39,10 +39,14 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   `release/{ar}.{vecka}.{sekvens}`, nasta lediga sekvens). Aterandvand aldrig
   en gammal release-branch for en ny deploy - Octopus bygger per branch och
   historiken ska visa exakt vad varje release innehall.
-- **Kor hela testsviten fore push.** Pre-push-hooken (`.githooks/pre-push`)
-  gor det automatiskt; kringga den aldrig slentrianmassigt (nodfall:
-  `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i commit-texten). CI ar skyddsnatet,
-  inte forsta forsvarslinjen - roda pushar ska fangas lokalt.
+- **Kor testsviten fore push.** Pre-push-hooken (`.githooks/pre-push`) kor
+  typkontroll, lint och `pytest -m "not browser"` automatiskt; kringga den
+  aldrig slentrianmassigt (nodfall: `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i
+  commit-texten). Browsertesterna (`-m browser`, Playwright) ar lastkansliga
+  pa utvecklarmaskinen och gate:as i CI med max 2 omkorningar; en nattlig
+  flake-jakt kor dem 3x utan omkorningar och oppnar issue vid instabilitet.
+  Aterkommande omkorningar ska rotorsakas, inte normaliseras - se
+  `wiki/test-strategi.md`. CI ar skyddsnatet, inte forsta forsvarslinjen.
 - **Benchmarka fore och efter vid stora/prestandapaverkande andringar**
   (query-/cache-/anslutnings-/arkitekturandringar): kor
   `python -m tools.api_benchmark --label fore-<andring> ...` mot miljon innan,

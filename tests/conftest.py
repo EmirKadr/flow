@@ -24,6 +24,19 @@ _SESSION_TEMP_DIR_GLOBS = (
 )
 
 
+def pytest_collection_modifyitems(config, items):
+    """Auto-märk Playwright-tester med `browser` utifrån fixturanvändning.
+
+    Markören styr var testerna körs: pre-push kör `-m "not browser"` (snabbt,
+    deterministiskt lokalt), CI är gate för browsertesterna. Auto-märkning på
+    fixturnamn i stället för manuell pytestmark gör att en ny browserfil
+    aldrig kan glömma markören."""
+    for item in items:
+        fixtures = getattr(item, "fixturenames", ())
+        if "chromium_browser" in fixtures:
+            item.add_marker(pytest.mark.browser)
+
+
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("FLOW_KEEP_TEST_ARTIFACTS") == "1":
         return

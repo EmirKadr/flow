@@ -106,6 +106,8 @@ def build_frames(spec: dict[str, list[str]]) -> dict[str, pd.DataFrame]:
             "Kund": CUSTOMERS[i % len(CUSTOMERS)],
             "Sändningsnr": f"S{i + 1:05d}",
             "Bolag": "SYNTBOLAG",
+            # "0" = saknar alt-adress (LQ ej klar-vägen); 1-3 matchar custom_adr.
+            "Alt adress": str(i % 4),
         }
         return values.get(col, "")
 
@@ -168,6 +170,34 @@ def build_frames(spec: dict[str, list[str]]) -> dict[str, pd.DataFrame]:
         }
         return values.get(col, "")
 
+    def custom_adr_filler(col: str, i: int):
+        # Postnummer varvar Gotland (621-624xx -> "LQ Gotland") och fastlandet
+        # sa goods-declaration motionerar bada sjovagarna.
+        postcodes = ["621 45", "12345", "623 10", "54321"]
+        values = {
+            "Kund": f"K{i + 1:03d}",
+            "Namn": f"Syntetisk mottagare {i + 1}",
+            "Adress": f"Syntetgatan {i + 1}",
+            "Post nr": postcodes[i % len(postcodes)],
+            "Ort": ["Visby", "Fastlandet"][i % 2],
+            "Adr num": str(1 + i % 3),
+            "Land": "SE",
+            "Bolag": "SYNTBOLAG",
+        }
+        return values.get(col, "")
+
+    def item_security_filler(col: str, i: int):
+        # Nivamonster "", LQ, DG, "" sa prioriteringen DG > LQ > tom provas.
+        values = {
+            "Artikel": ARTICLES[i % len(ARTICLES)],
+            "Beskrivning": f"Syntetisk artikel {i % len(ARTICLES) + 1}",
+            "Farligt gods nivå": ["", "LQ", "DG", ""][i % 4],
+            "Lager": "SYNT",
+            "Bolag": "SYNTBOLAG",
+            "Timestamp": _ts(i),
+        }
+        return values.get(col, "")
+
     fillers = {
         "orders": (orders_filler, 24),
         "saldo": (saldo_filler, 8),
@@ -176,6 +206,8 @@ def build_frames(spec: dict[str, list[str]]) -> dict[str, pd.DataFrame]:
         "buffer": (buffer_filler, 16),
         "items": (items_filler, 8),
         "not_putaway": (not_putaway_filler, 6),
+        "custom_adr": (custom_adr_filler, 8),
+        "item_security_info": (item_security_filler, 8),
     }
     return {
         key: _rows(spec[key], count, filler)

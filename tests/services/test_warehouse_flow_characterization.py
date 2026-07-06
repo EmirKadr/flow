@@ -200,6 +200,12 @@ SYNTHETIC_FLOW_INPUTS: dict[str, dict[str, str]] = {
     "overview-check": {"overview": "overview", "details": "orders"},
     "dispatch-check": {"overview": "overview", "dispatch": "dispatch", "details": "orders"},
     "vecka27-check": {"orders": "orders"},
+    "goods-declaration": {
+        "orders": "orders",
+        "overview": "overview",
+        "custom_adr": "custom_adr",
+        "item_security_info": "item_security_info",
+    },
 }
 
 

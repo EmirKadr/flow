@@ -1,0 +1,249 @@
+{
+  "has_text": false,
+  "log_line_count": 3,
+  "summary": {
+    "DG-rader": "6",
+    "Ej klara LQ": "6",
+    "Klara ordernummer": "3",
+    "LQ sjö/hav": "0",
+    "LQ-rader": "6"
+  },
+  "tables": [
+    {
+      "columns": [
+        "Ordernr"
+      ],
+      "head": [
+        [
+          "990003"
+        ],
+        [
+          "990001"
+        ],
+        [
+          "990005"
+        ]
+      ],
+      "key": "clear_orders",
+      "label": "Klara ordernummer",
+      "rows": 3,
+      "sha256": "9952037240df7d403408dc4436b3b7a82f128f95af8b8be89afd41718cb72523"
+    },
+    {
+      "columns": [
+        "Klar",
+        "Orsak",
+        "Farligt gods nivå",
+        "Ordernr",
+        "Rad",
+        "Kund",
+        "Kundnamn",
+        "Artikel",
+        "Artikelbenämning",
+        "Bolag",
+        "Adr num",
+        "Post nr"
+      ],
+      "head": [
+        [
+          "Ja",
+          "DG",
+          "DG",
+          "990003",
+          "3",
+          "KUND-C",
+          "",
+          "SYNT-A003",
+          "",
+          "SYNTBOLAG",
+          "",
+          ""
+        ],
+        [
+          "Ja",
+          "DG",
+          "DG",
+          "990001",
+          "7",
+          "KUND-A",
+          "",
+          "SYNT-A007",
+          "",
+          "SYNTBOLAG",
+          "",
+          ""
+        ],
+        [
+          "Ja",
+          "DG",
+          "DG",
+          "990005",
+          "11",
+          "KUND-E",
+          "",
+          "SYNT-A003",
+          "",
+          "SYNTBOLAG",
+          "",
+          ""
+        ],
+        [
+          "Ja",
+          "DG",
+          "DG",
+          "990003",
+          "15",
+          "KUND-C",
+          "",
+          "SYNT-A007",
+          "",
+          "SYNTBOLAG",
+          "",
+          ""
+        ],
+        [
+          "Ja",
+          "DG",
+          "DG",
+          "990001",
+          "19",
+          "KUND-A",
+          "",
+          "SYNT-A003",
+          "",
+          "SYNTBOLAG",
+          "",
+          ""
+        ]
+      ],
+      "key": "clear_lines",
+      "label": "Klara rader",
+      "rows": 6,
+      "sha256": "44a941dda2f57bf1ff1b33619a0b24f2b516a710c793e047c0f5e79d22c605bd"
+    },
+    {
+      "columns": [
+        "Klar",
+        "Orsak",
+        "Farligt gods nivå",
+        "Ordernr",
+        "Rad",
+        "Kund",
+        "Kundnamn",
+        "Artikel",
+        "Artikelbenämning",
+        "Bolag",
+        "Adr num",
+        "Post nr"
+      ],
+      "head": [
+        [
+          "Nej",
+          "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress",
+          "LQ",
+          "990002",
+          "2",
+          "KUND-B",
+          "",
+          "SYNT-A002",
+          "",
+          "SYNTBOLAG",
+          "1",
+          ""
+        ],
+        [
+          "Nej",
+          "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress",
+          "LQ",
+          "990006",
+          "6",
+          "KUND-F",
+          "",
+          "SYNT-A006",
+          "",
+          "SYNTBOLAG",
+          "1",
+          ""
+        ],
+        [
+          "Nej",
+          "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress",
+          "LQ",
+          "990004",
+          "10",
+          "KUND-D",
+          "",
+          "SYNT-A002",
+          "",
+          "SYNTBOLAG",
+          "3",
+          ""
+        ],
+        [
+          "Nej",
+          "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress",
+          "LQ",
+          "990002",
+          "14",
+          "KUND-B",
+          "",
+          "SYNT-A006",
+          "",
+          "SYNTBOLAG",
+          "1",
+          ""
+        ],
+        [
+          "Nej",
+          "LQ ej klar: adressnumret hittades inte i Alternativ Leveransadress",
+          "LQ",
+          "990006",
+          "18",
+          "KUND-F",
+          "",
+          "SYNT-A002",
+          "",
+          "SYNTBOLAG",
+          "1",
+          ""
+        ]
+      ],
+      "key": "review_lq",
+      "label": "LQ ej klara",
+      "rows": 6,
+      "sha256": "298e8d17d021e1b7d2c4098083a70354ee26d2f90b2183c0a87be6934c31ed15"
+    },
+    {
+      "columns": [
+        "Postnummer",
+        "Exempel"
+      ],
+      "head": [
+        [
+          "620 00-620 99",
+          "Burgsvik, Havdhem, Hemse, Stånga, Ljugarn, Klintehamn, Romakloster, Slite"
+        ],
+        [
+          "621 00-621 99",
+          "Visby"
+        ],
+        [
+          "622 00-622 99",
+          "Visby, Västerhejde, Tofta, Romakloster"
+        ],
+        [
+          "623 00-623 99",
+          "Hemse, Klintehamn, Burgsvik, Stånga, Ljugarn"
+        ],
+        [
+          "624 00-624 99",
+          "Slite, Lärbro, Tingstäde, Fårösund, Fårö"
+        ]
+      ],
+      "key": "gotland_postcodes",
+      "label": "Gotland postnummer",
+      "rows": 5,
+      "sha256": "2f9ea42228470e94d8ab32cade7075904f5fcab81c9755171c7969193e127b53"
+    }
+  ]
+}
