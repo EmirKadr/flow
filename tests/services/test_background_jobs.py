@@ -73,6 +73,7 @@ def test_main_registers_all_startup_jobs_via_lifespan():
         "archive_cache_scheduler",
         "demo_session_cleanup",
         "meta_media_retention_purge",
+        "bug_reports_retention_purge",
     ]
     assert app_main.app.router.lifespan_context is not None
     assert not getattr(app_main.app.router, "on_startup", [])
