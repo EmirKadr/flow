@@ -99,6 +99,22 @@ def print_report(report: dict, compare: dict | None) -> None:
         print(line)
 
 
+def check_budgets(report: dict, budgets: dict) -> list[str]:
+    """Jämför medianer mot latensbudgeten; returnerar överträdelser."""
+    breaches: list[str] = []
+    limits = {k: v for k, v in budgets.items() if not str(k).startswith("_")}
+    for row in report["results"]:
+        limit = limits.get(row["endpoint"])
+        if limit is None:
+            continue
+        median = row.get("median_ms")
+        if median is None:
+            breaches.append(f"{row['endpoint']}: inget lyckat svar (status {row.get('status')})")
+        elif median > float(limit):
+            breaches.append(f"{row['endpoint']}: median {median} ms > budget {limit} ms")
+    return breaches
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", required=True)
@@ -108,6 +124,10 @@ def main() -> int:
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--endpoints", help="Kommaseparerad endpointlista som ersätter standarduppsättningen.")
     parser.add_argument("--compare", help="Sökväg till tidigare rapport-JSON att diffa mot.")
+    parser.add_argument(
+        "--budget",
+        help="Sökväg till latensbudget-JSON (endpoint -> max median-ms). Avslutar med kod 2 vid överträdelse.",
+    )
     parser.add_argument("--output", default="artifacts/api_benchmark")
     args = parser.parse_args()
 
@@ -127,6 +147,16 @@ def main() -> int:
     report_path = output_dir / f"{name}.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nRapport: {report_path}")
+
+    if args.budget:
+        budgets = json.loads(Path(args.budget).read_text(encoding="utf-8"))
+        breaches = check_budgets(report, budgets)
+        if breaches:
+            print("\nLATENSBUDGET ÖVERSKRIDEN:")
+            for breach in breaches:
+                print(f"  - {breach}")
+            return 2
+        print("Latensbudget: OK.")
     return 0
 
 

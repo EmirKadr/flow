@@ -270,4 +270,27 @@ Efter varje deploy ska hälsan verifieras maskinellt, inte av första användare
    väntan i början). Vid behov: `--attempts`/`--delay`.
 3. För djupare kontroll efter större releaser: `python -m tools.healthcheck
    report --base-url <url>` och Historik-flikarna Hälsa/Väntetider.
+4. Latensbudget efter prestandapåverkande releaser:
+
+       python -m tools.api_benchmark --base-url https://<server> \
+           --username <user> --password <pass> \
+           --label efter-<release> --budget tools/latency_budgets.json
+
+   Avslutar med kod 2 om någon endpoints median överskrider budgeten i
+   `tools/latency_budgets.json`. Budgetarna är medvetet generösa i starten —
+   dra åt dem allteftersom riktiga rapporter samlas i `artifacts/api_benchmark/`.
+
+## Leveransoptimering (2026-07) och workers
+
+- Appen gzippar själv (GZipMiddleware) och stämplar statiska filer med
+  `?v=<innehålls-hash>` i Docker-bygget (`tools/stamp_asset_versions.py`) →
+  ett års immutable-cache + service worker-cache. Ingen gzip- eller
+  cache-konfiguration behövs i ingressen.
+- **Workers: kör 1 (`uvicorn` utan `--workers`).** Ledarlåset gör flera
+  workers *tillåtna* för bakgrundsjobben, men sankeys spårnings-cache
+  (`backend/sankey_inbound/trace.py`, `_TRACE_CACHE`) lever i processminne:
+  med >1 worker kan drill-down-requesten landa i fel process och ge 410.
+  Kriterium för att ta worker-frågan: Historik → Väntetider visar stigande
+  p95 vid samtidig last (köbildning). Åtgärden är då att först flytta
+  trace-cachen till DB (jfr LeaderLease-mönstret), sedan höja `--workers`.
 

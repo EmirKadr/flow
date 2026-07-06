@@ -79,6 +79,9 @@ pytest.ini
 !app/README.md
 wiki
 tools
+# ...men stämplingsverktyget behövs i bygget (Dockerfile kör det mot frontend)
+!tools/__init__.py
+!tools/stamp_asset_versions.py
 
 # Egen Docker-fil ska inte kopieras in
 Dockerfile
