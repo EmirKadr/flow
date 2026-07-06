@@ -13,7 +13,7 @@ from ..healthcheck_service import run_healthcheck
 from ..models import Area, CoreDataFile, RfidDevice, RfidScanEvent, User
 from ..settings_service import get_role_view_access
 from ..user_access import is_super_user, normalize_user_roles
-from .common import clamp_limit, parse_period_arg, resolve_business_id, truncation_note
+from .common import ToolInputError, clamp_limit, parse_period_arg, resolve_business_id, truncation_note
 from .registry import register_tool
 
 _BUSINESS_PARAM = {
@@ -204,3 +204,101 @@ def healthcheck_summary_tool(db: Session, user: User, args: dict[str, Any]) -> d
             for check in report.get("checks", [])
         ],
     }
+
+
+@register_tool(
+    name="archive_cache_status",
+    title="Arkiv-cachens status",
+    description=(
+        "Status för den lokala arkiv-cachen (DuckDB): täckning per tenant och vy, "
+        "saknade dagar och produktivitetsbyggets läge. Samma data som Arkivstatus-vyn."
+    ),
+    view_id="dataFetch",
+)
+def archive_cache_status_tool(db: Session, user: User, args: dict[str, Any]) -> dict[str, Any]:
+    # Lazy import: arkivmodulerna ska inte lastas förrän toolet faktiskt körs.
+    from .. import archive_cache_sync, local_archive_store
+    from ..routers.data_fetch import _productivity_build_status
+
+    if not local_archive_store.is_enabled():
+        payload: dict[str, Any] = {"enabled": False, "tenants": []}
+    else:
+        report = archive_cache_sync.coverage_report(log_limit=3)
+        payload = {
+            "enabled": True,
+            "today": report.get("today"),
+            "tenants": [
+                {
+                    "tenant": tenant.get("tenant"),
+                    "views": [
+                        {
+                            "view": view.get("view"),
+                            "covered_start": view.get("covered_start"),
+                            "covered_end": view.get("covered_end"),
+                            "missing_days": view.get("missing_days"),
+                            "fully_covered": view.get("fully_covered"),
+                        }
+                        for view in tenant.get("views") or []
+                    ],
+                }
+                for tenant in report.get("tenants") or []
+            ],
+        }
+    prod = _productivity_build_status()
+    payload["productivity"] = {
+        "snapshots": prod.get("snapshots"),
+        "backfill": prod.get("backfill"),
+    }
+    return payload
+
+
+@register_tool(
+    name="data_fetch_catalog",
+    title="Hämta datas vykatalog",
+    description=(
+        "Lista vilka datavyer som finns i Hämta data-katalogen med svenskt namn och "
+        "antal kolumner, så frågor kan hänvisas till rätt vy."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "search": {"type": "string", "description": "Filtrera på del av vyns namn eller id."},
+            "limit": {"type": "integer", "description": "Max antal vyer i svaret (default 30, max 200)."},
+        },
+    },
+    view_id="dataFetch",
+)
+def data_fetch_catalog_tool(db: Session, user: User, args: dict[str, Any]) -> dict[str, Any]:
+    from ..data_fetch.catalog import load_catalog
+    from ..data_fetch.core import DataFetchConfigError
+
+    try:
+        catalog = load_catalog()
+    except DataFetchConfigError as exc:
+        raise ToolInputError(f"Hämta data-katalogen är inte tillgänglig: {exc}") from exc
+    search = str(args.get("search") or "").strip().lower()
+    views = sorted(catalog.views.values(), key=lambda view: view.id)
+    if search:
+        views = [
+            view
+            for view in views
+            if search in view.id.lower() or search in view.label_sv.lower() or search in view.label_en.lower()
+        ]
+    # Katalogen har hundratals vyer och tool-svar kapas vid 4000 tecken —
+    # håll listan kort och be modellen filtrera med search i stället.
+    shown = views[: clamp_limit(args.get("limit"), default=30)]
+    result: dict[str, Any] = {
+        "views": [
+            {
+                "id": view.id,
+                "label_sv": view.label_sv,
+                "columns": len(view.columns),
+            }
+            for view in shown
+        ],
+        "total_views": len(views),
+    }
+    note = truncation_note(len(views), len(shown))
+    if note:
+        result["note"] = note
+    return result

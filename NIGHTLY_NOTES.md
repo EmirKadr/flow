@@ -30,3 +30,4 @@ Arbetslogg för OVERNIGHT_PLAN.md. Nyaste passet överst.
 - Uppgift 1 batch 3: finance_summary + refaktor av
   /productivity/overview/business-summary till delad
   build_business_summary_payload + tester (94 produktivitets-/finanstester gröna).
+- **sankey_inbound_summary struken**: load_sankey_inbound_payload är den dokumenterade OOM-vägen utan arkiv-cache; det finns ingen garanterat billig summeringsväg idag. FÖRSLAG: bygg aggregat i arkiv-cachen först.

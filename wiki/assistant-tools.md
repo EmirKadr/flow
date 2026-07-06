@@ -7,12 +7,14 @@ tags: [chat, tools, function-calling, llm, minimax, behorighet]
 
 # Apphjälpens tools (live-data i chatten)
 
-Kort svar: Apphjälpen har ett internt register med ~30 read-only-tools
+Kort svar: Apphjälpen har ett internt register med ~45 read-only-tools
 (function calling) som låter chatten svara på live-datafrågor: schema,
-personer, områden, aktiviteter, produktivitet, Historik, användare och
-systemhälsa. Alla tools är verksamhetsscopade via `business_scope` och kan
+personer, områden, aktiviteter, produktivitet, ekonomi, Historik, användare
+och systemhälsa. Alla tools är verksamhetsscopade via `business_scope` och kan
 aldrig ändra data. Behörighet per tool finns som metadata (vy + nivå) men
-enforcement är avstängd tills `ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS=true`.
+enforcement är avstängd tills `ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS=true` —
+med ett undantag: ekonomi-toolen kräver alltid productivityFinance-behörighet
+i runtime.
 
 Beslutsdatum för experimentet: 2026-08-01 — då ska Emir avgöra om
 vybehörighets-enforcement slås på, om tools ska begränsas per roll, eller om
@@ -47,6 +49,7 @@ Registret ligger i `app/backend/assistant_tools/` och varje tool har
 | Historik | `search_audit_log`, `audit_action_stats`, `recent_errors`, `wait_metrics_summary`, `interaction_summary` | analytics |
 | Historik – trend/detalj | `error_trend`, `error_top_endpoints`, `audit_entity_history`, `wait_metrics_by_endpoint`, `user_activity_summary`, `rfid_error_summary` | analytics |
 | System | `list_users`, `get_role_view_access_matrix`, `list_rfid_devices`, `rfid_scan_stats`, `list_coredata_files`, `healthcheck_summary` | users/roleAccess/analytics/allocationUploads |
+| System – status/katalog | `archive_cache_status`, `data_fetch_catalog` | dataFetch |
 
 Regler som gäller alla tools:
 

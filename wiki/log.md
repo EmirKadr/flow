@@ -2637,3 +2637,26 @@ Sex forbattringar i en insats (feature/kvalitet-2-7):
   `sidebar.js`, `foundation.js`, `styles.css`. Playwright-tester i
   `tests/tools/test_sidebar_user_browser.py`. Uppdaterade sidor:
   `businesses.md`, `ui-map.md`.
+
+## [2026-07-06] ingest | Nattpass: apphjälpen växer till ~45 tools (Historik, produktivitet, ekonomi, schema, system)
+
+Uppgift 1 i OVERNIGHT_PLAN.md (nattagent, branch feature/nightly-quality-20260706).
+16 nya read-only-tools i fem batchar, alla med egna servicetester:
+
+- Historik/fel: error_trend, error_top_endpoints, audit_entity_history,
+  wait_metrics_by_endpoint (p50/p95), user_activity_summary, rfid_error_summary.
+- Produktivitet: productivity_trend (ISO-veckor), productivity_person_compare,
+  productivity_process_trend, productivity_anomalies (z-score, deterministisk).
+- Ekonomi: finance_summary — återanvänder periodöversiktens beräkning via nya
+  build_business_summary_payload (utbruten ur endpointen, som nu delegerar).
+  Kräver ALLTID productivityFinance-behörighet i runtime. Övriga ekonomi-tools
+  medvetet strukna (ingen andra sanning om pengar) — se NIGHTLY_NOTES.md.
+- Schema: schedule_coverage_gaps, person_utilization, schedule_period_compare.
+  (year, week)-filter som OR-kedja, aldrig tuple-IN (MSSQL-lärdomen).
+- System: archive_cache_status (trimmad coverage_report), data_fetch_catalog
+  (kort default-lista pga 4000-teckenstaket; sankey_inbound_summary struken —
+  ingen garanterat billig väg utan OOM-risk).
+
+Ny hjälpare percentile() i assistant_tools/common.py. Dag-/veckogruppering
+sker i Python för dialektsäkerhet med _FETCH_CAP som minnesskydd.
+Uppdaterat: assistant-tools.md (tool-tabell + kort svar).
