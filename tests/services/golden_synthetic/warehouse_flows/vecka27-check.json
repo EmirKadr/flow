@@ -1,0 +1,19 @@
+{
+  "has_text": false,
+  "log_line_count": 1,
+  "summary": {
+    "Avvikelser": "0"
+  },
+  "tables": [
+    {
+      "columns": [
+        "Avvikelse"
+      ],
+      "head": [],
+      "key": "report",
+      "label": "Avvikelser",
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

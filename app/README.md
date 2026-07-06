@@ -98,10 +98,10 @@ Den skriver `data/external_data_catalog.json`, som commitas så servern får kat
 
 ## RFID-moduler
 
-Fysiska ESP32/RDM6300-moduler kopplas via USB/COM. Sketchen skriver RFID-rader
-pa Serial, och Flow startar lokala bryggor som laser COM-portarna och postar
-till `POST /api/rfid/scans`. Lokalt ar standarden `COM9 -> MG Plock` och
-`COM10 -> MG VM`.
+Fysiska ESP32/RDM6300-moduler postar direkt over WiFi till
+`POST /api/rfid/scans`, ingen USB-brygga eller COM-port kravs. Se
+`../hardware/MG_Plock/README.md` och `../hardware/MG_VM/README.md` for
+WiFi-, server- och tokenkonfiguration.
 
 ## Halsa
 
@@ -165,9 +165,8 @@ uvicorn backend.main:app --reload
 ### Lokal testmiljö med live-data
 
 `scripts\start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
-Scriptet startar backend pa port `8000` och startar RFID-bryggor for
-`COM9 -> MG Plock` och `COM10 -> MG VM`. ESP32-modulerna behover darfor inte
-WiFi; de ska bara sitta kvar i ratt USB-port medan Flow ar igang. Browsern
+Scriptet startar backend pa port `8000` med `--host 0.0.0.0`, sa ESP32-moduler
+pa samma natverk kan na den direkt over WiFi utan nagon lokal brygga. Browsern
 oppnas pa `http://localhost:8000`.
 
 Normal lokal start är ett snabbt användarläge utan `uvicorn --reload` och utan
@@ -180,8 +179,7 @@ Den lokala bootstrappen vägrar köra mot annat än SQLite, så den kan inte rå
 skriva seed/backfill till live-Postgres.
 
 Om du utvecklar kod och vill att servern ska ladda om automatiskt använder du
-`scripts\start_dev.bat`. Den startar samma RFID-bryggor men kor backend med
-`uvicorn --reload`.
+`scripts\start_dev.bat`, som kor backend med `uvicorn --reload`.
 
 Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa URL som en lokal miljövariabel och kör den explicita syncen medan lokal server är stängd:
 

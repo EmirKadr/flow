@@ -2140,7 +2140,10 @@ def test_allocation_frontend_uses_local_file_store_and_upload_indicator():
     allocation = read_allocation_frontend(frontend)
     styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
     catalog = (ROOT / "warehouse_tools" / "catalog.py").read_text(encoding="utf-8")
-    flows = (ROOT / "warehouse_tools" / "flows.py").read_text(encoding="utf-8")
+    flows = "".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "warehouse_tools" / "flows").glob("*.py"))
+    )
 
     assert 'const ALLOCATION_API = "/api/allokering"' in allocation
     assert 'const ALLOCATION_DB_NAME = "flow-allokering-files"' in allocation

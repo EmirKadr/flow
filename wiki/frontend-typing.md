@@ -46,10 +46,18 @@ Kommandon (fran repo-roten): `npm install` (en gang per maskin),
 
 ## Status for utrullningen
 
-- `// @ts-check` aktivt i: `api.js`.
+- `// @ts-check` aktivt i: `api.js`, `common/foundation.js`,
+  `sankey_inbound_state.js`.
 - Kolla aktuellt lage: `grep -rl "^// @ts-check" app/frontend/js`.
-- Nasta naturliga kandidater: `common/foundation.js`, `common/sidebar.js`,
-  state-filerna (`overview_state.js`, `sankey_inbound_state.js`).
+- API-svarens former genereras fran backendens OpenAPI-schema till
+  `types/api-schema.d.ts` (`python -m tools.generate_api_types`); CI failar om
+  filen inte regenererats nar `schemas.py` andrats. Anvands i JSDoc via
+  `import("./types/api-schema").components["schemas"]["..."]`.
+- Blockerad kandidat: `overview_state.js` deklarerar `state`/`drag`/
+  `personOrderDrag` som ocksa finns i `schedule/state.js` (olika sidor, ingen
+  runtime-krock). Kraver namnrymdsflytt (t.ex. `overviewState`) i hela
+  overview-domanen innan @ts-check kan sla pa dar.
+- Nasta kandidater darefter: `common/sidebar.js`, `schedule/state.js`.
 
 ## Vad checkarna INTE gor
 

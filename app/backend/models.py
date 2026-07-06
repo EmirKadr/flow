@@ -485,3 +485,18 @@ class AppSetting(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class LeaderLease(Base):
+    """DB-baserat ledarlas: processen som haller lease:t kor bakgrundsjobben.
+
+    Se app/backend/leader_lock.py. En rad per lasnamn; holder_id ar processens
+    slumpade id och heartbeat_at fornyas av ledaren. En annan process far ta
+    over nar heartbeat ar aldre an lease-tiden.
+    """
+
+    __tablename__ = "leader_leases"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    holder_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)  # naiv UTC

@@ -1,0 +1,76 @@
+{
+  "has_text": false,
+  "log_line_count": 0,
+  "summary": {
+    "Artiklar med underskott": "8",
+    "Kompletta ordrar": "0"
+  },
+  "tables": [
+    {
+      "columns": [
+        "Ordernr"
+      ],
+      "head": [],
+      "key": "complete",
+      "label": "Kompletta ordrar",
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "columns": [
+        "Artikel",
+        "Total beställt",
+        "Tillgängligt saldo (Plock)",
+        "Antal på Helpall",
+        "Utbeställt",
+        "Underskott"
+      ],
+      "head": [
+        [
+          "SYNT-A001",
+          "61",
+          "20",
+          "",
+          "34",
+          "75"
+        ],
+        [
+          "SYNT-A002",
+          "34",
+          "18",
+          "",
+          "17",
+          "33"
+        ],
+        [
+          "SYNT-A003",
+          "51",
+          "11",
+          "",
+          "12",
+          "52"
+        ],
+        [
+          "SYNT-A004",
+          "25",
+          "20",
+          "",
+          "1",
+          "6"
+        ],
+        [
+          "SYNT-A005",
+          "49",
+          "10",
+          "",
+          "17",
+          "56"
+        ]
+      ],
+      "key": "shortage",
+      "label": "Underskott",
+      "rows": 8,
+      "sha256": "1b41455d91725e43f8e29a7b3c96fa4dc2180499703928ba35684104b08f9a73"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+﻿Lagerplats	Pallid	Artikel	Beskrivning	Palltyp	Antal	Status	Vikt	Timestamp	Detalj	Kontrolind	Antal per lav	Pack klass	Datum/tid	Batch	Utgångsdatum	Lager	Bolag	Beskrivning.1	Rfid	Mixpallsnummer	Reservation	Platstyp	Produktionsdatum	Inköpsnr	Robot ind	Krangång
+B-200	PL000001	SYNT-A001	Syntetisk artikel 1	EUR	20	1	559.5	2026-05-01 08:00:00			6					SYNT	SYNTBOLAG									
+B-201	PL000002	SYNT-A002	Syntetisk artikel 2	HALV	29	2	557.5	2026-05-01 09:00:00			12					SYNT	SYNTBOLAG									
+B-202	PL000003	SYNT-A003	Syntetisk artikel 3	EUR	45	1	570.5	2026-05-01 10:00:00			6					SYNT	SYNTBOLAG									
+B-203	PL000004	SYNT-A004	Syntetisk artikel 4	HALV	27	2	571.1	2026-05-01 11:00:00			11					SYNT	SYNTBOLAG									
+B-204	PL000005	SYNT-A005	Syntetisk artikel 5	EUR	101	1	323.8	2026-05-01 12:00:00			6					SYNT	SYNTBOLAG									
+B-205	PL000006	SYNT-A006	Syntetisk artikel 6	HALV	14	2	59.2	2026-05-01 13:00:00			4					SYNT	SYNTBOLAG									
+B-206	PL000007	SYNT-A007	Syntetisk artikel 7	EUR	70	1	331.4	2026-05-01 14:00:00			7					SYNT	SYNTBOLAG									
+B-207	PL000008	SYNT-A008	Syntetisk artikel 8	HALV	10	2	290.8	2026-05-01 15:00:00			8					SYNT	SYNTBOLAG									
+B-208	PL000009	SYNT-A001	Syntetisk artikel 1	EUR	110	1	85.5	2026-05-01 16:00:00			5					SYNT	SYNTBOLAG									
+B-209	PL000010	SYNT-A002	Syntetisk artikel 2	HALV	65	2	511.6	2026-05-01 17:00:00			4					SYNT	SYNTBOLAG									
+B-210	PL000011	SYNT-A003	Syntetisk artikel 3	EUR	24	1	590.5	2026-05-01 18:00:00			8					SYNT	SYNTBOLAG									
+B-211	PL000012	SYNT-A004	Syntetisk artikel 4	HALV	86	2	242.2	2026-05-01 19:00:00			10					SYNT	SYNTBOLAG									
+B-212	PL000013	SYNT-A005	Syntetisk artikel 5	EUR	21	1	423.5	2026-05-01 20:00:00			5					SYNT	SYNTBOLAG									
+B-213	PL000014	SYNT-A006	Syntetisk artikel 6	HALV	17	2	507.9	2026-05-01 21:00:00			11					SYNT	SYNTBOLAG									
+B-214	PL000015	SYNT-A007	Syntetisk artikel 7	EUR	53	1	206.5	2026-05-01 22:00:00			6					SYNT	SYNTBOLAG									
+B-215	PL000016	SYNT-A008	Syntetisk artikel 8	HALV	36	2	80.6	2026-05-01 23:00:00			9					SYNT	SYNTBOLAG									

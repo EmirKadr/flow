@@ -1,3 +1,4 @@
+// @ts-check
 // Delade hjälpare: navbar, toast, auth-check.
 
 const THEME_STORAGE_KEY = "flow-theme";

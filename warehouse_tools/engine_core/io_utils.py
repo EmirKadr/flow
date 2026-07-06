@@ -220,7 +220,9 @@ def normalize_saldo(df_raw: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame({
         "Artikel": df[art_col].astype(str).str.strip(),
         "Plocksaldo": pd.to_numeric(df[saldo_col].map(to_num), errors="coerce").fillna(0.0),
-        "Plockplats": (df[plats_col].astype(str).str.strip() if plats_col else pd.Series([""]*len(df))),
+        # fillna fore astype: annars blir tomma celler strangen "nan" under
+        # pandas 2.2.x och lacker ut i refill-tabellernas Plockplats-kolumn.
+        "Plockplats": (df[plats_col].fillna("").astype(str).str.strip() if plats_col else pd.Series([""]*len(df))),
     })
     agg = (out.groupby("Artikel", as_index=False)
               .agg({"Plocksaldo":"sum","Plockplats":lambda s: next((x for x in s if isinstance(x,str) and x.strip()), "")}))
