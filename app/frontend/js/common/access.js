@@ -1,3 +1,4 @@
+// @ts-check
 function userRoles(user) {
   const rawRoles = Array.isArray(user?.roles) && user.roles.length ? user.roles : [user?.role];
   return [...new Set(rawRoles.map((role) => String(role || "").trim()).filter(Boolean))];

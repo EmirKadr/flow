@@ -1,3 +1,4 @@
+// @ts-check
 let sidebarProductivityContextMenu = null;
 let sidebarProductivityContextMenuListenersInstalled = false;
 let sidebarContextMenu = null;
@@ -85,7 +86,7 @@ function openSidebarContextMenu(event, user, activePage, pageId) {
 function ensureSidebarContextMenuListeners() {
   if (sidebarContextMenuListenersInstalled) return;
   document.addEventListener("click", (event) => {
-    if (event.target.closest?.("[data-sidebar-context-menu]")) return;
+    if (event.target instanceof Element && event.target.closest("[data-sidebar-context-menu]")) return;
     closeSidebarContextMenu();
   });
   document.addEventListener("keydown", (event) => {
@@ -98,7 +99,7 @@ function ensureSidebarContextMenuListeners() {
 function initSidebarContextMenus(user, activePage) {
   closeSidebarContextMenu();
   ensureSidebarContextMenuListeners();
-  document.querySelectorAll("[data-sidebar-context-menu]").forEach((link) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("[data-sidebar-context-menu]")).forEach((link) => {
     link.addEventListener("contextmenu", (event) => {
       openSidebarContextMenu(event, user, activePage, link.dataset.sidebarViewId);
     });
@@ -129,7 +130,7 @@ function sidebarTodayIsoDate() {
 
 function sidebarSankeyInboundPeriodValue() {
   const params = new URLSearchParams(window.location.search || "");
-  const period = document.querySelector(".productivity-overview-period-toggle button.active")?.dataset?.period
+  const period = /** @type {HTMLElement | null} */ (document.querySelector(".productivity-overview-period-toggle button.active"))?.dataset?.period
     || params.get("period")
     || "day";
   return ["day", "week", "month", "year"].includes(period) ? period : "day";
@@ -137,7 +138,7 @@ function sidebarSankeyInboundPeriodValue() {
 
 function sidebarSankeyInboundDateValue() {
   const params = new URLSearchParams(window.location.search || "");
-  return document.querySelector("[data-flow-context-date]")?.value
+  return /** @type {HTMLInputElement | null} */ (document.querySelector("[data-flow-context-date]"))?.value
     || params.get("date")
     || sidebarTodayIsoDate();
 }
@@ -186,7 +187,7 @@ function openSidebarProductivityContextMenu(event, user) {
 function ensureSidebarProductivityContextMenuListeners() {
   if (sidebarProductivityContextMenuListenersInstalled) return;
   document.addEventListener("click", (event) => {
-    if (event.target.closest?.("[data-sidebar-productivity-context-menu]")) return;
+    if (event.target instanceof Element && event.target.closest("[data-sidebar-productivity-context-menu]")) return;
     closeSidebarProductivityContextMenu();
   });
   document.addEventListener("keydown", (event) => {
@@ -395,7 +396,7 @@ function assistantFriendlyError(error) {
 function renderAssistantMessages() {
   const list = document.getElementById("assistant-chat-messages");
   const counter = document.getElementById("assistant-chat-counter");
-  const send = document.getElementById("assistant-chat-send");
+  const send = /** @type {HTMLButtonElement | null} */ (document.getElementById("assistant-chat-send"));
   const statusEl = document.getElementById("assistant-chat-status");
   if (!list) return;
 
@@ -437,8 +438,8 @@ function renderAssistantMessages() {
 
 function setAssistantChatPending(pending) {
   assistantChatPending = Boolean(pending);
-  const send = document.getElementById("assistant-chat-send");
-  const textarea = document.getElementById("assistant-chat-input");
+  const send = /** @type {HTMLButtonElement | null} */ (document.getElementById("assistant-chat-send"));
+  const textarea = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("assistant-chat-input"));
   const statusEl = document.getElementById("assistant-chat-status");
   if (send) {
     send.disabled = assistantChatPending || readAssistantQuestionCount() >= ASSISTANT_CHAT_MAX_QUESTIONS;
@@ -467,7 +468,7 @@ function setAssistantChatOpen(open) {
 
 async function clearAssistantChat() {
   clearAssistantLocalSession({ keepOpenState: true, keepStorageVersion: true });
-  const input = document.getElementById("assistant-chat-input");
+  const input = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("assistant-chat-input"));
   if (input) input.value = "";
   try {
     await api.post("/api/assistant/clear", {});
@@ -480,7 +481,7 @@ async function clearAssistantChat() {
 async function submitAssistantQuestion(event) {
   event.preventDefault();
   if (assistantChatPending) return;
-  const input = document.getElementById("assistant-chat-input");
+  const input = /** @type {HTMLTextAreaElement | null} */ (document.getElementById("assistant-chat-input"));
   const statusEl = document.getElementById("assistant-chat-status");
   const question = String(input?.value || "").trim();
   if (!question) return;
@@ -560,12 +561,12 @@ function ensureAssistantChatPanel(app) {
     void clearAssistantChat();
   });
   panel.querySelector("#assistant-chat-input")?.addEventListener("input", (event) => {
-    safeSessionSet(ASSISTANT_CHAT_DRAFT_KEY, event.target.value);
+    safeSessionSet(ASSISTANT_CHAT_DRAFT_KEY, event.target instanceof HTMLTextAreaElement ? event.target.value : "");
   });
-  panel.querySelector("#assistant-chat-input")?.addEventListener("keydown", (event) => {
+  panel.querySelector("#assistant-chat-input")?.addEventListener("keydown", (/** @type {KeyboardEvent} */ event) => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
-    panel.querySelector("#assistant-chat-form")?.requestSubmit();
+    /** @type {HTMLFormElement | null} */ (panel.querySelector("#assistant-chat-form"))?.requestSubmit();
   });
   renderAssistantMessages();
 }
@@ -668,9 +669,10 @@ function openSidebarEditor(user, activePage) {
       `;
     }).join("");
 
-    list.querySelectorAll("[data-move]").forEach((button) => {
+    /** @type {NodeListOf<HTMLElement>} */ (list.querySelectorAll("[data-move]")).forEach((button) => {
       button.addEventListener("click", () => {
         const row = button.closest(".sidebar-editor-row");
+        if (!(row instanceof HTMLElement)) return;
         const index = Number(row.dataset.index);
         const nextIndex = index + Number(button.dataset.move);
         if (nextIndex < 0 || nextIndex >= draft.length) return;
@@ -679,14 +681,18 @@ function openSidebarEditor(user, activePage) {
         renderRows();
       });
     });
-    list.querySelectorAll("[data-heading]").forEach((input) => {
+    /** @type {NodeListOf<HTMLInputElement>} */ (list.querySelectorAll("[data-heading]")).forEach((input) => {
       input.addEventListener("input", () => {
-        draft[Number(input.closest(".sidebar-editor-row").dataset.index)].heading = input.value;
+        const row = input.closest(".sidebar-editor-row");
+        if (!(row instanceof HTMLElement)) return;
+        draft[Number(row.dataset.index)].heading = input.value;
       });
     });
-    list.querySelectorAll("[data-parent]").forEach((select) => {
+    /** @type {NodeListOf<HTMLSelectElement>} */ (list.querySelectorAll("[data-parent]")).forEach((select) => {
       select.addEventListener("change", () => {
-        draft[Number(select.closest(".sidebar-editor-row").dataset.index)].parentId = select.value || null;
+        const row = select.closest(".sidebar-editor-row");
+        if (!(row instanceof HTMLElement)) return;
+        draft[Number(row.dataset.index)].parentId = select.value || null;
         draft = normalizeSidebarLayout(draft).filter((item) => pageById[item.id]);
         renderRows();
       });
@@ -699,7 +705,7 @@ function openSidebarEditor(user, activePage) {
     renderRows();
   });
   backdrop.querySelector("#sidebar-editor-save").addEventListener("click", async () => {
-    const saveButton = backdrop.querySelector("#sidebar-editor-save");
+    const saveButton = /** @type {HTMLButtonElement} */ (backdrop.querySelector("#sidebar-editor-save"));
     saveButton.disabled = true;
     try {
       const response = await api.put("/api/settings/sidebar", { items: sidebarLayoutPayload(draft) });

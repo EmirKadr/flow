@@ -1,3 +1,4 @@
+// @ts-check
 function waitMetricNow() {
   return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
 }
@@ -371,22 +372,22 @@ function trackElementInteraction(eventType, element, extraDetail = {}) {
 
 function initInteractionAutoCapture() {
   document.addEventListener("click", (event) => {
-    const element = event.target?.closest?.("button, a[href], [role='button'], input[type='button'], input[type='submit'], summary, [data-track-click]");
+    const element = event.target instanceof Element ? event.target.closest("button, a[href], [role='button'], input[type='button'], input[type='submit'], summary, [data-track-click]") : null;
     if (!element) return;
     trackElementInteraction("click", element, { href: interactionPath(element.getAttribute?.("href") || "") });
   }, true);
   document.addEventListener("contextmenu", (event) => {
-    const element = event.target?.closest?.("button, a[href], [role='button'], td, th, .allocation-map-location, [data-track-context]");
+    const element = event.target instanceof Element ? event.target.closest("button, a[href], [role='button'], td, th, .allocation-map-location, [data-track-context]") : null;
     if (!element) return;
     trackElementInteraction("contextmenu", element);
   }, true);
   document.addEventListener("change", (event) => {
-    const element = event.target?.closest?.("input, select, textarea");
+    const element = event.target instanceof Element ? event.target.closest("input, select, textarea") : null;
     if (!element) return;
     trackElementInteraction("change", element);
   }, true);
   document.addEventListener("submit", (event) => {
-    const element = event.target?.closest?.("form");
+    const element = event.target instanceof Element ? event.target.closest("form") : null;
     if (!element) return;
     trackElementInteraction("submit", element);
   }, true);

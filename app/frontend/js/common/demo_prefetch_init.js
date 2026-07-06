@@ -1,3 +1,4 @@
+// @ts-check
 const DEMO_TOUR_HANDLED_KEY = "flow-demo-tour-handled";
 const DEMO_TOUR_STATE_KEY = "flow-demo-tour-state";
 
@@ -283,7 +284,7 @@ function currentIsoWeekParts(date = new Date()) {
   const day = target.getUTCDay() || 7;
   target.setUTCDate(target.getUTCDate() + 4 - day);
   const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+  const week = Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return { year: target.getUTCFullYear(), week, weekday: day };
 }
 

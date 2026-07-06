@@ -43,6 +43,13 @@ interface Window {
   // Publika ytor som api.js exponerar för andra script och desktop-bryggan.
   api?: any;
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
+  // Sidspecifika prefetch-krokar (definieras av respektive domän-boot).
+  preloadAllocationUploadsData?: () => void;
+  // Sidkontext och desktop-brygga (sätts av foundation/desktop-skalet).
+  flowActivePage?: string;
+  flowDesktop?: { isDesktop?: () => boolean } & Record<string, unknown>;
+  flowDesktopBridge?: unknown;
+  qt?: { webChannelTransport?: unknown };
   // Periodväljaren (common/period_picker.js).
   flowPeriodPicker?: {
     open: (options: {
