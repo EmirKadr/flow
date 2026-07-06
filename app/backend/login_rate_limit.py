@@ -16,8 +16,13 @@ from .config import settings
 
 
 def client_ip_from_request(request) -> str:
-    """Klient-IP bakom ingressen: första hoppet i X-Forwarded-For, annars socket."""
-    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    """Klient-IP bakom ingressen: första hoppet i X-Forwarded-For, annars socket.
+
+    Defensiv mot request-liknande objekt utan headers/client (t.ex. tester som
+    anropar login() direkt med ett enkelt namespace).
+    """
+    headers = getattr(request, "headers", None) or {}
+    forwarded = str(headers.get("x-forwarded-for") or "").split(",")[0].strip()
     if forwarded:
         return forwarded[:64]
     client = getattr(request, "client", None)
