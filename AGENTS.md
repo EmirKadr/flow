@@ -39,6 +39,18 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   `release/{ar}.{vecka}.{sekvens}`, nasta lediga sekvens). Aterandvand aldrig
   en gammal release-branch for en ny deploy - Octopus bygger per branch och
   historiken ska visa exakt vad varje release innehall.
+- **Pusha release-branchen i en EGEN `git push`, inte buntad med feature +
+  main.** `Flow Docker`-workflowen (som bygger imagen och skapar
+  Octopus-releasen) har ett `paths`-filter; pushar man flera nya refs
+  samtidigt och de delar commits (t.ex. main i samma push) ser GitHub inga
+  nya andrade filer unika for release-refen och **hoppar over imagebygget** -
+  da skapas ingen Octopus-release trots gron push. Hande 2026-07-06 med
+  `release/2026.28.2`. **Gron `Tests`-workflow bevisar INTE att imagen byggts**
+  (Tests saknar paths-filter, Flow Docker har det - olika workflows). Verifiera
+  alltid efter release-push: `gh run list --workflow=flow-docker.yml` ska visa
+  en korning for release-refen. Saknas den: `gh workflow run flow-docker.yml
+  --ref release/<ver>` (workflow_dispatch ar en sanktionerad vag - t.ex.
+  `release/2026.27.4` skapades sa). Se `wiki/nowaste-git-release.md`.
 - **Kor testsviten fore push.** Pre-push-hooken (`.githooks/pre-push`) kor
   typkontroll, lint och `pytest -m "not browser"` automatiskt; kringga den
   aldrig slentrianmassigt (nodfall: `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i
