@@ -7,6 +7,18 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-06] ingest | Apphjalpen far read-only-tools (function calling mot live-data)
+
+Ny sida `assistant-tools.md`; `app-chat.md` och `index.md` uppdaterade. Nytt
+paket `app/backend/assistant_tools/` med ~30 read-only-tools (grunddata,
+personer, schema, produktivitet, Historik, system) + providerneutral tool-loop
+i `runtime.py`. Apphjalpen (`assistant.py`) skickar toolsen till MiniMax som
+function calling; svar med tool-anrop visar meta-rad i bubblan och skriver
+auditraden `assistant_chat`/`tools_used` (label `Apphjalp-fraga` i Historik,
+payload utan fraga/svar). Verksamhetsscope alltid pa via `business_scope`;
+vybehorighet per tool ar metadata bakom `ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS`
+(default av — beslut 2026-08-01). Tester: `test_assistant_tools.py`.
+
 ## [2026-07-06] ingest | Leveransoptimering: gzip, immutable-cache, ETag/304, service worker, latensbudget
 
 Ny sida `prestanda-leveranslager.md`. Backend gzippar sjalv (GZipMiddleware,

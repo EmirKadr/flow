@@ -19,6 +19,7 @@ const ENTITY_LABELS = {
   app_setting: "Inställning",
   client_error: "Felkod",
   mcp_query: "MCP-fråga",
+  assistant_chat: "Apphjälp-fråga",
   coredata_file: "Kärnfil",
   data_fetch: "Hämta data",
   meta_media_upload: "Meta-uppladdning",
@@ -146,6 +147,10 @@ function objectSummary(entry) {
   if (entry.entity_type === "mcp_query") {
     return snapshot.model || snapshot.tool || snapshot.server || "MCP-fråga";
   }
+  if (entry.entity_type === "assistant_chat") {
+    const tools = Array.isArray(snapshot.tools_used) ? snapshot.tools_used : [];
+    return tools.length ? tools.slice(0, 3).join(", ") : "Apphjälp-fråga";
+  }
   if (entry.entity_type === "client_error") {
     return snapshot.path || snapshot.page_path || "Felkod";
   }
@@ -204,6 +209,15 @@ function detailSummary(entry) {
     if (Array.isArray(snapshot.missing) && snapshot.missing.length) parts.push(`Saknar: ${snapshot.missing.join(", ")}`);
     if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
     return parts.join(" | ") || "MCP-fråga";
+  }
+  if (entry.entity_type === "assistant_chat") {
+    const parts = [];
+    if (snapshot.tool_calls != null) parts.push(`${snapshot.tool_calls} tool-anrop`);
+    if (Array.isArray(snapshot.tools_used) && snapshot.tools_used.length) parts.push(`Tools: ${snapshot.tools_used.join(", ")}`);
+    if (snapshot.tool_errors) parts.push(`${snapshot.tool_errors} tool-fel`);
+    if (snapshot.question_chars != null) parts.push(`${snapshot.question_chars} tecken fråga`);
+    if (snapshot.answer_chars != null) parts.push(`${snapshot.answer_chars} tecken svar`);
+    return parts.join(" | ") || "Apphjälp-fråga";
   }
   if (entry.entity_type === "workflow_source") {
     const parts = [];

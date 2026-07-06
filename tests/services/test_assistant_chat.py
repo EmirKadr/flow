@@ -29,6 +29,13 @@ def fake_user():
     )
 
 
+def fake_minimax_response(answer, tool_calls=None):
+    message = {"role": "assistant", "content": answer}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return {"choices": [{"message": message}]}
+
+
 def test_assistant_chat_requires_minimax_key(monkeypatch):
     monkeypatch.setattr(settings, "MINIMAX_API_KEY", "")
     app.dependency_overrides[get_current_user] = fake_user
@@ -107,10 +114,10 @@ def test_assistant_chat_sends_wiki_context_and_dialogue(monkeypatch):
 
     def fake_call(payload):
         captured["payload"] = payload
-        return "Klicka Kopiera dag och valj maldag."
+        return fake_minimax_response("Klicka Kopiera dag och valj maldag.")
 
     monkeypatch.setattr(settings, "MINIMAX_API_KEY", "test-key")
-    monkeypatch.setattr(assistant, "_call_minimax", fake_call)
+    monkeypatch.setattr(assistant, "_minimax_response", fake_call)
     app.dependency_overrides[get_current_user] = fake_user
     try:
         client = TestClient(app)
@@ -131,6 +138,11 @@ def test_assistant_chat_sends_wiki_context_and_dialogue(monkeypatch):
     assert response.status_code == 200
     assert response.json()["answer"] == "Klicka Kopiera dag och valj maldag."
     assert response.json()["remaining_questions"] == 9
+    assert response.json()["tool_calls"] == 0
+    assert response.json()["tools_used"] == []
+    tool_names = [entry["function"]["name"] for entry in captured["payload"]["tools"]]
+    assert "get_schedule_day" in tool_names
+    assert captured["payload"]["tool_choice"] == "auto"
     messages = captured["payload"]["messages"]
     assert messages[0]["role"] == "system"
     assert "Wikiutdrag" in messages[0]["content"]
@@ -170,7 +182,7 @@ def test_assistant_user_context_uses_configured_view_access():
 
 def test_assistant_chat_session_limit_can_be_cleared(monkeypatch):
     monkeypatch.setattr(settings, "MINIMAX_API_KEY", "test-key")
-    monkeypatch.setattr(assistant, "_call_minimax", lambda _payload: "Svar")
+    monkeypatch.setattr(assistant, "_minimax_response", lambda _payload: fake_minimax_response("Svar"))
     app.dependency_overrides[get_current_user] = fake_user
     try:
         client = TestClient(app)

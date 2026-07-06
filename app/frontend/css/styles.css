@@ -956,6 +956,11 @@ body.with-sidebar:not(.sidebar-hydrated) > :not(script) {
   gap: 9px;
   color: var(--text-muted);
 }
+.assistant-chat-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .assistant-chat-spinner {
   width: 16px;
   height: 16px;

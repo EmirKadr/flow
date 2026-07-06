@@ -52,6 +52,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Anvandarhandelser](user-events.md) - allt anvandaren kan se: laddning, tomma lagen, disabled knappar, confirm, toastar och redirect.
 - [Felkoder och felmeddelanden](error-reference.md) - HTTP-koder, vanliga serverfel, klientfel och vad de betyder.
 - [Apphjalp och LLM-chatt](app-chat.md) - pratbubbelknappen, sessionsdialog, 10-fragorsgrans och MiniMax-konfiguration.
+- [Apphjalpens tools](assistant-tools.md) - read-only function calling i chatten: live-data for schema, personer, produktivitet, Historik m.m. med verksamhetsscope och behorighetsmetadata.
 - [Felsokning och framtida LLM-chat](troubleshooting-chat.md) - fragor/svar och symptom till rotorsak.
 - [Kallmanifest](sources.md) - vilka filer som anvandes nar wikin skapades.
 - [Logg](log.md) - append-only historik over wikiarbete.

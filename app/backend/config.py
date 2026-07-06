@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     MINIMAX_MODEL: str = "MiniMax-M2.7"
     MINIMAX_MAX_TOKENS: int = 700
     MINIMAX_TIMEOUT_SECONDS: int = 30
+    # Apphjälpens interna read-only-tools (function calling i chatten).
+    ASSISTANT_TOOLS_ENABLED: bool = True
+    ASSISTANT_TOOLS_MAX_STEPS: int = 4
+    ASSISTANT_TOOLS_MAX_CALLS_PER_STEP: int = 5
+    # Behörighetsmetadata (view_id per tool) finns i registret; false = alla
+    # inloggade får alla tools, true = filtrera per vybehörighet (framtida läge).
+    ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS: bool = False
     NOEFFECT_MCP_URL_TEMPLATE: str = ""
     NOEFFECT_MCP_TOKEN_ENV_TEMPLATE: str = "NOEFFECT_{tenant}_TOKEN"
     NOEFFECT_MCP_TIMEOUT_SECONDS: float = 30

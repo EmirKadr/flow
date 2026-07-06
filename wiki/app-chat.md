@@ -1,13 +1,13 @@
 ---
 title: Apphjalp och LLM-chatt
 status: aktiv
-updated: 2026-06-11
-tags: [chat, llm, minimax, support, sidebar]
+updated: 2026-07-06
+tags: [chat, llm, minimax, support, sidebar, tools]
 ---
 
 # Apphjalp och LLM-chatt
 
-Kort svar: Apphjalpen ar en liten chattpanel i sidomenyn. Knappen sitter direkt under omradesfokus/infinity-markeringen. Den kan vara oppen medan anvandaren navigerar mellan sidor och dialogen sparas i aktuell browser-/desktop-session.
+Kort svar: Apphjalpen ar en liten chattpanel i sidomenyn. Knappen sitter direkt under omradesfokus/infinity-markeringen. Den kan vara oppen medan anvandaren navigerar mellan sidor och dialogen sparas i aktuell browser-/desktop-session. Sedan 2026-07 kan chatten ocksa hamta live-data (schema, personer, omraden, produktivitet, Historik m.m.) via interna read-only-tools — se [assistant-tools.md](assistant-tools.md).
 
 ## Anvandarflode
 
@@ -15,8 +15,8 @@ Kort svar: Apphjalpen ar en liten chattpanel i sidomenyn. Knappen sitter direkt 
 2. En liten panel med rubriken `Apphjalp` oppnas utan modal-backdrop. Resten av appen gar fortfarande att anvanda.
 3. Anvandaren skriver en fraga i textfaltet och klickar `Skicka` eller trycker Enter. `Shift+Enter` ger ny rad.
 4. Frontend visar en liten rund laddningsanimation i chattflodet och skickar hela dialogen till `POST /api/assistant/chat`, tillsammans med aktuell `page_path`.
-5. Backend bygger en systemprompt med wikiutdrag och skickar fragan till MiniMax.
-6. Svaret laggs in i dialogen och sparas i `sessionStorage`.
+5. Backend bygger en systemprompt med wikiutdrag, aktuellt datum och tool-instruktioner, och skickar fragan till MiniMax med read-only-tools som function calling. Datafragor besvaras via tools; hur-fragor via wikin. Se [assistant-tools.md](assistant-tools.md).
+6. Svaret laggs in i dialogen och sparas i `sessionStorage`. Om modellen hamtade live-data visar bubblan meta-raden "Hamtade live-data (N uppslag)" och en auditrad `Apphjalp-fraga` skrivs i Historik.
 7. Om anvandaren byter sida i samma session oppnas panelen igen om den var oppen, med samma dialog.
 8. Anvandaren stanger panelen genom att klicka pratbubbelikonen igen.
 
@@ -61,7 +61,7 @@ Kanslig information skickas inte till MiniMax: inga losenord, password hashes, s
 
 Svar ska formateras for en smal chattpanel: korta stycken, korta punktlistor, fet kort rubrik hellre an `##`, och inga markdown-tabeller om det gar att undvika. Frontend kan rendera enklare Markdown som fetstil, inline-kod, listor, rubriker och tabeller, men tabeller blir snabbt tranga.
 
-Wikin ar hard grans for normalfragor: om wikin inte sager att en funktion, knapp, vy eller export finns ska chatten svara nej/inte dokumenterat och inte foresla troliga API-vagar, Swagger eller generiska exportknappar. Om anvandaren invander, till exempel "jo det finns visst" eller "kolla hela repot", lagger backend till en begransad textsokning i repo:t som extra kontext sa chatten kan ge ett tydligare ja/nej.
+Wikin ar hard grans for funktionsfragor: om wikin inte sager att en funktion, knapp, vy eller export finns ska chatten svara nej/inte dokumenterat och inte foresla troliga API-vagar, Swagger eller generiska exportknappar. For datainnehall (schema, personer, omraden, produktivitet, Historik) ar de interna toolsen kallan i stallet — chatten ska anvanda tools for datafragor, inte gissa eller svara att det inte gar. Om anvandaren invander, till exempel "jo det finns visst" eller "kolla hela repot", lagger backend till en begransad textsokning i repo:t som extra kontext sa chatten kan ge ett tydligare ja/nej.
 
 Behorighetsrad ska skrivas fran vanlig anvandares perspektiv. Om losningen kraver `Anvandare`, `Vybehorigheter`, rollandring, admin eller Super User ska chatten inte saga att anvandaren sjalv ska ga dit. Skriv i stallet: "Be en admin eller Super User kontrollera ..." och forklara vad admin ska kontrollera. Exempel: om Bearbeta saknas ska chatten saga att Bearbeta ar en egen sidebar-vy och att admin/Super User behover kontrollera att rollen har `allocationProcess=edit`.
 
@@ -94,8 +94,10 @@ Vid invandningar eller uttryckliga kodkontroller kor backend en textsokning i re
 | `MINIMAX_API_KEY` | tom | Obligatorisk serverhemlighet. Om den saknas svarar chatten 503. |
 | `MINIMAX_API_URL` | `https://api.minimax.io/v1/chat/completions` | MiniMax OpenAI-kompatibel endpoint. |
 | `MINIMAX_MODEL` | `MiniMax-M2.7` | Modellnamn som skickas i payload. |
-| `MINIMAX_MAX_TOKENS` | `700` | Max svarslangd fran modellen. |
+| `MINIMAX_MAX_TOKENS` | `700` | Max svarslangd fran modellen (hojs till minst 1200 nar tools ar aktiva). |
 | `MINIMAX_TIMEOUT_SECONDS` | `30` | Timeout mot MiniMax. |
+| `ASSISTANT_TOOLS_ENABLED` | `true` | Av/pa for chattens read-only-tools (se [assistant-tools.md](assistant-tools.md)). |
+| `ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS` | `false` | `true` filtrerar tools per anvandarens vybehorighet. |
 
 Backend anropar MiniMax server-side med `Authorization: Bearer ...` sa API-nyckeln aldrig hamnar i frontend.
 
@@ -137,5 +139,6 @@ Modellen far framst wikiutdrag. Om wikin saknar detaljer ska den be om vy, knapp
 - `../app/frontend/js/common.js`
 - `../app/frontend/css/styles.css`
 - `../app/backend/routers/assistant.py`
+- `../app/backend/assistant_tools/`
 - `../app/backend/config.py`
 - `../API_ROUTES.md`

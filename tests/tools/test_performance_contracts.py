@@ -176,7 +176,9 @@ def test_same_server_heavy_external_work_is_offloaded_from_async_routes():
     assert "await run_in_threadpool(_call_minimax" in data_fetch
     assert "await run_in_threadpool(_fetch_rows" in data_fetch
     assert "from starlette.concurrency import run_in_threadpool" in assistant
-    assert "await run_in_threadpool(_call_minimax" in assistant
+    # Apphjalpen kor hela tool-loopen (MiniMax + tool-anrop) i tradpoolen.
+    assert "await run_in_threadpool(_run_chat" in assistant
+    assert "call_model=_minimax_response" in assistant
     assert "from starlette.concurrency import run_in_threadpool" in audit_logs
     assert "await run_in_threadpool(_call_minimax" in audit_logs
     assert "BackgroundTasks" in meta_uploads
