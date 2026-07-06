@@ -54,7 +54,7 @@ Byt ut `0.2.0` mot versionsnumret som ska slappas.
 4. Bygg och smoke-testa installeraren lokalt:
 
    ```bat
-   build_windows.bat
+   scripts\build_windows.bat
    ```
 
    Forvantade filer:

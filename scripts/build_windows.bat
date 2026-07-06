@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 set "BUILD_ROOT=%LOCALAPPDATA%\flowBuild"
 if "%LOCALAPPDATA%"=="" set "BUILD_ROOT=%TEMP%\flowBuild"

@@ -164,7 +164,7 @@ uvicorn backend.main:app --reload
 
 ### Lokal testmiljö med live-data
 
-`start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
+`scripts\start_local.bat` använder alltid SQLite-filen `app/flow_local.db`, så lokala ändringar kan inte påverka live-databasen.
 Scriptet startar backend pa port `8000` och startar RFID-bryggor for
 `COM9 -> MG Plock` och `COM10 -> MG VM`. ESP32-modulerna behover darfor inte
 WiFi; de ska bara sitta kvar i ratt USB-port medan Flow ar igang. Browsern
@@ -174,27 +174,27 @@ Normal lokal start är ett snabbt användarläge utan `uvicorn --reload` och uta
 automatisk live-sync. Vid schemaändringar kör starten en lätt lokal bootstrap som behåller befintliga
 rader, lägger till saknade kolumner/tabeller och backfyller äldre lokal data till
 standardverksamheten `STIGAMO`. Om något ser fel ut lokalt, stäng den gamla
-servern med `stop_local.bat`, starta `start_local.bat` igen och ladda om
+servern med `scripts\stop_local.bat`, starta `scripts\start_local.bat` igen och ladda om
 browsern hårt.
 Den lokala bootstrappen vägrar köra mot annat än SQLite, så den kan inte råka
 skriva seed/backfill till live-Postgres.
 
 Om du utvecklar kod och vill att servern ska ladda om automatiskt använder du
-`start_dev.bat`. Den startar samma RFID-bryggor men kor backend med
+`scripts\start_dev.bat`. Den startar samma RFID-bryggor men kor backend med
 `uvicorn --reload`.
 
 Om du vill att den lokala testmiljön ska börja med en färsk kopia av live-data, sätt live-databasens externa URL som en lokal miljövariabel och kör den explicita syncen medan lokal server är stängd:
 
 ```powershell
 setx LIVE_DATABASE_URL "postgresql://..."
-sync_live_local.bat
+scripts\sync_live_local.bat
 ```
 
-`start_local.bat` försöker inte längre ersätta `app/flow_local.db` bara för att
+`scripts\start_local.bat` försöker inte längre ersätta `app/flow_local.db` bara för att
 `LIVE_DATABASE_URL` råkar finnas i miljön. Det undviker långsam start och låsta
 SQLite-filer i vardagskörning.
 
-Kör `stop_local.bat` från projektroten om en gammal lokal server fortfarande håller `app/flow_local.db` eller port `8000` låst.
+Kör `scripts\stop_local.bat` från projektroten om en gammal lokal server fortfarande håller `app/flow_local.db` eller port `8000` låst.
 
 ## Mappstruktur
 

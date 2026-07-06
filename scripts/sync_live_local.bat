@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0app"
+cd /d "%~dp0..\app"
 
 set "DATABASE_URL=sqlite:///./flow_local.db"
 set "SECRET_KEY=dev-only-change-me"

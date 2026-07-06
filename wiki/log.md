@@ -2502,3 +2502,16 @@ etikettvarden skickas fortsatt inte till backend eller system-clipboard.
 Valet laggs in som ett vanligt symbolobjekt, kan andras i egenskapspanelen och
 foljer samma lokala dokumentlogg, kortkommandon och read-only/audit-undantag som
 ovriga etikettobjekt.
+
+## [2026-07-06] underhall | Repo-stadning: scripts/, tempkataloger, branchar
+
+Repo-roten stadad. De sex .bat-filerna (start, start_dev, start_local,
+stop_local, sync_live_local, build_windows) ligger nu i `scripts/` och deras
+`%~dp0`-sokvagar ar justerade; alla referenser i BUILD.md, RELEASE.md,
+TESTPROTOCOL.md, app/README.md, hardware-README, CI-workflown och tester ar
+uppdaterade. Kallmaterialet i `vyer & kolumner/` har flyttats till
+`referens/vyer-kolumner/` och `ask-datalagring.md` pekar dit. Pytest stadar nu
+bort `tmp_screenshots/` och `.pytest-tmp*`-kataloger efter korning
+(`FLOW_KEEP_TEST_ARTIFACTS=1` behaller dem). 22 helt mergade arbetsbranchar
+plus doda `in_wait` raderades lokalt och pa origin; `release/*` och omergade
+`migration` behalls.

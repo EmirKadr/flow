@@ -27,7 +27,7 @@ Flow laser dessa rader via `tools.rfid_serial_bridge` och postar sedan till
 
 ## Automatisk COM-brygga
 
-`start_local.bat` och `start_dev.bat` startar bryggan automatiskt:
+`scripts\start_local.bat` och `scripts\start_dev.bat` startar bryggan automatiskt:
 
 ```powershell
 COM9 -> MG Plock

@@ -127,4 +127,4 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 | Anslutningsfel | Felvy i Windows-skalet | Servern kan inte nas | Kontrollera internet/server eller testa webben. |
 | "Ansluten till servern" | Statusbar | Health check OK | Fortsatt anvand appen. |
 | Uppdatering finns | Dialog | GitHub Releases har ny Setup.exe | Ladda ner/installera om det ar forvantat. |
-| Lokal SQLite-sync stoppas | Text om att `flow_local.db` anvands av annan process | Gammal `start_local.bat`/`uvicorn` haller databasen oppen | Kor `stop_local.bat`, vanta nagon sekund och starta sedan igen. |
+| Lokal SQLite-sync stoppas | Text om att `flow_local.db` anvands av annan process | Gammal `scripts\start_local.bat`/`uvicorn` haller databasen oppen | Kor `scripts\stop_local.bat`, vanta nagon sekund och starta sedan igen. |

@@ -113,9 +113,9 @@ kontraktstest skyddar Dockerfile-CMD mot `--workers`.
   `SUPER_USER_USERNAMES`/`ARCHIVE_CACHE_*` utan effekt, tom Seq (OTel-env).
 - Render-driften ar avvecklad (2026-07-03); `render.yaml` och
   `backend.migrate_pg_to_mssql` ar borttagna ur repot och finns i git-historiken.
-- `start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
-- `start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
-- `sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.
+- `scripts\start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
+- `scripts\start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
+- `scripts\sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.
 - `tools.visual_smoke`, `tools.interactive_e2e` och desktop-prober skapar temporara databaser for tester.
 
 ## Kallor
