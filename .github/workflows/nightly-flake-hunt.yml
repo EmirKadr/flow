@@ -4,7 +4,14 @@
 # Vid fel öppnas en issue med länk till körningen.
 name: Nightly flake hunt
 
+# push deklareras + jobbet skippas på push (if nedan). Utan det skapar GitHub
+# en tom "No jobs were run"-körning för push-eventet på ett schedule-only-
+# workflow, som rapporteras som FAILURE och mejlar vid varje push (inträffade
+# 2026-07-06). Ett skippat jobb ger istället grön körning. Kontraktet i
+# tests/tools/test_workflow_contracts.py kräver gardeningen för schemalagda
+# workflows.
 on:
+  push:
   schedule:
     - cron: "0 2 * * *"   # 02:00 UTC varje natt
   workflow_dispatch: {}    # manuell körning vid behov
@@ -15,6 +22,9 @@ permissions:
 
 jobs:
   browser-flake-hunt:
+    # Kör aldrig på push - bara schemalagt/manuellt. På push skippas jobbet
+    # rent (=success), så inga spök-failures.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     env:
       QT_QPA_PLATFORM: offscreen

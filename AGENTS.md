@@ -51,6 +51,13 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   en korning for release-refen. Saknas den: `gh workflow run flow-docker.yml
   --ref release/<ver>` (workflow_dispatch ar en sanktionerad vag - t.ex.
   `release/2026.27.4` skapades sa). Se `wiki/nowaste-git-release.md`.
+- **Nytt/andrat GitHub-workflow: verifiera dess EGEN korning gron efter push,**
+  inte bara de workflows du forvantade dig. Ett schemalagt workflow (`schedule`
+  utan `push`) far GitHub att skapa en tom "No jobs were run"-FAILURE for
+  push-eventet som mejlar vid varje push. Regel: schemalagda workflows maste
+  deklarera `push` OCH skippa jobben pa push (`if: github.event_name != 'push'`).
+  Kontraktet `tests/tools/test_workflow_contracts.py` haller det (hade fangat
+  nightly-flake-hunt.yml 2026-07-06 direkt i pre-push).
 - **Kor testsviten fore push.** Pre-push-hooken (`.githooks/pre-push`) kor
   typkontroll, lint och `pytest -m "not browser"` automatiskt; kringga den
   aldrig slentrianmassigt (nodfall: `FLOW_SKIP_PREPUSH_TESTS=1`, motivera i
