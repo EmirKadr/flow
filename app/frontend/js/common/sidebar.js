@@ -826,6 +826,9 @@ function renderSidebar(user, activePage) {
   const zoomControls = renderAppZoomControls();
   const userName = user?.display_name || user?.username || "";
   const roleLabel = sidebarRoleLabel(user);
+  const businessFocusButton = user?.is_super_user
+    ? `<button class="area-focus-toggle business-focus-toggle" id="business-focus-toggle" type="button" title="Verksamhetsfokus" aria-label="Verksamhetsfokus"></button>`
+    : "";
 
   sidebar.innerHTML = `
     <div class="sidebar-top-row">
@@ -842,7 +845,10 @@ function renderSidebar(user, activePage) {
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-utility">
-        <button class="area-focus-toggle" id="area-focus-toggle" type="button" title="Områdesfokus" aria-label="Områdesfokus"></button>
+        <div class="sidebar-focus-row">
+          <button class="area-focus-toggle" id="area-focus-toggle" type="button" title="Områdesfokus" aria-label="Områdesfokus"></button>
+          ${businessFocusButton}
+        </div>
         ${assistantUtility}
         ${logUtility}
         ${uploadUtility}
@@ -861,6 +867,7 @@ function renderSidebar(user, activePage) {
 
   initAppZoomControls();
   initAreaFocusToggle(user);
+  initBusinessFocusToggle(user);
   initThemeToggle();
   ensureLogSidebar(app);
   initLogSidebarToggle();

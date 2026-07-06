@@ -85,10 +85,17 @@ const SHARED_ALLOCATION_FILE_WORDS = {
   wms_pick: ["v_ask_pick_log_full", "pick_log_full", "plocklogg"],
 };
 const AREA_FOCUS_STORAGE_KEY = "flow-area-focus";
-const AREA_FOCUS_ALL_OPTION = { value: "ALLT", label: "∞", title: "Alla områden", code: null, areaId: null };
+const AREA_FOCUS_ALL_OPTION = { value: "ALLT", label: "∞", title: "Alla områden", code: null, areaId: null, businessId: null };
 let dynamicAreaFocusOptions = null;
 let areaFocusLoadState = "idle";
 let areaFocusAreasRequest = null;
+let areaFocusAreasCache = null;
+let areaFocusUserCache = null;
+const BUSINESS_FOCUS_STORAGE_KEY = "flow-business-focus";
+const BUSINESS_FOCUS_ALL_OPTION = { value: "ALLT", label: "∞", title: "Alla verksamheter", businessId: null };
+let dynamicBusinessFocusOptions = null;
+let businessFocusLoadState = "idle";
+let businessFocusBusinessesRequest = null;
 let appLogEntries = [];
 let appLogSignalTimer = null;
 let waitMetricQueue = [];
