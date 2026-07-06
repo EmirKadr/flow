@@ -8,8 +8,10 @@ mejlar vid varje push. Det här testet hade fällt nightly-flake-hunt.yml direkt
 i pre-push i stället för efter fyra pushar.
 
 Regel: ett workflow som är schemalagt (`schedule`) måste också deklarera
-`push` OCH skippa varje jobb på push (`if: github.event_name != 'push'`), så
-att push-körningen blir ett rent skip (grön) i stället för en tom failure.
+`push`, OCH minst ett jobb måste faktiskt köra på push (inget `if` på
+JOBB-nivå som exkluderar push). Annars kör GitHub noll jobb → "No jobs were
+run" = FAILURE. Gardera de dyra stegen på STEG-nivå i stället; låt jobbet
+alltid instansieras så push-körningen blir grön.
 """
 from __future__ import annotations
 
@@ -63,9 +65,20 @@ def test_workflows_parse_and_have_jobs():
         assert workflow.get("jobs"), f"{path.name}: saknar jobs"
 
 
-def test_scheduled_workflows_skip_on_push():
-    """Schemalagda workflows måste garderas mot push-spök-failures:
-    deklarera `push` och skippa alla jobb på push."""
+def _job_runs_on_push(job: dict) -> bool:
+    """Ett jobb körs på push om det saknar `if` på jobb-nivå, eller om if:t
+    inte exkluderar push. Ett `if` som innehåller `github.event_name != 'push'`
+    filtrerar bort hela jobbet på push (→ zero-jobs failure)."""
+    guard = str(job.get("if", "")).replace('"', "'")
+    if not guard:
+        return True
+    return "github.event_name != 'push'" not in guard
+
+
+def test_scheduled_workflows_survive_push_without_ghost_failure():
+    """Schemalagda workflows måste (1) deklarera `push` och (2) ha minst ett
+    jobb som faktiskt körs på push, annars blir push-körningen en tom
+    "No jobs were run"-failure som mejlar vid varje push."""
     offenders: list[str] = []
     for path in _workflow_files():
         workflow = _load(path)
@@ -75,17 +88,14 @@ def test_scheduled_workflows_skip_on_push():
         if "push" not in triggers:
             offenders.append(
                 f"{path.name}: schemalagt men deklarerar inte `push` - GitHub "
-                f"skapar en tom failure-körning för push. Lägg till `push:` + "
-                f"`if: github.event_name != 'push'` på jobben."
+                f"skapar en tom failure-körning för push-eventet."
             )
             continue
         jobs = workflow.get("jobs") or {}
-        for job_name, job in jobs.items():
-            guard = str(job.get("if", ""))
-            if "github.event_name != 'push'" not in guard.replace('"', "'"):
-                offenders.append(
-                    f"{path.name}:{job_name}: saknar push-gardering "
-                    f"(`if: github.event_name != 'push'`) - push-körningen blir "
-                    f"en spök-failure."
-                )
-    assert offenders == [], "Workflows utan push-gardering:\n" + "\n".join(offenders)
+        if not any(_job_runs_on_push(job) for job in jobs.values()):
+            offenders.append(
+                f"{path.name}: alla jobb har `if` som exkluderar push → noll "
+                f"jobb körs → 'No jobs were run'-failure. Flytta garderingen "
+                f"till STEG-nivå så jobbet alltid instansieras och blir grönt."
+            )
+    assert offenders == [], "Workflows med push-spök-failure-risk:\n" + "\n".join(offenders)

@@ -4,12 +4,12 @@
 # Vid fel öppnas en issue med länk till körningen.
 name: Nightly flake hunt
 
-# push deklareras + jobbet skippas på push (if nedan). Utan det skapar GitHub
-# en tom "No jobs were run"-körning för push-eventet på ett schedule-only-
-# workflow, som rapporteras som FAILURE och mejlar vid varje push (inträffade
-# 2026-07-06). Ett skippat jobb ger istället grön körning. Kontraktet i
-# tests/tools/test_workflow_contracts.py kräver gardeningen för schemalagda
-# workflows.
+# `push` deklareras men de tunga stegen skippas på push (if på STEG-nivå).
+# Bakgrund (lärt 2026-07-06): ett `if` på JOBB-nivå som exkluderar push gör att
+# GitHub kör noll jobb → körningen rapporteras som "No jobs were run" = FAILURE
+# och mejlar vid varje push. Lösningen är att låta jobbet ALLTID köra minst ett
+# (trivialt) steg så körningen blir grön, och gardera de dyra stegen på
+# stegnivå. Kontraktet i tests/tools/test_workflow_contracts.py håller detta.
 on:
   push:
   schedule:
@@ -22,9 +22,6 @@ permissions:
 
 jobs:
   browser-flake-hunt:
-    # Kör aldrig på push - bara schemalagt/manuellt. På push skippas jobbet
-    # rent (=success), så inga spök-failures.
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     env:
       QT_QPA_PLATFORM: offscreen
@@ -34,26 +31,36 @@ jobs:
       EXCEL_API_TOKEN: test-token
 
     steps:
+      # Kör alltid (även på push) så jobbet instansieras och blir grönt -
+      # utan detta blir push en tom "No jobs were run"-failure.
+      - name: Event-gate
+        run: echo "event=${{ github.event_name }} - flake-jakten kör bara schemalagt/manuellt; push skippar de tunga stegen."
+
       - name: Check out repository
+        if: github.event_name != 'push'
         uses: actions/checkout@v7
 
       - name: Set up Python
+        if: github.event_name != 'push'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install Qt runtime libraries
+        if: github.event_name != 'push'
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
 
       - name: Install dependencies
+        if: github.event_name != 'push'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r app/requirements.txt -r requirements-dev.txt
           python -m playwright install --with-deps chromium
 
       - name: Run browser suite 3x (no retries)
+        if: github.event_name != 'push'
         run: |
           for round in 1 2 3; do
             echo "=== Flake-jakt: runda $round/3 ==="
@@ -61,7 +68,7 @@ jobs:
           done
 
       - name: Open issue on instability
-        if: failure()
+        if: failure() && github.event_name != 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
