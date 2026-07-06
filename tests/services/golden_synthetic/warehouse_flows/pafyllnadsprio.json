@@ -1,0 +1,95 @@
+{
+  "has_text": false,
+  "log_line_count": 13,
+  "summary": {
+    "Läge": "Lastningsfönster",
+    "Rapportrader": "8",
+    "Saknad referens": "8"
+  },
+  "tables": [
+    {
+      "columns": [
+        "ALLA",
+        "PRIO 1",
+        "PRIO 2",
+        "PRIO 3",
+        "PRIO 4",
+        "PRIO 5"
+      ],
+      "head": [
+        [
+          "SYNT-A001",
+          "",
+          "",
+          "",
+          "",
+          "SYNT-A001"
+        ],
+        [
+          "SYNT-A002",
+          "",
+          "",
+          "",
+          "",
+          "SYNT-A002"
+        ],
+        [
+          "SYNT-A003",
+          "",
+          "",
+          "",
+          "",
+          "SYNT-A003"
+        ],
+        [
+          "SYNT-A004",
+          "",
+          "",
+          "",
+          "",
+          "SYNT-A004"
+        ],
+        [
+          "SYNT-A005",
+          "",
+          "",
+          "",
+          "",
+          "SYNT-A005"
+        ]
+      ],
+      "key": "report",
+      "label": "Påfyllnadsprio",
+      "rows": 8,
+      "sha256": "1a3357a93e147f890330471c7af4b92edf7e9fc39adcfcbd08da5c4b0737f85d"
+    },
+    {
+      "columns": [
+        "PRIO",
+        "LASTNINGSFÖNSTER"
+      ],
+      "head": [
+        [
+          "PRIO 1",
+          "2026-04-29 01:00"
+        ],
+        [
+          "PRIO 2",
+          "2026-04-29 16:00"
+        ],
+        [
+          "PRIO 3",
+          "2026-04-30 00:00"
+        ],
+        [
+          "PRIO 4",
+          "2026-04-30 15:00"
+        ]
+      ],
+      "key": "window_map",
+      "label": "Lastningsfönster",
+      "rows": 4,
+      "sha256": "391faf81edfbb0a72bd24cc4d78e5b5cc1bb319d64f06e239ae574c5cf16526e"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "has_text": false,
+  "log_line_count": 0,
+  "summary": {
+    "Missade avgångar": "0",
+    "Ändringar": "0"
+  },
+  "tables": [
+    {
+      "columns": [
+        "ordernummer",
+        "Ursprungsdatum",
+        "Orderdatum",
+        "sändningsnummer",
+        "Zon",
+        "Multi"
+      ],
+      "head": [],
+      "key": "changes",
+      "label": "Ändringar",
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "columns": [
+        "ordernummer",
+        "kundnamn",
+        "Missat"
+      ],
+      "head": [],
+      "key": "missed",
+      "label": "Missade avgångar",
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

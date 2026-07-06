@@ -1,0 +1,52 @@
+{
+  "has_text": false,
+  "log_line_count": 5,
+  "summary": {
+    "Avvikelser": "4"
+  },
+  "tables": [
+    {
+      "columns": [
+        "Ordernr",
+        "Översikt sändningsnr",
+        "Dispatch sändningsnr",
+        "Plockpallsnr",
+        "kundnamn"
+      ],
+      "head": [
+        [
+          "990001",
+          "S00001",
+          "S00007",
+          "PP00007",
+          "KUND-A"
+        ],
+        [
+          "990002",
+          "S00002",
+          "S00008",
+          "PP00008",
+          "KUND-B"
+        ],
+        [
+          "990003",
+          "S00003",
+          "S00009",
+          "PP00009",
+          "KUND-C"
+        ],
+        [
+          "990004",
+          "S00004",
+          "S00010",
+          "PP00010",
+          "KUND-D"
+        ]
+      ],
+      "key": "diff",
+      "label": "Dispatchavvikelser",
+      "rows": 4,
+      "sha256": "3411c3c4db10441c1f355014a1140417e0dc307e4a44ead11b5b3c5935af8dd9"
+    }
+  ]
+}

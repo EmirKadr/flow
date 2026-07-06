@@ -254,3 +254,20 @@ syns i loggar och dashboards i stället.
 ## 9. Kontakt
 
 Frågor om appen, schemat, eller migrationen — kontakta Emir (kadric.emir1@outlook.com).
+
+## Post-deploy-verifiering
+
+Efter varje deploy ska hälsan verifieras maskinellt, inte av första användaren:
+
+1. k8s-proberna (liveness + readiness mot `/api/health`) är kontraktstestade i
+   `tests/tools/test_deploy_verification.py` och får inte tas bort.
+2. Lägg (engångsjobb för Emir) ett sista steg i Octopus-projektet Flow som kör:
+
+       python -m tools.post_deploy_check --base-url https://<server>
+
+   Steget failar releasen om `/api/health` inte svarar 200 inom ~1 minut
+   (12 försök à 5 s; k8s `strategy: Recreate` ger normalt några sekunders
+   väntan i början). Vid behov: `--attempts`/`--delay`.
+3. För djupare kontroll efter större releaser: `python -m tools.healthcheck
+   report --base-url <url>` och Historik-flikarna Hälsa/Väntetider.
+

@@ -1,0 +1,9 @@
+﻿Artikel	Beskrivning	Vikt netto	Plockplats	Plocksaldo	Kundorder	Diff	Buffertsaldo	Saldo automation	Automation diff	Saldo kran	Kran diff	Saldo autoplock	Autoplock diff	Utbeställt	Inlagring	Ankommande	Pågående plock	För och under plock	Saldo	Diff2	Externt	Lager	Bolag	Batchartikel	Klassificering	Robot
+SYNT-A001	Syntetisk artikel 1	10.1	P-100	12	19		112							34					37			SYNT	SYNTBOLAG			
+SYNT-A002	Syntetisk artikel 2	3.89	P-101	31	11		171							17					243			SYNT	SYNTBOLAG			
+SYNT-A003	Syntetisk artikel 3	8.32	P-102	50	0		104							12					143			SYNT	SYNTBOLAG			
+SYNT-A004	Syntetisk artikel 4	7.94	P-103	47	14		186							1					178			SYNT	SYNTBOLAG			
+SYNT-A005	Syntetisk artikel 5	1.45	P-104	49	24		63							17					234			SYNT	SYNTBOLAG			
+SYNT-A006	Syntetisk artikel 6	5.06	P-105	37	26		35							19					37			SYNT	SYNTBOLAG			
+SYNT-A007	Syntetisk artikel 7	0.65	P-106	47	8		145							25					177			SYNT	SYNTBOLAG			
+SYNT-A008	Syntetisk artikel 8	2.29	P-107	16	26		12							27					127			SYNT	SYNTBOLAG			

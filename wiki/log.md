@@ -1,11 +1,27 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-04
+updated: 2026-07-06
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-06] arkitektur | RFID gar WiFi-only, USB-brygga avvecklad
+
+`MG_Plock.ino`/`MG_VM.ino` postar nu direkt over WiFi
+(`WiFiClientSecure`/`HTTPClient`) till `POST /api/rfid/scans` istallet for att
+skriva Serial-rader for en lokal USB-brygga. `tools/rfid_serial_bridge.py`,
+`tools/start_rfid_bridges.ps1` och deras tester togs bort;
+`scripts/start_local.bat`/`start_dev.bat` startar inte langre nagon COM-brygga
+(bara `--host 0.0.0.0` sa ESP32 nar backend over LAN). Testkontraktet
+`tests/tools/test_rfid_firmware_contracts.py` kraver nu WiFi-inkludering
+istallet for att forbjuda den. Upptackte under felsokning: Octopus-variabler
+snapshotas vid releaseskapande, inte vid omdeploy av en befintlig release -
+en `RFID_DEVICE_TOKEN`-andring kravde darfor en ny release for att sla
+igenom. `k8s/flow.yml` kor `strategy: Recreate`, sa en deploy ger nagra
+sekunders synligt `network_error`/`HTTP 0` i Historik - forvantat, inte ett
+fel. Se `rfid.md` for hela floden och felsokningssvaren.
 
 ## [2026-07-04] feature | Arkivstatus-dashboard (superuser) + seed-konfig som lokalt
 
@@ -2545,3 +2561,37 @@ meta_upload.js, omdopt), dod mojibake-kod i settings_finance_check.js och
 oatkomlig return i overview.js. Arkitekturkontraktet fick frontend-
 domangranser: ALLOWED_PAGE_DOMAINS (en sida = common/ + hogst en doman).
 Regler tillagda i AGENTS.md (utrullning, @ts-ignore, backend-synk).
+
+## [2026-07-06] arkitektur | Kvalitetspaket 2-7: typer, ledarlas, syntetisk data, flows-paket
+
+Sex forbattringar i en insats (feature/kvalitet-2-7):
+
+- **API-typer fran OpenAPI**: `tools/generate_api_types.py` genererar
+  `app/frontend/js/types/api-schema.d.ts` (~9300 rader) ur FastAPI-schemat;
+  CI regenererar och failar pa diff, sa frontendtyper kan inte drifta fran
+  `schemas.py`. @ts-check aven i `common/foundation.js` och
+  `sankey_inbound_state.js` (overview kraver namnrymdsflytt forst).
+- **ESLint/tsc-fynd fixade**: DOM-casts i sankey, inga nya fel.
+- **Ledarlas**: `app/backend/leader_lock.py` + tabellen `leader_leases`
+  (migration 0046). Bakgrundsjobben startas nu bara av ledarprocessen;
+  single-worker-taket ar darmed ett medvetet val, inte ett krav.
+  `FLOW_DISABLE_LEADER_LOCK=1` ar felsokningsventil.
+- **Syntetisk testdata i CI**: `tools/make_synthetic_testdata.py` +
+  `tests/services/fixtures/synthetic/` + `golden_synthetic/` gor att
+  karakteriseringstesterna (8 floden) aven kor i CI dar privat testdata
+  saknas. Determinismtest binder incheckad data till generatorn.
+- **Buggfix fangad av golden**: `normalize_saldo` gjorde tomma
+  Plockplats-celler till strangen "nan" under pandas 2.2.x (pinnad version =
+  CI/prod; lokal pandas hade driftat). Fix i `engine_core/io_utils.py` +
+  vakt i `allocation.py`.
+- **flows.py uppdelad**: paketet `warehouse_tools/flows/` (shared,
+  allocation_flows, goods_declaration, report_flows, forecast_flows;
+  registryt i `__init__`). Sista radtaksundantaget borta. Tester patchar
+  implementationsmodulen (`flows.shared._read`,
+  `flows.forecast_flows.flow_forecast`).
+- **Beroendebevakning**: dependabot.yml (pip/npm/actions) + pip-audit och
+  npm audit blockerande i CI. Sarbarhetsbumpar: fastapi 0.139.0,
+  starlette 1.3.1, python-multipart 0.0.31, requests 2.33.0.
+- **Deploy-verifiering**: kontraktstest for k8s-proberna +
+  `tools/post_deploy_check.py` som Octopus-slutsteg (se DEPLOY.md).
+

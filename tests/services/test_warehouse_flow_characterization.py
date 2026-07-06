@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TESTDATA = ROOT / "testdata" / "warehouse_tools"
 GOLDEN_DIR = ROOT / "tests" / "services" / "golden" / "warehouse_flows"
 
-pytestmark = pytest.mark.skipif(
+requires_private_testdata = pytest.mark.skipif(
     not TESTDATA.is_dir(),
     reason="privat testdata saknas (testdata/warehouse_tools är gitignorerad)",
 )
@@ -157,6 +157,7 @@ def _run_flow(flow_id: str) -> dict:
     return handler(files, {})
 
 
+@requires_private_testdata
 @pytest.mark.parametrize("flow_id", sorted(FLOW_INPUTS))
 def test_flow_matches_golden_snapshot(flow_id: str):
     result = _run_flow(flow_id)
@@ -178,3 +179,72 @@ def test_flow_matches_golden_snapshot(flow_id: str):
         f"Flödet {flow_id} avviker från golden-snapshot. Om ändringen är avsiktlig: "
         "regenerera med FLOW_GOLDEN_UPDATE=1 och granska diffen."
     )
+
+
+# --- Syntetiskt läge (körs alltid, även i CI) --------------------------------
+#
+# Deterministisk påhittad data (tools/make_synthetic_testdata.py) med egna
+# incheckade golden-snapshots. Fångar motorregressioner i CI där privat
+# testdata saknas. Den privata sviten ovan är fortfarande facit för verkliga
+# datamönster; den syntetiska skyddar struktur, kolumnkontrakt och kraschfrihet.
+
+SYNTHETIC_DATA = ROOT / "tests" / "services" / "fixtures" / "synthetic" / "data"
+SYNTHETIC_GOLDEN_DIR = ROOT / "tests" / "services" / "golden_synthetic" / "warehouse_flows"
+
+SYNTHETIC_FLOW_INPUTS: dict[str, dict[str, str]] = {
+    "allocate": {"orders": "orders", "buffer": "buffer", "saldo": "saldo", "items": "items", "not_putaway": "not_putaway"},
+    "ordersaldo": {"orders": "orders", "saldo": "saldo"},
+    "lyx": {"saldo": "saldo"},
+    "pafyllnadsprio": {"orders": "orders", "saldo": "saldo", "overview": "overview"},
+    "hib-koppling": {"details": "orders", "overview": "overview"},
+    "overview-check": {"overview": "overview", "details": "orders"},
+    "dispatch-check": {"overview": "overview", "dispatch": "dispatch", "details": "orders"},
+    "vecka27-check": {"orders": "orders"},
+}
+
+
+@pytest.mark.parametrize("flow_id", sorted(SYNTHETIC_FLOW_INPUTS))
+def test_flow_matches_synthetic_golden_snapshot(flow_id: str):
+    from warehouse_tools import flows
+
+    files = {
+        key: SYNTHETIC_DATA / f"{name}.csv"
+        for key, name in SYNTHETIC_FLOW_INPUTS[flow_id].items()
+    }
+    result = flows.FLOW_BY_ID[flow_id]["handler"](files, {})
+    snapshot = _result_snapshot(result)
+
+    golden_path = SYNTHETIC_GOLDEN_DIR / f"{flow_id}.json"
+    if os.environ.get("FLOW_GOLDEN_UPDATE") == "1" or not golden_path.is_file():
+        SYNTHETIC_GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+        golden_path.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if os.environ.get("FLOW_GOLDEN_UPDATE") != "1":
+            pytest.skip(f"syntetisk golden-fil skapad för {flow_id} - kör om testet")
+        return
+
+    golden = json.loads(golden_path.read_text(encoding="utf-8"))
+    assert snapshot == golden, (
+        f"Flödet {flow_id} avviker från syntetisk golden. Om ändringen är avsiktlig: "
+        "regenerera med FLOW_GOLDEN_UPDATE=1 och granska diffen."
+    )
+
+
+def test_synthetic_testdata_matches_generator(tmp_path):
+    """Incheckad syntetisk data ska vara exakt vad generatorn producerar
+    (deterministiskt seed) - annars har någon handredigerat filerna."""
+    import json as _json
+
+    from tools import make_synthetic_testdata as gen
+
+    spec = _json.loads(gen.SPEC_PATH.read_text(encoding="utf-8"))
+    for key, frame in gen.build_frames(spec).items():
+        out = tmp_path / f"{key}.csv"
+        frame.to_csv(out, sep="\t", index=False, encoding="utf-8-sig", lineterminator="\n")
+        committed = (SYNTHETIC_DATA / f"{key}.csv").read_bytes()
+        assert out.read_bytes() == committed, (
+            f"{key}.csv avviker från generatorn - kör python -m tools.make_synthetic_testdata"
+        )
+
