@@ -28,6 +28,11 @@ updates:
     groups:
       npm-dev:
         update-types: ["minor", "patch"]
+    ignore:
+      # openapi-typescript kraver peer typescript ^5.x - slapp major-bumpen
+      # nar openapi-typescript stodjer TS 6.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
