@@ -1,0 +1,63 @@
+# Nattlig flake-jakt: kör browsersviten 3x utan omkörningar. En instabil
+# browsertest ska upptäckas här - systematiskt och utan att blockera någons
+# push - i stället för när den fäller en CI-körning mitt i ett releasearbete.
+# Vid fel öppnas en issue med länk till körningen.
+name: Nightly flake hunt
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC varje natt
+  workflow_dispatch: {}    # manuell körning vid behov
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  browser-flake-hunt:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FLOW_DISABLE_UPDATE_CHECK: "1"
+      SECRET_KEY: test-secret
+      SUPER_USER_USERNAMES: admin,emikad,mikhal
+      EXCEL_API_TOKEN: test-token
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r app/requirements.txt -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run browser suite 3x (no retries)
+        run: |
+          for round in 1 2 3; do
+            echo "=== Flake-jakt: runda $round/3 ==="
+            python -m pytest -m browser -q
+          done
+
+      - name: Open issue on instability
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Flake-jakt: browsersviten instabil $(date -u +%F)" \
+            --body "Nattliga flake-jakten föll. Körning: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+Regel (wiki/test-strategi.md): rotorsaka eller karantänsätt testet - flakes får inte normaliseras."

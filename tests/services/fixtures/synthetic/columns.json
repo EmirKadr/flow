@@ -225,5 +225,23 @@
     "Crossdock Ind",
     "Produktionsdatum",
     "Robot Ind"
+  ],
+  "custom_adr": [
+    "Kund",
+    "Namn",
+    "Adress",
+    "Post nr",
+    "Ort",
+    "Adr num",
+    "Land",
+    "Bolag"
+  ],
+  "item_security_info": [
+    "Artikel",
+    "Beskrivning",
+    "Farligt gods nivå",
+    "Lager",
+    "Bolag",
+    "Timestamp"
   ]
 }

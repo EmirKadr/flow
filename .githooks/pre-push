@@ -72,7 +72,10 @@ else
     echo "  ⚠ pre-push: Node/node_modules saknas - hoppar over frontend-typkontroll och lint (kor npm install)." >&2
 fi
 
-python -m pytest -x -q
+# Browsertesterna (Playwright, -m browser) kors INTE har: de ar lastkansliga
+# pa utvecklarmaskinen (OneDrive-synk, CPU-konkurrens gav falska rod 2026-07-06)
+# och CI ar deras gate. Kor dem lokalt vid behov: python -m pytest -m browser
+python -m pytest -x -q -m "not browser"
 status=$?
 if [ $status -ne 0 ]; then
     echo "" >&2
