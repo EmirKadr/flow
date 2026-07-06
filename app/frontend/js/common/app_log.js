@@ -1,3 +1,4 @@
+// @ts-check
 appLogEntries = readStoredAppLogEntries();
 
 function renderAppLogEntries() {

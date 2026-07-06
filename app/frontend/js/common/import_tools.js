@@ -1,3 +1,4 @@
+// @ts-check
 function openImportHelpModal(title = "Importera") {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
@@ -180,7 +181,9 @@ function openBulkImportGrid({ title, columns, submitLabel = "Skapa", initialRows
   backdrop.querySelector("#bulk-import-prune").addEventListener("click", () => {
     tbody.querySelectorAll("tr").forEach((tr) => {
       const hasValue = safeColumns.some((column) => {
-        const input = tr.querySelector(`[data-bulk-key="${column.key}"]`);
+        const input = /** @type {HTMLInputElement | HTMLSelectElement | null} */ (
+          tr.querySelector(`[data-bulk-key="${column.key}"]`)
+        );
         return String(input?.value || "").trim();
       });
       if (!hasValue && tbody.querySelectorAll("tr").length > 1) tr.remove();
@@ -189,7 +192,7 @@ function openBulkImportGrid({ title, columns, submitLabel = "Skapa", initialRows
   });
   backdrop.querySelector("#bulk-import-cancel").addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("#bulk-import-submit").addEventListener("click", async () => {
-    const submitButton = backdrop.querySelector("#bulk-import-submit");
+    const submitButton = /** @type {HTMLButtonElement} */ (backdrop.querySelector("#bulk-import-submit"));
     const rows = collectBulkImportRows(tbody, safeColumns);
     if (!rows.length) {
       showToast("Fyll minst en rad.", "warn", 3000);

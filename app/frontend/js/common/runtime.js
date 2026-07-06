@@ -1,3 +1,4 @@
+// @ts-check
 function setupSyncedHorizontalScroll(target) {
   const element = typeof target === "string" ? document.querySelector(target) : target;
   const wrap = element?.classList?.contains("table-wrap") ? element : element?.closest?.(".table-wrap");
@@ -46,7 +47,7 @@ function setupSyncedHorizontalScroll(target) {
   wrap.addEventListener("scroll", syncFromWrap, { passive: true });
 
   let observer = null;
-  if ("ResizeObserver" in window) {
+  if (typeof ResizeObserver !== "undefined") {
     observer = new ResizeObserver(update);
     observer.observe(wrap);
     Array.from(wrap.children || []).forEach((child) => observer.observe(child));

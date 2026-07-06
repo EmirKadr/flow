@@ -1,3 +1,4 @@
+// @ts-check
 const YWD_STORAGE_KEY = "flow-selected-date";
 
 function readSelectedDate() {

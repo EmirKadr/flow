@@ -43,4 +43,14 @@ interface Window {
   // Publika ytor som api.js exponerar för andra script och desktop-bryggan.
   api?: any;
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
+  // Periodväljaren (common/period_picker.js).
+  flowPeriodPicker?: {
+    open: (options: {
+      period?: string;
+      anchorEl?: HTMLElement | null;
+      currentIso?: string;
+      onPick?: (value: string) => void;
+    }) => void;
+    close: () => void;
+  };
 }

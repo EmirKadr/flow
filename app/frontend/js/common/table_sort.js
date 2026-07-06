@@ -1,3 +1,4 @@
+// @ts-check
 const CLIENT_TABLE_SORT_EXCLUDE_SELECTOR = [
   "table.matrix",
   "table.overview",
@@ -207,6 +208,7 @@ function setupClientSortableTable(table) {
   });
 }
 
+/** @param {Document | Element} root */
 function setupClientSortableTables(root = document) {
   const tables = [];
   if (root instanceof HTMLTableElement) tables.push(root);
@@ -220,9 +222,9 @@ function initClientSortableTables() {
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
-        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (!(node instanceof Element)) return;
         setupClientSortableTables(node);
-        scheduleClientTableResort(node.closest?.("table.client-sortable-table"));
+        scheduleClientTableResort(node.closest("table.client-sortable-table"));
       });
     });
   });

@@ -1,3 +1,4 @@
+// @ts-check
 function readTheme() {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -62,12 +63,12 @@ function updateAppZoomControls(percent = readAppZoom()) {
 
   const out = document.getElementById("app-zoom-out");
   const input = document.getElementById("app-zoom-in");
-  if (out) {
+  if (out instanceof HTMLButtonElement) {
     out.disabled = normalized <= APP_ZOOM_MIN;
     out.title = `Zooma ut (Ctrl+-), nu ${normalized}%`;
     out.setAttribute("aria-label", out.title);
   }
-  if (input) {
+  if (input instanceof HTMLButtonElement) {
     input.disabled = normalized >= APP_ZOOM_MAX;
     input.title = `Zooma in (Ctrl++), nu ${normalized}%`;
     input.setAttribute("aria-label", input.title);

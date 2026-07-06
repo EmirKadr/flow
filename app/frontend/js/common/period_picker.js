@@ -1,3 +1,4 @@
+// @ts-check
 // period_picker.js — högerklicksväljare för en specifik vecka/månad/år.
 // Används av både Sankey - Inbound och Produktivitetsöversikt. Väljaren ändrar
 // bara ankardatumet; respektive vy avgör vilken period datumet tillhör.

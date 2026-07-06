@@ -1,3 +1,4 @@
+// @ts-check
 function readAllocationUploadNotice() {
   try {
     const raw = sessionStorage.getItem(ALLOCATION_UPLOAD_NOTICE_KEY);
