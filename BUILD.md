@@ -12,7 +12,7 @@ Windows-lasningar.
 Kor i CMD fran projektroten:
 
 ```bat
-build_windows.bat
+scripts\build_windows.bat
 ```
 
 Resultat:
@@ -34,7 +34,7 @@ Inno Setup-mallen finns i:
 packaging\windows\flow.iss
 ```
 
-Nar Inno Setup 6 finns installerat bygger `build_windows.bat` en riktig
+Nar Inno Setup 6 finns installerat bygger `scripts\build_windows.bat` en riktig
 `Setup.exe` fran den redan byggda `release\flow`-mappen. Det gar ocksa att
 kora:
 

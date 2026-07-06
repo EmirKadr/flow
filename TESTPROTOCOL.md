@@ -35,7 +35,7 @@ skapar schema via `backend.prestart` och far inte kora seed.
 For release eller desktop-andringar:
 
 ```powershell
-cmd /c build_windows.bat
+cmd /c scripts\build_windows.bat
 python -m tools.release_check
 ```
 
@@ -135,7 +135,7 @@ testet och dokumentationen visa det undantaget.
 | `tests/services/test_data_fetch_service.py` | Hamta data-flodets katalog, LLM-plan, hemlighetsbarriar, extern datahamtning och Excel-export. | `Hamta data`, extern datakalla, katalogbyggnad, MiniMax-planering eller export. |
 | `tests/services/test_health_service.py` | Desktop/klient-health URL och felhantering. | Health service eller anslutningskontroll. |
 | `tests/services/test_legacy_activity_routes.py` | Gamla aktivitetsvagar redirectar till nya aktivitetsvyn och statiska filer cachas ratt i dev. | Legacy-redirects, statisk frontendservering eller aktivitetsrutter. |
-| `tests/services/test_live_local_sync.py` | Lokal SQLite-sync fran live-databas och skydd mot fel target. | `prepare_local_database`, live/local sync eller `start_local.bat`-dataflode. |
+| `tests/services/test_live_local_sync.py` | Lokal SQLite-sync fran live-databas och skydd mot fel target. | `prepare_local_database`, live/local sync eller `scripts\start_local.bat`-dataflode. |
 | `tests/services/test_person_import.py` | Personimportmallar, Excel-parsning, dubblettskydd, skapa/uppdatera/ta bort person. | Personimport, person-CRUD eller namnvalidering. |
 | `tests/services/test_person_schedules.py` | Timmis/fast schema-regler for personers veckomallar. | Personschema, timmisflagga eller veckomalllogik. |
 | `tests/services/test_productivity_service.py` | Produktivitetsfilstatus, filidentifiering, karnfilsfallback och sammanstallda produktivitetsloggar. | Produktivitet, snapshot-/compiled-loggar eller KPI-filer. |
@@ -171,7 +171,7 @@ testet och dokumentationen visa det undantaget.
 | `tests/tools/test_rfid_firmware_contracts.py` | Kontrakt for att ESP32-sketch ar lokal, ignorerad och dokumenterad utan local-header-omvag. | `hardware/rfid_esp32_flow`, `.gitignore` eller firmwarekonfiguration. |
 | `tests/tools/test_rfid_serial_bridge.py` | USB-bryggans parser och POST-kontrakt for RFID-scans nar LAN/brandvagg blockerar ESP32. | `tools/rfid_serial_bridge.py`, RFID-felsokning eller lokal hardvaruintegration. |
 | `tests/tools/test_sidebar_user_browser.py` | Sidebarens footer visar namn/roll/logout och dokumentloggen sparas over sidbyte i browser. | Sidebar footer, anvandarvisning, logoutknapp eller anvandarsynlig loggning. |
-| `tests/tools/test_start_local_contracts.py` | Lokal start lyssnar pa LAN for hardvara men oppnar browsern mot localhost. | `start_local.bat` eller lokal hardvaruanslutning. |
+| `tests/tools/test_start_local_contracts.py` | Lokal start lyssnar pa LAN for hardvara men oppnar browsern mot localhost. | `scripts\start_local.bat` eller lokal hardvaruanslutning. |
 | `tests/tools/test_visual_tools.py` | Kontrakt for visual smoke, interaktiv E2E, desktop probes, frontend assets, global UI-wiring och kritiska vyer. | Sidebar/global frontend, visuella verktyg, assets, imports, allokerings-UI eller testprotokoll. |
 
 Om en ny testfil laggs till ska den in i tabellen ovan. Om en testfil byter
@@ -515,7 +515,7 @@ Innan ny release:
 8. `python -m tools.desktop_app_probe`
 9. `python -m tools.healthcheck report --local`
 10. `python -m tools.healthcheck waits --local --period 24h`
-11. `cmd /c build_windows.bat`
+11. `cmd /c scripts\build_windows.bat`
 12. Skapa och pusha release-tagg enligt `RELEASE.md`.
 13. Efter deploy: kor `python -m tools.healthcheck report --base-url <url>`
     nar servern ar uppe och agenten har inloggning.

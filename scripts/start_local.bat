@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0app"
+cd /d "%~dp0..\app"
 
 set "DATABASE_URL=sqlite:///./flow_local.db"
 set "SECRET_KEY=dev-only-change-me"
@@ -13,7 +13,7 @@ echo Forbereder lokal SQLite-databas for snabbstart...
 python -m backend.prepare_local_database || goto :error
 
 echo Startar RFID-bryggor for ESP32 via USB/COM: COM9=MG Plock, COM10=MG VM...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\start_rfid_bridges.ps1" || echo Varning: RFID-bryggor kunde inte startas automatiskt.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\tools\start_rfid_bridges.ps1" || echo Varning: RFID-bryggor kunde inte startas automatiskt.
 
 echo Startar lokal server pa localhost. RFID-moduler laser via COM9/COM10.
 start "" "http://localhost:8000"

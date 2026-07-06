@@ -34,7 +34,7 @@ och `hardware/MG_VM`. `.ino`-filerna ar lokala och git-ignorerade, men de
 innehaller ingen WiFi, serveradress eller token. Sketchen laser RDM6300 och
 skriver bara serialrader i formatet `[MG VM] RFID HEX=... DEC=... count=...`.
 
-`start_local.bat` och `start_dev.bat` startar automatiskt
+`scripts\start_local.bat` och `scripts\start_dev.bat` startar automatiskt
 `tools/start_rfid_bridges.ps1`, som i sin tur startar serialbryggor for
 `COM9 -> MG Plock` och `COM10 -> MG VM`. Bryggorna laser ESP32:ornas USB/Serial
 och postar sedan lokalt till `http://127.0.0.1:8000/api/rfid/scans`. Samma tagg
@@ -45,7 +45,7 @@ slapps.
 
 Bemanning pollar `GET /api/rfid/events` var 7:e sekund nar fliken ar synlig.
 Om en scan nar backend syns den forst som `POST /api/rfid/scans` i
-`start_local.bat`-fonstret och sedan som markering i ratt person/timme.
+`scripts\start_local.bat`-fonstret och sedan som markering i ratt person/timme.
 
 Arduino Serial Monitor maste vara stangd medan USB-bryggan kor, eftersom
 serieporten bara kan lasas av ett program i taget.
@@ -64,7 +64,7 @@ RDM6300 `TX` kopplas till ESP32 `GPIO16`. API:t ar `POST /api/rfid/scans`.
 | Fraga | Svar |
 | --- | --- |
 | "Varfor syns ingen stampel i Bemanning?" | Kontrollera att ESP32 sitter i ratt USB-port (`COM9` for MG Plock, `COM10` for MG VM), att Arduino Serial Monitor ar stangd och att `artifacts/rfid_bridge/*.log` visar en RFID-rad eller ett portfel. Om `POST /api/rfid/scans` syns men ingen markering visas, kontrollera modulnamn, personens `rfid_code`, vald dag och omradesfokus. |
-| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Ingen brandvaggsregel behovs i USB-laget. Starta Flow med `start_local.bat`, hall ESP32 anslutna pa COM9/COM10 och titta i `artifacts/rfid_bridge/` vid felsokning. |
+| "Jag har inte admin for brandvaggsregel, hur testar jag?" | Ingen brandvaggsregel behovs i USB-laget. Starta Flow med `scripts\start_local.bat`, hall ESP32 anslutna pa COM9/COM10 och titta i `artifacts/rfid_bridge/` vid felsokning. |
 | "Kan modulen ha flera WiFi?" | Nej, de lokala MG-sketcherna ar USB/Serial-only och anvander inte WiFi. |
 | "USB-bryggan sager att COM-porten ar upptagen eller blockerad" | Ratt COM-port kan vara last av Arduino Serial Monitor/Serial Plotter. Stang serialfonstret; autostartade bryggor ligger kvar och provar igen. |
 | "Maste jag ladda upp firmware igen for USB-bryggan?" | Ladda upp de nya USB-only-sketcherna om ESP32 fortfarande forsoker ansluta till WiFi. Efter det racker det att starta Flow. |

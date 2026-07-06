@@ -69,7 +69,7 @@ Thumbs.db
 
 # Lokala arbetsfiler och pytest-tempkataloger
 påg.docx
-.pytest-tmp/
+.pytest-tmp*/
 .pytest-label-editor-browser-temp/
 
 # Lokala golden-snapshots for karakteriseringstester (bygger pa privat testdata)

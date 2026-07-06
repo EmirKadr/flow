@@ -11,7 +11,7 @@ Kort svar: ASK/WMan kör ett schemalagt jobb som **rensar** (raderar) eller
 **arkiverar** (flyttar till en separat logg-databas) tabeller i WManFrey efter ett
 visst antal dagar. Det avgör hur långt bak i tiden historisk data finns kvar för
 varje `v_ask_*`-vy. Reglerna ligger i
-[`../vyer & kolumner/ask_rensning_och_arkivering.xml`](../vyer%20%26%20kolumner/ask_rensning_och_arkivering.xml).
+[`../referens/vyer-kolumner/ask_rensning_och_arkivering.xml`](../referens/vyer-kolumner/ask_rensning_och_arkivering.xml).
 Den här sidan ska läsas innan någon agent lovar historik längre bak än
 retentionen tillåter, eller felsöker varför gammal data "saknas".
 
@@ -157,13 +157,13 @@ Fråga: Hur långt bak kan jag i praktiken analysera plock och transporter?
 Svar: Operativt så långt som tabellens `days` (t.ex. PICK_LOG 40, TRANS_LOG 60, ORDER_LOG 80). För arkiverade tabeller finns ~800 dagar i `log_wmanfrey`. För `archive="false"`-tabeller finns inget bortom `days`.
 
 Fråga: Var ser jag exakt vilken tabell som har vilken retention?
-Svar: I [`../vyer & kolumner/ask_rensning_och_arkivering.xml`](../vyer%20%26%20kolumner/ask_rensning_och_arkivering.xml). `days` + `archive` per tabell.
+Svar: I [`../referens/vyer-kolumner/ask_rensning_och_arkivering.xml`](../referens/vyer-kolumner/ask_rensning_och_arkivering.xml). `days` + `archive` per tabell.
 
 ## Källor
 
-- `../vyer & kolumner/ask_rensning_och_arkivering.xml` – själva rensnings-/arkiveringskonfigurationen för WMan.
+- `../referens/vyer-kolumner/ask_rensning_och_arkivering.xml` – själva rensnings-/arkiveringskonfigurationen för WMan.
 - `../app/backend/data_fetch_service.py` – `LIVE_ARCHIVE_PAIRS` och `build_retention_segments` (auto-byte/merge).
 - `../app/backend/routers/data_fetch.py` – `_apply_retention` och `_fetch_rows_with_segments`.
 - [data-fetch.md](data-fetch.md) – hur `v_ask_*`-vyer hämtas via katalog och MiniMax.
-- `../vyer & kolumner/views_summary_20260521_154102.xlsx` – vy-katalog.
-- `../vyer & kolumner/views_swedish_columns_commands_20260521_155519.xlsx` – kolumn-katalog.
+- `../referens/vyer-kolumner/views_summary_20260521_154102.xlsx` – vy-katalog.
+- `../referens/vyer-kolumner/views_swedish_columns_commands_20260521_155519.xlsx` – kolumn-katalog.

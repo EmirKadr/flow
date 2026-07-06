@@ -428,7 +428,7 @@ def test_testprotocol_documents_agent_test_tools():
         "python -m tools.desktop_shell_screens",
         "python -m tools.desktop_app_probe",
         "python -m tools.release_check",
-        "cmd /c build_windows.bat",
+        "cmd /c scripts\\build_windows.bat",
     ):
         assert command in protocol
 

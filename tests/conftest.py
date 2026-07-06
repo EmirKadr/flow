@@ -12,6 +12,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 from PyQt6.QtWidgets import QApplication
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Tempkataloger som test-/agentkörningar lämnar efter sig i repo-roten.
+# Sätt FLOW_KEEP_TEST_ARTIFACTS=1 för att behålla dem (t.ex. för att
+# inspektera skärmdumpar efter en visuell körning).
+_SESSION_TEMP_DIR_GLOBS = (
+    "tmp_screenshots",
+    ".pytest-tmp*",
+    ".pytest-label-editor-browser-temp",
+)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if os.environ.get("FLOW_KEEP_TEST_ARTIFACTS") == "1":
+        return
+    import shutil
+
+    for pattern in _SESSION_TEMP_DIR_GLOBS:
+        for path in REPO_ROOT.glob(pattern):
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+
 
 @pytest.fixture(scope="session")
 def qapp():
