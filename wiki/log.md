@@ -2610,3 +2610,18 @@ Sex forbattringar i en insats (feature/kvalitet-2-7):
 - **Deploy-verifiering**: kontraktstest for k8s-proberna +
   `tools/post_deploy_check.py` som Octopus-slutsteg (se DEPLOY.md).
 
+
+## [2026-07-06] ux | Verksamhetsfokus-toggle for Super User i sidebaren
+
+- Ny toggle bredvid omradestogglen i sidebar-footern, endast synlig for
+  Super User: vanligt klick stegar mellan aktiva verksamheter och `∞`,
+  hogerklick oppnar meny (`/api/businesses`). Valet sparas i
+  `flow-business-focus` (localStorage) och synkas mellan flikar.
+- Vald verksamhet filtrerar omradestogglens alternativ till verksamhetens
+  omraden; omradesfokus som inte tillhor verksamheten nollstalls till `∞`.
+- `areaFocusBusinessId` faller for Super User tillbaka pa verksamhetsfokus
+  nar omradesfokus ar `∞`, sa lagerverktyg/Hamta data foljer valet.
+- Implementation i `js/common/area_focus.js` (nu `// @ts-check`),
+  `sidebar.js`, `foundation.js`, `styles.css`. Playwright-tester i
+  `tests/tools/test_sidebar_user_browser.py`. Uppdaterade sidor:
+  `businesses.md`, `ui-map.md`.

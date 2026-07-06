@@ -277,6 +277,89 @@ def test_area_focus_context_menu_respects_business_scope(local_sidebar_server, c
         r3_context.close()
 
 
+def test_business_focus_toggle_filters_area_menu_for_super_user(local_sidebar_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        page.goto(f"{local_sidebar_server}/login.html", wait_until="networkidle")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+
+        toggle = page.locator("#business-focus-toggle")
+        expect(toggle).to_be_enabled(timeout=15000)
+        expect(toggle).to_have_attribute("data-value", "ALLT")
+        expect(toggle).to_have_text("∞")
+
+        # Sätt områdesfokus på ett Stigamo-område först
+        expect(page.locator("#area-focus-toggle")).to_be_enabled(timeout=15000)
+        page.locator("#area-focus-toggle").click(button="right")
+        expect(page.locator(".area-focus-menu")).to_be_visible()
+        page.locator(".area-focus-menu button", has_text="Mestergruppen").click()
+        expect(page.locator("#area-focus-toggle")).to_have_text("MG")
+
+        # Välj verksamheten R3 i verksamhetsmenyn
+        toggle.click(button="right")
+        expect(page.locator(".business-focus-menu")).to_be_visible()
+        business_items = page.locator(".business-focus-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => ({ value: node.dataset.value, text: node.innerText }))"""
+        )
+        business_text = "\n".join(item["text"] for item in business_items)
+        assert "Alla verksamheter" in business_text
+        assert "R3" in business_text
+        assert any(item["value"].startswith("BIZ:") for item in business_items)
+        page.locator(".business-focus-menu button", has_text="R3").first.click()
+        expect(page.locator(".business-focus-menu")).to_have_count(0)
+        expect(toggle).to_have_text("R3")
+        assert str(page.evaluate("() => localStorage.getItem('flow-business-focus')")).startswith("BIZ:")
+
+        # Områdesfokus på MG hör inte till R3 och ska ha nollställts till ∞
+        expect(page.locator("#area-focus-toggle")).to_have_attribute("data-value", "ALLT")
+
+        # Områdesmenyn ska bara visa R3:s områden plus Alla områden
+        page.locator("#area-focus-toggle").click(button="right")
+        expect(page.locator(".area-focus-menu")).to_be_visible()
+        expect(page.locator(".area-focus-menu button").first).to_be_visible()
+        area_items = page.locator(".area-focus-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => node.innerText)"""
+        )
+        area_text = "\n".join(area_items)
+        assert "Granngården" not in area_text
+        assert "Mestergruppen" not in area_text
+        assert "Alla områden" in area_text
+        page.keyboard.press("Escape")
+
+        # Tillbaka till alla verksamheter: alla områden ska synas igen
+        toggle.click(button="right")
+        expect(page.locator(".business-focus-menu")).to_be_visible()
+        page.locator(".business-focus-menu button", has_text="Alla verksamheter").click()
+        expect(toggle).to_have_attribute("data-value", "ALLT")
+        page.locator("#area-focus-toggle").click(button="right")
+        expect(page.locator(".area-focus-menu")).to_be_visible()
+        all_items = page.locator(".area-focus-menu button").evaluate_all(
+            """(nodes) => nodes.map((node) => node.innerText)"""
+        )
+        assert "Granngården" in "\n".join(all_items)
+    finally:
+        context.close()
+
+
+def test_business_focus_toggle_hidden_for_non_super_user(local_sidebar_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        page.goto(f"{local_sidebar_server}/login.html", wait_until="networkidle")
+        page.fill("#username", "visual_r3_admin")
+        page.fill("#password", visual_smoke.VISUAL_PASSWORD)
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+        expect(page.locator("#area-focus-toggle")).to_be_enabled(timeout=15000)
+        expect(page.locator("#business-focus-toggle")).to_have_count(0)
+    finally:
+        context.close()
+
+
 def test_area_focus_does_not_fallback_to_hardcoded_areas(local_sidebar_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()
