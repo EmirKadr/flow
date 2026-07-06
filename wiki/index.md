@@ -20,6 +20,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Test och release](testing-release.md) - hur en agent verifierar andringar.
 - [Frontend-typning och lint](frontend-typing.md) - JSDoc + tsc --checkJs och ESLint utan byggsteg; utrullningsregler och domangranser.
 - [Kallkodshantering och release (NoWaste)](nowaste-git-release.md) - branchmodell, Octopus-releaser (`release/*` bygger automatiskt) och deploy till development/production.
+- [Prestanda - leveranslagret](prestanda-leveranslager.md) - gzip, versionsstamplade statiska filer med immutable-cache, ETag/304 pa API-GET, service worker, latensbudget och workers-beslutet.
 - [Begrepp och agentordlista](terminology.md) - namngivna produktbegrepp som
   ska tolkas konsekvent i framtida chattar.
 

@@ -342,3 +342,14 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
   },
 };
 
+// Service worker: cache-first för versionsstämplade statiska filer (se sw.js).
+// Endast https = produktion; lokal dev och desktop kör http och ska läsa
+// filerna direkt (dev-läget svarar no-store på statiska filer).
+if ("serviceWorker" in navigator && window.location.protocol === "https:") {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      console.warn("Service worker kunde inte registreras", error);
+    });
+  });
+}
+
