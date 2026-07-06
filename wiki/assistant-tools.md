@@ -42,6 +42,7 @@ Registret ligger i `app/backend/assistant_tools/` och varje tool har
 | Schema | `get_schedule_day`, `get_person_schedule`, `schedule_staffing_summary`, `find_scheduled_persons`, `schedule_week_overview` | schedule |
 | Produktivitet | `productivity_summary`, `productivity_person_day`, `productivity_top_persons`, `productivity_process_summary` | productivity |
 | Historik | `search_audit_log`, `audit_action_stats`, `recent_errors`, `wait_metrics_summary`, `interaction_summary` | analytics |
+| Historik – trend/detalj | `error_trend`, `error_top_endpoints`, `audit_entity_history`, `wait_metrics_by_endpoint`, `user_activity_summary`, `rfid_error_summary` | analytics |
 | System | `list_users`, `get_role_view_access_matrix`, `list_rfid_devices`, `rfid_scan_stats`, `list_coredata_files`, `healthcheck_summary` | users/roleAccess/analytics/allocationUploads |
 
 Regler som gäller alla tools:

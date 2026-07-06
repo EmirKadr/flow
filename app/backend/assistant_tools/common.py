@@ -205,3 +205,14 @@ def truncation_note(total: int, shown: int) -> str | None:
     if total <= shown:
         return None
     return f"Visar {shown} av {total} rader. Förfina filtren för att se fler."
+
+
+def percentile(values: list[int | float], p: float) -> float:
+    """Deterministisk percentil (närmaste rang, p i 0-100) utan numpy-beroende."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+    rank = max(1, -(-int(p) * len(ordered) // 100))  # ceil(p/100 * n), minst 1
+    return float(ordered[min(rank, len(ordered)) - 1])
