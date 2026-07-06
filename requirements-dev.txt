@@ -1,3 +1,6 @@
 -r requirements-desktop.txt
 pytest==8.3.4
 playwright==1.49.1
+hypothesis==6.156.1
+pytest-xdist==3.8.0
+pytest-rerunfailures==16.4

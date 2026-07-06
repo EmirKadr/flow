@@ -1,7 +1,7 @@
 ---
 title: Källkodshantering och release (NoWaste)
 status: aktiv
-updated: 2026-07-03
+updated: 2026-07-06
 tags: [git, release, octopus, deploy, nowaste, agent]
 ---
 
@@ -31,6 +31,44 @@ Två hårda regler för agenter (beslut 2026-07-03, se `AGENTS.md`):
 Releasen dyker sedan upp i Octopus-projektets dashboard (Projects → Övrigt →
 Flow) och deployas därifrån till **development** respektive **production**.
 Releasenamnen följer `år.vecka.sekvens`, t.ex. `2026.26.1-rc00046`.
+
+### Fallgrop: buntad push hoppar över imagebygget (lärt 2026-07-06)
+
+Det som faktiskt bygger imagen och skapar Octopus-releasen är GitHub-workflowen
+**`Flow Docker`** (`.github/workflows/flow-docker.yml`), som anropar NoWastes
+gemensamma `procedures/docker.yml` och där får `octopus_server_url` +
+`octopus_server_apikey`. Den har ett **`paths`-filter** (`app/**`, `Dockerfile`,
+`.dockerignore`, `data/**`, `warehouse_tools/**`, `k8s/**`).
+
+**Pushar man flera nya branchar i ett enda `git push`** (t.ex.
+`git push origin feature/x release/y main`) och de delar samma commits, ser
+GitHub inga *nya* ändrade filer unika för release-refen — de finns redan i
+repot via de andra refsen i samma push — och **hoppar över Flow Docker-bygget**
+för release-branchen. Resultat: grön push, men **ingen Octopus-release**. Det
+inträffade med `release/2026.28.2` (byggdes aldrig), medan `release/2026.28.1`
+byggdes korrekt eftersom den pushades för sig.
+
+Två konsekvenser att internalisera:
+
+- **Pusha release-branchen separat**, inte buntad med feature + main.
+- **Grön `Tests`-workflow ≠ imagen byggd.** `Tests` saknar paths-filter och
+  triggar alltid; `Flow Docker` har paths-filter och kan hoppas över. Att
+  Tests är grön säger inget om att releasen finns i Octopus.
+
+**Verifiera efter varje release-push:**
+
+    gh run list --workflow=flow-docker.yml
+
+Det ska finnas en körning för release-refen. Saknas den — eller finns bara en
+röd — är releasen inte byggd.
+
+**Återställning (sanktionerad):** kör bygget manuellt via workflow_dispatch:
+
+    gh workflow run flow-docker.yml --ref release/<ver>
+
+…eller Actions → Flow Docker → *Run workflow* → välj release-branchen.
+`release/2026.27.4` skapades exakt så. Att bygga releasen deployar inget — du
+klickar deploy i Octopus efteråt som vanligt.
 
 ## NoWaste branchmodell
 
@@ -103,8 +141,13 @@ Grundregler:
 - **"Hur gör jag en release?"** — committa/merga till en `release/*`-branch;
   Octopus bygger releasen automatiskt. Deploya sedan från Octopus-dashboarden
   till rätt miljö.
-- **"Min release syns inte i Octopus"** — kontrollera att branchen faktiskt
-  heter `release/...` och att pushen nådde GitHub (Actions ska ha byggt).
+- **"Min release syns inte i Octopus"** — kontrollera i tur och ordning: (1)
+  branchen heter faktiskt `release/...`; (2) det finns en **`Flow Docker`**-
+  körning för refen (`gh run list --workflow=flow-docker.yml`) — INTE bara en
+  grön `Tests`-körning, de är olika workflows; (3) om körningen saknas byggdes
+  imagen aldrig (vanligast: release pushad buntad med andra refs, se fallgropen
+  ovan) → kör `gh workflow run flow-docker.yml --ref release/<ver>`; (4) om
+  körningen är röd, läs byggloggen. Grön push ≠ byggd image.
 - **"Ska PR:en gå mot master?"** — nej, feature-PR:ar går mot `develop`;
   `develop` → `master` är en egen PR i steg 7.
 - **"Vad ska taggen heta?"** — `år.vecka.sekvens`, t.ex. `2026.26.2`. Välj
