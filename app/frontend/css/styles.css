@@ -9353,3 +9353,51 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
     outline: 0 !important;
   }
 }
+
+/* Buggrapportering (Bugg-knappen i sidebar-footern) */
+.bug-report-toggle { font-size: 15px; }
+.bug-report-modal { max-width: 480px; }
+.bug-report-modal textarea { width: 100%; resize: vertical; margin: 6px 0 4px; }
+.bug-report-indicator {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #b3261e;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  z-index: 10000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  font-weight: 600;
+}
+.bug-report-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  animation: bug-report-blink 1s infinite;
+}
+@keyframes bug-report-blink { 50% { opacity: 0.2; } }
+.bug-report-indicator button {
+  background: #fff;
+  color: #b3261e;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+/* Uppspelning i Buggrapporter-vyn */
+.bug-report-player {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.bug-report-player iframe, .bug-report-player .replayer-wrapper { max-width: 100%; }

@@ -364,6 +364,32 @@ class UserInteractionEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class BugReport(Base):
+    __tablename__ = "bug_reports"
+    __table_args__ = (
+        Index("ix_bug_reports_created_at", "created_at"),
+        Index("ix_bug_reports_business_created", "business_id", "created_at"),
+        Index("ix_bug_reports_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    view_id: Mapped[str | None] = mapped_column(String(80))
+    page_path: Mapped[str | None] = mapped_column(String(300))
+    note: Mapped[str | None] = mapped_column(String(2000))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="new")
+    # rrweb-händelser som rå JSON-text — medvetet inte JsonField: blobben ska
+    # aldrig frågas på, bara lagras och spelas upp. Storlekstak i routern.
+    events_json: Mapped[str] = mapped_column(Text, nullable=False)
+    events_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Sanerad kontext: konsolfel, senaste interaktioner, API-fel under inspelningen.
+    context: Mapped[dict | None] = mapped_column(JsonField)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
 class CoreDataFile(Base):
     __tablename__ = "coredata_files"
     __table_args__ = (

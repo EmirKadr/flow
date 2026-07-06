@@ -571,6 +571,24 @@ function ensureAssistantChatPanel(app) {
   renderAssistantMessages();
 }
 
+function initBugReportButton() {
+  const button = document.getElementById("bug-report-toggle");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    if (window.flowBugReport) {
+      window.flowBugReport.open();
+      return;
+    }
+    // Lazy-laddning: rrweb + rapportlogiken hämtas först vid klick, så vanliga
+    // sidladdningar betalar aldrig för buggrapportören.
+    const script = document.createElement("script");
+    script.src = "/js/common/bug_report.js";
+    script.onload = () => window.flowBugReport?.open();
+    script.onerror = () => showToast("Kunde inte ladda buggrapportören.", "error", 5000);
+    document.head.appendChild(script);
+  });
+}
+
 function initAssistantChatToggle() {
   const toggle = document.getElementById("assistant-toggle");
   if (!toggle) return;
@@ -854,6 +872,7 @@ function renderSidebar(user, activePage) {
         <div class="sidebar-focus-row">
           <button class="area-focus-toggle" id="area-focus-toggle" type="button" title="Områdesfokus" aria-label="Områdesfokus"></button>
           ${businessFocusButton}
+          <button class="area-focus-toggle bug-report-toggle" id="bug-report-toggle" type="button" title="Rapportera bugg – spelar in 30 sekunder av din skärm i appen" aria-label="Rapportera bugg">🐞</button>
         </div>
         ${assistantUtility}
         ${logUtility}
@@ -874,6 +893,7 @@ function renderSidebar(user, activePage) {
   initAppZoomControls();
   initAreaFocusToggle(user);
   initBusinessFocusToggle(user);
+  initBugReportButton();
   initThemeToggle();
   ensureLogSidebar(app);
   initLogSidebarToggle();

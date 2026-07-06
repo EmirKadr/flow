@@ -7,6 +7,10 @@
 
 module.exports = [
   {
+    // Vendrade tredjepartsbundlar (rrweb m.fl.) lintas inte — de ägs uppströms.
+    ignores: ["app/frontend/js/vendor/**"],
+  },
+  {
     files: ["app/frontend/js/**/*.js", "app/frontend/sw.js"],
     languageOptions: {
       ecmaVersion: 2021,

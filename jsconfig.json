@@ -10,5 +10,6 @@
     "strict": false,
     "noImplicitAny": false
   },
-  "include": ["app/frontend/js/**/*.js", "app/frontend/js/types/*.d.ts"]
+  "include": ["app/frontend/js/**/*.js", "app/frontend/js/types/*.d.ts"],
+  "exclude": ["app/frontend/js/vendor"]
 }

@@ -242,6 +242,8 @@ FRONTEND_DIR = ROOT / "app" / "frontend"
 # andring och motivera i commit-meddelandet, precis som ALLOWED_DOMAIN_EDGES.
 ALLOWED_PAGE_DOMAINS = {
     "bearbeta.html": {"allocation"},
+    # Vendrad rrweb-bundle för uppspelning — inte en appdomän, medvetet undantag.
+    "bug-rapporter.html": {"vendor"},
     "dela.html": {"allocation"},
     "installningar.html": {"allocation"},
     "uppladdningar.html": {"allocation"},

@@ -2660,3 +2660,22 @@ Uppgift 1 i OVERNIGHT_PLAN.md (nattagent, branch feature/nightly-quality-2026070
 Ny hjälpare percentile() i assistant_tools/common.py. Dag-/veckogruppering
 sker i Python för dialektsäkerhet med _FETCH_CAP som minnesskydd.
 Uppdaterat: assistant-tools.md (tool-tabell + kort svar).
+
+## [2026-07-07] ingest | Nattpass: säkerhetshärdning + buggrapportör med 30 s inspelning
+
+Nattagentens uppgift 4 och 7 (OVERNIGHT_PLAN.md, branch feature/nightly-quality-20260706):
+
+- **Säkerhetshärdning**: security_headers-middleware (nosniff, X-Frame-Options
+  DENY, Referrer-Policy, HSTS endast över https), rate limiting på
+  /api/auth/login (login_rate_limit.py, fast fönster per användarnamn+IP,
+  AUTH_LOGIN_RATE_LIMIT_*, auditrader login_failed/login_rate_limited utan
+  kontoavslöjande), cookieflaggor kontraktstestade. CSP: endast analys —
+  stegplan i NIGHTLY_NOTES.md. Tester: test_security_hardening.py.
+- **Buggrapporter** (ny sida bug-reports.md, experiment, beslut 2026-08-07):
+  🐞-knapp i sidebar-footern → consent-popup → 30 s DOM-inspelning via vendrad
+  rrweb (lazy-laddad) → POST /api/bug-reports (tak/rate limit/retention/audit)
+  → uppspelning i nya vyn Buggrapporter (bug-rapporter.html, vy-id bugReports,
+  default endast Super User). Migration 0047, api.patch tillagd i js/api.js,
+  vendor-undantag i ALLOWED_PAGE_DOMAINS. Tester: test_bug_reports.py.
+- **@ts-check-utrullning** (uppgift 2, delvis): 4 → 26 av 82 filer, bl.a. hela
+  js/common/. Fynd utan beteendeändring; nya window-globaler deklarerade.

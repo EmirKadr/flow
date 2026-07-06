@@ -52,6 +52,7 @@ let VIEW_ACCESS_OPTIONS = [
   { id: "analytics", label: "Historik" },
   { id: "meta", label: "Meta" },
   { id: "archiveStatus", label: "Arkivstatus" },
+  { id: "bugReports", label: "Buggrapporter" },
   { id: "users", label: "Användare" },
   { id: "userImport", label: "Användarimport" },
   { id: "businesses", label: "Verksamheter" },

@@ -140,7 +140,7 @@ function canUseAllocationProcess(user) {
   return canViewPage(user, "allocationProcess");
 }
 
-const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta", "archiveStatus"];
+const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta", "archiveStatus", "bugReports"];
 const SIDEBAR_STAFFING_TAB_VIEW_IDS = [
   "schedule",
   "overview",
@@ -167,6 +167,7 @@ const SIDEBAR_VIEW_HREFS = {
   analytics: "/historik.html",
   meta: "/meta.html",
   archiveStatus: "/arkiv-status.html",
+  bugReports: "/bug-rapporter.html",
   schedule: "/index.html",
   overview: "/overblick.html",
   productivity: "/produktivitet.html",
@@ -440,6 +441,15 @@ function sidebarPageDefinitions(user, activePage) {
       icon: "🗄",
       visible: Boolean(user?.is_super_user),
       active: activePage === "archiveStatus",
+      sidebar: false,
+    },
+    {
+      id: "bugReports",
+      label: "Buggrapporter",
+      href: "/bug-rapporter.html",
+      icon: "🐞",
+      visible: canViewPage(user, "bugReports"),
+      active: activePage === "bugReports",
       sidebar: false,
     },
     {

@@ -259,6 +259,7 @@ const ROLE_VIEW_IDS = [
   "analytics",
   "meta",
   "archiveStatus",
+  "bugReports",
   "users",
   "userImport",
   "businesses",

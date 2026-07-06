@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     AUTH_LOGIN_RATE_LIMIT_ENABLED: bool = True
     AUTH_LOGIN_RATE_LIMIT_ATTEMPTS: int = 8
     AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
+    # Buggrapporter (experiment): 30 s DOM-inspelning från Bugg-knappen.
+    BUG_REPORTS_ENABLED: bool = True
+    BUG_REPORTS_RETENTION_DAYS: int = 30
+    BUG_REPORTS_MAX_EVENTS_BYTES: int = 4 * 1024 * 1024
+    BUG_REPORTS_RATE_LIMIT_PER_HOUR: int = 3
     DATA_SOURCE_API_BASE_URL: str = ""
     DATA_SOURCE_API_KEY: str = ""
     DATA_SOURCE_API_CLIENT: str = ""

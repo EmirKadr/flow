@@ -117,6 +117,17 @@ eller skapa/importera med explicit verksamhet.
 - `GET /api/meta/uploads`, `HEAD/GET /api/meta/uploads/{upload_id}/content`, `DELETE /api/meta/uploads/{upload_id}` - Super User-endpoints for Meta-vyn. Listan returnerar metadata utan blobbinnehall, inklusive hash, storlek och videolangd nar den finns; content-endpointen kan visa bild/video inline, ladda ner med `download=1` och stoder byte-range for videospelning. Delete-endpointen raderar raden och blobben.
 - `GET /api/meta/shipment-observations`, `GET /api/meta/shipment-observations/export`, `POST /api/meta/uploads/{upload_id}/analyze` - Super User-endpoints for Meta-videoanalys. LLM fyller `pallet_id` och `deviations` fran extraherat ljud; efter analys forsoker backend hamta ASK Dispatchpallar (`v_ask_dispatch_pallet`) med filter pa `pick_pall_num=pallet_id` och fyller `order_number`, `shipment_number`, `username` och `customer_name` fran svaret. Exportendpointen laddar ner hela listan eller filtrerade `ids` som Excel. Videons filnamn, Video-ID/hash, langd och storlek returneras fortsatt via kopplad media-rad.
 
+## Buggrapporter
+
+| Metod | Path | Behorighet | Beskrivning |
+| --- | --- | --- | --- |
+| POST | `/api/bug-reports` | Inloggad | Skicka in 30 s rrweb-inspelning + kontext. Tak: `BUG_REPORTS_MAX_EVENTS_BYTES`, rate limit per anvandare/timme. |
+| GET | `/api/bug-reports` | vy `bugReports` (view) | Lista rapporter (utan blob), verksamhetsscopad. |
+| GET | `/api/bug-reports/{id}` | vy `bugReports` (view) | Hamta rapport inkl. `events_json` for uppspelning. |
+| PATCH | `/api/bug-reports/{id}/status` | vy `bugReports` (edit) | Satt status new/seen/done. Auditloggas. |
+
+Se [Buggrapporter](bug-reports.md).
+
 ## Agentkommandon
 
 ```powershell

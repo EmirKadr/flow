@@ -26,6 +26,7 @@ from .routers import (
     assistant,
     audit_logs,
     auth,
+    bug_reports,
     bulk,
     businesses,
     coredata,
@@ -329,6 +330,20 @@ def _cleanup_stale_demo_sessions_job() -> None:
     demo_session.cleanup_stale_demo_sessions(settings.DEMO_SESSION_MAX_AGE_HOURS)
 
 
+def _purge_expired_bug_reports_background() -> None:
+    with start_span("background.bug_reports_retention_purge"):
+        try:
+            from .routers.bug_reports import purge_expired_bug_reports
+
+            db = SessionLocal()
+            try:
+                purge_expired_bug_reports(db)
+            finally:
+                db.close()
+        except Exception:
+            logger.warning("Bug report retention purge failed at startup.", exc_info=True)
+
+
 def _purge_expired_meta_media_background() -> None:
     with start_span("background.meta_media_retention_purge"):
         try:
@@ -370,11 +385,17 @@ BACKGROUND_JOBS = [
         run=_purge_expired_meta_media_background,
         description="Rensar utgången meta-media vid uppstart.",
     ),
+    background.BackgroundJob(
+        name="bug_reports_retention_purge",
+        run=_purge_expired_bug_reports_background,
+        description="Rensar buggrapporter äldre än retentionen vid uppstart.",
+    ),
 ]
 
 
 app.include_router(auth.router)
 app.include_router(allocation.router)
+app.include_router(bug_reports.router)
 app.include_router(assistant.router)
 app.include_router(businesses.router)
 app.include_router(areas.router)

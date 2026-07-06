@@ -50,6 +50,15 @@ interface Window {
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
   // Sidspecifika prefetch-krokar (definieras av respektive domän-boot).
   preloadAllocationUploadsData?: () => void;
+  // Buggrapportering (common/bug_report.js, lazy-laddad) + vendrad rrweb.
+  flowBugReport?: { open: () => void; isRecording: () => boolean };
+  rrweb?: {
+    record: (options: Record<string, unknown>) => (() => void) | undefined;
+    Replayer: new (events: unknown[], options?: Record<string, unknown>) => {
+      play: (offsetMs?: number) => void;
+      pause: () => void;
+    };
+  };
   // Sidkontext och desktop-brygga (sätts av foundation/desktop-skalet).
   flowActivePage?: string;
   flowCurrentViewId?: string;

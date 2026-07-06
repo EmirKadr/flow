@@ -898,6 +898,8 @@ const api = {
   },
   put: (path, data, options = {}) =>
     request(path, { ...options, method: "PUT", body: JSON.stringify(data) }).finally(() => clearApiGetCache()),
+  patch: (path, data, options = {}) =>
+    request(path, { ...options, method: "PATCH", body: JSON.stringify(data) }).finally(() => clearApiGetCache()),
   del: (path, options = {}) => request(path, { ...options, method: "DELETE" }).finally(() => clearApiGetCache()),
   prefetchGet,
   clearGetCache: clearApiGetCache,
