@@ -37,10 +37,9 @@ BACKEND_LINE_EXCEPTIONS = {
 FRONTEND_LINE_EXCEPTIONS = {
     "allocation/map_settings.js": 1060,
 }
-# Krympnings-ratchet for warehouse_tools: vendor-filen far bara minska tills
-# den ar sanerad fran dod GUI-kod och till slut uppdelad. Ingen frizon.
+# Vendor-monoliten (allokering12.1.py) ar uppdelad i engine_core/ (2026-07)
+# och krympnings-ratcheten ar avslutad. Kvarvarande undantag ska bara minska.
 WAREHOUSE_LINE_EXCEPTIONS = {
-    "vendor/allokering12.1.py": 4250,
     "flows.py": 1410,
 }
 

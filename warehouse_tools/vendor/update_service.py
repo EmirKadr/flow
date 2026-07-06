@@ -7,7 +7,7 @@ import re
 import tempfile
 from typing import Callable, Optional
 
-from app_info import APP_NAME, APP_VERSION, GITHUB_REPO
+from .app_info import APP_NAME, APP_VERSION, GITHUB_REPO
 
 
 ProgressCallback = Callable[[int], None]

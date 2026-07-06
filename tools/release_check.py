@@ -29,7 +29,7 @@ REQUIRED_PACKAGE_FILES = (
     *_frontend_package_files(),
     "_internal/desktop/assets/flow_icon.ico",
     "_internal/desktop/assets/flow_icon.svg",
-    "_internal/warehouse_tools/vendor/allokering12.1.py",
+    "_internal/warehouse_tools/vendor/app_info.py",
 )
 
 

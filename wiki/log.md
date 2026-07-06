@@ -2502,3 +2502,18 @@ etikettvarden skickas fortsatt inte till backend eller system-clipboard.
 Valet laggs in som ett vanligt symbolobjekt, kan andras i egenskapspanelen och
 foljer samma lokala dokumentlogg, kortkommandon och read-only/audit-undantag som
 ovriga etikettobjekt.
+
+## [2026-07-06] arkitektur | Vendor-motorn uppdelad i engine_core/
+
+`warehouse_tools/vendor/allokering12.1.py` (4 250 rader) ar borttagen.
+Den levande logiken (134 definitioner, ~3 500 rader) ligger nu i nio moduler
+under `warehouse_tools/engine_core/` (constants, runtime_paths, io_utils, hib,
+ordersaldo, observations, allocation, reports, filetypes), alla under
+1000-raderstaket. Dod kod (18 funktioner: CLI-writers, sales-metrics,
+analytics_store m.m.) raderades. Fasaden `warehouse_tools/engine.py` behaller
+samma API sa flows/bryggan/tester ar oforandrade; golden-karakteriserings-
+testerna bekraftade identiska utdata fore/efter. Resursdata
+(`vendor/lowfreqdata/buffertpall/`) och legacy-modulerna `app_info`/
+`update_service` ligger kvar under `vendor/`. Tester ska monkeypatcha
+implementationsmodulen (t.ex. `engine_core.runtime_paths`), inte fasaden.
+Krympnings-ratcheten i arkitekturkontraktet ar avslutad.

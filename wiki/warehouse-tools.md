@@ -199,7 +199,7 @@ flowchart TB
 
   Handler --> EngineChoice{"Vilken motor anvands?"}
   EngineChoice -- "Native Bearbeta-kod" --> Native["warehouse_tools/native_flows.py<br/>surface_generation.py<br/>carrier_clusters.py<br/>native_tables.py"]
-  EngineChoice -- "Legacy/paritet" --> Legacy["warehouse_tools/engine.py<br/>warehouse_tools/vendor/allokering12.1.py"]
+  EngineChoice -- "Legacy/paritet" --> Legacy["warehouse_tools/engine.py<br/>warehouse_tools/engine_core/"]
   EngineChoice -- "Forecast/yta" --> Forecast["warehouse_tools/mg_forecast/*<br/>warehouse_tools/ytgenerering_map.py"]
 
   Handler --> Result["Resultat och artifacts<br/>session_id, tempfiler,<br/>preview-tabeller, downloads"]
@@ -219,7 +219,7 @@ Snabbkarta for var du bor borja:
 | Var valjs faktisk Bearbeta-handler? | `app/backend/allocation_bridge.py` och `warehouse_tools/flows.py` |
 | Var finns publik flow-metadata/listan frontend far? | `warehouse_tools/catalog.py` och `warehouse_tools/flows.py` |
 | Var finns Windows-specialfallet? | `desktop/local_app_server.py`, `desktop/local_runtime.py`, `app/frontend/js/desktop_bridge.js` |
-| Var finns legacy-motorn? | `warehouse_tools/engine.py` och `warehouse_tools/vendor/allokering12.1.py` |
+| Var finns motorn? | Fasaden `warehouse_tools/engine.py`; implementationen i `warehouse_tools/engine_core/` (uppdelad 2026-07, ersätter vendor/allokering12.1.py) |
 | Var finns Forecast/Ytgenereringens extra kod? | `warehouse_tools/mg_forecast/*`, `warehouse_tools/surface_generation.py`, `warehouse_tools/ytgenerering_map.py`, `warehouse_tools/carrier_clusters.py` |
 | Var skyddas beteendet i test? | `tests/services/test_allocation_bridge.py`, `tests/services/test_workflow_data.py`, `tests/services/test_warehouse_tools_local_data.py`, `tests/tools/test_allocation_split_browser.py`, `tests/tools/test_visual_tools.py` |
 
@@ -248,7 +248,7 @@ rg -n "/api/allokering/flow|run_allocation_flow|local_response_for_request|local
 rg -n "run_flow_handler|SESSIONS|download|table_column|open_excel|preview" app/backend/allocation_bridge.py app/backend/routers/allocation.py
 
 # Hitta legacy- och Forecast-motorer
-rg -n "allokering12.1|ENGINE_FILE|mg_forecast|flow_ytgenerering|surface_generation" warehouse_tools
+rg -n "engine_core|mg_forecast|flow_ytgenerering|surface_generation" warehouse_tools
 
 # Hitta tester som brukar behova uppdateras vid Bearbeta-andring
 rg -n "ytgenerering|allocation|run_flow|api_first|localRef|workflow_data" tests/services tests/tools
@@ -258,7 +258,7 @@ Vanliga flow-id och huvudfiler:
 
 | flow_id | Knapp/namn | Forsta handler | Vanliga sidospar |
 | --- | --- | --- | --- |
-| `allocate` | Allokering | `warehouse_tools/flows.py::flow_allocate` | `warehouse_tools/engine.py`, `warehouse_tools/vendor/allokering12.1.py`, `warehouse_tools/native_flows.py` |
+| `allocate` | Allokering | `warehouse_tools/flows.py::flow_allocate` | `warehouse_tools/engine.py`, `warehouse_tools/engine_core/`, `warehouse_tools/native_flows.py` |
 | `ytgenerering` | Ytgenerering | `warehouse_tools/flows.py::flow_ytgenerering` | `app/backend/workflow_data.py`, `warehouse_tools/mg_forecast/*`, `warehouse_tools/surface_generation.py`, `warehouse_tools/ytgenerering_map.py`, `warehouse_tools/carrier_clusters.py` |
 | `forecast` | Forecast, tekniskt/legacy | `warehouse_tools/flows.py::flow_forecast` | `warehouse_tools/mg_forecast/*`, anvands framst som intern eller legacy-nara vag |
 | `ordersaldo` | Ordersaldo | `warehouse_tools/flows.py::flow_ordersaldo` | `warehouse_tools/native_flows.py`, `warehouse_tools/compiled_data_paths.py` |
@@ -430,7 +430,7 @@ python -m tools.compare_warehouse_results --left .\Resultat.csv --right .\tmp6jj
 - `../warehouse_tools/carrier_clusters.py`
 - `../warehouse_tools/surface_generation.py`
 - `../warehouse_tools/mg_forecast/forecast.py`
-- `../warehouse_tools/vendor/allokering12.1.py`
+- `../warehouse_tools/engine_core/` (motorimplementationen, f.d. vendor/allokering12.1.py)
 - `../tools/flow_cli.py`
 - `../tools/compare_warehouse_results.py`
 - `../../ALLOKERING_FILKUNSKAP.md`
