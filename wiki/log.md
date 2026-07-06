@@ -2515,3 +2515,18 @@ bort `tmp_screenshots/` och `.pytest-tmp*`-kataloger efter korning
 (`FLOW_KEEP_TEST_ARTIFACTS=1` behaller dem). 22 helt mergade arbetsbranchar
 plus doda `in_wait` raderades lokalt och pa origin; `release/*` och omergade
 `migration` behalls.
+
+## [2026-07-06] arkitektur | Vendor-motorn uppdelad i engine_core/
+
+`warehouse_tools/vendor/allokering12.1.py` (4 250 rader) ar borttagen.
+Den levande logiken (134 definitioner, ~3 500 rader) ligger nu i nio moduler
+under `warehouse_tools/engine_core/` (constants, runtime_paths, io_utils, hib,
+ordersaldo, observations, allocation, reports, filetypes), alla under
+1000-raderstaket. Dod kod (18 funktioner: CLI-writers, sales-metrics,
+analytics_store m.m.) raderades. Fasaden `warehouse_tools/engine.py` behaller
+samma API sa flows/bryggan/tester ar oforandrade; golden-karakteriserings-
+testerna bekraftade identiska utdata fore/efter. Resursdata
+(`vendor/lowfreqdata/buffertpall/`) och legacy-modulerna `app_info`/
+`update_service` ligger kvar under `vendor/`. Tester ska monkeypatcha
+implementationsmodulen (t.ex. `engine_core.runtime_paths`), inte fasaden.
+Krympnings-ratcheten i arkitekturkontraktet ar avslutad.

@@ -1,14 +1,15 @@
 """Karakteriseringstester för warehouse_tools-flöden mot golden-snapshots.
 
-Syfte: låsa vendor-motorns (warehouse_tools/vendor/allokering12.1.py)
-observerbara beteende innan död kod tas bort och filen krymps. Testerna kör
+Syfte: låsa motorns observerbara beteende. Golden-snapshotsen skapades mot den
+gamla vendormotorn (vendor/allokering12.1.py) och bevisade att uppdelningen
+till warehouse_tools/engine_core/ (2026-07) gav identiska utdata. Testerna kör
 flödeshandlers i warehouse_tools/flows.py direkt mot realistisk lokal testdata
 och jämför ett normaliserat snapshot (summary, tabellkolumner, radantal,
 innehålls-hash och de fem första raderna) mot golden-filer.
 
 Privat data: både `testdata/` och `tests/services/golden/` är gitignorade
 eftersom underlaget innehåller kund-/lagerdata. I CI (där testdata saknas)
-skippas hela modulen — skyddet är lokalt, där vendor-krympningen sker.
+skippas hela modulen — skyddet är lokalt, där motorändringar görs.
 
 Regenerera golden-filer avsiktligt med:
 
@@ -44,7 +45,7 @@ def _data(name: str) -> Path:
 
 
 # Flöde -> files-dict (nycklar enligt FLOW_BY_ID[...]["inputs"]/["coredata"]).
-# Endast flöden som går genom vendor-motorn och är deterministiska utan
+# Endast flöden som går genom motorn (engine_core) och är deterministiska utan
 # nätverk/GitHub/ML tas med. forecast/ytgenerering (ML), observations-*
 # (GitHub/temporära filer) och update-check (nätverk) karakteriseras inte.
 FLOW_INPUTS: dict[str, dict[str, str]] = {

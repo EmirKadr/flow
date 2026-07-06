@@ -476,7 +476,10 @@ def test_project_protocol_documents_release_polling_policy():
 def test_allocation_observations_github_sync_is_wired():
     workflow = (ROOT / ".github" / "workflows" / "merge-observations.yml").read_text(encoding="utf-8")
     main = (ROOT / "app" / "backend" / "main.py").read_text(encoding="utf-8")
-    engine = (ROOT / "warehouse_tools" / "vendor" / "allokering12.1.py").read_text(encoding="utf-8")
+    engine_core = ROOT / "warehouse_tools" / "engine_core"
+    engine = (engine_core / "observations.py").read_text(encoding="utf-8") + (
+        engine_core / "reports.py"
+    ).read_text(encoding="utf-8")
 
     assert "data/community-observations" in workflow
     assert "warehouse_tools/vendor/lowfreqdata/buffertpall/observations_*.csv.gz" in workflow

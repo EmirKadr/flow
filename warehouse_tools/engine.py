@@ -1,41 +1,20 @@
-"""Load and expose the vendored warehouse runtime.
+"""Facade over the in-house warehouse engine.
 
-The legacy runtime still lives in one large file for output parity with the
-existing Allokering app.  flow now vendors that runtime here instead of
-importing a sibling application at runtime.  New code should be added as clean
-modules under `warehouse_tools`, and the vendored file can be reduced flow by
-flow once golden parity tests exist.
+Historik: motorlogiken var tidigare vendorerad i ``vendor/allokering12.1.py``
+och laddades dynamiskt via importlib. Sedan 2026-07 ligger den i riktiga
+moduler under ``warehouse_tools/engine_core/``. Denna fasad behåller det gamla
+API:t — modulobjektet ``engine`` plus namngivna re-exports — så flows,
+allocation-bryggan och tester fungerar oförändrat. Ny kod ska importera från
+``warehouse_tools.engine_core`` direkt; tester ska monkeypatcha
+implementationsmodulen (t.ex. ``engine_core.runtime_paths``), inte fasaden.
+
+Resursdata (``lowfreqdata/buffertpall``) ligger kvar under
+``warehouse_tools/vendor/`` tillsammans med legacy-modulerna ``app_info`` och
+``update_service``.
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-
-PACKAGE_ROOT = Path(__file__).resolve().parent
-VENDOR_ROOT = PACKAGE_ROOT / "vendor"
-ENGINE_FILE = VENDOR_ROOT / "allokering12.1.py"
-
-
-def _load_engine():
-    if not ENGINE_FILE.exists():
-        raise FileNotFoundError(f"Hittar inte lagerverktygsmotorn: {ENGINE_FILE}")
-
-    vendor_path = str(VENDOR_ROOT)
-    if vendor_path not in sys.path:
-        sys.path.insert(0, vendor_path)
-
-    spec = importlib.util.spec_from_file_location("warehouse_tools_legacy_engine", ENGINE_FILE)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Kunde inte ladda lagerverktygsmotorn: {ENGINE_FILE}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["warehouse_tools_legacy_engine"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-engine = _load_engine()
+from . import engine_core as engine
 
 # Domain functions used by the API/flow layer.
 read_table = engine._read_cli_table
@@ -58,5 +37,5 @@ APP_TITLE = engine.APP_TITLE
 
 
 def detect_file_type(path: str):
-    """Reuse the legacy file detector without instantiating the GUI."""
+    """Reuse the engine's file detector without instantiating any UI."""
     return engine.detect_file_type(path)

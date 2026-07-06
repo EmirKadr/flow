@@ -1733,9 +1733,13 @@ def test_update_observations_uses_area_focus_business_for_super_user(monkeypatch
     assert not upload_path.exists()
 
 
-def test_allocation_bridge_uses_vendored_warehouse_tools_by_default():
+def test_allocation_bridge_uses_in_house_engine_core_by_default():
     assert bridge.warehouse_tools_dir() == ROOT / "warehouse_tools"
-    assert (bridge.warehouse_tools_dir() / "vendor" / "allokering12.1.py").is_file()
+    engine_core_dir = bridge.warehouse_tools_dir() / "engine_core"
+    assert (engine_core_dir / "__init__.py").is_file()
+    # Vendor-monoliten är borta; kvar i vendor/ är bara legacy-stödmoduler + data.
+    assert not (bridge.warehouse_tools_dir() / "vendor" / "allokering12.1.py").exists()
+    assert (bridge.warehouse_tools_dir() / "vendor" / "app_info.py").is_file()
 
 
 def test_allocation_bridge_imports_warehouse_tools_when_started_from_app_root():
@@ -1935,7 +1939,11 @@ def test_observations_paths_are_separate_per_business(tmp_path, monkeypatch):
     pd = pytest.importorskip("pandas")
     engine, _flows = bridge.require_available()
     legacy_engine = engine.engine
-    monkeypatch.setattr(legacy_engine, "_bufferpall_runtime_dir", lambda: tmp_path)
+    # Patcha implementationsmodulen, inte fasaden: business_*_path går via
+    # engine_core.runtime_paths internt.
+    from warehouse_tools.engine_core import runtime_paths
+
+    monkeypatch.setattr(runtime_paths, "_bufferpall_runtime_dir", lambda: tmp_path)
 
     stigamo_observations = legacy_engine.business_observations_path("STIGAMO")
     stigamo_max = legacy_engine.business_artikel_max_path("STIGAMO")
