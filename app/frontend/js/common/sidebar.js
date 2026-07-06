@@ -322,10 +322,14 @@ function ensureAssistantLocalSessionVersion() {
 function normalizeAssistantMessages(value) {
   return (Array.isArray(value) ? value : [])
     .filter((message) => message && (message.role === "user" || message.role === "assistant"))
-    .map((message) => ({
-      role: message.role,
-      content: String(message.content || "").trim().slice(0, 4000),
-    }))
+    .map((message) => {
+      const toolCalls = Number(message.toolCalls) || 0;
+      return {
+        role: message.role,
+        content: String(message.content || "").trim().slice(0, 4000),
+        ...(toolCalls > 0 ? { toolCalls } : {}),
+      };
+    })
     .filter((message) => message.content)
     .slice(-21);
 }
@@ -415,6 +419,9 @@ function renderAssistantMessages() {
   list.innerHTML = messages.map((message) => `
     <div class="assistant-chat-message ${message.role}">
       ${message.role === "assistant" ? renderAssistantMarkdown(message.content) : escapeHtml(message.content).replace(/\n/g, "<br>")}
+      ${message.role === "assistant" && message.toolCalls > 0
+        ? `<div class="assistant-chat-meta">Hämtade live-data (${message.toolCalls} uppslag)</div>`
+        : ""}
     </div>
   `).join("");
   if (assistantChatPending) {
@@ -496,7 +503,11 @@ async function submitAssistantQuestion(event) {
       page_path: window.location.pathname || "",
     });
     const nextMessages = readAssistantMessages();
-    nextMessages.push({ role: "assistant", content: response?.answer || "Jag fick inget textinnehåll tillbaka." });
+    nextMessages.push({
+      role: "assistant",
+      content: response?.answer || "Jag fick inget textinnehåll tillbaka.",
+      toolCalls: Number(response?.tool_calls) || 0,
+    });
     writeAssistantMessages(nextMessages);
     if (typeof response?.remaining_questions === "number") {
       writeAssistantQuestionCount(ASSISTANT_CHAT_MAX_QUESTIONS - response.remaining_questions);

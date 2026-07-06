@@ -2541,6 +2541,13 @@ export interface components {
             model: string;
             /** Remaining Questions */
             remaining_questions: number;
+            /**
+             * Tool Calls
+             * @default 0
+             */
+            tool_calls: number;
+            /** Tools Used */
+            tools_used?: string[];
         };
         /** AssistantMessage */
         AssistantMessage: {

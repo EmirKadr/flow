@@ -6,6 +6,7 @@ import re
 import socket
 import urllib.error
 import urllib.request
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from ..assistant_tools import allowed_tools_for, run_tool_loop
+from ..audit import log_and_commit as audit_log_and_commit
 from ..config import settings
 from ..deps import get_current_user, get_db
 from ..models import Area, User
@@ -243,6 +246,10 @@ Regler:
   gäller webb eller Windows-appen.
 - Namn på knappar, vyer och feltexter ska matcha appen när de finns i kontexten.
 
+Verktyg och live-data:
+{tools_context}
+
+Aktuellt datum: {current_date}
 Aktuell sida: {page_path}
 
 Användarkontext:
@@ -270,6 +277,25 @@ class AssistantChatResponse(BaseModel):
     answer: str
     model: str
     remaining_questions: int
+    tool_calls: int = 0
+    tools_used: list[str] = Field(default_factory=list)
+
+
+TOOLS_CONTEXT_ACTIVE = (
+    "Du har read-only-verktyg (function calling) för live-data i appen: schema, "
+    "personer, områden, aktiviteter, produktivitet, Historik, användare och "
+    "systemhälsa. För frågor om aktuell data (t.ex. 'vilka jobbar idag?', 'hur "
+    "många områden finns?') ska du använda verktygen i stället för att gissa "
+    "eller svara att det inte går. Vid schemafrågor med relativa datum: använd "
+    "resolve_date först. Wikin är fortsatt gräns för vilka funktioner och "
+    "knappar som finns i appen; verktygen är källan för aktuellt datainnehåll. "
+    "Om ett verktyg svarar med error ska du förklara felet kort och be om "
+    "förtydligande i stället för att hitta på data."
+)
+TOOLS_CONTEXT_INACTIVE = (
+    "Inga verktyg är tillgängliga i detta anrop. Svara utifrån wikin och "
+    "användarkontexten; säg tydligt när du saknar live-data."
+)
 
 
 def _session_question_count(request: Request) -> int:
@@ -542,7 +568,8 @@ def _clean_minimax_answer(answer: str) -> str:
     return THINK_BLOCK_RE.sub("", answer).strip()
 
 
-def _call_minimax(payload: dict) -> str:
+def _minimax_response(payload: dict) -> dict:
+    """Anropa MiniMax och returnera hela JSON-svaret (för tool-loopens skull)."""
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         settings.MINIMAX_API_URL,
@@ -590,22 +617,34 @@ def _call_minimax(payload: dict) -> str:
 
         try:
             data = json.loads(raw)
-            answer = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        except json.JSONDecodeError as exc:
             add_span_attributes({"llm.error_type": type(exc).__name__})
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="MiniMax svar saknade textinnehall.",
             ) from exc
+        return data if isinstance(data, dict) else {}
 
-        answer = _clean_minimax_answer(str(answer or ""))
-        add_span_attributes({"llm.answer_chars": len(answer)})
-        if not answer:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="MiniMax returnerade ett tomt svar.",
-            )
-        return answer
+
+def _call_minimax(payload: dict) -> str:
+    data = _minimax_response(payload)
+    try:
+        answer = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        add_span_attributes({"llm.error_type": type(exc).__name__})
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="MiniMax svar saknade textinnehall.",
+        ) from exc
+
+    answer = _clean_minimax_answer(str(answer or ""))
+    add_span_attributes({"llm.answer_chars": len(answer)})
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="MiniMax returnerade ett tomt svar.",
+        )
+    return answer
 
 
 def build_minimax_payload(
@@ -613,6 +652,7 @@ def build_minimax_payload(
     user: User,
     role_access: dict | None = None,
     area_label: str | None = None,
+    tools_available: bool = False,
 ) -> dict:
     messages = payload.messages[-MAX_DIALOG_MESSAGES:]
     page_path = payload.page_path or ""
@@ -635,6 +675,8 @@ def build_minimax_payload(
         user_context=user_context,
         wiki_context=wiki_context,
         repo_context=repo_context,
+        tools_context=TOOLS_CONTEXT_ACTIVE if tools_available else TOOLS_CONTEXT_INACTIVE,
+        current_date=date.today().isoformat(),
     )
     return {
         "model": settings.MINIMAX_MODEL,
@@ -685,11 +727,13 @@ async def chat_with_assistant(
                 role_access = get_role_view_access(db, business_id=getattr(user, "business_id", None))
             except TypeError:
                 role_access = get_role_view_access(db)
+            tools = allowed_tools_for(user, role_access) if settings.ASSISTANT_TOOLS_ENABLED else []
             minimax_payload = build_minimax_payload(
                 payload,
                 user,
                 role_access=role_access,
                 area_label=area_label,
+                tools_available=bool(tools),
             )
         except Exception as exc:
             add_span_attributes({"agent.error_type": type(exc).__name__})
@@ -698,7 +742,51 @@ async def chat_with_assistant(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Kunde inte bygga chatkontext: {type(exc).__name__}",
             ) from exc
-        answer = await run_in_threadpool(_call_minimax, minimax_payload)
+
+        def _run_chat():
+            return run_tool_loop(
+                db,
+                user,
+                minimax_payload,
+                call_model=_minimax_response,
+                role_access=role_access,
+                tools=tools,
+            )
+
+        loop_result = await run_in_threadpool(_run_chat)
+        answer = _clean_minimax_answer(loop_result.answer)
+        add_span_attributes(
+            {
+                "agent.tool_calls": loop_result.tool_calls,
+                "agent.tool_errors": loop_result.tool_errors,
+                "llm.answer_chars": len(answer),
+            }
+        )
+        if not answer:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="MiniMax returnerade ett tomt svar.",
+            )
+        if loop_result.tool_calls > 0:
+            audit_log_and_commit(
+                db,
+                entity_type="assistant_chat",
+                entity_id=0,
+                action="tools_used",
+                old_value=None,
+                new_value={
+                    "tool_calls": loop_result.tool_calls,
+                    "tools_used": loop_result.tools_used,
+                    "tool_errors": loop_result.tool_errors,
+                    "question_chars": len(_last_user_question(payload.messages)),
+                    "answer_chars": len(answer),
+                    "page_path": payload.page_path or "",
+                },
+                user_id=getattr(user, "id", None),
+                business_id=getattr(user, "business_id", None),
+                logger=logger,
+                context="assistant chat tools audit",
+            )
         used_questions += 1
         request.session[SESSION_COUNT_KEY] = used_questions
         add_span_attributes({"agent.remaining_questions": max(0, MAX_QUESTIONS_PER_SESSION - used_questions)})
@@ -706,6 +794,8 @@ async def chat_with_assistant(
             answer=answer,
             model=settings.MINIMAX_MODEL,
             remaining_questions=max(0, MAX_QUESTIONS_PER_SESSION - used_questions),
+            tool_calls=loop_result.tool_calls,
+            tools_used=loop_result.tools_used,
         )
 
 
