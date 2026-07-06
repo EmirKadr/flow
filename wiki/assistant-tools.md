@@ -40,6 +40,7 @@ Registret ligger i `app/backend/assistant_tools/` och varje tool har
 | Grunddata | `list_businesses`, `list_areas`, `list_activities`, `get_activity`, `data_counts`, `resolve_date` | businesses/areas/activities/overview/schedule |
 | Personer | `search_persons`, `get_person`, `list_competencies`, `get_person_schedule_template` | persons |
 | Schema | `get_schedule_day`, `get_person_schedule`, `schedule_staffing_summary`, `find_scheduled_persons`, `schedule_week_overview` | schedule |
+| Schema – analys | `schedule_coverage_gaps`, `person_utilization`, `schedule_period_compare` | schedule |
 | Produktivitet | `productivity_summary`, `productivity_person_day`, `productivity_top_persons`, `productivity_process_summary` | productivity |
 | Produktivitet – trend/analys | `productivity_trend`, `productivity_person_compare`, `productivity_process_trend`, `productivity_anomalies` | productivity |
 | Ekonomi | `finance_summary` (kräver alltid productivityFinance-behörighet i runtime, oavsett enforcement-flaggan) | productivityFinance |
