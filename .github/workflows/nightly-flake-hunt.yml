@@ -75,6 +75,4 @@ jobs:
           gh issue create \
             --repo "$GITHUB_REPOSITORY" \
             --title "Flake-jakt: browsersviten instabil $(date -u +%F)" \
-            --body "Nattliga flake-jakten föll. Körning: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-
-Regel (wiki/test-strategi.md): rotorsaka eller karantänsätt testet - flakes får inte normaliseras."
+            --body "Nattliga flake-jakten foll. Korning: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} - regel (wiki/test-strategi.md): rotorsaka eller karantansatt testet, flakes far inte normaliseras."

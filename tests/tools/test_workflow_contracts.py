@@ -54,6 +54,31 @@ def _workflow_files() -> list[Path]:
     return sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml"))
 
 
+# Giltiga top-level-nycklar i ett GitHub Actions-workflow. En kolumn-0-rad som
+# inte är någon av dessa (eller kommentar/tom) betyder trasig indentering -
+# oftast en block-scalar (`run: |`) som avslutats för tidigt av en oindenterad
+# rad. GitHub avvisar det ("workflow file issue" → noll jobb → failure) men
+# PyYAML är släpphänt och "parsar" det ändå - så det här textbaserade testet
+# fångar det som yaml.safe_load missar (lärt 2026-07-06: en oindenterad rad
+# inuti `--body` i nightly-flake-hunt.yml fällde varje push).
+_TOP_LEVEL_KEYS = {"name", "run-name", "on", "permissions", "env", "defaults", "concurrency", "jobs", "true"}
+
+
+def test_workflows_have_no_stray_column_zero_lines():
+    for path in _workflow_files():
+        stray: list[str] = []
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line or line[0] in " \t#":
+                continue
+            key = line.split(":", 1)[0].strip()
+            if key not in _TOP_LEVEL_KEYS:
+                stray.append(f"rad {lineno}: {line[:60]!r}")
+        assert not stray, (
+            f"{path.name}: kolumn-0-rader som inte är top-level-nycklar - trolig "
+            f"trasig block-scalar/indentering som GitHub avvisar:\n" + "\n".join(stray)
+        )
+
+
 def test_workflows_parse_and_have_jobs():
     """Varje workflow ska vara giltig YAML med minst ett jobb och ett on-block."""
     files = _workflow_files()
