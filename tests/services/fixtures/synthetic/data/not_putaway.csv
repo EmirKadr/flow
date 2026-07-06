@@ -1,0 +1,7 @@
+﻿Status	Prioritet	Pall nr	Batch nr	Artikel	Artikel.1	Område	Ändrad	Antal	Vikt	Användare	Kö	Utgång	SSCC	Bolag	Lager	Antal per lav	Detalj	Kontrolind	Viktartikel	Palltyp	Pack klass	Mix Pall	Inköpsnr	Crossdock Ind	Produktionsdatum	Robot Ind
+5	0	NP00001		SYNT-A001				35	133.5					SYNTBOLAG	SYNT	4										
+10	1	NP00002		SYNT-A002				25	207.3					SYNTBOLAG	SYNT	6										
+5	2	NP00003		SYNT-A003				44	62.9					SYNTBOLAG	SYNT	12										
+10	0	NP00004		SYNT-A004				8	52.9					SYNTBOLAG	SYNT	6										
+5	1	NP00005		SYNT-A005				41	208.9					SYNTBOLAG	SYNT	12										
+10	2	NP00006		SYNT-A006				53	98.4					SYNTBOLAG	SYNT	12										

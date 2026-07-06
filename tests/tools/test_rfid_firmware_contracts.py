@@ -28,23 +28,20 @@ def test_rfid_readme_documents_current_rdm6300_rx_pin():
         assert "GPIO14" not in readme
 
 
-def test_rfid_sketches_are_usb_serial_only():
+def test_rfid_sketches_post_directly_over_wifi():
     readmes = [(firmware_dir / "README.md").read_text(encoding="utf-8") for firmware_dir in FIRMWARE_DIRS]
 
     for readme in readmes:
-        assert "USB/Serial" in readme
-        assert "ingen WiFi" in readme
-        assert "COM9 -> MG Plock" in readme
-        assert "COM10 -> MG VM" in readme
+        assert "WiFi" in readme
+        assert "POST /api/rfid/scans" in readme
+        assert "RFID_DEVICE_TOKEN" in readme
 
     for firmware_dir in FIRMWARE_DIRS:
         sketch_path = firmware_dir / f"{firmware_dir.name}.ino"
         if not sketch_path.exists():
             continue
         sketch = sketch_path.read_text(encoding="utf-8")
-        assert "#include <WiFi.h>" not in sketch
-        assert "#include <HTTPClient.h>" not in sketch
-        assert "connectWifi" not in sketch
-        assert "HTTPClient" not in sketch
+        assert "#include <WiFi.h>" in sketch
+        assert "#include <HTTPClient.h>" in sketch
         assert "RFID HEX=" in sketch
-        assert "USB/Serial-lage" in sketch
+        assert "WiFi-lage" in sketch

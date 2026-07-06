@@ -193,9 +193,9 @@ flowchart TB
   LocalServer --> LocalRuntime["desktop/local_runtime.py<br/>local_response_for_request<br/>run_allocation_flow"]
   LocalRuntime --> LocalSources["Samma API-first-map<br/>app/backend/workflow_data.py<br/>eller localRef/cache"]
 
-  Bridge --> Registry["Flow-register<br/>warehouse_tools/catalog.py<br/>publik metadata<br/><br/>warehouse_tools/flows.py<br/>FLOWS + FLOW_BY_ID"]
+  Bridge --> Registry["Flow-register<br/>warehouse_tools/catalog.py<br/>publik metadata<br/><br/>warehouse_tools/flows/ (paket)<br/>FLOWS + FLOW_BY_ID i __init__"]
   LocalSources --> Registry
-  Registry --> Handler["Handler<br/>warehouse_tools/flows.py<br/>flow_ytgenerering, flow_allocate,<br/>flow_ordersaldo, ..."]
+  Registry --> Handler["Handler<br/>warehouse_tools/flows/&lt;doman&gt;.py<br/>flow_ytgenerering, flow_allocate,<br/>flow_ordersaldo, ..."]
 
   Handler --> EngineChoice{"Vilken motor anvands?"}
   EngineChoice -- "Native Bearbeta-kod" --> Native["warehouse_tools/native_flows.py<br/>surface_generation.py<br/>carrier_clusters.py<br/>native_tables.py"]
@@ -216,8 +216,8 @@ Snabbkarta for var du bor borja:
 | Var sker behorighet, audit och business-scope? | `app/backend/routers/allocation.py`, `app/backend/user_access.py`, `app/backend/business_scope.py` |
 | Var mappas API-first-kallor och fallback? | `app/backend/workflow_data.py` |
 | Var hamtas privat extern data? | `app/backend/external_data_client.py` och katalogen `data/external_data_catalog.json` |
-| Var valjs faktisk Bearbeta-handler? | `app/backend/allocation_bridge.py` och `warehouse_tools/flows.py` |
-| Var finns publik flow-metadata/listan frontend far? | `warehouse_tools/catalog.py` och `warehouse_tools/flows.py` |
+| Var valjs faktisk Bearbeta-handler? | `app/backend/allocation_bridge.py` och `warehouse_tools/flows/` (paket, uppdelat 2026-07) |
+| Var finns publik flow-metadata/listan frontend far? | `warehouse_tools/catalog.py` och `warehouse_tools/flows/__init__.py` |
 | Var finns Windows-specialfallet? | `desktop/local_app_server.py`, `desktop/local_runtime.py`, `app/frontend/js/desktop_bridge.js` |
 | Var finns motorn? | Fasaden `warehouse_tools/engine.py`; implementationen i `warehouse_tools/engine_core/` (uppdelad 2026-07, ersätter vendor/allokering12.1.py) |
 | Var finns Forecast/Ytgenereringens extra kod? | `warehouse_tools/mg_forecast/*`, `warehouse_tools/surface_generation.py`, `warehouse_tools/ytgenerering_map.py`, `warehouse_tools/carrier_clusters.py` |

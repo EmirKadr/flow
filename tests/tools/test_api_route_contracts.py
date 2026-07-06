@@ -35,10 +35,25 @@ def frontend_literal_api_calls() -> list[tuple[str, str, str]]:
     return calls
 
 
+def _iter_flat_routes(routes, prefix: str = ""):
+    """FastAPI >=0.139 lagger inkluderade routrar som _IncludedRouter-poster
+    i stallet for att platta ut dem. Ga in i original_router rekursivt och
+    ackumulera include-prefixet (nastlade include_router(prefix=...) bar
+    prefixet i include_context, inte i ruttvagarna)."""
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            context = getattr(route, "include_context", None)
+            inner_prefix = prefix + (getattr(context, "prefix", "") or "")
+            yield from _iter_flat_routes(original.routes, inner_prefix)
+            continue
+        yield prefix, route
+
+
 def backend_route_methods() -> dict[str, set[str]]:
     routes: dict[str, set[str]] = {}
-    for route in app.routes:
-        path = getattr(route, "path", "")
+    for route_prefix, route in _iter_flat_routes(app.routes):
+        path = route_prefix + getattr(route, "path", "")
         if not path.startswith("/api/"):
             continue
         methods = set(getattr(route, "methods", set()) or set())

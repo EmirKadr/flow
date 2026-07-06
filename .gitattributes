@@ -1,0 +1,2 @@
+# Syntetisk testdata jamfors byte-exakt mot generatorn - ingen EOL-konvertering
+tests/services/fixtures/synthetic/data/*.csv -text

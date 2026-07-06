@@ -300,7 +300,7 @@ def test_allocate_flow_reuses_cached_outputs_for_same_file_versions(monkeypatch,
     buffer_path.write_text("buffer-v1\n", encoding="utf-8")
     calls = {"allocate": 0}
 
-    monkeypatch.setattr(flows, "_read", lambda path: pd.DataFrame({"source": [Path(path).name]}))
+    monkeypatch.setattr(flows.shared, "_read", lambda path: pd.DataFrame({"source": [Path(path).name]}))
 
     def fake_allocate(_orders, _buffer, log=None):
         calls["allocate"] += 1
@@ -500,7 +500,7 @@ def test_ytgenerering_combined_returns_forecast_only_when_location_missing(monke
             "log": ["Forecast körd."],
         }
 
-    monkeypatch.setattr(flows, "flow_forecast", fake_flow_forecast)
+    monkeypatch.setattr(flows.forecast_flows, "flow_forecast", fake_flow_forecast)
 
     result = flows.FLOW_BY_ID["ytgenerering"]["handler"](
         {"orders": Path("orders.csv"), "overview": Path("overview.csv"), "buffer": Path("buffer.csv")},
@@ -537,9 +537,9 @@ def test_ytgenerering_combined_runs_forecast_and_surface_generation(monkeypatch,
 
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
-    monkeypatch.setattr(flows, "flow_forecast", fake_flow_forecast)
+    monkeypatch.setattr(flows.forecast_flows, "flow_forecast", fake_flow_forecast)
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1125,7 +1125,7 @@ def test_ytgenerering_flow_consumes_forecast_json_and_location_coredata(monkeypa
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1159,7 +1159,7 @@ def test_ytgenerering_uses_configured_utl_range(monkeypatch, tmp_path):
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1193,7 +1193,7 @@ def test_ytgenerering_map_layout_adds_missing_location_capacity(monkeypatch, tmp
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1249,7 +1249,7 @@ def test_ytgenerering_flow_uses_transport_cluster_json(monkeypatch, tmp_path):
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1289,7 +1289,7 @@ def test_ytgenerering_builds_order_set_area_import_for_multi_order_multi_surface
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [
@@ -1336,7 +1336,7 @@ def test_ytgenerering_map_attaches_customer_to_assignments_and_unplaced(monkeypa
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame([{"Lagerplats": "UTL100", "Typ": "U", "Max pall": 1}]),
     )
@@ -1363,7 +1363,7 @@ def test_ytgenerering_flow_consumes_forecast_dataframe_fast_path(monkeypatch, tm
     location_path = tmp_path / "location.csv"
     location_path.write_text("not used\n", encoding="utf-8")
     monkeypatch.setattr(
-        flows,
+        flows.shared,
         "_read",
         lambda path: pd.DataFrame(
             [

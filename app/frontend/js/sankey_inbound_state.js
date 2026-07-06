@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur sankey_inbound.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter sankey_inbound.js via <script>-tagg.
 
@@ -118,22 +119,32 @@ function sankeyFormatNumber(value, digits = 0) {
   }).format(Number(value || 0));
 }
 
+function sankeyDateInput() {
+  return /** @type {HTMLInputElement|null} */ (document.getElementById("sankeyInboundDate"));
+}
+
 function sankeyDateValue() {
-  return document.getElementById("sankeyInboundDate")?.value || sankeyLocalIsoDate();
+  return sankeyDateInput()?.value || sankeyLocalIsoDate();
+}
+
+function sankeyCompanySelect() {
+  return /** @type {HTMLSelectElement|null} */ (document.getElementById("sankeyInboundCompany"));
 }
 
 function sankeyCompanyValue() {
-  return sankeyNormalizeCompany(document.getElementById("sankeyInboundCompany")?.value || "ALL");
+  return sankeyNormalizeCompany(sankeyCompanySelect()?.value || "ALL");
 }
 
 function updateSankeyDateDisplay() {
-  const input = document.getElementById("sankeyInboundDate");
+  const input = sankeyDateInput();
   const display = document.getElementById("sankeyInboundDateDisplayText");
   if (display) display.textContent = input?.value || sankeyLocalIsoDate();
 }
 
 function updateSankeyControls() {
-  document.querySelectorAll("[data-sankey-period]").forEach((button) => {
+  /** @type {NodeListOf<HTMLElement>} */ (
+    document.querySelectorAll("[data-sankey-period]")
+  ).forEach((button) => {
     button.classList.toggle("active", button.dataset.sankeyPeriod === sankeyInboundPeriod);
   });
   const consumedButton = document.getElementById("sankeyInboundOnlyConsumed");
@@ -154,7 +165,7 @@ function setSankeyStatus(text, busy = false) {
 }
 
 function updateSankeyCompanyOptions(payload) {
-  const select = document.getElementById("sankeyInboundCompany");
+  const select = sankeyCompanySelect();
   if (!select) return;
   const current = select.value || "ALL";
   const codes = [

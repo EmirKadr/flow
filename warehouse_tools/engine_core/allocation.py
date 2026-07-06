@@ -706,7 +706,10 @@ def calculate_refill(allocated_df: pd.DataFrame,
             for _, r in s_norm.iterrows():
                 art = str(r["Artikel"]).strip()
                 saldo_sum[art] = float(saldo_sum.get(art, 0.0) + float(r.get("Plocksaldo", 0.0)))
-                pp = str(r.get("Plockplats", "") or "").strip()
+                pp_raw = r.get("Plockplats", "")
+                # NaN ar truthy: utan denna vakt blir tom plockplats strangen "nan"
+                # i refill-tabellerna (pandas 2.2.x laser tomma celler som NaN).
+                pp = "" if pd.isna(pp_raw) else str(pp_raw).strip()
                 if pp and art not in plockplats_by_art:
                     plockplats_by_art[art] = pp
         except Exception:

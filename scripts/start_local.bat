@@ -12,10 +12,7 @@ set "FLOW_SYNC_LIVE_ON_START=0"
 echo Forbereder lokal SQLite-databas for snabbstart...
 python -m backend.prepare_local_database || goto :error
 
-echo Startar RFID-bryggor for ESP32 via USB/COM: COM9=MG Plock, COM10=MG VM...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\tools\start_rfid_bridges.ps1" || echo Varning: RFID-bryggor kunde inte startas automatiskt.
-
-echo Startar lokal server pa localhost. RFID-moduler laser via COM9/COM10.
+echo Startar lokal server pa localhost. RFID-moduler postar direkt via WiFi.
 start "" "http://localhost:8000"
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 goto :eof

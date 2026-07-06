@@ -1,0 +1,9 @@
+﻿Artikel	Lager	Bolag	Nollinventering	Hantera saldo	Timestamp	Klassificering	Skapad	Plockzon	Vikt tolerans	Zon klass	Tillåt uppdrag	Ignorera EAN	Splitta helpalls gen. med	Automatiserat robotplock	Ej staplingsbar	Alltid farligt gods	Helpalls avvikelse %
+SYNT-A001	SYNT	SYNTBOLAG			2026-05-01 08:00:00	STD		A							0		
+SYNT-A002	SYNT	SYNTBOLAG			2026-05-01 09:00:00	SKRYM		B							1		
+SYNT-A003	SYNT	SYNTBOLAG			2026-05-01 10:00:00	STD		A							0		
+SYNT-A004	SYNT	SYNTBOLAG			2026-05-01 11:00:00	SKRYM		B							1		
+SYNT-A005	SYNT	SYNTBOLAG			2026-05-01 12:00:00	STD		A							0		
+SYNT-A006	SYNT	SYNTBOLAG			2026-05-01 13:00:00	SKRYM		B							1		
+SYNT-A007	SYNT	SYNTBOLAG			2026-05-01 14:00:00	STD		A							0		
+SYNT-A008	SYNT	SYNTBOLAG			2026-05-01 15:00:00	SKRYM		B							1		

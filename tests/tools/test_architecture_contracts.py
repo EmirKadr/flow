@@ -40,9 +40,7 @@ FRONTEND_LINE_EXCEPTIONS = {
 }
 # Vendor-monoliten (allokering12.1.py) ar uppdelad i engine_core/ (2026-07)
 # och krympnings-ratcheten ar avslutad. Kvarvarande undantag ska bara minska.
-WAREHOUSE_LINE_EXCEPTIONS = {
-    "flows.py": 1410,
-}
+WAREHOUSE_LINE_EXCEPTIONS: dict[str, int] = {}
 
 
 def _line_count(path: Path) -> int:
@@ -126,9 +124,10 @@ def test_container_start_command_keeps_single_worker():
     for line in start_lines:
         assert "--workers" not in line and "gunicorn" not in line, (
             "Startkommandot får inte köra flera workers: bakgrundsjobben i "
-            "app/backend/background.py och schedulerna i productivity_sync/"
-            "archive_cache_sync antar exakt en process. Inför ledarlås "
-            "(t.ex. databasbaserat ledarlås) innan --workers läggs till. Rad: " + line.strip()
+            "app/backend/background.py och schedulerna startas via ledarlåset i "
+            "app/backend/leader_lock.py. --workers är ändå ett medvetet beslut: "
+            "verifiera ledarlåset i drift och uppdatera detta kontrakt i samma "
+            "ändring. Rad: " + line.strip()
         )
 
 
@@ -138,7 +137,7 @@ def test_container_start_command_keeps_single_worker():
 SHARED_MODULES = {
     "audit", "background", "bootstrap_local", "business_scope", "code_utils",
     "compiled_data_paths", "config", "database", "demo_session", "deps",
-    "external_data_client", "healthcheck_service", "home_activity", "main",
+    "external_data_client", "healthcheck_service", "home_activity", "leader_lock", "main",
     "media_store", "models", "observability",
     "prepare_local_database", "prestart", "schedule_locks", "schemas",
     "security", "seed", "settings_service", "sync_live_to_local",

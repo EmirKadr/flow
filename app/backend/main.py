@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import allocation_bridge, background, demo_session
+from . import allocation_bridge, background, demo_session, leader_lock
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
 from .database import SessionLocal, engine
@@ -85,7 +85,15 @@ async def lifespan(_: FastAPI):
     # (browser-/desktop-tester) inte startar schemaläggare som gör riktiga
     # nätverksanrop och håller produktivitetssyncens lås över andra tester.
     if os.getenv("FLOW_DISABLE_BACKGROUND_JOBS", "").lower() not in {"1", "true", "yes"}:
-        background.start_background_jobs(BACKGROUND_JOBS)
+        if os.getenv("FLOW_DISABLE_LEADER_LOCK", "").lower() in {"1", "true", "yes"}:
+            background.start_background_jobs(BACKGROUND_JOBS)
+        else:
+            # Endast ledaren startar jobben. Med en worker (dagens deploy) blir
+            # processen ledare direkt; med flera workers skyddar laset mot
+            # dubbelkorning av schedulers och sync-jobb.
+            leader_lock.start_leader_gated(
+                lambda: background.start_background_jobs(BACKGROUND_JOBS)
+            )
     yield
 
 

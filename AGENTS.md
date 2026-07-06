@@ -357,9 +357,11 @@ ska respektera i stallet for att kringga:
   `app/backend/sankey_inbound/`. Hoj aldrig taket eller lagg till undantag
   utan uttrycklig instruktion fran Emir. Nar en undantagsfil splittas ska
   dess undantag tas bort.
-- **Single-worker.** Bakgrundsjobben i `app/backend/background.py` och
-  schedulerna antar exakt en uvicorn-worker. `--workers` i Dockerfile-CMD
-  kraver ledarlas (t.ex. databasbaserat ledarlas) forst.
+- **Single-worker + ledarlas.** Bakgrundsjobben i `app/backend/background.py`
+  och schedulerna startas via DB-ledarlaset i `app/backend/leader_lock.py` -
+  bara ledarprocessen kor dem. Dockerfile kor fortfarande en uvicorn-worker;
+  att hoja `--workers` ar ett medvetet beslut som kraver verifierat ledarlas
+  i drift och uppdaterat arkitekturkontrakt i samma andring.
 - **Domangranser.** Servicemoduler far importera delad grund och sin egen
   doman. Ett nytt beroende mellan domaner ar ett medvetet beslut: lagg till
   kanten i `ALLOWED_DOMAIN_EDGES` i samma andring och motivera i
