@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     MAX_META_UPLOAD_FILE_BYTES: int = 96 * 1024 * 1024
     MAX_META_UPLOAD_BATCH_BYTES: int = 192 * 1024 * 1024
     META_UPLOAD_RATE_LIMIT_PER_MINUTE: int = 0
+    # Rate limiting för inloggning: fast fönster per (användarnamn, IP).
+    AUTH_LOGIN_RATE_LIMIT_ENABLED: bool = True
+    AUTH_LOGIN_RATE_LIMIT_ATTEMPTS: int = 8
+    AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 300
     DATA_SOURCE_API_BASE_URL: str = ""
     DATA_SOURCE_API_KEY: str = ""
     DATA_SOURCE_API_CLIENT: str = ""

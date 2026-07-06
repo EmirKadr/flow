@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from .. import demo_session
 from ..audit import log as audit_log
 from ..deps import get_current_user, get_db
+from ..login_rate_limit import client_ip_from_request, login_rate_limiter
 from ..models import Person, User
 from ..schemas import LoginRequest, PasswordSetRequest, UserOut
 from ..security import hash_password, verify_password
@@ -73,21 +74,65 @@ def _auto_create_person_user(db: Session, username: str) -> User | None:
     return user
 
 
+def _audit_failed_login(db: Session, username: str, client_ip: str, attempts: int) -> None:
+    """Auditrad för misslyckad inloggning — samma rad oavsett om kontot finns."""
+    audit_log(
+        db,
+        entity_type="auth",
+        entity_id=0,
+        action="login_failed",
+        old_value=None,
+        new_value={"username": str(username or "")[:120], "ip": client_ip, "attempts_in_window": attempts},
+        user_id=None,
+        business_id=None,
+    )
+    db.commit()
+
+
+def _register_login_failure(db: Session, username: str, client_ip: str, detail: str) -> HTTPException:
+    attempts = login_rate_limiter.register_failure(username, client_ip)
+    _audit_failed_login(db, username, client_ip, attempts)
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+
+
 @router.post("/login", response_model=UserOut)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> UserOut:
+    client_ip = client_ip_from_request(request)
+    retry_after = login_rate_limiter.retry_after_seconds(payload.username, client_ip)
+    if retry_after is not None:
+        audit_log(
+            db,
+            entity_type="auth",
+            entity_id=0,
+            action="login_rate_limited",
+            old_value=None,
+            new_value={
+                "username": str(payload.username or "")[:120],
+                "ip": client_ip,
+                "retry_after_seconds": retry_after,
+            },
+            user_id=None,
+            business_id=None,
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="För många inloggningsförsök. Vänta en stund och försök igen.",
+            headers={"Retry-After": str(retry_after)},
+        )
     user = db.query(User).filter_by(username=payload.username).one_or_none()
     if user is None:
         user = _auto_create_person_user(db, payload.username)
     if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Felaktigt användarnamn eller lösenord")
+        raise _register_login_failure(db, payload.username, client_ip, "Felaktigt användarnamn eller lösenord")
     if user.password_hash is None:
         if payload.password:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Lämna lösenordet tomt vid första inloggningen",
+            raise _register_login_failure(
+                db, payload.username, client_ip, "Lämna lösenordet tomt vid första inloggningen"
             )
     elif not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Felaktigt användarnamn eller lösenord")
+        raise _register_login_failure(db, payload.username, client_ip, "Felaktigt användarnamn eller lösenord")
+    login_rate_limiter.reset(payload.username, client_ip)
     request.session["user_id"] = user.id
     if is_demo_user(user):
         try:

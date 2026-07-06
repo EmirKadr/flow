@@ -31,3 +31,22 @@ Arbetslogg för OVERNIGHT_PLAN.md. Nyaste passet överst.
   /productivity/overview/business-summary till delad
   build_business_summary_payload + tester (94 produktivitets-/finanstester gröna).
 - **sankey_inbound_summary struken**: load_sankey_inbound_payload är den dokumenterade OOM-vägen utan arkiv-cache; det finns ingen garanterat billig summeringsväg idag. FÖRSLAG: bygg aggregat i arkiv-cachen först.
+
+### CSP-analys (uppgift 4, punkt 4 — endast analys)
+
+Frontendens HTML-sidor använder inline `<script>`-block (bl.a. sidinit) och
+inline-styles, så en enforcing CSP kräver antingen nonce-stämpling i
+Docker-byggets stamp_asset_versions-steg (naturlig plats — den skriver redan
+om taggarna) eller flytt av inline-koden till filer. Rekommendation:
+1) börja med `Content-Security-Policy-Report-Only: default-src 'self';
+img-src 'self' data:; style-src 'self' 'unsafe-inline'` + rapport-endpoint,
+2) inventera träffarna i Historik, 3) nonce-stämpla script-taggar i bygget,
+4) slå på enforcing. Uppskattning: en egen kväll. INTE gjort i natt —
+fel CSP släcker appen.
+
+### Avvikelse: uppgiftsordning
+
+Uppgift 3 (prestanda) sköts efter uppgift 4 (säkerhet) och 7 (buggrapportör):
+säkerhetshålen var verifierade och små att täppa, och buggrapportören är
+nattens huvudleverans. Prestandan kräver benchmark-servrar och är bättre som
+nästa natts huvudjobb.

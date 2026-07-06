@@ -114,6 +114,25 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Grundläggande säkerhetsheaders på alla svar.
+
+    HSTS sätts bara när requesten bevisligen gick över https (direkt eller via
+    ingressens X-Forwarded-Proto) — dev och desktop kör http och ska inte få
+    webbläsare att tvinga https mot localhost. CSP är medvetet INTE med här:
+    frontendens inline-scripts kräver en genomtänkt policy (se NIGHTLY_NOTES).
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if request.url.scheme == "https" or forwarded_proto == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return response
+
+
+@app.middleware("http")
 async def trace_context_middleware(request: Request, call_next):
     token = begin_request_trace(request.headers)
     try:
