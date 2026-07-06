@@ -4,7 +4,7 @@
   "description": "Dev-verktyg för frontend-typkontroll (JSDoc + tsc --checkJs) och lint. Ingen build — appen serverar ren JS.",
   "scripts": {
     "typecheck": "tsc -p jsconfig.json --noEmit",
-    "lint": "eslint app/frontend/js"
+    "lint": "eslint app/frontend/js app/frontend/sw.js"
   },
   "devDependencies": {
     "eslint": "^10.6.0",

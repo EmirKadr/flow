@@ -37,6 +37,11 @@ COPY --chown=flow:flow app/ /repo/app/
 COPY --chown=flow:flow data/ /repo/data/
 COPY --chown=flow:flow warehouse_tools/ /repo/warehouse_tools/
 
+# Stämpla ?v=<innehålls-hash> på script/link-taggarna så att produktions-HTML
+# får ett års immutable-cache via static_cache_headers-middlewaren.
+COPY tools/__init__.py tools/stamp_asset_versions.py /repo/tools/
+RUN python -m tools.stamp_asset_versions --frontend-dir /repo/app/frontend
+
 USER flow
 WORKDIR /repo/app
 

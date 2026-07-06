@@ -7,7 +7,7 @@
 
 module.exports = [
   {
-    files: ["app/frontend/js/**/*.js"],
+    files: ["app/frontend/js/**/*.js", "app/frontend/sw.js"],
     languageOptions: {
       ecmaVersion: 2021,
       sourceType: "script",

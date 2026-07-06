@@ -1,12 +1,15 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import hashlib
 import logging
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import Response
 
 from . import allocation_bridge, background, demo_session, leader_lock
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
@@ -123,11 +126,30 @@ async def trace_context_middleware(request: Request, call_next):
         end_request_trace(token)
 
 
+# Statiska filer: HTML revalideras alltid (billiga 304 via StaticFiles ETag);
+# JS/CSS m.fl. med ?v=<innehålls-hash> (stämplas i Docker-bygget av
+# tools/stamp_asset_versions.py) cachas i ett år — URL:en byter när innehållet
+# byter, så ingen kan köra gammal frontend mot nytt API.
+_IMMUTABLE_STATIC_SUFFIXES = (".js", ".css", ".svg", ".png", ".ico", ".woff", ".woff2")
+
+
 @app.middleware("http")
-async def prevent_stale_static_cache_in_development(request: Request, call_next):
+async def static_cache_headers(request: Request, call_next):
     response = await call_next(request)
-    if not settings.is_production and request.url.path.endswith((".html", ".js", ".css")):
-        response.headers["Cache-Control"] = "no-store"
+    path = request.url.path
+    if path.startswith("/api/"):
+        return response
+    if not settings.is_production:
+        if path.endswith((".html", ".js", ".css")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+    if path.endswith(".html") or path == "/":
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.endswith(_IMMUTABLE_STATIC_SUFFIXES):
+        if request.query_params.get("v"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -146,6 +168,50 @@ async def demo_session_context_middleware(request: Request, call_next):
         return await call_next(request)
     finally:
         demo_session.demo_data_root_var.reset(token)
+
+
+@app.middleware("http")
+async def api_get_etag(request: Request, call_next):
+    """Svag ETag på API-GET-JSON: oförändrat innehåll ger 304 utan payload.
+
+    Webbläsaren revalideras (private, no-cache) i stället för att ladda om hela
+    svaret — kombinerat med frontendens GET-cache kostar ett oförändrat svar en
+    RTT i stället för hela överföringen. Strömmande svar (SSE, filer) och
+    no-store-svar lämnas orörda.
+    """
+    response = await call_next(request)
+    if (
+        request.method != "GET"
+        or not request.url.path.startswith("/api/")
+        or response.status_code != 200
+        or not response.headers.get("content-type", "").startswith("application/json")
+        or "no-store" in response.headers.get("cache-control", "")
+    ):
+        return response
+
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    etag = f'W/"{hashlib.sha256(body).hexdigest()[:32]}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(
+            status_code=304,
+            headers={"ETag": etag, "Cache-Control": "private, no-cache"},
+            background=response.background,
+        )
+    headers = dict(response.headers)
+    headers["ETag"] = etag
+    headers.setdefault("cache-control", "private, no-cache")
+    return Response(
+        content=body,
+        status_code=response.status_code,
+        headers=headers,
+        background=response.background,
+    )
+
+
+# Läggs till sist = ytterst i middleware-kedjan: komprimerar både API-JSON och
+# statiska JS/CSS-svar (60-80 % mindre payload). Starlette undantar
+# text/event-stream automatiskt, så SSE-progressströmmarna påverkas inte.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.get("/api/health")

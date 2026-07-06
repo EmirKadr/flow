@@ -7,6 +7,21 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-06] ingest | Leveransoptimering: gzip, immutable-cache, ETag/304, service worker, latensbudget
+
+Ny sida `prestanda-leveranslager.md`. Backend gzippar sjalv (GZipMiddleware,
+SSE undantas av Starlette), `tools/stamp_asset_versions.py` stamplar
+`?v=<innehalls-hash>` pa alla script/link-taggar i Docker-bygget och
+`static_cache_headers` ger dem ett ars immutable-cache (HTML alltid
+`no-cache`), `api_get_etag` ger 304 utan payload pa oforandrade API-GET-svar,
+och `app/frontend/sw.js` cache-first:ar enbart versionsstamplade filer
+(registreras bara over https). Latensbudget: `tools/latency_budgets.json` +
+`api_benchmark --budget` (rutin i DEPLOY.md). Workers-audit: 1 worker star
+fast — sankeys `_TRACE_CACHE` ar processlokal (410-risk vid >1 worker);
+eskaleringsvag dokumenterad i DEPLOY.md. Konstaterat under arbetet:
+idle-prefetch for alla sidor fanns redan (`enqueueVisiblePagePrefetches`) och
+"morgonvarmning" tacks av produktivitetens snapshot-scheduler.
+
 ## [2026-07-06] arkitektur | RFID gar WiFi-only, USB-brygga avvecklad
 
 `MG_Plock.ino`/`MG_VM.ino` postar nu direkt over WiFi
