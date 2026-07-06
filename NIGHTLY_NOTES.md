@@ -4,6 +4,37 @@ Arbetslogg för OVERNIGHT_PLAN.md. Nyaste passet överst.
 
 ## Pass 2026-07-06 (branch feature/nightly-quality-20260706)
 
+### SAMMANFATTNING AV PASSET (skrivet vid avslut, natt mot 2026-07-07)
+
+**Klart och pushat (13 commits, hela icke-browser-sviten grön i pre-push):**
+1. **Uppgift 1 KLAR** — apphjälpen 30→~45 tools: 6 Historik/fel + 4
+   produktivitet + finance_summary (med refaktor av business-summary-
+   endpointen till delad byggare) + 3 schema-analys + 2 systemstatus.
+   Alla med egna servicetester och wiki-uppdateringar.
+2. **Uppgift 2 DELVIS** — @ts-check: 4→26 av 82 filer (hela js/common/ +
+   10 sidfiler). Alla fynd fixade utan beteendeändring.
+3. **Uppgift 4 KLAR** — säkerhetsheaders på alla svar, rate limit på
+   login (fönster per användarnamn+IP, auditloggad), cookieflaggor
+   kontraktstestade, CSP-stegplan nedan.
+4. **Uppgift 7 KLAR (backend+frontend)** — Buggrapportören: 🐞-knapp →
+   consent → 30 s rrweb-inspelning → POST med skyddsräcken → vyn
+   Buggrapporter med uppspelning + status. Experiment, beslut 2026-08-07.
+
+**Återstår till nästa pass (i prioritetsordning):**
+- Buggrapportören: Playwright-test för consent-flödet ("ingen inspelning
+  utan OK" är servicetestat men inte browsertestat) + desktop-smoke
+  (knappen bör verifieras i PyQt-skalet: python desktop/main.py --smoke-test).
+- Uppgift 3 (prestanda): inget påbörjat — benchmark först, sedan
+  stale-while-revalidate-pilot och trace-cache→DB. Bra huvudjobb nästa natt.
+- Uppgift 2: 56 filer kvar utan @ts-check (fortsätt minsta först;
+  overview.js kräver namnrymdsflytt — ta sist).
+- Uppgifterna 5, 6, 8, 9, 10 (a11y/mobil, UX-svep, coverage, Hypothesis,
+  JS-harness): ej påbörjade.
+- MERGE-BESLUT ÅT EMIR: branchen är feature/nightly-quality-20260706;
+  inget har mergats till main eller release/* — det är ditt beslut på
+  morgonen. Migration 0047 ingår (kör automatiskt vid appstart).
+
+
 ### Beslut och avvikelser
 
 - **Ekonomi-tools, medvetet strukna ur batchen** (uppgift 1): planen föreslog
