@@ -1,3 +1,4 @@
+// @ts-check
 window.showToast = showToast;
 window.initPage = initPage;
 window.queueToast = queueToast;

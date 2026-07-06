@@ -1,3 +1,4 @@
+// @ts-check
 function allocationDefaultGetCacheTtlMs(path, options = {}) {
   if (options.skipCache || options.cacheTtlMs) return 0;
   const text = String(path || "");
@@ -35,7 +36,7 @@ async function allocationJson(path, options = {}) {
   if (!response.ok) {
     let message = body?.detail || body?.message || body?.error || `HTTP ${response.status}`;
     if (typeof message === "object") message = message.message || JSON.stringify(message);
-    const error = new Error(message);
+    const error = /** @type {Error & { status?: number, body?: unknown }} */ (new Error(message));
     error.status = response.status;
     error.body = body;
     window.reportApiError?.(path, {

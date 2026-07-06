@@ -1,3 +1,4 @@
+// @ts-check
 function openCopyModal() {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
@@ -22,15 +23,16 @@ function openCopyModal() {
   document.body.appendChild(backdrop);
   document.getElementById("cp-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("cp-go").addEventListener("click", async () => {
+    const field = (id) => /** @type {HTMLInputElement} */ (document.getElementById(id));
     const copyPayload = {
-      from_year: Number(document.getElementById("cp-fy").value),
-      from_week: Number(document.getElementById("cp-fw").value),
-      from_weekday: Number(document.getElementById("cp-fd").value),
-      to_year: Number(document.getElementById("cp-ty").value),
-      to_week: Number(document.getElementById("cp-tw").value),
-      to_weekday: Number(document.getElementById("cp-td").value),
+      from_year: Number(field("cp-fy").value),
+      from_week: Number(field("cp-fw").value),
+      from_weekday: Number(field("cp-fd").value),
+      to_year: Number(field("cp-ty").value),
+      to_week: Number(field("cp-tw").value),
+      to_weekday: Number(field("cp-td").value),
       area_id: state.areaId,
-      overwrite: document.getElementById("cp-ow").checked,
+      overwrite: field("cp-ow").checked,
     };
     try {
       const r = await api.post("/api/schedule/copy", copyPayload);

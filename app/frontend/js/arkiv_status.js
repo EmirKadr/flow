@@ -1,3 +1,4 @@
+// @ts-check
 // Arkivstatus: superuser-dashboard för arkiv-cachen (DuckDB) + produktivitetsbygget.
 // Läs-bara vy som pollar /api/data-fetch/archive-cache/status.
 

@@ -30,6 +30,11 @@ interface ApiRequestOptions extends RequestInit {
 
 interface FlowLogTarget {
   append?: (message: string, kind?: string, title?: string) => void;
+  info?: (message: string, title?: string) => void;
+  success?: (message: string, title?: string) => void;
+  warn?: (message: string, title?: string) => void;
+  error?: (message: string, title?: string) => void;
+  clear?: () => void;
 }
 
 interface Window {
@@ -47,9 +52,35 @@ interface Window {
   preloadAllocationUploadsData?: () => void;
   // Sidkontext och desktop-brygga (sätts av foundation/desktop-skalet).
   flowActivePage?: string;
-  flowDesktop?: { isDesktop?: () => boolean } & Record<string, unknown>;
-  flowDesktopBridge?: unknown;
+  flowCurrentViewId?: string;
+  flowDesktop?: {
+    isDesktop?: () => boolean;
+    ready?: () => Promise<any>;
+    pickFiles?: (options?: { accept?: string; multiple?: boolean }) => Promise<any[]>;
+  };
+  flowDesktopBridge?: any;
   qt?: { webChannelTransport?: unknown };
+  QWebChannel?: any;
+  // Behörighets- och layoutkonstanter som common.js exponerar globalt.
+  ROLE_VIEW_ROLES?: any;
+  ROLE_VIEW_LEVELS?: any;
+  ROLE_VIEW_IDS?: any;
+  SIDEBAR_DEFAULT_LAYOUT?: any;
+  flowFlushWaitMetrics?: (...args: any[]) => any;
+  flowFlushInteractions?: (...args: any[]) => any;
+  sharedAllocationUploads?: {
+    saveFiles: (...args: any[]) => any;
+    clearGeneration: (...args: any[]) => any;
+  };
+  flowBackgroundPrefetch?: {
+    status: () => any;
+    waitForIdle: (...args: any[]) => any;
+  };
+  allocationUploadActivity?: {
+    start: (...args: any[]) => any;
+    finish: (...args: any[]) => any;
+    clear: (...args: any[]) => any;
+  };
   // Periodväljaren (common/period_picker.js).
   flowPeriodPicker?: {
     open: (options: {

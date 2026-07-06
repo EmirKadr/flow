@@ -1,3 +1,4 @@
+// @ts-check
 function renderSoloFlowView(flowId) {
   const flow = flowById(flowId);
   if (!flow) {
@@ -43,7 +44,7 @@ function renderSoloFlowView(flowId) {
     <label class="button-like" for="allocation-solo-files">${fileActionLabel}</label>
     <input id="allocation-solo-files" type="file" multiple hidden />
   ` : "");
-  document.getElementById("allocation-solo-files")?.addEventListener("change", async (event) => routeAllocationFiles(event.target.files, slots));
+  document.getElementById("allocation-solo-files")?.addEventListener("change", async (event) => routeAllocationFiles(event.target instanceof HTMLInputElement ? event.target.files : null, slots));
   bindFlowFields(document.getElementById("allocationRoot"));
   bindRunButtons();
 }

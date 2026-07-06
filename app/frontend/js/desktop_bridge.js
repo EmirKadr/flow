@@ -1,3 +1,4 @@
+// @ts-check
 (function () {
   const state = {
     ready: false,

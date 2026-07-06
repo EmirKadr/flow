@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter overview.js via <script>-tagg.
 
@@ -72,10 +73,10 @@ function buildWeekBody() {
       const cell = lookup.get(`${p.id}:${wd}`) || { activity_id: null, mixed: false, hours_total: 0, template_hours: 0 };
       const td = document.createElement("td");
       td.className = "day";
-      td.dataset.personId = p.id;
-      td.dataset.weekday = wd;
-      td.dataset.year = state.year;
-      td.dataset.week = state.week;
+      td.dataset.personId = String(p.id);
+      td.dataset.weekday = String(wd);
+      td.dataset.year = String(state.year);
+      td.dataset.week = String(state.week);
       td.tabIndex = -1;
       const dayDate = new Date(monday);
       dayDate.setUTCDate(monday.getUTCDate() + (wd - 1));

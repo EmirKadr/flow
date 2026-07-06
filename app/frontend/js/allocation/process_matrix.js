@@ -1,3 +1,4 @@
+// @ts-check
 function allocationProcessMatrixAreas() {
   return allocationProcessMatrixData().areas || ALLOCATION_PROCESS_AREA_OPTIONS;
 }
