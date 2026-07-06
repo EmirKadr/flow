@@ -595,8 +595,6 @@ async function load() {
     applyOverviewData(cachedData);
     return true;
   }
-
-    return true;
   } catch (err) {
     if (err?.name === "AbortError") return false;
     throw err;

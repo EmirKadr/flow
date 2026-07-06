@@ -19,6 +19,7 @@ Tre invariants som skyddar mot smygande strukturförfall:
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -231,3 +232,65 @@ def test_service_modules_respect_domain_boundaries():
         "ALLOWED_DOMAIN_EDGES i samma ändring. Annars: gå via delad grund eller "
         "flytta logiken.\n  " + "\n  ".join(sorted(set(violations)))
     )
+
+
+# --- Frontend-domangranser ---------------------------------------------------
+
+FRONTEND_DIR = ROOT / "app" / "frontend"
+
+# Sida -> domankatalog under js/ (utover common/ som alla sidor far ladda).
+# Kontrakt: en sida laddar script fran js/common/ plus hogst EN domankatalog.
+# Ett nytt korsberoende ar ett medvetet beslut - uppdatera mappningen i samma
+# andring och motivera i commit-meddelandet, precis som ALLOWED_DOMAIN_EDGES.
+ALLOWED_PAGE_DOMAINS = {
+    "bearbeta.html": {"allocation"},
+    "dela.html": {"allocation"},
+    "installningar.html": {"allocation"},
+    "uppladdningar.html": {"allocation"},
+    "index.html": {"schedule"},
+    "label-editor.html": {"label_editor"},
+}
+
+
+def test_frontend_pages_only_load_their_own_domain_scripts():
+    violations = []
+    for html in sorted(FRONTEND_DIR.glob("*.html")):
+        text = html.read_text(encoding="utf-8")
+        srcs = re.findall(r'<script[^>]+src="([^"]+)"', text)
+        domains = set()
+        for src in srcs:
+            match = re.match(r"/?js/([^/]+)/", src)
+            if match and match.group(1) != "common":
+                domains.add(match.group(1))
+        allowed = ALLOWED_PAGE_DOMAINS.get(html.name, set())
+        extra = domains - allowed
+        if extra:
+            allowed_label = ", ".join(sorted(allowed)) if allowed else "bara common/"
+            violations.append(f"{html.name}: laddar {sorted(extra)} (tillatet: {allowed_label})")
+    assert not violations, (
+        "Ny domankorsning i frontend. Ar beroendet medvetet? Lagg da till "
+        "domanen i ALLOWED_PAGE_DOMAINS i samma andring. Annars: flytta delad "
+        "logik till js/common/ i stallet for att ladda en annan domans script:\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_frontend_page_domain_allowlist_is_not_stale():
+    stale = []
+    for name, domains in ALLOWED_PAGE_DOMAINS.items():
+        page = FRONTEND_DIR / name
+        if not page.is_file():
+            stale.append(f"{name} (sidan finns inte)")
+            continue
+        text = page.read_text(encoding="utf-8")
+        srcs = re.findall(r'<script[^>]+src="([^"]+)"', text)
+        loaded = set()
+        for src in srcs:
+            match = re.match(r"/?js/([^/]+)/", src)
+            if match and match.group(1) != "common":
+                loaded.add(match.group(1))
+        unused = domains - loaded
+        if unused:
+            stale.append(f"{name}: {sorted(unused)} laddas inte langre")
+    assert not stale, "Ta bort inaktuella poster ur ALLOWED_PAGE_DOMAINS: " + ", ".join(stale)
+

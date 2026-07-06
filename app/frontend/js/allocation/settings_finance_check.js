@@ -204,24 +204,6 @@ function renderProductivityFinanceProcessCheckResult(result, options = {}) {
               <p>${allocationEscape(item.process_extra_count)} extra ${allocationEscape(productivityFinanceProcessCheckComparisonUnit(item))} samlas av matchande processer, men ligger utanfor den har intaktsraden.</p>
               ${productivityFinanceProcessCheckDiagnostics(item.process_extra)}
             ` : ""}
-            ${false && Number(item.missing_in_kpi_count || 0) > 0 ? `
-              <p>${allocationEscape(item.missing_in_kpi_count)} ${allocationEscape(productivityFinanceProcessCheckComparisonUnit(item))} finns i intÃ¤kten men saknas i KPI-processerna.</p>
-              ${productivityFinanceProcessCheckRuleGaps(item.rule_gaps)}
-              ${productivityFinanceProcessCheckDiagnostics(item.missing_in_kpi)}
-            ` : ""}
-            ${false && Number(item.process_extra_count || 0) > 0 ? `
-              <p>${allocationEscape(item.process_extra_count)} extra ${allocationEscape(productivityFinanceProcessCheckComparisonUnit(item))} samlas av matchande processer, men ligger utanfÃ¶r den hÃ¤r intÃ¤ktsraden.</p>
-              ${productivityFinanceProcessCheckDiagnostics(item.process_extra)}
-            ` : ""}
-            ${false && Number(item.missing_in_kpi_count || 0) > 0 ? `
-              <p>${allocationEscape(item.missing_in_kpi_count)} rader finns i intäkten men saknas i KPI-processerna.</p>
-              ${productivityFinanceProcessCheckRuleGaps(item.rule_gaps)}
-              ${productivityFinanceProcessCheckDiagnostics(item.missing_in_kpi)}
-            ` : ""}
-            ${false && Number(item.process_extra_count || 0) > 0 ? `
-              <p>${allocationEscape(item.process_extra_count)} KPI-rader räknas också av matchande processer, men ligger utanför den här intäktsraden.</p>
-              ${productivityFinanceProcessCheckDiagnostics(item.process_extra)}
-            ` : ""}
           </article>
         `).join("") || `<p class="allocation-muted">Inga intäktsrader med sparad uträkning hittades.</p>`}
       </div>

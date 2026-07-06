@@ -10,7 +10,7 @@ const progressRemaining = document.getElementById("metaProgressRemaining");
 const statusBox = document.getElementById("metaStatus");
 
 const META_UPLOAD_FILES_PER_REQUEST = 1;
-const PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
+const META_PUBLIC_INTERACTION_EVENT_REPORT_PATH = "/api/audit/interactions/public";
 let selectedFiles = [];
 let fileUploadStates = [];
 let uploading = false;
@@ -43,7 +43,7 @@ function publicMetaTrack(eventType, detail = {}) {
       detail,
     }],
   });
-  fetch(PUBLIC_INTERACTION_EVENT_REPORT_PATH, {
+  fetch(META_PUBLIC_INTERACTION_EVENT_REPORT_PATH, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

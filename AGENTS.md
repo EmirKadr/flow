@@ -174,6 +174,29 @@ implementationen skilja pa klick och drag/textmarkering, till exempel genom att
 krava att bade pointerdown och pointerup startar/slutar pa backdropen, och ett
 test ska skydda beteendet.
 
+## Frontend-typning och lint (JSDoc + tsc + ESLint)
+
+Frontendens vanilla JS ar buildlos och ska forbli det - inga ramverk, ingen
+bundler. Typsakerheten kommer fran JSDoc-typer verifierade av TypeScript-
+kompilatorn som ren checker plus ESLint med korrekthetsregler. CI och
+pre-push-hooken kor `npm run typecheck` och `npm run lint`; bada ska vara
+grona fore push. Konfig: `jsconfig.json`, `eslint.config.js`,
+`app/frontend/js/types/flow-globals.d.ts`. Se `wiki/frontend-typing.md`.
+
+- **Utrullningsregel:** en JS-fil som andras vasentligt ska fa `// @ts-check`
+  hogst upp innan arbetet lamnas, och dess typfel ska fixas. Tackningen vaxer
+  organiskt - ingen stor migrering, men heller ingen ny ocheckad kod.
+- **Flyktvagsregel:** `@ts-ignore`/`@ts-expect-error` kraver en motivering pa
+  samma rad och ska behandlas som radtaksundantagen: tillatet men synligt och
+  ifragasatt. Sprid dem inte.
+- **Synkregel mot backend:** nar ett Pydantic-schema i `app/backend/schemas.py`
+  andras ska motsvarande `@typedef`/interface i frontendens typer uppdateras i
+  samma arbetsinsats - samma princip som paritetsregeln webb/desktop.
+- **Domangranser:** en HTML-sida laddar script fran `js/common/` plus hogst en
+  domankatalog (`js/allocation/`, `js/schedule/`, ...). Kontraktet ligger i
+  `tests/tools/test_architecture_contracts.py::ALLOWED_PAGE_DOMAINS` och nya
+  korsberoenden ar medvetna beslut, precis som `ALLOWED_DOMAIN_EDGES`.
+
 ## Loggregel for agenter
 
 Anvandaren ska kunna se vad som lyckades, vad som misslyckades och vad systemet

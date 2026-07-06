@@ -2502,3 +2502,18 @@ etikettvarden skickas fortsatt inte till backend eller system-clipboard.
 Valet laggs in som ett vanligt symbolobjekt, kan andras i egenskapspanelen och
 foljer samma lokala dokumentlogg, kortkommandon och read-only/audit-undantag som
 ovriga etikettobjekt.
+
+## [2026-07-06] arkitektur | Frontend-typning: JSDoc + tsc + ESLint utan byggsteg
+
+Frontendens vanilla JS har nu maskinkontrollerade kontrakt: JSDoc-typer
+verifierade av tsc (npm run typecheck; jsconfig.json, checkJs via // @ts-check
+per fil) och ESLint med korrekthetsregler (npm run lint). Bada kors i CI
+(test.yml) och i pre-push-hooken. Ingen build - servad JS ar oforandrad.
+Nya filer: package.json, jsconfig.json, eslint.config.js,
+app/frontend/js/types/flow-globals.d.ts, wiki/frontend-typing.md.
+api.js ar forsta @ts-check-filen. Forsta korningarna hittade och fixade:
+global namnkollision (PUBLIC_INTERACTION_EVENT_REPORT_PATH i api.js vs
+meta_upload.js, omdopt), dod mojibake-kod i settings_finance_check.js och
+oatkomlig return i overview.js. Arkitekturkontraktet fick frontend-
+domangranser: ALLOWED_PAGE_DOMAINS (en sida = common/ + hogst en doman).
+Regler tillagda i AGENTS.md (utrullning, @ts-ignore, backend-synk).
