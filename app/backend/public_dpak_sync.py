@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from .config import settings
-from .database import SessionLocal
 from .public_dpak_service import (
     dataset_status,
     import_from_csv_directory,
@@ -38,6 +37,10 @@ def _support_dir(value: Path | None) -> Path:
 
 def _normalize_legacy_args(argv: list[str]) -> list[str]:
     normalized = list(argv)
+    if "--status" in normalized:
+        normalized.remove("--status")
+        if not normalized or normalized[0] not in {"api", "csv", "rebuild", "status"}:
+            normalized.insert(0, "status")
     if "--from-api" in normalized:
         normalized.remove("--from-api")
         if not normalized or normalized[0] not in {"api", "csv", "rebuild", "status"}:
@@ -75,7 +78,7 @@ def _load_env_file(path: Path | None) -> None:
         value = value.strip().strip('"').strip("'")
         if not key:
             continue
-        os.environ.setdefault(key, value)
+        os.environ[key] = value
         if hasattr(settings, key):
             setattr(settings, key, _coerce_env_value(getattr(settings, key), value))
 
@@ -134,6 +137,19 @@ class DpakProgressBar:
             self.current = (
                 f"{label}: {event.get('view')} {event.get('start')}..{event.get('end')} "
                 f"({_fmt_int(event.get('rows'))} rader)"
+            )
+            self._render()
+            return
+        if event_type == "db_insert":
+            inserted = _fmt_int(event.get("inserted"))
+            rows = _fmt_int(event.get("rows"))
+            self.current = f"skriver till Postgres {inserted}/{rows} rader"
+            self._render()
+            return
+        if event_type == "db_retry":
+            self.current = (
+                f"tappar DB-anslutning, testar igen "
+                f"{event.get('attempt')}/{event.get('attempts')}"
             )
             self._render()
             return
@@ -238,12 +254,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_parser = subparsers.add_parser("status", help="Print public D-pak dataset status.")
     status_parser.add_argument("--business-code", default=argparse.SUPPRESS, help=business_help)
+    status_parser.add_argument("--env-file", type=Path, default=argparse.SUPPRESS, help="Load values from a local env file.")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args(_normalize_legacy_args(sys.argv[1:]))
     _load_env_file(getattr(args, "env_file", None))
+    from .database import SessionLocal
+
     business_code = public_dpak_business_code(args.business_code)
     db = SessionLocal()
     try:
@@ -297,6 +316,10 @@ def main() -> None:
             print(f"chunks skipped: {result.chunks_skipped}")
             print(f"rows imported this run: {result.rows_imported}")
             return
+    except KeyboardInterrupt:
+        db.rollback()
+        print("\nAvbruten. Klara chunks behalls; nasta korning fortsatter pa ofardiga chunks.")
+        raise SystemExit(130)
     except Exception:
         db.rollback()
         raise

@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 import math
 import re
+import time as time_module
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, Callable, Iterable
 
 import pandas as pd
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
@@ -466,10 +468,32 @@ def build_order_supplier_box_facts(
     ]
 
 
-def _bulk_insert(db: Session, model, rows: list[dict[str, Any]], chunk_size: int = 2000) -> None:
+def _bulk_insert(
+    db: Session,
+    model,
+    rows: list[dict[str, Any]],
+    chunk_size: int | None = None,
+    *,
+    commit_each_batch: bool = False,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> None:
+    chunk_size = max(1, int(chunk_size or settings.PUBLIC_DPAK_INSERT_BATCH_SIZE or 500))
+    last_reported = 0
     for index in range(0, len(rows), chunk_size):
         db.bulk_insert_mappings(model, rows[index : index + chunk_size])
         db.flush()
+        if commit_each_batch:
+            db.commit()
+        inserted = min(index + chunk_size, len(rows))
+        if progress and (inserted == len(rows) or inserted - last_reported >= max(chunk_size, 5000)):
+            last_reported = inserted
+            progress(
+                {
+                    "type": "db_insert",
+                    "inserted": inserted,
+                    "rows": len(rows),
+                }
+            )
 
 
 def replace_public_dpak_dataset(
@@ -885,6 +909,8 @@ def _replace_pick_rows_for_chunk(
     chunk_start: date,
     chunk_end: date,
     rows: list[dict[str, Any]],
+    commit_batches: bool = False,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> None:
     db.query(PublicDpakPickRow).filter(
         PublicDpakPickRow.business_code == business_code,
@@ -892,8 +918,57 @@ def _replace_pick_rows_for_chunk(
         PublicDpakPickRow.pick_date >= _dt(chunk_start),
         PublicDpakPickRow.pick_date <= _range_end_dt(chunk_end),
     ).delete(synchronize_session=False)
-    db.flush()
-    _bulk_insert(db, PublicDpakPickRow, rows)
+    if commit_batches:
+        db.commit()
+    else:
+        db.flush()
+    _bulk_insert(db, PublicDpakPickRow, rows, commit_each_batch=commit_batches, progress=progress)
+
+
+def _replace_pick_rows_for_chunk_with_retries(
+    db: Session,
+    *,
+    business_code: str,
+    source_view: str,
+    chunk_start: date,
+    chunk_end: date,
+    rows: list[dict[str, Any]],
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> None:
+    attempts = max(1, int(settings.PUBLIC_DPAK_DB_WRITE_RETRIES or 1))
+    for attempt in range(1, attempts + 1):
+        try:
+            _replace_pick_rows_for_chunk(
+                db,
+                business_code=business_code,
+                source_view=source_view,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+                rows=rows,
+                commit_batches=True,
+                progress=progress,
+            )
+            return
+        except OperationalError as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt >= attempts:
+                raise
+            if progress:
+                progress(
+                    {
+                        "type": "db_retry",
+                        "attempt": attempt + 1,
+                        "attempts": attempts,
+                        "view": source_view,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "error": str(exc).splitlines()[0][:200],
+                    }
+                )
+            time_module.sleep(min(30, 3 * attempt))
 
 
 def sync_public_dpak_pick_chunks(
@@ -1021,13 +1096,14 @@ def sync_public_dpak_pick_chunks(
                 if (pick_day := _day(row.get("pick_date"))) is not None and chunk_start <= pick_day <= chunk_end
             ]
             normalized_rows = _dedupe_pick_rows(normalized_rows)
-            _replace_pick_rows_for_chunk(
+            _replace_pick_rows_for_chunk_with_retries(
                 db,
                 business_code=business,
                 source_view=view_id,
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
                 rows=normalized_rows,
+                progress=progress,
             )
             chunk = _sync_chunk(
                 db,
@@ -1061,23 +1137,26 @@ def sync_public_dpak_pick_chunks(
                 )
         except Exception as exc:
             db.rollback()
-            failed_chunk = _sync_chunk(
-                db,
-                business_code=business,
-                source_view=view_id,
-                chunk_start=chunk_start,
-                chunk_end=chunk_end,
-            )
-            failed_chunk.status = "failed"
-            failed_chunk.error_text = str(exc)[:4000]
-            failed_chunk.completed_at = datetime.now(timezone.utc)
-            _mark_public_dpak_dataset_status(
-                db,
-                business_code=business,
-                status="error",
-                error_text=f"{view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}: {exc}",
-            )
-            db.commit()
+            try:
+                failed_chunk = _sync_chunk(
+                    db,
+                    business_code=business,
+                    source_view=view_id,
+                    chunk_start=chunk_start,
+                    chunk_end=chunk_end,
+                )
+                failed_chunk.status = "failed"
+                failed_chunk.error_text = str(exc)[:4000]
+                failed_chunk.completed_at = datetime.now(timezone.utc)
+                _mark_public_dpak_dataset_status(
+                    db,
+                    business_code=business,
+                    status="error",
+                    error_text=f"{view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}: {exc}",
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
             raise
 
     if progress:
