@@ -387,9 +387,8 @@ function renderRows() {
 
 
 async function loadPersons() {
-  const areaId = focusedAreaId();
-  const params = new URLSearchParams();
-  if (areaId != null) params.set("area_id", String(areaId));
+  // area_id vid specifikt områdesfokus, business_id vid ∞ + verksamhetsfokus.
+  const params = areaFocusListParams(areas);
   const query = params.toString();
   // SWR-pilot: visa senaste snapshot direkt vid sidbyte, uppdatera i bakgrunden.
   await api.getSwr(`/api/persons${query ? `?${query}` : ""}`, (data) => {

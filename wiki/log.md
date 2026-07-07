@@ -2759,3 +2759,21 @@ Emirs önskemål efter första skarpa testet på flow-development:
 - Tester: delete-kontrakt (behörighet, audit, 404), summarize/soft-exit
   för verktyget, browsertestet utökat med statusdropdown + ta bort-flödet
   (kört grönt lokalt). API-typer regenererade.
+
+## [2026-07-07] bygge | Fokustogglar: vertikal stapling + verksamhetsfilter vid ∞-områden
+
+Emirs önskemål: togglarna i sidebar-footern var horisontella med öppen
+sidebar (nu staplade vertikalt, som i ihopfällt läge), och verksamhets-
+togglen filtrerade inte när områdesfokus stod på ∞.
+
+- **Filterregeln**: vald verksamhet + ∞ områden = bara den verksamheten;
+  ∞ + ∞ = allt. Nya helpers `areaFocusListParams` (Personer skickar
+  business_id serverledes; Översikt vecko-/månads-URL:er + revision) och
+  `matchesAreaFocusBusiness` (aktiviteter/användare/personalvyer klient-
+  ledes). Översiktens cache-nycklar inkluderar verksamhetsfokus så
+  toggle-byte aldrig målar cachat data från fel verksamhet.
+- **Omhämtning**: writeBusinessFocus skickar alltid flow:areaFocusChanged
+  (tidigare bara när områdesfokus ändrades) så alla vyer laddar om vid
+  verksamhetsbyte.
+- Kontrakt: tests/tools/test_area_focus_business_filter.py (JS-harness,
+  6 tester). Backend oförändrad — alla endpoints tog redan business_id.

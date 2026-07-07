@@ -191,7 +191,9 @@ function focusedAreaId() {
 
 function matchesAreaFocus(activity) {
   const areaId = focusedAreaId();
-  return areaId == null || Number(activity?.area_id) === Number(areaId);
+  if (areaId != null) return Number(activity?.area_id) === Number(areaId);
+  // Alla områden (∞): verksamhetstogglen ska fortfarande filtrera.
+  return matchesAreaFocusBusiness(activity?.business_id);
 }
 
 async function load() {

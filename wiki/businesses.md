@@ -1,7 +1,7 @@
 ---
 title: Verksamheter och isolering
 status: aktiv
-updated: 2026-07-06
+updated: 2026-07-07
 tags: [verksamheter, behorighet, isolering, super-user]
 ---
 
@@ -18,7 +18,8 @@ Kort svar: Verksamhet är isoleringsnivån ovanför område. Vanliga användare,
    - R3 visar bara R3-toggle tills `ANNAT` läggs till för R3.
    - Super User kan använda `∞` som globalt allt.
    - Hogerklick pa togglen oppnar en direktmeny med samma scope: vanliga anvandare far omradena i egen verksamhet och Super User far alla aktiva omraden.
-   - Super User har dessutom en egen verksamhetsfokus-toggle bredvid områdestogglen. Väljs en specifik verksamhet där filtreras områdestogglens alternativ till den verksamhetens områden; `∞` i verksamhetstogglen visar alla områden igen. Om aktuellt områdesfokus inte tillhör vald verksamhet nollställs det till `∞`.
+   - Super User har dessutom en egen verksamhetsfokus-toggle under områdestogglen (fokustogglarna staplas vertikalt i sidebar-footern sedan 2026-07-07). Väljs en specifik verksamhet där filtreras områdestogglens alternativ till den verksamhetens områden; `∞` i verksamhetstogglen visar alla områden igen. Om aktuellt områdesfokus inte tillhör vald verksamhet nollställs det till `∞`.
+   - **Filterregeln (2026-07-07):** verksamhetstogglen filtrerar vyernas data även när områdesfokus är `∞`. Vald verksamhet + `∞` områden = bara den verksamhetens personer/aktiviteter/användare/Översikt. `∞` verksamheter + `∞` områden = allt syns. Specifikt område pekar redan ut verksamheten. Centralt via `areaFocusListParams` (serverfiltrerade vyer skickar `business_id`) och `matchesAreaFocusBusiness` (klientfiltrerade vyer); ett verksamhetsbyte skickar alltid `flow:areaFocusChanged` så vyerna hämtar om. Kontrakt: `tests/tools/test_area_focus_business_filter.py`.
 3. När en vanlig användare skapar person, aktivitet, användare, schemacell eller settingsrad väljer användaren inte verksamhet. Backend använder användarens verksamhet.
 4. När Super User skapar eller importerar något som inte kan härledas från område, person eller aktivitet måste Super User välja verksamhet.
 5. Vanliga användare ska inte se att andra verksamheter finns. Främmande id ska ge nekad eller saknad resurs utan att visa data från den andra verksamheten.

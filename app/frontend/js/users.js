@@ -234,7 +234,9 @@ function focusedAreaId() {
 
 function matchesAreaFocus(user) {
   const areaId = focusedAreaId();
-  return areaId == null || Number(user?.area_id) === Number(areaId);
+  if (areaId != null) return Number(user?.area_id) === Number(areaId);
+  // Alla områden (∞): verksamhetstogglen ska fortfarande filtrera.
+  return matchesAreaFocusBusiness(user?.business_id);
 }
 
 function passwordStatus(user) {
