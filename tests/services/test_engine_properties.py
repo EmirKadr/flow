@@ -11,7 +11,7 @@ import math
 
 import pandas as pd
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import assume, given, settings, strategies as st
 
 from warehouse_tools.engine_core.io_utils import normalize_saldo
 from warehouse_tools.engine_core.reports import build_chunked_values_result
@@ -133,3 +133,98 @@ def test_normalize_saldo_never_leaks_nan_and_sums_per_article(rows):
         )
         actual_plats = result.loc[result["Artikel"] == article, "Plockplats"].iloc[0]
         assert actual_plats == expected_plats
+
+
+# ---------------------------------------------------------------------------
+# to_num: total funktion — kraschar aldrig, returnerar alltid ändlig float,
+# och tolkar svensk sifferform (mellanslag som tusentalsavgränsare, komma
+# som decimaltecken) exakt. (Nattpass 2026-07-07.)
+# ---------------------------------------------------------------------------
+
+
+@given(
+    st.one_of(
+        st.none(),
+        st.text(max_size=30),
+        st.floats(allow_nan=True, allow_infinity=False, width=32),
+        st.integers(min_value=-(10**9), max_value=10**9),
+    )
+)
+@settings(max_examples=200, deadline=None)
+def test_to_num_is_total_and_finite(value):
+    from warehouse_tools.engine_core.io_utils import to_num
+
+    result = to_num(value)
+    assert isinstance(result, float)
+    assert math.isfinite(result)
+
+
+@given(
+    st.integers(min_value=-(10**9), max_value=10**9),
+    st.integers(min_value=0, max_value=99),
+)
+@settings(max_examples=100, deadline=None)
+def test_to_num_parses_swedish_number_format(whole, decimals):
+    from warehouse_tools.engine_core.io_utils import to_num
+
+    text = f"{whole:,}".replace(",", " ") + f",{decimals:02d}"
+    expected = float(f"{whole}.{decimals:02d}") if whole >= 0 else -float(f"{abs(whole)}.{decimals:02d}")
+    assert to_num(text) == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# find_col: case-insensitiv exakt träff returnerar alltid det VERKLIGA
+# kolumnnamnet; miss utan default ger KeyError; miss med required=False ger
+# default. Skyddar fuzzy-matchningen som hela CSV-inläsningen vilar på.
+# ---------------------------------------------------------------------------
+
+
+_col_name = st.text(
+    alphabet=st.characters(whitelist_categories=("Lu", "Ll", "Nd"), max_codepoint=0x017F),
+    min_size=3,
+    max_size=12,
+)
+
+
+@given(st.lists(_col_name, min_size=1, max_size=6, unique_by=lambda s: s.lower()), st.data())
+@settings(max_examples=100, deadline=None)
+def test_find_col_exact_match_is_case_insensitive(columns, data):
+    from warehouse_tools.engine_core.io_utils import find_col
+
+    frame = pd.DataFrame(columns=columns)
+    target = data.draw(st.sampled_from(columns))
+    mangled = data.draw(st.sampled_from([target.lower(), target.upper(), target]))
+    # Kontraktet är lower()-ekvivalens; tecken som ß (upper() -> SS) faller
+    # utanför — Hypothesis hittade det själv. Dokumenterat med assume.
+    assume(mangled.lower() == target.lower())
+    assert find_col(frame, [mangled]) == target
+
+
+@given(st.lists(_col_name, min_size=1, max_size=4, unique_by=lambda s: s.lower()))
+@settings(max_examples=50, deadline=None)
+def test_find_col_miss_raises_or_returns_default(columns):
+    from warehouse_tools.engine_core.io_utils import find_col
+
+    frame = pd.DataFrame(columns=columns)
+    # "\x00" kan aldrig vara del av ett kolumnnamn ur våra strategier.
+    with pytest.raises(KeyError):
+        find_col(frame, ["\x00finns-inte\x00"])
+    assert find_col(frame, ["\x00finns-inte\x00"], required=False, default="fallback") == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# smart_to_datetime: ISO-datum och kompakta ÅÅÅÅMMDD-datum ska båda tolkas
+# till exakt samma datum utan NaT — oavsett blandning av dagar/månader som
+# annars lurar dayfirst-heuristiker.
+# ---------------------------------------------------------------------------
+
+
+@given(st.lists(st.dates(min_value=pd.Timestamp("2000-01-01").date(), max_value=pd.Timestamp("2035-12-31").date()), min_size=1, max_size=40))
+@settings(max_examples=100, deadline=None)
+def test_smart_to_datetime_roundtrips_iso_and_compact(dates):
+    from warehouse_tools.engine_core.io_utils import smart_to_datetime
+
+    iso = smart_to_datetime(pd.Series([d.isoformat() for d in dates]))
+    compact = smart_to_datetime(pd.Series([d.strftime("%Y%m%d") for d in dates]))
+    assert list(iso.dt.date) == dates
+    assert list(compact.dt.date) == dates
