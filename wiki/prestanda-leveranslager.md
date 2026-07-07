@@ -54,6 +54,19 @@ vilken data användaren ser.
    finns alltså redan; se [local-archive-cache](local-archive-cache.md) för
    DuckDB-arkivet.
 
+## Stale-while-revalidate (pilot 2026-07-07: Personer + Översikt)
+
+Sidbyten är riktiga sidladdningar, så minnescachen dör mellan sidor. SWR-
+lagret i `js/api.js` (`api.getSwr`, `readSwrSnapshot`, `swrSnapshot`-option)
+sparar senaste GET-svar som snapshot i sessionStorage UTAN läs-TTL: nästa
+besök målar snapshoten direkt och hämtar färskt i bakgrunden, med en diskret
+"Uppdaterar…"-pill nere till höger. Skyddsregler: verksamhets-/områdesfokus
+bakas in i lagringsnyckeln (scope-byte kan aldrig visa fel data), varje
+mutation rensar snapshots via clearApiGetCache, och kvotfel är ofarliga
+(snapshoten är en bonus). Browsertestat i `test_swr_pilot_browser.py` genom
+att släcka API:et helt och kräva att sidorna ändå renderar. Utvidga till
+fler vyer först när piloten bekräftats i drift.
+
 ## Latensbudget
 
 `tools/latency_budgets.json` sätter max median-ms per kärnendpoint.

@@ -16,6 +16,7 @@ interface ApiRequestOptions extends RequestInit {
   headers?: Record<string, string>;
   cacheTtlMs?: number;
   skipCache?: boolean;
+  swrSnapshot?: boolean;
   logLabel?: string;
   logUserEvent?: boolean;
   logGetUserEvent?: boolean;

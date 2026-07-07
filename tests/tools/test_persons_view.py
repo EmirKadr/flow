@@ -77,7 +77,7 @@ def test_persons_view_has_no_active_inactive_modes():
     assert 'data-person-status="all"' not in persons_html
     assert 'id="show-inactive"' not in persons_html
     assert "statusMode" not in persons_js
-    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in persons_js
+    assert 'api.getSwr(`/api/persons${query ? `?${query}` : ""}`' in persons_js
     assert ".person-status-tabs" not in styles
 
 
@@ -169,7 +169,7 @@ def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
 
     assert "const areaId = focusedAreaId();" in load_body
     assert 'params.set("area_id", String(areaId))' in load_body
-    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in load_body
+    assert 'api.getSwr(`/api/persons${query ? `?${query}` : ""}`' in load_body
     assert 'api.get("/api/persons")' not in load_body
     assert "persons.filter(matchesAreaFocus).filter(passesFilter)" in render_body
     assert "Number(person?.home_area_id) === Number(areaId)" in matches_body

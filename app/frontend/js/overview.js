@@ -572,7 +572,14 @@ async function load() {
 
   if (state.view === "week") {
     const requestedAreaId = state.areaId;
-    const data = await api.get(overviewUrl(null), { signal: controller.signal, cacheTtlMs: 25 * 1000 });
+    // SWR-pilot: måla senaste snapshot direkt (sidbyte) medan färskt data hämtas.
+    const snapshot = api.readSwrSnapshot?.(overviewUrl(null));
+    if (snapshot) {
+      applyOverviewData(filterOverviewDataForArea(snapshot, requestedAreaId));
+      api.setSwrRefreshIndicator?.(true);
+    }
+    const data = await api.get(overviewUrl(null), { signal: controller.signal, cacheTtlMs: 25 * 1000, swrSnapshot: true });
+    api.setSwrRefreshIndicator?.(false);
     if (controller.signal.aborted || requestSeq !== loadState.requestSeq) return false;
     const baseKey = overviewCacheKey();
     const allData = filterOverviewDataForArea(data, null);
@@ -584,7 +591,13 @@ async function load() {
     return true;
   } else {
     const requestedAreaId = state.areaId;
-    const data = await api.get(overviewUrl(null), { signal: controller.signal, cacheTtlMs: 25 * 1000 });
+    const snapshot = api.readSwrSnapshot?.(overviewUrl(null));
+    if (snapshot) {
+      applyOverviewData(filterOverviewDataForArea(snapshot, requestedAreaId));
+      api.setSwrRefreshIndicator?.(true);
+    }
+    const data = await api.get(overviewUrl(null), { signal: controller.signal, cacheTtlMs: 25 * 1000, swrSnapshot: true });
+    api.setSwrRefreshIndicator?.(false);
     if (controller.signal.aborted || requestSeq !== loadState.requestSeq) return false;
     const baseKey = overviewCacheKey();
     const allData = filterOverviewDataForArea(data, null);
@@ -596,6 +609,7 @@ async function load() {
     return true;
   }
   } catch (err) {
+    api.setSwrRefreshIndicator?.(false);
     if (err?.name === "AbortError") return false;
     throw err;
   } finally {

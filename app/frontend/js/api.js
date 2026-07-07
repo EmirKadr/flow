@@ -216,6 +216,8 @@ function clearApiGetPersistentCache(predicate = null) {
 function clearApiGetCache(predicate = null) {
   apiGetCacheGeneration += 1;
   clearApiGetPersistentCache(predicate);
+  // SWR-modulen (common/api_swr.js) laddas bara på pilotsidorna.
+  if (typeof clearSwrSnapshots === "function") clearSwrSnapshots(predicate);
   if (typeof predicate !== "function") {
     apiGetCache.clear();
     apiGetInFlight.clear();
@@ -551,6 +553,7 @@ async function request(path, options = {}) {
     headers = {},
     cacheTtlMs = 0,
     skipCache = false,
+    swrSnapshot = false,
     logLabel = "",
     logUserEvent = undefined,
     logGetUserEvent = false,
@@ -679,6 +682,9 @@ async function request(path, options = {}) {
     }
     if (useGetCache && cacheTtlMs && requestCacheGeneration === apiGetCacheGeneration) {
       writeApiGetCache(path, body, cacheTtlMs);
+    }
+    if (swrSnapshot && method === "GET" && typeof writeSwrSnapshot === "function") {
+      writeSwrSnapshot(path, body);
     }
     reportApiWaitMetric(path, method, requestStartedAt, "ok", telemetryOptions, { status_code: resp.status, trace_id: responseTraceId });
     reportApiInteraction(path, method, "ok", interactionOptions, { status_code: resp.status, trace_id: responseTraceId });

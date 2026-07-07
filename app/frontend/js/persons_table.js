@@ -387,6 +387,9 @@ async function loadPersons() {
   const params = new URLSearchParams();
   if (areaId != null) params.set("area_id", String(areaId));
   const query = params.toString();
-  persons = await api.get(`/api/persons${query ? `?${query}` : ""}`);
-  renderRows();
+  // SWR-pilot: visa senaste snapshot direkt vid sidbyte, uppdatera i bakgrunden.
+  await api.getSwr(`/api/persons${query ? `?${query}` : ""}`, (data) => {
+    persons = data;
+    renderRows();
+  });
 }

@@ -1178,7 +1178,7 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "matchesAreaFocus" in persons
     assert "matchesAreaFocus" in users
     assert 'params.set("area_id", String(areaId))' in persons
-    assert 'api.get(`/api/persons${query ? `?${query}` : ""}`)' in persons
+    assert 'api.getSwr(`/api/persons${query ? `?${query}` : ""}`' in persons
     assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons
     assert "PRODUCTIVITY_GROUPS" not in productivity_overview
     assert "productivity-matrix" not in productivity_overview
