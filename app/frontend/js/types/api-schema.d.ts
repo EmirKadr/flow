@@ -695,6 +695,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bug-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Bug Reports */
+        get: operations["list_bug_reports_api_bug_reports_get"];
+        put?: never;
+        /** Create Bug Report */
+        post: operations["create_bug_report_api_bug_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bug-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Bug Report */
+        get: operations["get_bug_report_api_bug_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bug-reports/{report_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set Bug Report Status */
+        patch: operations["set_bug_report_status_api_bug_reports__report_id__status_patch"];
+        trace?: never;
+    };
     "/api/businesses": {
         parameters: {
             query?: never;
@@ -2763,6 +2815,26 @@ export interface components {
         Body_upload_meta_media_api_meta_uploads_post: {
             /** Files */
             files: string[];
+        };
+        /** BugReportIn */
+        BugReportIn: {
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            } | null;
+            /** Events Json */
+            events_json: string;
+            /** Note */
+            note?: string | null;
+            /** Page Path */
+            page_path?: string | null;
+            /** View Id */
+            view_id?: string | null;
+        };
+        /** BugReportStatusIn */
+        BugReportStatusIn: {
+            /** Status */
+            status: string;
         };
         /** BulkCellItem */
         BulkCellItem: {
@@ -5969,6 +6041,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bug_reports_api_bug_reports_get: {
+        parameters: {
+            query?: {
+                status_filter?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_bug_report_api_bug_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BugReportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_bug_report_api_bug_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_bug_report_status_api_bug_reports__report_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BugReportStatusIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
