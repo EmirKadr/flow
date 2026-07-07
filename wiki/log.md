@@ -2742,3 +2742,20 @@ Nattplanens slutförande (feature/nightly-quality-20260706, Emirs godkännanden)
 - **UX/a11y**: tomma lägen i Personer/Användare/Aktiviteter, global
   Escape-stängning av modaler (klickar modalens egen Avbryt-knapp),
   mobiloverflow 96-723px på 13 sidor fixad med en scrollregel i main.
+
+## [2026-07-07] bygge | Buggrapporter: Ta bort + Att göra-status + agent-påminnelse
+
+Emirs önskemål efter första skarpa testet på flow-development:
+
+- **Ta bort**: ny `DELETE /api/bug-reports/{id}` (bugReports edit, scopad,
+  auditrad `bug_report`/`delete` utan inspelningsinnehåll). Ta bort-knapp
+  per rad och i detaljpanelen, bekräftelsemodal enligt dialogregeln
+  (Escape via Avbryt-knappen).
+- **Status i vyn**: dropdown per rad + detaljknappar; `seen` omdöpt i UI
+  till "Att göra" (DB-värden oförändrade new/seen/done).
+- **Agent-påminnelse**: nytt verktyg `tools.bug_reports_status` (best
+  effort, healthcheck-cookiejar, mjuk exit utan inloggning) + AGENTS.md-
+  regel: påminn Emir om öppna buggrapporter vid arbetsstart i repot.
+- Tester: delete-kontrakt (behörighet, audit, 404), summarize/soft-exit
+  för verktyget, browsertestet utökat med statusdropdown + ta bort-flödet
+  (kört grönt lokalt). API-typer regenererade.

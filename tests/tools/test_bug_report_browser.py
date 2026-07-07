@@ -103,5 +103,25 @@ def test_consent_gate_and_full_report_flow(local_server, chromium_browser):
         expect(page.locator("#bugReportMeta")).to_contain_text("notis: Browsertest: knappen dog", timeout=15000)
         # Uppspelningen har byggt en replayer-yta (rrweb skapar en iframe i containern).
         page.wait_for_selector("#bugReportPlayer iframe", timeout=15000)
+
+        # 4) Status ändras via radens dropdown (Ny -> Att göra).
+        page.select_option("select.bug-report-status-select", "seen")
+        expect(page.locator(".toast.success").last).to_contain_text("att göra", timeout=15000)
+        page.wait_for_selector("tr[data-report-id] .bug-status-seen", timeout=15000)
+
+        # 5) Ta bort kräver bekräftelse; Avbryt lämnar rapporten kvar.
+        page.click("button.bug-report-delete")
+        page.wait_for_selector("#bug-report-delete-backdrop", timeout=15000)
+        page.click("#bug-report-delete-cancel")
+        expect(page.locator("#bug-report-delete-backdrop")).to_have_count(0)
+        assert page.locator("tr[data-report-id]").count() == 1
+
+        # 6) Bekräftad borttagning tömmer listan och stänger detaljpanelen.
+        page.click("button.bug-report-delete")
+        page.wait_for_selector("#bug-report-delete-backdrop", timeout=15000)
+        page.click("#bug-report-delete-confirm")
+        expect(page.locator(".toast.success").last).to_contain_text("borttagen", timeout=15000)
+        expect(page.locator("tr[data-report-id]")).to_have_count(0)
+        expect(page.locator("#bugReportDetail")).to_be_hidden()
     finally:
         context.close()

@@ -14,3 +14,5 @@ Snabborientering:
   i Octopus. Se `wiki/nowaste-git-release.md`. Render-driften ar avvecklad
   (juli 2026) och dess filer borttagna ur repot.
 - Huvudbranch: `main`.
+- Vid arbetsstart: kor `python -m tools.bug_reports_status` och paminn Emir
+  om oppna buggrapporter (regeln "Buggrapport-paminnelse" i AGENTS.md).

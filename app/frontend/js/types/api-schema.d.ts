@@ -724,7 +724,8 @@ export interface paths {
         get: operations["get_bug_report_api_bug_reports__report_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Bug Report */
+        delete: operations["delete_bug_report_api_bug_reports__report_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6123,6 +6124,39 @@ export interface operations {
         };
     };
     get_bug_report_api_bug_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bug_report_api_bug_reports__report_id__delete: {
         parameters: {
             query?: never;
             header?: never;

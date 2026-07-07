@@ -25,6 +25,9 @@
     .bug-report-detail .detail-meta { font-size: 13px; margin-bottom: 10px; }
     .bug-report-detail .detail-actions { display: flex; gap: 8px; margin: 10px 0; }
     .bug-report-context { font-size: 12px; background: var(--card, #f7f7f7); border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 10px 14px; margin-top: 12px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+    td.bug-report-actions { white-space: nowrap; }
+    td.bug-report-actions select { margin-right: 6px; }
+    td.bug-report-actions button { font-size: 12px; padding: 3px 8px; }
   </style>
 </head>
 <body class="with-sidebar">
@@ -41,10 +44,10 @@
     <table class="bug-reports-table">
       <thead>
         <tr>
-          <th>Skickad</th><th>Användare</th><th>Vy</th><th>Notis</th><th>Status</th><th>Storlek</th>
+          <th>Skickad</th><th>Användare</th><th>Vy</th><th>Notis</th><th>Status</th><th>Storlek</th><th>Åtgärder</th>
         </tr>
       </thead>
-      <tbody id="bugReportsBody"><tr><td colspan="6">Laddar …</td></tr></tbody>
+      <tbody id="bugReportsBody"><tr><td colspan="7">Laddar …</td></tr></tbody>
     </table>
 
     <section class="bug-report-detail" id="bugReportDetail" hidden>
@@ -52,8 +55,9 @@
       <div class="detail-meta" id="bugReportMeta"></div>
       <div class="detail-actions">
         <button type="button" id="bugReportReplay">Spela upp igen</button>
-        <button type="button" class="secondary" id="bugReportMarkSeen">Markera som sedd</button>
+        <button type="button" class="secondary" id="bugReportMarkSeen">Markera som att göra</button>
         <button type="button" class="secondary" id="bugReportMarkDone">Markera som klar</button>
+        <button type="button" class="danger" id="bugReportDelete">Ta bort</button>
       </div>
       <div class="bug-report-player" id="bugReportPlayer"></div>
       <div class="bug-report-context" id="bugReportContext" hidden></div>
@@ -76,6 +80,6 @@
   <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
   <script src="/js/common.js?v=20260616-speed-common"></script>
   <script src="/js/vendor/rrweb.min.js"></script>
-  <script src="/js/bug_reports_admin.js?v=20260707-bug-reports"></script>
+  <script src="/js/bug_reports_admin.js?v=20260707-bug-actions"></script>
 </body>
 </html>
