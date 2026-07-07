@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter overview.js via <script>-tagg.
 
@@ -6,7 +7,7 @@
 const DAY_NAMES = { 1: "Måndag", 2: "Tisdag", 3: "Onsdag", 4: "Torsdag", 5: "Fredag", 6: "Lördag", 7: "Söndag" };
 const DAY_SHORT = { 1: "Mån", 2: "Tis", 3: "Ons", 4: "Tor", 5: "Fre", 6: "Lör", 7: "Sön" };
 
-const state = {
+const overviewState = {
   currentUser: null,
   view: "week",        // "week" | "month"
   year: 0,
@@ -30,7 +31,7 @@ const state = {
   selectedDateParts: null,
 };
 
-const drag = {
+const overviewDrag = {
   active: false,
   pending: false,
   suppressClick: false,
@@ -44,7 +45,7 @@ const drag = {
   startY: 0,
 };
 
-const personOrderDrag = {
+const overviewPersonOrderDrag = {
   sourceId: null,
   targetId: null,
   position: "after",
@@ -76,12 +77,12 @@ const overviewRevalidateState = {
 };
 
 function overviewIsReadOnly() {
-  if (typeof isReadOnlyUser === "function") return isReadOnlyUser(state.currentUser);
-  return state.currentUser?.role === "viewer" && !state.currentUser?.is_super_user;
+  if (typeof isReadOnlyUser === "function") return isReadOnlyUser(overviewState.currentUser);
+  return overviewState.currentUser?.role === "viewer" && !overviewState.currentUser?.is_super_user;
 }
 
 function overviewScopeKey() {
-  const user = state.currentUser || {};
+  const user = overviewState.currentUser || {};
   return [
     user.id ?? user.username ?? "anonymous",
     user.is_super_user ? "super" : "scoped",
@@ -90,31 +91,31 @@ function overviewScopeKey() {
 }
 
 function overviewCacheKey() {
-  const period = state.view === "week"
-    ? `week:${state.year}:${state.week}`
-    : `month:${state.year}:${state.month}`;
+  const period = overviewState.view === "week"
+    ? `week:${overviewState.year}:${overviewState.week}`
+    : `month:${overviewState.year}:${overviewState.month}`;
   return `${overviewScopeKey()}|${period}`;
 }
 
-function overviewAreaCacheKey(areaId = state.areaId, baseKey = overviewCacheKey()) {
+function overviewAreaCacheKey(areaId = overviewState.areaId, baseKey = overviewCacheKey()) {
   return `${baseKey}|area:${areaId == null ? "ALLT" : Number(areaId)}`;
 }
 
-function overviewUrl(areaId = state.areaId) {
-  if (state.view === "week") {
-    return `/api/overview?year=${state.year}&week=${state.week}` +
+function overviewUrl(areaId = overviewState.areaId) {
+  if (overviewState.view === "week") {
+    return `/api/overview?year=${overviewState.year}&week=${overviewState.week}` +
       (areaId ? `&area_id=${areaId}` : "");
   }
-  return `/api/overview/month?year=${state.year}&month=${state.month}` +
+  return `/api/overview/month?year=${overviewState.year}&month=${overviewState.month}` +
     (areaId ? `&area_id=${areaId}` : "");
 }
 
 function overviewRevisionUrl(areaId = null) {
-  if (state.view === "week") {
-    return `/api/overview/revision?year=${state.year}&week=${state.week}` +
+  if (overviewState.view === "week") {
+    return `/api/overview/revision?year=${overviewState.year}&week=${overviewState.week}` +
       (areaId ? `&area_id=${areaId}` : "");
   }
-  return `/api/overview/revision/month?year=${state.year}&month=${state.month}` +
+  return `/api/overview/revision/month?year=${overviewState.year}&month=${overviewState.month}` +
     (areaId ? `&area_id=${areaId}` : "");
 }
 
@@ -185,9 +186,9 @@ function overviewRevalidateDelay() {
 }
 
 function overviewIsBusyForBackgroundUpdate() {
-  return drag.active
-    || drag.pending
-    || personOrderDrag.sourceId != null
+  return overviewDrag.active
+    || overviewDrag.pending
+    || overviewPersonOrderDrag.sourceId != null
     || Boolean(document.querySelector("#overviewBody .pending-save"));
 }
 
@@ -225,7 +226,7 @@ function overviewDaysSignature(days) {
 }
 
 function overviewCellKey(cell) {
-  return state.view === "week"
+  return overviewState.view === "week"
     ? `${Number(cell.person_id)}:${Number(cell.weekday)}`
     : `${Number(cell.person_id)}:${cell.date || ""}`;
 }
@@ -246,7 +247,7 @@ function overviewMatrixMap(cells) {
 }
 
 function overviewTdForCell(cell) {
-  if (state.view === "week") {
+  if (overviewState.view === "week") {
     return document.querySelector(
       `#overviewBody td.day[data-person-id="${Number(cell.person_id)}"][data-weekday="${Number(cell.weekday)}"]`
     );
@@ -257,20 +258,20 @@ function overviewTdForCell(cell) {
 }
 
 function overviewCellIsFocused(td) {
-  return td && state.focusedCell?.td === td && document.activeElement?.closest("#overviewBody");
+  return td && overviewState.focusedCell?.td === td && document.activeElement?.closest("#overviewBody");
 }
 
 function patchOverviewFromAllData(allData) {
-  const data = filterOverviewDataForArea(allData, state.areaId);
-  const personsChanged = overviewPersonSignature(state.allPersons) !== overviewPersonSignature(data.persons || []);
-  const daysChanged = overviewDaysSignature(state.days) !== overviewDaysSignature(data.days || []);
+  const data = filterOverviewDataForArea(allData, overviewState.areaId);
+  const personsChanged = overviewPersonSignature(overviewState.allPersons) !== overviewPersonSignature(data.persons || []);
+  const daysChanged = overviewDaysSignature(overviewState.days) !== overviewDaysSignature(data.days || []);
   if (personsChanged || daysChanged) {
     applyOverviewData(data);
     return { changed: true, patched: false };
   }
 
-  state.allPersons = (data.persons || []).map((person) => ({ ...person }));
-  const currentMap = overviewMatrixMap(state.cells);
+  overviewState.allPersons = (data.persons || []).map((person) => ({ ...person }));
+  const currentMap = overviewMatrixMap(overviewState.cells);
   const nextMap = overviewMatrixMap(data.matrix || []);
   let changedCount = 0;
   let skippedFocused = false;
@@ -288,7 +289,7 @@ function patchOverviewFromAllData(allData) {
     changedCount += 1;
   });
 
-  state.cells = state.cells.filter((cell) => {
+  overviewState.cells = overviewState.cells.filter((cell) => {
     const keep = nextMap.has(overviewCellKey(cell));
     if (!keep) changedCount += 1;
     return keep;
@@ -313,5 +314,5 @@ function applyOverviewReadOnlyMode() {
 }
 
 function preferredAreaIdForCurrentUser() {
-  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(state.areas) : null;
+  return typeof preferredAreaIdFromFocus === "function" ? preferredAreaIdFromFocus(overviewState.areas) : null;
 }

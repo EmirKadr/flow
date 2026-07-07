@@ -1114,11 +1114,11 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "button.capacity-toggle.active" not in styles
     assert ".schedule-capacity-tooltip" in styles
     assert 'preferredAreaIdFromFocus(state.areas) : null' in schedule
-    assert 'preferredAreaIdFromFocus(state.areas) : null' in overview
+    assert 'preferredAreaIdFromFocus(overviewState.areas) : null' in overview
     assert "setAreaFocusAreas(areas, state.currentUser)" in schedule
-    assert "setAreaFocusAreas(areas, state.currentUser)" in overview
+    assert "setAreaFocusAreas(areas, overviewState.currentUser)" in overview
     assert "compareActivitiesForAreaFocus(a, b, state.areas, state.currentUser?.area_id)" in schedule
-    assert "compareActivitiesForAreaFocus(a, b, state.areas, state.currentUser?.area_id)" in overview
+    assert "compareActivitiesForAreaFocus(a, b, overviewState.areas, overviewState.currentUser?.area_id)" in overview
     assert "const scheduleAreaCache = new Map();" in schedule
     assert "function scheduleAreaCacheKey" in schedule
     assert "function renderScheduleFromCache" in schedule

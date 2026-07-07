@@ -60,20 +60,20 @@ function overviewDateFromCell(td) {
 }
 
 function storedDateForCurrentPeriod() {
-  const storedDate = dateFromParts(state.selectedDateParts);
+  const storedDate = dateFromParts(overviewState.selectedDateParts);
   if (!storedDate) return null;
-  if (state.view === "month") {
-    return storedDate.getUTCFullYear() === state.year && storedDate.getUTCMonth() + 1 === state.month
+  if (overviewState.view === "month") {
+    return storedDate.getUTCFullYear() === overviewState.year && storedDate.getUTCMonth() + 1 === overviewState.month
       ? storedDate
       : null;
   }
   const storedWeek = isoWeek(storedDate);
-  return storedWeek.year === state.year && storedWeek.week === state.week ? storedDate : null;
+  return storedWeek.year === overviewState.year && storedWeek.week === overviewState.week ? storedDate : null;
 }
 
 function writeOverviewSelectedDate(date) {
-  state.selectedDateParts = datePartsFromDate(date);
-  writeSelectedDate(state.selectedDateParts[0], state.selectedDateParts[1], state.selectedDateParts[2]);
+  overviewState.selectedDateParts = datePartsFromDate(date);
+  writeSelectedDate(overviewState.selectedDateParts[0], overviewState.selectedDateParts[1], overviewState.selectedDateParts[2]);
 }
 
 function persistOverviewState() {
@@ -82,32 +82,32 @@ function persistOverviewState() {
     writeOverviewSelectedDate(date);
     return;
   }
-  if (state.view === "month") {
+  if (overviewState.view === "month") {
     const now = new Date();
-    const isCurrentMonth = state.year === now.getFullYear() && state.month === now.getMonth() + 1;
-    date = isCurrentMonth ? now : new Date(Date.UTC(state.year, state.month - 1, 1));
+    const isCurrentMonth = overviewState.year === now.getFullYear() && overviewState.month === now.getMonth() + 1;
+    date = isCurrentMonth ? now : new Date(Date.UTC(overviewState.year, overviewState.month - 1, 1));
   } else {
-    const monday = isoWeekToMonday(state.year, state.week);
+    const monday = isoWeekToMonday(overviewState.year, overviewState.week);
     date = monday;
   }
   writeOverviewSelectedDate(date);
 }
 
 function overviewPresenceSelection() {
-  let date = overviewDateFromCell(state.focusedCell?.td) || storedDateForCurrentPeriod();
+  let date = overviewDateFromCell(overviewState.focusedCell?.td) || storedDateForCurrentPeriod();
   if (!date) {
-    if (state.view === "month") date = new Date(Date.UTC(state.year, state.month - 1, 1));
-    else date = isoWeekToMonday(state.year, state.week);
+    if (overviewState.view === "month") date = new Date(Date.UTC(overviewState.year, overviewState.month - 1, 1));
+    else date = isoWeekToMonday(overviewState.year, overviewState.week);
   }
   const selectedWeek = isoWeek(date);
   return {
     year: selectedWeek.year,
     week: selectedWeek.week,
     weekday: selectedWeek.weekday,
-    areaId: state.areaId,
-    areaName: state.areaId == null
+    areaId: overviewState.areaId,
+    areaName: overviewState.areaId == null
       ? "Alla områden"
-      : (state.areas.find((area) => area.id === state.areaId)?.name || "Nuvarande område"),
+      : (overviewState.areas.find((area) => area.id === overviewState.areaId)?.name || "Nuvarande område"),
   };
 }
 
@@ -118,11 +118,11 @@ function escapeHtml(s) {
 }
 
 function activityById(id) {
-  return state.activities.find((a) => a.id === id);
+  return overviewState.activities.find((a) => a.id === id);
 }
 
 function personById(id) {
-  return state.persons.find((p) => p.id === id) || state.allPersons.find((p) => p.id === id) || null;
+  return overviewState.persons.find((p) => p.id === id) || overviewState.allPersons.find((p) => p.id === id) || null;
 }
 
 function colorFor(activityId) {
@@ -149,10 +149,10 @@ function buildActivitySelect(includeActivityIds = []) {
   };
 
   const sortedActivities = typeof compareActivitiesForAreaFocus === "function"
-    ? [...state.activitiesActive].sort((a, b) =>
-      compareActivitiesForAreaFocus(a, b, state.areas, state.currentUser?.area_id)
+    ? [...overviewState.activitiesActive].sort((a, b) =>
+      compareActivitiesForAreaFocus(a, b, overviewState.areas, overviewState.currentUser?.area_id)
     )
-    : state.activitiesActive;
+    : overviewState.activitiesActive;
   sortedActivities.forEach(appendOption);
   includeActivityIds
     .map((id) => Number(id))
@@ -170,29 +170,29 @@ function focusNameFilter() {
 }
 
 function refreshPersons() {
-  const q = state.nameFilter.toLowerCase().trim();
-  let list = state.allPersons;
+  const q = overviewState.nameFilter.toLowerCase().trim();
+  let list = overviewState.allPersons;
   if (q) list = list.filter((p) => p.name.toLowerCase().includes(q));
-  const getSortVal = (p) => state.sortKey === "name" ? (p.name || "").toLowerCase() : p.sort_order;
+  const getSortVal = (p) => overviewState.sortKey === "name" ? (p.name || "").toLowerCase() : p.sort_order;
   list = [...list].sort((a, b) => {
     if (typeof comparePersonsForAreaFocus === "function") {
-      const areaCompare = comparePersonsForAreaFocus(a, b, state.areas);
+      const areaCompare = comparePersonsForAreaFocus(a, b, overviewState.areas);
       if (areaCompare !== 0) return areaCompare;
     }
     const av = getSortVal(a), bv = getSortVal(b);
-    if (av < bv) return state.sortAsc ? -1 : 1;
-    if (av > bv) return state.sortAsc ? 1 : -1;
+    if (av < bv) return overviewState.sortAsc ? -1 : 1;
+    if (av > bv) return overviewState.sortAsc ? 1 : -1;
     return 0;
   });
-  state.persons = list;
+  overviewState.persons = list;
   document.querySelectorAll("table.overview th[data-sort]").forEach((th) => {
     const ind = th.querySelector(".sort-ind");
-    if (ind) ind.textContent = /** @type {HTMLElement} */ (th).dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
+    if (ind) ind.textContent = /** @type {HTMLElement} */ (th).dataset.sort === overviewState.sortKey ? (overviewState.sortAsc ? "▲" : "▼") : "";
   });
 }
 
 function canUsePersonSortOrder() {
-  const user = state.currentUser || {};
+  const user = overviewState.currentUser || {};
   const roles = typeof userRoles === "function" ? userRoles(user) : [user.role];
   const canCrossAreas = canSortPersonsAcrossAreas();
   const hasAllowedRole = canCrossAreas || roles.includes("admin") || roles.includes("staffing_manager");
@@ -201,13 +201,13 @@ function canUsePersonSortOrder() {
 }
 
 function canSortPersonsAcrossAreas() {
-  const user = state.currentUser || {};
+  const user = overviewState.currentUser || {};
   return Boolean(user.is_super_user || user.is_demo);
 }
 
 function canReorderPerson(person) {
   return canUsePersonSortOrder()
-    && (canSortPersonsAcrossAreas() || Number(person?.home_area_id) === Number(state.currentUser?.area_id));
+    && (canSortPersonsAcrossAreas() || Number(person?.home_area_id) === Number(overviewState.currentUser?.area_id));
 }
 
 function setupPersonOrderNameCell(cell, person) {
@@ -234,30 +234,30 @@ function resetPersonOrderDrag() {
     .querySelectorAll("#overviewBody tr.person-order-dragging")
     .forEach((row) => row.classList.remove("person-order-dragging"));
   clearPersonOrderDropMarkers();
-  personOrderDrag.sourceId = null;
-  personOrderDrag.targetId = null;
-  personOrderDrag.position = "after";
+  overviewPersonOrderDrag.sourceId = null;
+  overviewPersonOrderDrag.targetId = null;
+  overviewPersonOrderDrag.position = "after";
 }
 
 function updatePersonOrderDropTarget(cell, event) {
   const targetId = Number(cell.dataset.personId);
-  if (!Number.isInteger(targetId) || targetId === Number(personOrderDrag.sourceId)) return;
+  if (!Number.isInteger(targetId) || targetId === Number(overviewPersonOrderDrag.sourceId)) return;
   const rect = cell.getBoundingClientRect();
   const position = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
   clearPersonOrderDropMarkers();
   cell.parentElement.classList.add(position === "before" ? "person-order-drop-before" : "person-order-drop-after");
-  personOrderDrag.targetId = targetId;
-  personOrderDrag.position = position;
+  overviewPersonOrderDrag.targetId = targetId;
+  overviewPersonOrderDrag.position = position;
 }
 
 function currentAreaPersonIdsForReorder() {
   if (canSortPersonsAcrossAreas()) {
-    return state.persons
+    return overviewState.persons
       .filter((person) => person.is_active !== false)
       .map((person) => Number(person.id));
   }
-  const areaId = Number(state.currentUser?.area_id);
-  return state.persons
+  const areaId = Number(overviewState.currentUser?.area_id);
+  return overviewState.persons
     .filter((person) => Number(person.home_area_id) === areaId && person.is_active !== false)
     .map((person) => Number(person.id));
 }
@@ -275,13 +275,13 @@ function movedPersonOrderIds(sourceId, targetId, position, ids) {
 function applyPersonOrderResponse(updatedPersons) {
   const byId = new Map((updatedPersons || []).map((person) => [Number(person.id), person]));
   if (!byId.size) return;
-  state.allPersons = state.allPersons.map((person) => (
+  overviewState.allPersons = overviewState.allPersons.map((person) => (
     byId.has(Number(person.id)) ? { ...person, ...byId.get(Number(person.id)) } : person
   ));
-  state.sortKey = "sort_order";
-  state.sortAsc = true;
+  overviewState.sortKey = "sort_order";
+  overviewState.sortAsc = true;
   refreshPersons();
-  if (state.view === "week") buildWeekBody();
+  if (overviewState.view === "week") buildWeekBody();
   else buildMonthBody();
   setupOverviewHorizontalScroll();
 }
@@ -291,7 +291,7 @@ async function savePersonOrder(sourceId, targetId, position) {
     showToast("Du saknar behörighet att sortera personer.", "error", 5000);
     return;
   }
-  if (state.nameFilter.trim()) {
+  if (overviewState.nameFilter.trim()) {
     showToast("Rensa personfiltret innan du sorterar personer.", "warn", 5000);
     return;
   }
@@ -323,20 +323,20 @@ function setupPersonOrderDrag() {
     const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
     const person = personById(Number(/** @type {HTMLElement} */ (cell).dataset.personId));
-    if (!canReorderPerson(person) || state.nameFilter.trim()) {
+    if (!canReorderPerson(person) || overviewState.nameFilter.trim()) {
       event.preventDefault();
-      if (state.nameFilter.trim()) showToast("Rensa personfiltret innan du sorterar personer.", "warn", 4000);
+      if (overviewState.nameFilter.trim()) showToast("Rensa personfiltret innan du sorterar personer.", "warn", 4000);
       return;
     }
-    personOrderDrag.sourceId = Number(/** @type {HTMLElement} */ (cell).dataset.personId);
+    overviewPersonOrderDrag.sourceId = Number(/** @type {HTMLElement} */ (cell).dataset.personId);
     document.body.classList.add("dragging-person-order");
     cell.parentElement.classList.add("person-order-dragging");
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(personOrderDrag.sourceId));
+    event.dataTransfer.setData("text/plain", String(overviewPersonOrderDrag.sourceId));
   });
 
   body.addEventListener("dragover", (event) => {
-    if (personOrderDrag.sourceId == null) return;
+    if (overviewPersonOrderDrag.sourceId == null) return;
     const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
     const person = personById(Number(/** @type {HTMLElement} */ (cell).dataset.personId));
@@ -347,13 +347,13 @@ function setupPersonOrderDrag() {
   });
 
   body.addEventListener("drop", (event) => {
-    if (personOrderDrag.sourceId == null) return;
+    if (overviewPersonOrderDrag.sourceId == null) return;
     const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
     event.preventDefault();
-    const sourceId = Number(personOrderDrag.sourceId);
-    const targetId = Number(personOrderDrag.targetId || /** @type {HTMLElement} */ (cell).dataset.personId);
-    const position = personOrderDrag.position;
+    const sourceId = Number(overviewPersonOrderDrag.sourceId);
+    const targetId = Number(overviewPersonOrderDrag.targetId || /** @type {HTMLElement} */ (cell).dataset.personId);
+    const position = overviewPersonOrderDrag.position;
     resetPersonOrderDrag();
     void savePersonOrder(sourceId, targetId, position);
   });
@@ -365,10 +365,10 @@ function setupPersonOrderDrag() {
 }
 
 function focusDayCell(td) {
-  if (state.focusedCell?.td) state.focusedCell.td.classList.remove("focused");
+  if (overviewState.focusedCell?.td) overviewState.focusedCell.td.classList.remove("focused");
   const selectedDate = overviewDateFromCell(td);
   if (selectedDate) writeOverviewSelectedDate(selectedDate);
-  state.focusedCell = {
+  overviewState.focusedCell = {
     td,
     personId: Number(td.dataset.personId),
     year: Number(td.dataset.year),
@@ -403,27 +403,27 @@ function normalizeOverviewCell(cell, td = null) {
 }
 
 function cellRecordIndexForTd(td) {
-  if (state.view === "week") {
+  if (overviewState.view === "week") {
     const personId = Number(td.dataset.personId);
     const weekday = Number(td.dataset.weekday);
-    return state.cells.findIndex((cell) => Number(cell.person_id) === personId && Number(cell.weekday) === weekday);
+    return overviewState.cells.findIndex((cell) => Number(cell.person_id) === personId && Number(cell.weekday) === weekday);
   }
   const personId = Number(td.dataset.personId);
   const date = td.dataset.date || "";
-  return state.cells.findIndex((cell) => Number(cell.person_id) === personId && cell.date === date);
+  return overviewState.cells.findIndex((cell) => Number(cell.person_id) === personId && cell.date === date);
 }
 
 function cellRecordForTd(td) {
   const idx = cellRecordIndexForTd(td);
-  if (idx >= 0) return normalizeOverviewCell(state.cells[idx], td);
+  if (idx >= 0) return normalizeOverviewCell(overviewState.cells[idx], td);
   return normalizeOverviewCell({}, td);
 }
 
 function upsertCellRecordForTd(td, cell) {
   const normalized = normalizeOverviewCell(cell, td);
   const idx = cellRecordIndexForTd(td);
-  if (idx >= 0) state.cells[idx] = { ...state.cells[idx], ...normalized };
-  else state.cells.push(normalized);
+  if (idx >= 0) overviewState.cells[idx] = { ...overviewState.cells[idx], ...normalized };
+  else overviewState.cells.push(normalized);
   return normalized;
 }
 

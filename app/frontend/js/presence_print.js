@@ -323,10 +323,15 @@ function schedulePrintHomeArea(person) {
 }
 
 function schedulePrintPersonsForDay() {
-  const hasState = typeof state !== "undefined";
-  const source = (hasState && Array.isArray(state.allPersons) && state.allPersons.length)
-    ? state.allPersons
-    : ((hasState && Array.isArray(state.persons)) ? state.persons : []);
+  // Delas av Bemanning (global state) och Översikt (overviewState efter
+  // namnrymdsflytten) — läs den sida som faktiskt är laddad.
+  const pageState = typeof overviewState !== "undefined"
+    ? overviewState
+    : (typeof state !== "undefined" ? state : undefined);
+  const hasState = typeof pageState !== "undefined";
+  const source = (hasState && Array.isArray(pageState.allPersons) && pageState.allPersons.length)
+    ? pageState.allPersons
+    : ((hasState && Array.isArray(pageState.persons)) ? pageState.persons : []);
   const relevant = source.filter((person) => schedulePrintPersonHasDayValue(person));
   return relevant.length ? relevant : source;
 }

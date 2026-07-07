@@ -1,3 +1,4 @@
+// @ts-check
 // ---- Cell update ----
 async function postDay(personId, year, week, weekday, activityId) {
   return api.post("/api/overview/day", {
@@ -71,8 +72,8 @@ function updateUndoRedoButtons() {
   const u = document.getElementById("undoBtn");
   const r = document.getElementById("redoBtn");
   const readOnly = overviewIsReadOnly();
-  if (u) u.disabled = readOnly || state.undoStack.length === 0;
-  if (r) r.disabled = readOnly || state.redoStack.length === 0;
+  if (u) /** @type {HTMLInputElement} */ (u).disabled = readOnly || overviewState.undoStack.length === 0;
+  if (r) /** @type {HTMLInputElement} */ (r).disabled = readOnly || overviewState.redoStack.length === 0;
 }
 
 function pushOverviewUndo(label, days) {
@@ -87,9 +88,9 @@ function pushOverviewUndo(label, days) {
     }))
     .filter((day) => overviewSnapshotSignature(day.before_hours) !== overviewSnapshotSignature(day.after_hours));
   if (!filtered.length) return;
-  state.undoStack.push({ label, days: filtered });
-  if (state.undoStack.length > 50) state.undoStack.shift();
-  state.redoStack = [];
+  overviewState.undoStack.push({ label, days: filtered });
+  if (overviewState.undoStack.length > 50) overviewState.undoStack.shift();
+  overviewState.redoStack = [];
   updateUndoRedoButtons();
 }
 
@@ -135,13 +136,13 @@ async function undoLastOverviewAction() {
     showReadOnlyToast();
     return;
   }
-  const action = state.undoStack[state.undoStack.length - 1];
+  const action = overviewState.undoStack[overviewState.undoStack.length - 1];
   if (!action) { showToast("Inget att ångra.", "warn"); return; }
   const ok = await applyOverviewHistory(action, "undo");
   if (ok) {
-    state.undoStack.pop();
-    state.redoStack.push(action);
-    if (state.redoStack.length > 50) state.redoStack.shift();
+    overviewState.undoStack.pop();
+    overviewState.redoStack.push(action);
+    if (overviewState.redoStack.length > 50) overviewState.redoStack.shift();
     showToast(`Ångrade: ${action.label}`);
   }
   updateUndoRedoButtons();
@@ -152,13 +153,13 @@ async function redoLastOverviewAction() {
     showReadOnlyToast();
     return;
   }
-  const action = state.redoStack[state.redoStack.length - 1];
+  const action = overviewState.redoStack[overviewState.redoStack.length - 1];
   if (!action) { showToast("Inget att göra om.", "warn"); return; }
   const ok = await applyOverviewHistory(action, "redo");
   if (ok) {
-    state.redoStack.pop();
-    state.undoStack.push(action);
-    if (state.undoStack.length > 50) state.undoStack.shift();
+    overviewState.redoStack.pop();
+    overviewState.undoStack.push(action);
+    if (overviewState.undoStack.length > 50) overviewState.undoStack.shift();
     showToast(`Gjorde om: ${action.label}`);
   }
   updateUndoRedoButtons();
@@ -208,57 +209,57 @@ async function onDayChange(td, sel, cell) {
 }
 
 function updateDragTargets() {
-  document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
-  if (!drag.active) return;
-  const r0 = Math.min(drag.sourceRow, drag.currentRow);
-  const r1 = Math.max(drag.sourceRow, drag.currentRow);
-  const c0 = Math.min(drag.sourceCol, drag.currentCol);
-  const c1 = Math.max(drag.sourceCol, drag.currentCol);
+  document.querySelectorAll("td.day.overviewDrag-target").forEach((t) => t.classList.remove("overviewDrag-target"));
+  if (!overviewDrag.active) return;
+  const r0 = Math.min(overviewDrag.sourceRow, overviewDrag.currentRow);
+  const r1 = Math.max(overviewDrag.sourceRow, overviewDrag.currentRow);
+  const c0 = Math.min(overviewDrag.sourceCol, overviewDrag.currentCol);
+  const c1 = Math.max(overviewDrag.sourceCol, overviewDrag.currentCol);
 
   document.querySelectorAll("#overviewBody td.day").forEach((td) => {
-    const r = td.parentElement.rowIndex;
-    const c = td.cellIndex;
-    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) td.classList.add("drag-target");
+    const r = /** @type {HTMLTableRowElement} */ (td.parentElement).rowIndex;
+    const c = /** @type {HTMLTableCellElement} */ (td).cellIndex;
+    if (r >= r0 && r <= r1 && c >= c0 && c <= c1) td.classList.add("overviewDrag-target");
   });
 }
 
 function resetDragState() {
   document.body.classList.remove("dragging-ov");
-  document.querySelectorAll("td.day.drag-target").forEach((t) => t.classList.remove("drag-target"));
-  drag.active = false;
-  drag.pending = false;
-  drag.sourceCell = null;
-  drag.sourceTd = null;
-  drag.sourceRow = -1;
-  drag.sourceCol = -1;
-  drag.currentRow = -1;
-  drag.currentCol = -1;
-  drag.startX = 0;
-  drag.startY = 0;
+  document.querySelectorAll("td.day.overviewDrag-target").forEach((t) => t.classList.remove("overviewDrag-target"));
+  overviewDrag.active = false;
+  overviewDrag.pending = false;
+  overviewDrag.sourceCell = null;
+  overviewDrag.sourceTd = null;
+  overviewDrag.sourceRow = -1;
+  overviewDrag.sourceCol = -1;
+  overviewDrag.currentRow = -1;
+  overviewDrag.currentCol = -1;
+  overviewDrag.startX = 0;
+  overviewDrag.startY = 0;
 }
 
 function startPendingDrag(td, event) {
   if (overviewIsReadOnly()) return;
-  drag.pending = true;
-  drag.sourceTd = td;
-  drag.sourceCell = {
+  overviewDrag.pending = true;
+  overviewDrag.sourceTd = td;
+  overviewDrag.sourceCell = {
     activity_id: td.dataset.activityId ? Number(td.dataset.activityId) : null,
   };
-  drag.sourceRow = td.parentElement.rowIndex;
-  drag.sourceCol = td.cellIndex;
-  drag.currentRow = drag.sourceRow;
-  drag.currentCol = drag.sourceCol;
-  drag.startX = event.clientX;
-  drag.startY = event.clientY;
+  overviewDrag.sourceRow = td.parentElement.rowIndex;
+  overviewDrag.sourceCol = td.cellIndex;
+  overviewDrag.currentRow = overviewDrag.sourceRow;
+  overviewDrag.currentCol = overviewDrag.sourceCol;
+  overviewDrag.startX = event.clientX;
+  overviewDrag.startY = event.clientY;
 }
 
 function activateDrag() {
-  if (!drag.pending || drag.active || !drag.sourceTd) return;
-  drag.pending = false;
-  drag.active = true;
+  if (!overviewDrag.pending || overviewDrag.active || !overviewDrag.sourceTd) return;
+  overviewDrag.pending = false;
+  overviewDrag.active = true;
   document.body.classList.add("dragging-ov");
   if (document.activeElement?.tagName === "SELECT") {
-    document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   updateDragTargets();
 }
@@ -276,58 +277,58 @@ function setupDrag() {
   body.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     if (overviewIsReadOnly()) return;
-    const td = e.target.closest("td.day");
+    const td = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest("td.day")) : null;
     if (!td || td.classList.contains("is-off")) return;
     startPendingDrag(td, e);
   });
 
   document.addEventListener("mousemove", (e) => {
-    if (!drag.pending && !drag.active) return;
-    const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
-    if (!drag.active) {
+    if (!overviewDrag.pending && !overviewDrag.active) return;
+    const moved = Math.hypot(e.clientX - overviewDrag.startX, e.clientY - overviewDrag.startY);
+    if (!overviewDrag.active) {
       if (moved < 5) return;
       activateDrag();
     }
     const td = overviewCellFromPoint(e.clientX, e.clientY);
     if (!td) return;
-    drag.currentRow = td.parentElement.rowIndex;
-    drag.currentCol = td.cellIndex;
+    overviewDrag.currentRow = /** @type {HTMLTableRowElement} */ (td.parentElement).rowIndex;
+    overviewDrag.currentCol = /** @type {HTMLTableCellElement} */ (td).cellIndex;
     updateDragTargets();
   });
 
   document.addEventListener("mouseup", async () => {
     if (overviewIsReadOnly()) {
-      if (drag.pending || drag.active) resetDragState();
+      if (overviewDrag.pending || overviewDrag.active) resetDragState();
       return;
     }
-    if (drag.pending && !drag.active) {
+    if (overviewDrag.pending && !overviewDrag.active) {
       resetDragState();
       return;
     }
-    if (!drag.active) return;
-    drag.suppressClick = true;
-    const targets = Array.from(document.querySelectorAll("#overviewBody td.day.drag-target"));
-    const sourceActivityId = drag.sourceCell?.activity_id ?? null;
+    if (!overviewDrag.active) return;
+    overviewDrag.suppressClick = true;
+    const targets = Array.from(document.querySelectorAll("#overviewBody td.day.overviewDrag-target"));
+    const sourceActivityId = overviewDrag.sourceCell?.activity_id ?? null;
     resetDragState();
-    setTimeout(() => { drag.suppressClick = false; }, 0);
+    setTimeout(() => { overviewDrag.suppressClick = false; }, 0);
 
     if (targets.length <= 1) return;
     if (targets.length > 100) { showToast("För många celler (max 100)", "error"); return; }
 
     const days = targets.map((td) => ({
-      person_id: Number(td.dataset.personId),
-      year: Number(td.dataset.year),
-      week: Number(td.dataset.week),
-      weekday: Number(td.dataset.weekday),
+      person_id: Number(/** @type {HTMLElement} */ (td).dataset.personId),
+      year: Number(/** @type {HTMLElement} */ (td).dataset.year),
+      week: Number(/** @type {HTMLElement} */ (td).dataset.week),
+      weekday: Number(/** @type {HTMLElement} */ (td).dataset.weekday),
       activity_id: sourceActivityId,
     }));
     const snapshots = new Map();
     targets.forEach((td) => {
       const key = dayRequestKey(
-        Number(td.dataset.personId),
-        Number(td.dataset.year),
-        Number(td.dataset.week),
-        Number(td.dataset.weekday),
+        Number(/** @type {HTMLElement} */ (td).dataset.personId),
+        Number(/** @type {HTMLElement} */ (td).dataset.year),
+        Number(/** @type {HTMLElement} */ (td).dataset.week),
+        Number(/** @type {HTMLElement} */ (td).dataset.weekday),
       );
       snapshots.set(key, cellRecordForTd(td));
       markDayPending(td, true);
@@ -360,10 +361,10 @@ function setupDrag() {
 
       targets.forEach((td) => {
         const key = dayRequestKey(
-          Number(td.dataset.personId),
-          Number(td.dataset.year),
-          Number(td.dataset.week),
-          Number(td.dataset.weekday),
+          Number(/** @type {HTMLElement} */ (td).dataset.personId),
+          Number(/** @type {HTMLElement} */ (td).dataset.year),
+          Number(/** @type {HTMLElement} */ (td).dataset.week),
+          Number(/** @type {HTMLElement} */ (td).dataset.weekday),
         );
         if (handled.has(key)) return;
         markDayPending(td, false);
@@ -382,15 +383,15 @@ function setupDrag() {
           after_hours: result.after_hours || [],
         };
       });
-      if (undoDays.length) pushOverviewUndo("drag-bemanning", undoDays);
+      if (undoDays.length) pushOverviewUndo("overviewDrag-bemanning", undoDays);
       showToast(`Drag klar: skrev ${resp.written || 0} h, tog bort ${resp.deleted || 0} h${errorCount ? `, ${errorCount} fel` : ""}`);
     } catch (e) {
       targets.forEach((td) => {
         const key = dayRequestKey(
-          Number(td.dataset.personId),
-          Number(td.dataset.year),
-          Number(td.dataset.week),
-          Number(td.dataset.weekday),
+          Number(/** @type {HTMLElement} */ (td).dataset.personId),
+          Number(/** @type {HTMLElement} */ (td).dataset.year),
+          Number(/** @type {HTMLElement} */ (td).dataset.week),
+          Number(/** @type {HTMLElement} */ (td).dataset.weekday),
         );
         markDayPending(td, false);
         const snapshot = snapshots.get(key);
@@ -402,24 +403,24 @@ function setupDrag() {
   });
 
   document.addEventListener("click", (e) => {
-    if (!drag.suppressClick) return;
-    if (!e.target.closest("#overviewBody td.day")) return;
+    if (!overviewDrag.suppressClick) return;
+    if (!(e.target instanceof Element && e.target.closest("#overviewBody td.day"))) return;
     e.preventDefault();
     e.stopPropagation();
-    drag.suppressClick = false;
+    overviewDrag.suppressClick = false;
   }, true);
 
   body.addEventListener("click", (e) => {
-    if (drag.suppressClick) return;
-    const row = e.target.closest("tr[data-person-id]");
+    if (overviewDrag.suppressClick) return;
+    const row = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest("tr[data-person-id]")) : null;
     if (row && body.contains(row)) selectPersonRow(row.dataset.personId);
-    const td = e.target.closest("td.day");
+    const td = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest("td.day")) : null;
     if (!td || td.classList.contains("is-off")) return;
     focusDayCell(td);
   });
 
   body.addEventListener("change", (e) => {
-    const td = e.target.closest("td.day");
+    const td = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest("td.day")) : null;
     if (!td) return;
     focusDayCell(td);
     setTimeout(() => { try { td.focus(); } catch (err) {} }, 0);
@@ -434,31 +435,31 @@ async function loadInitial() {
     api.get("/api/activities"),
     api.get("/api/activities?include_inactive=true"),
   ]);
-  state.areas = areas;
-  state.activitiesActive = activities;
-  state.activities = activitiesAll;
+  overviewState.areas = areas;
+  overviewState.activitiesActive = activities;
+  overviewState.activities = activitiesAll;
 
   if (typeof setAreaFocusAreas === "function") {
-    setAreaFocusAreas(areas, state.currentUser);
+    setAreaFocusAreas(areas, overviewState.currentUser);
   }
-  state.areaId = preferredAreaIdForCurrentUser();
+  overviewState.areaId = preferredAreaIdForCurrentUser();
 }
 
 function applyOverviewData(data) {
-  state.allPersons = (data.persons || []).map((person) => ({ ...person }));
+  overviewState.allPersons = (data.persons || []).map((person) => ({ ...person }));
   refreshPersons();
-  state.cells = (data.matrix || []).map((cell) => ({ ...cell }));
-  state.days = state.view === "month" ? (data.days || []).map((day) => ({ ...day })) : [];
-  state.focusedCell = null;
-  const areaName = state.areaId == null ? "Alla" : (state.areas.find((a) => a.id === state.areaId)?.name || "");
+  overviewState.cells = (data.matrix || []).map((cell) => ({ ...cell }));
+  overviewState.days = overviewState.view === "month" ? (data.days || []).map((day) => ({ ...day })) : [];
+  overviewState.focusedCell = null;
+  const areaName = overviewState.areaId == null ? "Alla" : (overviewState.areas.find((a) => a.id === overviewState.areaId)?.name || "");
 
-  if (state.view === "week") {
-    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – V${state.week}/${state.year}`;
+  if (overviewState.view === "week") {
+    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – V${overviewState.week}/${overviewState.year}`;
     buildWeekHeader();
     buildWeekBody();
   } else {
-    const monthName = document.querySelector(`#monthSelect option[value="${state.month}"]`)?.textContent || state.month;
-    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – ${monthName} ${state.year}`;
+    const monthName = document.querySelector(`#monthSelect option[value="${overviewState.month}"]`)?.textContent || overviewState.month;
+    document.getElementById("sectionTitle").textContent = `Översikt – ${areaName} – ${monthName} ${overviewState.year}`;
     buildMonthHeader();
     buildMonthBody();
   }
@@ -470,8 +471,8 @@ function renderOverviewFromCache() {
   const baseKey = overviewCacheKey();
   const cachedAll = overviewAllCache.get(baseKey);
   const cached = cachedAll
-    ? filterOverviewDataForArea(cachedAll, state.areaId)
-    : overviewAreaCache.get(overviewAreaCacheKey(state.areaId, baseKey));
+    ? filterOverviewDataForArea(cachedAll, overviewState.areaId)
+    : overviewAreaCache.get(overviewAreaCacheKey(overviewState.areaId, baseKey));
   if (!cached) return false;
   loadState.controller?.abort();
   loadState.requestSeq += 1;
@@ -570,8 +571,8 @@ async function load() {
   loadState.controller = controller;
   try {
 
-  if (state.view === "week") {
-    const requestedAreaId = state.areaId;
+  if (overviewState.view === "week") {
+    const requestedAreaId = overviewState.areaId;
     // SWR-pilot: måla senaste snapshot direkt (sidbyte) medan färskt data hämtas.
     const snapshot = api.readSwrSnapshot?.(overviewUrl(null));
     if (snapshot) {
@@ -590,7 +591,7 @@ async function load() {
     applyOverviewData(cachedData);
     return true;
   } else {
-    const requestedAreaId = state.areaId;
+    const requestedAreaId = overviewState.areaId;
     const snapshot = api.readSwrSnapshot?.(overviewUrl(null));
     if (snapshot) {
       applyOverviewData(filterOverviewDataForArea(snapshot, requestedAreaId));
@@ -621,57 +622,57 @@ async function load() {
 
 function shiftPeriod(delta) {
   markOverviewActivity();
-  if (state.view === "week") {
-    state.week += delta;
-    if (state.week < 1) { state.year -= 1; state.week = 52; }
-    if (state.week > 53) { state.year += 1; state.week = 1; }
-    document.getElementById("yearInput").value = state.year;
-    document.getElementById("weekInput").value = state.week;
+  if (overviewState.view === "week") {
+    overviewState.week += delta;
+    if (overviewState.week < 1) { overviewState.year -= 1; overviewState.week = 52; }
+    if (overviewState.week > 53) { overviewState.year += 1; overviewState.week = 1; }
+    /** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value = String(overviewState.year);
+    /** @type {HTMLInputElement} */ (document.getElementById("weekInput")).value = String(overviewState.week);
   } else {
-    state.month += delta;
-    if (state.month < 1) { state.year -= 1; state.month = 12; }
-    if (state.month > 12) { state.year += 1; state.month = 1; }
-    document.getElementById("yearInput").value = state.year;
-    document.getElementById("monthSelect").value = String(state.month);
+    overviewState.month += delta;
+    if (overviewState.month < 1) { overviewState.year -= 1; overviewState.month = 12; }
+    if (overviewState.month > 12) { overviewState.year += 1; overviewState.month = 1; }
+    /** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value = String(overviewState.year);
+    /** @type {HTMLInputElement} */ (document.getElementById("monthSelect")).value = String(overviewState.month);
   }
   persistOverviewState();
   load();
 }
 
 function updateViewVisibility() {
-  const isMonth = state.view === "month";
-  document.querySelectorAll(".week-only").forEach((el) => (el.hidden = isMonth));
-  document.querySelectorAll(".month-only").forEach((el) => (el.hidden = !isMonth));
+  const isMonth = overviewState.view === "month";
+  document.querySelectorAll(".week-only").forEach((el) => (/** @type {HTMLElement} */ (el).hidden = isMonth));
+  document.querySelectorAll(".month-only").forEach((el) => (/** @type {HTMLElement} */ (el).hidden = !isMonth));
 }
 
 
 // ---- Init ----
 (async () => {
-  state.currentUser = await initPage("overview");
-  if (!state.currentUser) return;
+  overviewState.currentUser = await initPage("overview");
+  if (!overviewState.currentUser) return;
   applyOverviewReadOnlyMode();
   await loadInitial();
 
   const stored = readSelectedDate();
   if (stored) {
-    state.selectedDateParts = stored;
+    overviewState.selectedDateParts = stored;
     const [y, m, d] = stored;
     const wk = isoWeek(new Date(Date.UTC(y, m - 1, d)));
-    state.year = wk.year;
-    state.week = wk.week;
-    state.month = m;
+    overviewState.year = wk.year;
+    overviewState.week = wk.week;
+    overviewState.month = m;
   } else {
     const nowDate = new Date();
-    state.selectedDateParts = [nowDate.getFullYear(), nowDate.getMonth() + 1, nowDate.getDate()];
+    overviewState.selectedDateParts = [nowDate.getFullYear(), nowDate.getMonth() + 1, nowDate.getDate()];
     const now = isoWeek(nowDate);
-    state.year = now.year;
-    state.week = now.week;
-    state.month = nowDate.getMonth() + 1;
+    overviewState.year = now.year;
+    overviewState.week = now.week;
+    overviewState.month = nowDate.getMonth() + 1;
   }
 
-  document.getElementById("yearInput").value = state.year;
-  document.getElementById("weekInput").value = state.week;
-  document.getElementById("monthSelect").value = String(state.month);
+  /** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value = String(overviewState.year);
+  /** @type {HTMLInputElement} */ (document.getElementById("weekInput")).value = String(overviewState.week);
+  /** @type {HTMLInputElement} */ (document.getElementById("monthSelect")).value = String(overviewState.month);
   updateViewVisibility();
 
   await load();
@@ -691,9 +692,9 @@ function updateViewVisibility() {
 
   const onControlChange = async () => {
     markOverviewActivity();
-    state.year = Number(document.getElementById("yearInput").value) || state.year;
-    state.week = Number(document.getElementById("weekInput").value) || state.week;
-    state.month = Number(document.getElementById("monthSelect").value) || state.month;
+    overviewState.year = Number(/** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value) || overviewState.year;
+    overviewState.week = Number(/** @type {HTMLInputElement} */ (document.getElementById("weekInput")).value) || overviewState.week;
+    overviewState.month = Number(/** @type {HTMLInputElement} */ (document.getElementById("monthSelect")).value) || overviewState.month;
     persistOverviewState();
     await load();
   };
@@ -703,7 +704,7 @@ function updateViewVisibility() {
   document.getElementById("monthSelect").addEventListener("change", onControlChange);
   window.addEventListener("flow:areaFocusChanged", async () => {
     markOverviewActivity();
-    state.areaId = preferredAreaIdForCurrentUser();
+    overviewState.areaId = preferredAreaIdForCurrentUser();
     await load();
   });
   document.getElementById("prev").addEventListener("click", () => shiftPeriod(-1));
@@ -722,7 +723,7 @@ function updateViewVisibility() {
     const key = e.key.toLowerCase();
     if (key !== "z" && key !== "y") return;
     const active = document.activeElement;
-    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
+    if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
     e.preventDefault();
     if (overviewIsReadOnly()) {
       showReadOnlyToast();
@@ -734,16 +735,16 @@ function updateViewVisibility() {
 
   document.getElementById("viewMode").addEventListener("change", (e) => {
     markOverviewActivity();
-    state.view = e.target.value;
+    overviewState.view = /** @type {HTMLInputElement} */ (e.target).value;
     updateViewVisibility();
     persistOverviewState();
     load();
   });
 
   document.getElementById("nameFilter").addEventListener("input", (e) => {
-    state.nameFilter = e.target.value;
+    overviewState.nameFilter = /** @type {HTMLInputElement} */ (e.target).value;
     refreshPersons();
-    if (state.view === "week") buildWeekBody();
+    if (overviewState.view === "week") buildWeekBody();
     else buildMonthBody();
     setupOverviewHorizontalScroll();
   });
@@ -752,17 +753,17 @@ function updateViewVisibility() {
 
   // Klick på Person-rubrik → sort
   document.addEventListener("click", (e) => {
-    const th = e.target.closest("table.overview th[data-sort]");
+    const th = e.target instanceof Element ? /** @type {HTMLElement | null} */ (e.target.closest("table.overview th[data-sort]")) : null;
     if (!th) return;
     if (th.dataset.filterTrigger && !e.shiftKey) {
       focusNameFilter();
       return;
     }
     const key = th.dataset.sort;
-    if (state.sortKey === key) state.sortAsc = !state.sortAsc;
-    else { state.sortKey = key; state.sortAsc = true; }
+    if (overviewState.sortKey === key) overviewState.sortAsc = !overviewState.sortAsc;
+    else { overviewState.sortKey = key; overviewState.sortAsc = true; }
     refreshPersons();
-    if (state.view === "week") buildWeekBody();
+    if (overviewState.view === "week") buildWeekBody();
     else buildMonthBody();
     setupOverviewHorizontalScroll();
   });

@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur persons.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter persons.js via <script>-tagg.
 
@@ -312,28 +313,28 @@ function openPersonProductivityModal(person) {
   document.body.appendChild(backdrop);
 
   const setCustomVisibility = () => {
-    backdrop.querySelector(".person-productivity-anchor").hidden = state.period === "custom";
-    backdrop.querySelector(".person-productivity-custom").hidden = state.period !== "custom";
+    /** @type {HTMLElement} */ (backdrop.querySelector(".person-productivity-anchor")).hidden = state.period === "custom";
+    /** @type {HTMLElement} */ (backdrop.querySelector(".person-productivity-custom")).hidden = state.period !== "custom";
   };
   backdrop.querySelector("#person-productivity-close").addEventListener("click", () => backdrop.remove());
   backdrop.querySelectorAll("[data-period]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.period = button.dataset.period || "week";
+      state.period = /** @type {HTMLElement} */ (button).dataset.period || "week";
       backdrop.querySelectorAll("[data-period]").forEach((item) => item.classList.toggle("active", item === button));
       setCustomVisibility();
       void loadPersonProductivityModal(backdrop, person, state);
     });
   });
   backdrop.querySelector("#person-productivity-anchor-date").addEventListener("change", (event) => {
-    state.anchorDate = event.target.value || today;
+    state.anchorDate = /** @type {HTMLInputElement} */ (event.target).value || today;
     void loadPersonProductivityModal(backdrop, person, state);
   });
   backdrop.querySelector("#person-productivity-start-date").addEventListener("change", (event) => {
-    state.startDate = event.target.value || today;
+    state.startDate = /** @type {HTMLInputElement} */ (event.target).value || today;
     void loadPersonProductivityModal(backdrop, person, state);
   });
   backdrop.querySelector("#person-productivity-end-date").addEventListener("change", (event) => {
-    state.endDate = event.target.value || state.startDate || today;
+    state.endDate = /** @type {HTMLInputElement} */ (event.target).value || state.startDate || today;
     void loadPersonProductivityModal(backdrop, person, state);
   });
   setCustomVisibility();

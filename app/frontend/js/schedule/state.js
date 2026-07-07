@@ -1,3 +1,4 @@
+// @ts-check
 // Bemanningsvy – matris person × timme.
 
 const HOURS = Array.from({ length: 18 }, (_, i) => 6 + i);   // 6..23

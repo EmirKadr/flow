@@ -188,7 +188,11 @@ def test_planning_views_drag_person_names_to_persist_sort_order():
         assert "setupPersonOrderNameCell" in source
         assert 'canEditPage(user, "personSortOrder")' in source
         assert 'api.put("/api/persons/sort-order"' in source
-        assert "Number(person?.home_area_id) === Number(state.currentUser?.area_id)" in source
+        # Bemanning använder state, Översikt overviewState efter namnrymdsflytten.
+        assert (
+            "Number(person?.home_area_id) === Number(state.currentUser?.area_id)" in source
+            or "Number(person?.home_area_id) === Number(overviewState.currentUser?.area_id)" in source
+        )
         assert "Rensa personfiltret innan du sorterar personer." in source
 
     assert "person-order-draggable" in styles
