@@ -1,3 +1,4 @@
+// @ts-check
 function layoutSankeyNodes(nodes, width, height) {
   const groups = new Map();
   for (const node of nodes) {
@@ -662,17 +663,17 @@ async function initSankeyInboundPage() {
   sankeyInboundUser = await initPage("sankeyInbound");
   if (!sankeyInboundUser) return;
   const input = document.getElementById("sankeyInboundDate");
-  if (input) input.value = params.get("date") || sankeyLocalIsoDate();
+  if (input) /** @type {HTMLInputElement} */ (input).value = params.get("date") || sankeyLocalIsoDate();
   const company = params.get("company");
-  if (company) document.getElementById("sankeyInboundCompany").value = company.toUpperCase();
+  if (company) /** @type {HTMLInputElement} */ (document.getElementById("sankeyInboundCompany")).value = company.toUpperCase();
   updateSankeyDateDisplay();
   updateSankeyControls();
   document.querySelectorAll("[data-sankey-period]").forEach((button) => {
-    if (["week", "month", "year"].includes(button.dataset.sankeyPeriod)) {
-      button.title = "Vänsterklick: byt period · Högerklick: välj specifik";
+    if (["week", "month", "year"].includes(/** @type {HTMLElement} */ (button).dataset.sankeyPeriod)) {
+      /** @type {HTMLElement} */ (button).title = "Vänsterklick: byt period · Högerklick: välj specifik";
     }
     button.addEventListener("click", () => {
-      const next = button.dataset.sankeyPeriod || "day";
+      const next = /** @type {HTMLElement} */ (button).dataset.sankeyPeriod || "day";
       if (next === sankeyInboundPeriod) return;
       sankeyInboundPeriod = next;
       sankeyInboundSelected = null;
@@ -680,15 +681,15 @@ async function initSankeyInboundPage() {
       applySankeyFilterChange("sankey-inbound-period");
     });
     button.addEventListener("contextmenu", (event) => {
-      const period = button.dataset.sankeyPeriod || "day";
+      const period = /** @type {HTMLElement} */ (button).dataset.sankeyPeriod || "day";
       if (!["week", "month", "year"].includes(period)) return;
       event.preventDefault();
       window.flowPeriodPicker?.open({
         period,
-        anchorEl: button,
+        anchorEl: /** @type {HTMLElement} */ (button),
         currentIso: sankeyDateValue(),
         onPick: (iso) => {
-          if (input) input.value = iso;
+          if (input) /** @type {HTMLInputElement} */ (input).value = iso;
           sankeyInboundPeriod = period;
           sankeyInboundSelected = null;
           updateSankeyDateDisplay();
@@ -705,14 +706,14 @@ async function initSankeyInboundPage() {
   });
   document.getElementById("sankeyInboundPrevDate")?.addEventListener("click", () => {
     if (!input) return;
-    input.value = sankeyShiftDate(input.value, -1, sankeyInboundPeriod);
+    /** @type {HTMLInputElement} */ (input).value = sankeyShiftDate(/** @type {HTMLInputElement} */ (input).value, -1, sankeyInboundPeriod);
     sankeyInboundSelected = null;
     updateSankeyDateDisplay();
     applySankeyFilterChange("sankey-inbound-prev-date");
   });
   document.getElementById("sankeyInboundNextDate")?.addEventListener("click", () => {
     if (!input) return;
-    input.value = sankeyShiftDate(input.value, 1, sankeyInboundPeriod);
+    /** @type {HTMLInputElement} */ (input).value = sankeyShiftDate(/** @type {HTMLInputElement} */ (input).value, 1, sankeyInboundPeriod);
     sankeyInboundSelected = null;
     updateSankeyDateDisplay();
     applySankeyFilterChange("sankey-inbound-next-date");
@@ -735,7 +736,7 @@ async function initSankeyInboundPage() {
   document.getElementById("sankeyInboundExport")?.addEventListener("click", exportSankeySvg);
   document.getElementById("sankeyInboundExportTraceAll")?.addEventListener("click", exportAllSankeyTraceRows);
   document.getElementById("sankeyInboundDetail")?.addEventListener("click", (event) => {
-    const targetEl = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const targetEl = event.target instanceof Element ? event.target : /** @type {Node | null} */ (event.target)?.parentElement;
     const button = targetEl?.closest("[data-sankey-export-traces]");
     if (!button) return;
     exportSankeyTraceRows();

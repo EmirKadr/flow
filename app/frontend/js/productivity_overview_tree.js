@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur productivity_overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter productivity_overview.js via <script>-tagg.
 

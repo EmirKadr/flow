@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/map_settings.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter map_settings.js via <script>-tagg.
 

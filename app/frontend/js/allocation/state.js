@@ -1,3 +1,4 @@
+// @ts-check
 const ALLOCATION_API = "/api/allokering";
 const STAFFING_SETTINGS_API = "/api/settings/staffing";
 const PRODUCTIVITY_FINANCE_SETTINGS_API = "/api/settings/productivity-finance";
@@ -619,7 +620,7 @@ function normalizeAllocationProcessMatrix(data = null) {
   for (const [code, rule] of Object.entries(incoming)) {
     const areaCode = String(code || "").trim().toUpperCase();
     if (!areaCode) continue;
-    matrix[areaCode] = normalizeAllocationProcessRule({ ...(matrix[areaCode] || matrix.DEFAULT || {}), ...rule });
+    matrix[areaCode] = normalizeAllocationProcessRule({ ...(matrix[areaCode] || /** @type {any} */ (matrix).DEFAULT || {}), ...rule });
   }
   const areas = Array.isArray(data?.areas) && data.areas.length
     ? data.areas.map((area) => ({
@@ -670,10 +671,10 @@ function normalizeAllocationYtgenereringAreas(value = {}) {
 
 function normalizeAllocationYtgenereringSettings(value = {}) {
   const raw = value && typeof value === "object" ? value : {};
-  const rawCarrierClusters = raw.carrierClusters || raw.carrier_clusters;
+  const rawCarrierClusters = /** @type {any} */ (raw).carrierClusters || /** @type {any} */ (raw).carrier_clusters;
   const carrierClusters = normalizeAllocationCarrierClusters(rawCarrierClusters);
   const settings = {
-    areas: normalizeAllocationYtgenereringAreas(raw.areas || raw),
+    areas: normalizeAllocationYtgenereringAreas(/** @type {any} */ (raw).areas || raw),
   };
   if (carrierClusters?.rows?.length) settings.carrierClusters = carrierClusters;
   else if (rawCarrierClusters && typeof rawCarrierClusters === "object" && Array.isArray(rawCarrierClusters.rows)) {

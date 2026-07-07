@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur productivity_overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter productivity_overview.js via <script>-tagg.
 
@@ -144,7 +145,7 @@ function productivityOverviewIsoWeekParts(isoDate) {
   date.setUTCDate(date.getUTCDate() + 4 - weekday);
   const weekYear = date.getUTCFullYear();
   const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return { year: weekYear, week };
 }
 
@@ -170,17 +171,17 @@ function productivityOverviewPeriodDisplayLabel(isoDate, period = productivityOv
 }
 
 function productivityOverviewDateValue() {
-  return document.getElementById("productivityOverviewDate")?.value || productivityOverviewReport?.date || "";
+  return /** @type {HTMLInputElement | null} */ (document.getElementById("productivityOverviewDate"))?.value || productivityOverviewReport?.date || "";
 }
 
 function productivityOverviewPeriodValue() {
-  return productivityOverviewPeriod || document.querySelector(".productivity-overview-period-toggle button.active")?.dataset?.period || "day";
+  return productivityOverviewPeriod || /** @type {HTMLElement} */ (document.querySelector(".productivity-overview-period-toggle button.active"))?.dataset?.period || "day";
 }
 
 function updateProductivityOverviewDateDisplay() {
   const input = document.getElementById("productivityOverviewDate");
   const display = document.getElementById("productivityOverviewDateDisplayText");
-  const value = input?.value || productivityOverviewReport?.date || "";
+  const value = /** @type {HTMLInputElement} */ (input)?.value || productivityOverviewReport?.date || "";
   const label = productivityOverviewPeriodDisplayLabel(value);
   if (display) {
     display.textContent = label;
@@ -191,7 +192,7 @@ function updateProductivityOverviewDateDisplay() {
 
 function updateProductivityOverviewPeriodControls() {
   document.querySelectorAll(".productivity-overview-period-toggle button[data-period]").forEach((button) => {
-    const active = button.dataset.period === productivityOverviewPeriodValue();
+    const active = /** @type {HTMLElement} */ (button).dataset.period === productivityOverviewPeriodValue();
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
@@ -225,8 +226,8 @@ function updateProductivityOverviewDateNav() {
   updateProductivityOverviewDateDisplay();
   if (!prev || !next) return;
   const current = productivityOverviewDateValue();
-  prev.disabled = !current;
-  next.disabled = !current;
+  /** @type {HTMLInputElement} */ (prev).disabled = !current;
+  /** @type {HTMLInputElement} */ (next).disabled = !current;
 }
 
 function completedProductivityOverviewCutoffMinute(reportDate) {

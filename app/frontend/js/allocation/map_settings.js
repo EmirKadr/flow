@@ -1,3 +1,4 @@
+// @ts-check
 async function mountAllocationMapSettingsPage(editor) {
   if (!editor) return;
   const canEdit = canEditAllocationMapSettings();

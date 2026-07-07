@@ -92,7 +92,7 @@ def test_persons_view_exposes_required_noman_field():
     assert 'case "noman": return (p.noman || "").toLowerCase();' in persons_js
     assert 'editText(tdNoman, p, "noman", p.noman || "", "NoMan")' in persons_js
     assert '{ key: "noman", label: "NoMan", required: true }' in persons_js
-    assert 'noman: document.getElementById("m-noman").value.trim()' in persons_js
+    assert 'noman: /** @type {HTMLInputElement} */ (document.getElementById("m-noman")).value.trim()' in persons_js
     assert 'if (!payload.noman) { showToast("NoMan krävs", "error"); return; }' in persons_js
 
 
@@ -106,7 +106,7 @@ def test_persons_view_exposes_optional_rfid_field():
     assert 'case "rfid_code": return (p.rfid_code || "").toLowerCase();' in persons_js
     assert 'editText(tdRfid, p, "rfid_code", p.rfid_code || "", "RFID")' in persons_js
     assert '{ key: "rfid_code", label: "RFID", required: false }' in persons_js
-    assert 'rfid_code: document.getElementById("m-rfid").value.trim()' in persons_js
+    assert 'rfid_code: /** @type {HTMLInputElement} */ (document.getElementById("m-rfid")).value.trim()' in persons_js
     assert 'rfid_code: person.rfid_code ?? null' in persons_js
 
 
@@ -123,7 +123,7 @@ def test_persons_view_exposes_collar_type_field():
     assert 'case "collar_type": return collarTypeLabel(p.collar_type).toLowerCase();' in persons_js
     assert 'editChoice(tdCollarType, p, "collar_type", p.collar_type || "blue_collar", PERSON_COLLAR_TYPES, "arbetstyp")' in persons_js
     assert '{ key: "collar_type", label: "Arbetstyp", required: false, type: "select", options: PERSON_COLLAR_TYPES }' in persons_js
-    assert 'collar_type: document.getElementById("m-collar-type").value || "blue_collar"' in persons_js
+    assert 'collar_type: /** @type {HTMLInputElement} */ (document.getElementById("m-collar-type")).value || "blue_collar"' in persons_js
     assert 'collar_type: person.collar_type || "blue_collar"' in persons_js
 
 

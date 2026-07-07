@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/settings_view.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter settings_view.js via <script>-tagg.
 

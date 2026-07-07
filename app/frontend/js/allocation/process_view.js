@@ -1,3 +1,4 @@
+// @ts-check
 
 function allocationFilterOperatorOptions(selected) {
   const value = normalizeAllocationFilterOperator(selected);
@@ -436,7 +437,7 @@ function ensureFlowPopoverDismiss() {
   document.addEventListener("click", (event) => {
     const root = document.getElementById("allocationRoot");
     if (!root) return;
-    if (event.target.closest("[data-flow-info]") || event.target.closest("[data-flow-filter]") || event.target.closest("[data-flow-popover]")) return;
+    if (/** @type {Element} */ (event.target).closest("[data-flow-info]") || /** @type {Element} */ (event.target).closest("[data-flow-filter]") || /** @type {Element} */ (event.target).closest("[data-flow-popover]")) return;
     closeFlowPopovers(root);
   });
 }
@@ -506,6 +507,6 @@ function renderCombinedView() {
     <input id="allocation-combined-files" type="file" multiple hidden />
   `);
   const input = document.getElementById("allocation-combined-files");
-  if (input) input.addEventListener("change", async (event) => routeAllocationFiles(event.target.files, currentAllocationSlots()));
+  if (input) input.addEventListener("change", async (event) => routeAllocationFiles(/** @type {HTMLInputElement} */ (event.target).files, currentAllocationSlots()));
   bindRunButtons();
 }

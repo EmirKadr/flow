@@ -1,3 +1,4 @@
+// @ts-check
 function formatHours(value) {
   const num = Number(value) || 0;
   const rounded = Math.round((num + Number.EPSILON) * 100) / 100;
@@ -121,9 +122,9 @@ function renderCalculator() {
   let focusState = null;
   if (active && container.contains(active) && active.matches("input[data-field]")) {
     focusState = {
-      field: active.dataset.field || "",
-      selectionStart: typeof active.selectionStart === "number" ? active.selectionStart : null,
-      selectionEnd: typeof active.selectionEnd === "number" ? active.selectionEnd : null,
+      field: /** @type {HTMLElement} */ (active).dataset.field || "",
+      selectionStart: typeof /** @type {HTMLInputElement} */ (active).selectionStart === "number" ? /** @type {HTMLInputElement} */ (active).selectionStart : null,
+      selectionEnd: typeof /** @type {HTMLInputElement} */ (active).selectionEnd === "number" ? /** @type {HTMLInputElement} */ (active).selectionEnd : null,
     };
   }
 
@@ -163,24 +164,24 @@ function renderCalculator() {
 
   container.querySelectorAll("input[data-field]").forEach((input) => {
     input.addEventListener("input", (e) => {
-      const panel = e.target.closest(".calc-panel");
+      const panel = /** @type {Element} */ (e.target).closest(".calc-panel");
       if (!panel) return;
-      const field = e.target.dataset.field;
-      const sanitized = sanitizeNumericInput(e.target.value);
-      if (sanitized !== e.target.value) e.target.value = sanitized;
+      const field = /** @type {HTMLElement} */ (e.target).dataset.field;
+      const sanitized = sanitizeNumericInput(/** @type {HTMLInputElement} */ (e.target).value);
+      if (sanitized !== /** @type {HTMLInputElement} */ (e.target).value) /** @type {HTMLInputElement} */ (e.target).value = sanitized;
       state.calcInputs.manual[field] = sanitized;
       updateCalcPanel(panel);
     });
   });
   container.querySelectorAll("[data-calc-edit]").forEach((button) => {
     button.addEventListener("click", () => {
-      const calc = (state.calculatorProfile.calculators || []).find((item) => item.id === button.dataset.calcEdit);
+      const calc = (state.calculatorProfile.calculators || []).find((item) => item.id === /** @type {HTMLElement} */ (button).dataset.calcEdit);
       if (calc) openCalculatorModal(calc);
     });
   });
   container.querySelectorAll("[data-calc-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await deleteAutomaticCalculator(button.dataset.calcDelete);
+      await deleteAutomaticCalculator(/** @type {HTMLElement} */ (button).dataset.calcDelete);
     });
   });
 
@@ -189,10 +190,10 @@ function renderCalculator() {
       `.calc-panel[data-calc-kind="manual"] input[data-field="${focusState.field}"]`
     );
     if (nextInput) {
-      nextInput.focus({ preventScroll: true });
+      /** @type {HTMLElement} */ (nextInput).focus({ preventScroll: true });
       if (focusState.selectionStart != null && focusState.selectionEnd != null) {
         try {
-          nextInput.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+          /** @type {HTMLInputElement} */ (nextInput).setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
         } catch (err) {}
       }
     }
@@ -228,7 +229,7 @@ function updateCalculatorToolbar() {
   const importUser = document.getElementById("calcImportUser");
   if (!importUser) return;
   const search = String(state.calculatorImportSearch || "").trim().toLowerCase();
-  const currentValue = importUser.value;
+  const currentValue = /** @type {HTMLInputElement} */ (importUser).value;
   const users = (state.calculatorUsers || [])
     .filter((user) => user.has_calculators && !user.is_current)
     .filter((user) => {
@@ -239,10 +240,10 @@ function updateCalculatorToolbar() {
     <option value="">Hämta från användare</option>
     ${users.map((user) => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name || user.username)} (${escapeHtml(user.calculator_count || 0)})</option>`).join("")}
   `;
-  if (users.some((user) => String(user.id) === String(currentValue))) importUser.value = currentValue;
-  importUser.disabled = users.length === 0;
+  if (users.some((user) => String(user.id) === String(currentValue))) /** @type {HTMLInputElement} */ (importUser).value = currentValue;
+  /** @type {HTMLInputElement} */ (importUser).disabled = users.length === 0;
   const button = document.getElementById("calcImportBtn");
-  if (button) button.disabled = users.length === 0 || !importUser.value;
+  if (button) /** @type {HTMLInputElement} */ (button).disabled = users.length === 0 || !/** @type {HTMLInputElement} */ (importUser).value;
 }
 
 function applyCalculatorProfilePayload(data) {
@@ -349,13 +350,13 @@ async function loadAutomaticCalculatorResults({ force = false } = {}) {
 function setupCalculatorToolbar() {
   document.getElementById("calcAddAutomaticBtn")?.addEventListener("click", () => openCalculatorModal());
   document.getElementById("calcImportSearch")?.addEventListener("input", (event) => {
-    state.calculatorImportSearch = event.target.value;
+    state.calculatorImportSearch = /** @type {HTMLInputElement} */ (event.target).value;
     updateCalculatorToolbar();
   });
   document.getElementById("calcImportUser")?.addEventListener("change", () => updateCalculatorToolbar());
   document.getElementById("calcImportBtn")?.addEventListener("click", async () => {
     const select = document.getElementById("calcImportUser");
-    const userId = select?.value;
+    const userId = /** @type {HTMLInputElement} */ (select)?.value;
     if (!userId) return;
     try {
       await importCalculatorProfile(userId);
@@ -406,11 +407,11 @@ function openCalculatorModal(existing = null) {
   backdrop.querySelector("#calcSave").addEventListener("click", async () => {
     const next = {
       id: existing?.id || `calc-${Date.now()}`,
-      name: backdrop.querySelector("#calcName").value.trim(),
-      process: backdrop.querySelector("#calcProcess").value.trim(),
-      company: backdrop.querySelector("#calcCompany").value.trim().toUpperCase(),
-      zone: backdrop.querySelector("#calcZone").value.trim().toUpperCase(),
-      pick_days: Number.parseInt(backdrop.querySelector("#calcPickDays").value, 10) || 0,
+      name: /** @type {HTMLInputElement} */ (backdrop.querySelector("#calcName")).value.trim(),
+      process: /** @type {HTMLInputElement} */ (backdrop.querySelector("#calcProcess")).value.trim(),
+      company: /** @type {HTMLInputElement} */ (backdrop.querySelector("#calcCompany")).value.trim().toUpperCase(),
+      zone: /** @type {HTMLInputElement} */ (backdrop.querySelector("#calcZone")).value.trim().toUpperCase(),
+      pick_days: Number.parseInt(/** @type {HTMLInputElement} */ (backdrop.querySelector("#calcPickDays")).value, 10) || 0,
     };
     if (!next.name || !next.process || !next.company || !next.zone) {
       showToast("Namn, process, bolag och zon krävs", "warn");
@@ -428,7 +429,7 @@ function openCalculatorModal(existing = null) {
       showToast(error.message || "Kunde inte spara kalkylen", "error");
     }
   });
-  setTimeout(() => backdrop.querySelector("#calcName")?.focus());
+  setTimeout(() => /** @type {HTMLElement} */ (backdrop.querySelector("#calcName"))?.focus());
 }
 
 async function deleteAutomaticCalculator(calcId) {

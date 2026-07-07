@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter overview.js via <script>-tagg.
 
@@ -7,7 +8,7 @@ function isoWeek(d = new Date()) {
   const dayNum = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return { year: date.getUTCFullYear(), week, weekday: dayNum };
 }
 
@@ -165,7 +166,7 @@ function focusNameFilter() {
   const input = document.getElementById("nameFilter");
   if (!input) return;
   input.focus();
-  input.select();
+  /** @type {HTMLInputElement} */ (input).select();
 }
 
 function refreshPersons() {
@@ -186,7 +187,7 @@ function refreshPersons() {
   state.persons = list;
   document.querySelectorAll("table.overview th[data-sort]").forEach((th) => {
     const ind = th.querySelector(".sort-ind");
-    if (ind) ind.textContent = th.dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
+    if (ind) ind.textContent = /** @type {HTMLElement} */ (th).dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
   });
 }
 
@@ -319,15 +320,15 @@ async function savePersonOrder(sourceId, targetId, position) {
 function setupPersonOrderDrag() {
   const body = document.getElementById("overviewBody");
   body.addEventListener("dragstart", (event) => {
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
-    const person = personById(Number(cell.dataset.personId));
+    const person = personById(Number(/** @type {HTMLElement} */ (cell).dataset.personId));
     if (!canReorderPerson(person) || state.nameFilter.trim()) {
       event.preventDefault();
       if (state.nameFilter.trim()) showToast("Rensa personfiltret innan du sorterar personer.", "warn", 4000);
       return;
     }
-    personOrderDrag.sourceId = Number(cell.dataset.personId);
+    personOrderDrag.sourceId = Number(/** @type {HTMLElement} */ (cell).dataset.personId);
     document.body.classList.add("dragging-person-order");
     cell.parentElement.classList.add("person-order-dragging");
     event.dataTransfer.effectAllowed = "move";
@@ -336,9 +337,9 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("dragover", (event) => {
     if (personOrderDrag.sourceId == null) return;
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
-    const person = personById(Number(cell.dataset.personId));
+    const person = personById(Number(/** @type {HTMLElement} */ (cell).dataset.personId));
     if (!canReorderPerson(person)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
@@ -347,11 +348,11 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("drop", (event) => {
     if (personOrderDrag.sourceId == null) return;
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = /** @type {Element} */ (event.target).closest("td.name[data-person-id]");
     if (!cell) return;
     event.preventDefault();
     const sourceId = Number(personOrderDrag.sourceId);
-    const targetId = Number(personOrderDrag.targetId || cell.dataset.personId);
+    const targetId = Number(personOrderDrag.targetId || /** @type {HTMLElement} */ (cell).dataset.personId);
     const position = personOrderDrag.position;
     resetPersonOrderDrag();
     void savePersonOrder(sourceId, targetId, position);
@@ -359,7 +360,7 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("dragend", resetPersonOrderDrag);
   body.addEventListener("dragleave", (event) => {
-    if (!body.contains(event.relatedTarget)) clearPersonOrderDropMarkers();
+    if (!(event.relatedTarget instanceof Node && body.contains(event.relatedTarget))) clearPersonOrderDropMarkers();
   });
 }
 
@@ -377,7 +378,7 @@ function focusDayCell(td) {
   };
   td.classList.add("focused");
   if (document.activeElement && document.activeElement.tagName === "SELECT") {
-    document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   setTimeout(() => { try { td.focus({ preventScroll: true }); } catch (e) {} }, 0);
 }

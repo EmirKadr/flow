@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/settings_finance.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter settings_finance.js via <script>-tagg.
 
@@ -349,8 +350,8 @@ function openProductivityFinanceContextMenu(event, row) {
   positionProductivityFinanceContextMenu(menu, event.clientX, event.clientY);
   menu.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.disabled) return;
-      const action = button.dataset.action;
+      if (/** @type {HTMLInputElement} */ (button).disabled) return;
+      const action = /** @type {HTMLElement} */ (button).dataset.action;
       closeProductivityFinanceContextMenu();
       if (action === "calculation") openProductivityFinanceCalculationDialog(row);
       if (action === "check") void openProductivityFinanceProcessCheckDialog(form, row);
@@ -505,18 +506,18 @@ async function openProductivityFinanceProcessLinkDialog(row) {
   `;
   document.body.appendChild(backdrop);
   const search = backdrop.querySelector("[data-productivity-finance-process-search]");
-  search?.focus();
+  /** @type {HTMLElement} */ (search)?.focus();
   search?.addEventListener("input", () => {
-    const query = String(search.value || "").trim().toLowerCase();
+    const query = String(/** @type {HTMLInputElement} */ (search).value || "").trim().toLowerCase();
     backdrop.querySelectorAll("[data-process-search]").forEach((option) => {
-      option.hidden = query && !String(option.dataset.processSearch || "").includes(query);
+      /** @type {HTMLElement} */ (option).hidden = query && !String(/** @type {HTMLElement} */ (option).dataset.processSearch || "").includes(query);
     });
   });
   backdrop.querySelector("[data-productivity-finance-process-link-cancel]")?.addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("[data-productivity-finance-process-link-save]")?.addEventListener("click", () => {
     const selected = backdrop.querySelector('input[name="productivity-finance-process-link"]:checked');
-    const processKey = selected?.value || "";
-    const processLabel = selected?.dataset.label || processKey;
+    const processKey = /** @type {HTMLInputElement} */ (selected)?.value || "";
+    const processLabel = /** @type {HTMLElement} */ (selected)?.dataset.label || processKey;
     backdrop.remove();
     void saveProductivityFinanceRowProcessLink(row, processKey, processLabel);
   });
@@ -691,9 +692,9 @@ async function openProductivityFinanceProcessCheckDialog(form, invoiceRow = null
   backdrop.querySelector("[data-productivity-finance-process-check-close]")?.addEventListener("click", () => backdrop.remove());
   backdrop.querySelector("[data-productivity-finance-process-check-dialog-run]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    const month = Number(monthSelect?.value || 0);
-    const companyCode = rowCompany || normalizeProductivityFinanceCompanyCode(companySelect?.value || "");
-    button.disabled = true;
+    const month = Number(/** @type {HTMLInputElement} */ (monthSelect)?.value || 0);
+    const companyCode = rowCompany || normalizeProductivityFinanceCompanyCode(/** @type {HTMLInputElement} */ (companySelect)?.value || "");
+    /** @type {HTMLInputElement} */ (button).disabled = true;
     if (statusBox) {
       statusBox.className = "allocation-muted";
       statusBox.textContent = "Kontrollerar intäkter och processer...";
@@ -724,7 +725,7 @@ async function openProductivityFinanceProcessCheckDialog(form, invoiceRow = null
       }
       showToast(error?.message || "Kunde inte kontrollera intäkter/processer.", "error", 7000);
     } finally {
-      button.disabled = false;
+      /** @type {HTMLInputElement} */ (button).disabled = false;
     }
   });
   backdrop.querySelector("[data-productivity-finance-process-combobox]")?.addEventListener("input", () => {
@@ -732,7 +733,7 @@ async function openProductivityFinanceProcessCheckDialog(form, invoiceRow = null
   });
   backdrop.querySelector("[data-productivity-finance-process-check-link-save]")?.addEventListener("click", () => {
     const input = backdrop.querySelector("[data-productivity-finance-process-combobox]");
-    const rawValue = String(input?.value || "").trim();
+    const rawValue = String(/** @type {HTMLInputElement} */ (input)?.value || "").trim();
     if (!rawValue) {
       void saveProductivityFinanceProcessCheckDialogLink(backdrop, invoiceRow, "", "");
       return;
@@ -749,11 +750,11 @@ async function openProductivityFinanceProcessCheckDialog(form, invoiceRow = null
     void saveProductivityFinanceProcessCheckDialogLink(backdrop, invoiceRow, option.value, option.label);
   });
   resultBox?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-productivity-finance-check-link-process]");
+    const button = /** @type {Element} */ (event.target).closest("[data-productivity-finance-check-link-process]");
     if (!button || !invoiceRow) return;
-    syncProductivityFinanceProcessCheckSelection(backdrop, button.dataset.productivityFinanceCheckLinkProcess || "", button.dataset.processLabel || "");
+    syncProductivityFinanceProcessCheckSelection(backdrop, /** @type {HTMLElement} */ (button).dataset.productivityFinanceCheckLinkProcess || "", /** @type {HTMLElement} */ (button).dataset.processLabel || "");
     updateProductivityFinanceProcessCheckSqlDetails(backdrop, invoiceRow, latestCheckResult, processOptions);
-    void saveProductivityFinanceProcessCheckDialogLink(backdrop, invoiceRow, button.dataset.productivityFinanceCheckLinkProcess || "", button.dataset.processLabel || "");
+    void saveProductivityFinanceProcessCheckDialogLink(backdrop, invoiceRow, /** @type {HTMLElement} */ (button).dataset.productivityFinanceCheckLinkProcess || "", /** @type {HTMLElement} */ (button).dataset.processLabel || "");
   });
 }
 
@@ -913,21 +914,21 @@ function openProductivityFinanceCalculationDialog(row) {
   const resultBox = backdrop.querySelector("[data-productivity-finance-calculation-result]");
   const sqlBox = backdrop.querySelector("[data-productivity-finance-calculation-sql]");
   const saveButton = backdrop.querySelector("[data-productivity-finance-calculation-save]");
-  promptInput?.focus();
+  /** @type {HTMLElement} */ (promptInput)?.focus();
   promptInput?.addEventListener("input", () => {
     lastResult = null;
-    if (saveButton) saveButton.disabled = true;
+    if (saveButton) /** @type {HTMLInputElement} */ (saveButton).disabled = true;
   });
   backdrop.querySelector("[data-productivity-finance-calculation-cancel]")?.addEventListener("click", () => closeProductivityFinanceCalculationDialog(backdrop));
   backdrop.querySelector("[data-productivity-finance-calculation-test]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    const prompt = String(promptInput?.value || "").trim();
-    const month = Number(monthSelect?.value || 0);
+    const prompt = String(/** @type {HTMLInputElement} */ (promptInput)?.value || "").trim();
+    const month = Number(/** @type {HTMLInputElement} */ (monthSelect)?.value || 0);
     if (!prompt) {
       showToast("Skriv uträkningen först.", "warn", 3500);
       return;
     }
-    button.disabled = true;
+    /** @type {HTMLInputElement} */ (button).disabled = true;
     if (resultBox) resultBox.textContent = "Testar...";
     try {
       const path = allocationScopedUrl(`${PRODUCTIVITY_FINANCE_SETTINGS_API}/calculation/test`, { fallbackToUser: true, includeAreaFocus: true });
@@ -943,19 +944,19 @@ function openProductivityFinanceCalculationDialog(row) {
       if (resultBox) {
         resultBox.textContent = `ST / Antal: ${Number(response.quantity || 0).toLocaleString("sv-SE", { maximumFractionDigits: 2 })}`;
       }
-      if (sqlBox) sqlBox.value = response.calculation_sql || "";
-      if (saveButton) saveButton.disabled = false;
+      if (sqlBox) /** @type {HTMLInputElement} */ (sqlBox).value = response.calculation_sql || "";
+      if (saveButton) /** @type {HTMLInputElement} */ (saveButton).disabled = false;
     } catch (error) {
       lastResult = null;
       if (resultBox) resultBox.textContent = error?.message || "Kunde inte testa uträkningen.";
       showToast(error?.message || "Kunde inte testa uträkningen.", "error", 7000);
-      if (saveButton) saveButton.disabled = true;
+      if (saveButton) /** @type {HTMLInputElement} */ (saveButton).disabled = true;
     } finally {
-      button.disabled = false;
+      /** @type {HTMLInputElement} */ (button).disabled = false;
     }
   });
   saveButton?.addEventListener("click", () => {
-    const prompt = String(promptInput?.value || "").trim();
+    const prompt = String(/** @type {HTMLInputElement} */ (promptInput)?.value || "").trim();
     if (!lastResult || !prompt) return;
     updateProductivityFinanceRowCalculation(row, lastResult, prompt);
     closeProductivityFinanceCalculationDialog(backdrop);

@@ -1,3 +1,4 @@
+// @ts-check
 function segmentKey(personId, hour, minuteStart) {
   return `${personId}:${hour}:${minuteStart}`;
 }
@@ -109,7 +110,7 @@ function firstSplitRangeForTd(td) {
 }
 
 function setAllSegments(cells) {
-  state.cells = new Map();
+  state.cells = /** @type {any} */ (new Map());
   state.hourCells = new Map();
   cells.forEach((cell) => {
     const normalized = {
@@ -125,7 +126,7 @@ function setAllSegments(cells) {
       updated_at: cell.updated_at || null,
       updated_by: cell.updated_by == null ? null : Number(cell.updated_by),
     };
-    state.cells.set(segmentKey(normalized.person_id, normalized.hour, normalized.minute_start), normalized);
+    /** @type {any} */ (state.cells).set(segmentKey(normalized.person_id, normalized.hour, normalized.minute_start), normalized);
     const hk = hourKey(normalized.person_id, normalized.hour);
     if (!state.hourCells.has(hk)) state.hourCells.set(hk, []);
     state.hourCells.get(hk).push(normalized);
@@ -142,7 +143,7 @@ function segmentsForHour(personId, hour) {
 function replaceHourSegments(personId, hour, segments) {
   const hk = hourKey(personId, hour);
   const existing = state.hourCells.get(hk) || [];
-  existing.forEach((segment) => state.cells.delete(segmentKey(segment.person_id, segment.hour, segment.minute_start)));
+  existing.forEach((segment) => /** @type {any} */ (state.cells).delete(segmentKey(segment.person_id, segment.hour, segment.minute_start)));
 
   const normalized = sortSegments((segments || []).map((segment) => ({
     person_id: Number(segment.person_id),
@@ -164,7 +165,7 @@ function replaceHourSegments(personId, hour, segments) {
   }
 
   normalized.forEach((segment) => {
-    state.cells.set(segmentKey(segment.person_id, segment.hour, segment.minute_start), segment);
+    /** @type {any} */ (state.cells).set(segmentKey(segment.person_id, segment.hour, segment.minute_start), segment);
   });
   state.hourCells.set(hk, normalized);
 }
@@ -285,8 +286,8 @@ function updateUndoRedoButtons() {
   const readOnly = scheduleIsReadOnly();
   const undoAction = state.undoStack[state.undoStack.length - 1];
   const redoAction = state.redoStack[state.redoStack.length - 1];
-  if (undoBtn) undoBtn.disabled = !undoAction || (readOnly && undoAction.kind !== "summary");
-  if (redoBtn) redoBtn.disabled = !redoAction || (readOnly && redoAction.kind !== "summary");
+  if (undoBtn) /** @type {HTMLInputElement} */ (undoBtn).disabled = !undoAction || (readOnly && undoAction.kind !== "summary");
+  if (redoBtn) /** @type {HTMLInputElement} */ (redoBtn).disabled = !redoAction || (readOnly && redoAction.kind !== "summary");
 }
 
 function segmentVersionRefs(segments) {

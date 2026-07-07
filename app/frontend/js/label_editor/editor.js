@@ -1,3 +1,4 @@
+// @ts-check
 (function () {
   const LABEL_SYMBOLS = window.FlowLabelSymbols;
   const LABEL_PROFILE_STORAGE_KEY = "flow-label-editor-profiles-v1";
@@ -39,6 +40,7 @@
   let suppressInspector = false;
   let paintTools = null;
 
+  /** @param {string} id @returns {any} Hämtare för editorns fält — medvetet any (experimentvy). */
   function $(id) {
     return document.getElementById(id);
   }
@@ -200,7 +202,7 @@
   function renderProfileSelect(preferredValue = "") {
     const select = $("labelProfileSelect");
     if (!select) return;
-    const previousValue = preferredValue || select.value;
+    const previousValue = preferredValue || /** @type {HTMLInputElement} */ (select).value;
     const customProfiles = readCustomProfiles();
     select.innerHTML = `
       <option value="custom-size">Egen storlek</option>
@@ -213,10 +215,10 @@
         </optgroup>
       ` : ""}
     `;
-    select.value = selectedProfileValue(previousValue);
-    const selected = profileFromValue(select.value);
+    /** @type {HTMLInputElement} */ (select).value = selectedProfileValue(previousValue);
+    const selected = profileFromValue(/** @type {HTMLInputElement} */ (select).value);
     const deleteButton = $("labelDeleteProfile");
-    if (deleteButton) deleteButton.disabled = !selected?.custom;
+    if (deleteButton) /** @type {HTMLInputElement} */ (deleteButton).disabled = !selected?.custom;
   }
 
   function applyLabelSize(width, height, options = {}) {
@@ -430,7 +432,7 @@
       </div>
     `).join("");
     canvas.querySelectorAll(".label-object").forEach((element) => {
-      const object = state.objects.find((item) => item.id === element.dataset.objectId);
+      const object = state.objects.find((item) => item.id === /** @type {HTMLElement} */ (element).dataset.objectId);
       if (!object) return;
       positionElement(element, object);
       if (!objectIsInteractive(object)) return;
@@ -479,17 +481,17 @@
     const selectedType = object?.type || "";
     $("labelSelectedName").textContent = hasObject ? objectName(selectedType) : "Inget valt";
     document.querySelectorAll("[data-selected-field]").forEach((field) => {
-      field.disabled = !hasObject;
+      /** @type {HTMLInputElement} */ (field).disabled = !hasObject;
     });
     document.querySelectorAll("[data-visible-for]").forEach((group) => {
-      const types = group.dataset.visibleFor.split(",");
-      group.hidden = !hasObject || !types.includes(selectedType);
+      const types = /** @type {HTMLElement} */ (group).dataset.visibleFor.split(",");
+      /** @type {HTMLElement} */ (group).hidden = !hasObject || !types.includes(selectedType);
     });
     if (!hasObject) return;
     suppressInspector = true;
     const setField = (id, value) => {
       const field = $(id);
-      if (document.activeElement !== field) field.value = value;
+      if (document.activeElement !== field) /** @type {HTMLInputElement} */ (field).value = value;
     };
     setField("labelObjectX", object.x);
     setField("labelObjectY", object.y);
@@ -514,7 +516,7 @@
     object.y = Number($("labelObjectY").value);
     object.w = Number($("labelObjectW").value);
     object.h = Number($("labelObjectH").value);
-    object.value = $("labelObjectValue").value;
+    /** @type {HTMLInputElement} */ (object).value = $("labelObjectValue").value;
     object.fontSize = Number($("labelObjectFontSize").value) || 5;
     object.color = $("labelObjectColor").value || "#111827";
     object.fill = $("labelObjectFill").value || "#ffffff";
@@ -645,7 +647,7 @@
     $("labelWidth").addEventListener("change", update);
     $("labelHeight").addEventListener("change", update);
     $("labelProfileSelect").addEventListener("change", (event) => {
-      const profile = profileFromValue(event.target.value);
+      const profile = profileFromValue(/** @type {HTMLInputElement} */ (event.target).value);
       if (!profile) {
         renderProfileSelect();
         return;
@@ -766,7 +768,7 @@
 
   function setupActions() {
     document.querySelectorAll("[data-add-label-object]").forEach((button) => {
-      button.addEventListener("click", () => addObject(button.dataset.addLabelObject));
+      button.addEventListener("click", () => addObject(/** @type {HTMLElement} */ (button).dataset.addLabelObject));
     });
     $("labelDeleteObject").addEventListener("click", deleteSelected);
     $("labelDuplicateObject").addEventListener("click", duplicateSelected);
@@ -879,11 +881,11 @@
     };
     backdrop.querySelector(".label-symbol-picker-close")?.addEventListener("click", close);
     backdrop.querySelectorAll("[data-symbol-value]").forEach((button) => {
-      button.addEventListener("click", () => choose(button.dataset.symbolValue || "check"));
+      button.addEventListener("click", () => choose(/** @type {HTMLElement} */ (button).dataset.symbolValue || "check"));
     });
     document.addEventListener("keydown", handleEscape);
     document.body.appendChild(backdrop);
-    backdrop.querySelector("[data-symbol-value]")?.focus({ preventScroll: true });
+    /** @type {HTMLElement} */ (backdrop.querySelector("[data-symbol-value]"))?.focus({ preventScroll: true });
     track("open-symbol-picker");
   }
 

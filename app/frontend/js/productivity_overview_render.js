@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur productivity_overview.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter productivity_overview.js via <script>-tagg.
 
@@ -210,7 +211,7 @@ function renderProductivityOverviewSummary(root, report) {
 
 function renderProductivityOverviewShell() {
   const input = document.getElementById("productivityOverviewDate");
-  if (input && !input.value) input.value = localProductivityOverviewIsoDate();
+  if (input && !/** @type {HTMLInputElement} */ (input).value) /** @type {HTMLInputElement} */ (input).value = localProductivityOverviewIsoDate();
   updateProductivityOverviewDateDisplay();
   updateProductivityOverviewPeriodControls();
   updateProductivityOverviewDateNav();
@@ -222,7 +223,7 @@ function renderProductivityOverviewShell() {
       <div class="productivity-kpi"><span>Områden</span><strong>-</strong></div>
       <div class="productivity-kpi"><span>Aktiviteter</span><strong>-</strong></div>
       <div class="productivity-kpi"><span>Personer</span><strong>-</strong></div>
-      <div class="productivity-kpi"><span>Period</span><strong>${escapeHtml(productivityOverviewPeriodDisplayLabel(input?.value || ""))}</strong></div>
+      <div class="productivity-kpi"><span>Period</span><strong>${escapeHtml(productivityOverviewPeriodDisplayLabel(/** @type {HTMLInputElement} */ (input)?.value || ""))}</strong></div>
     `;
   }
 
@@ -463,7 +464,7 @@ async function openProductivityBusinessSummaryDialog(node) {
     button.addEventListener("click", () => closeProductivityBusinessSummaryDialog(backdrop, onKeydown));
   });
   document.body.appendChild(backdrop);
-  backdrop.querySelector("[data-productivity-business-summary-close]")?.focus({ preventScroll: true });
+  /** @type {HTMLElement} */ (backdrop.querySelector("[data-productivity-business-summary-close]"))?.focus({ preventScroll: true });
   try {
     const payload = await fetchProductivityBusinessSummary();
     renderProductivityBusinessSummaryDialogContent(backdrop, payload);

@@ -1,3 +1,4 @@
+// @ts-check
 async function onSegmentChange(td, minuteStart, minuteEnd) {
   const personId = Number(td.dataset.personId);
   const hour = Number(td.dataset.hour);
@@ -278,7 +279,7 @@ function setupKeyboard() {
     if (!["c", "x", "v", "z", "y"].includes(key)) return;
 
     const active = document.activeElement;
-    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || /** @type {HTMLElement} */ (active).isContentEditable)) return;
     if (key === "z") {
       e.preventDefault();
       e.stopPropagation();
@@ -329,8 +330,8 @@ function getDragRect() {
 function dragTargetTdsInRect() {
   const { r0, r1, c0, c1 } = getDragRect();
   return Array.from(document.querySelectorAll("#scheduleBody td[data-row-index]")).filter((td) => {
-    const r = Number(td.dataset.rowIndex);
-    const c = Number(td.dataset.colIndex);
+    const r = Number(/** @type {HTMLElement} */ (td).dataset.rowIndex);
+    const c = Number(/** @type {HTMLElement} */ (td).dataset.colIndex);
     return r >= r0 && r <= r1 && c >= c0 && c <= c1;
   });
 }
@@ -343,7 +344,7 @@ function updateDragTargets() {
   const isAreaCopy = targets.filter((td) => td !== drag.sourceTd).length > 1;
   targets.forEach((td) => {
     td.classList.add("drag-target");
-    if (td.dataset.split !== "1") return;
+    if (/** @type {HTMLElement} */ (td).dataset.split !== "1") return;
     if (isAreaCopy) {
       td.querySelectorAll(".hour-segment").forEach((part) => part.classList.add("drag-target-segment"));
       return;
@@ -405,7 +406,7 @@ function activateDrag() {
   document.body.classList.add("dragging");
   drag.sourceTd.classList.add("drag-source-cell");
   if (document.activeElement?.tagName === "SELECT") {
-    document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   updateDragTargets();
 }
@@ -458,10 +459,10 @@ async function finishDrag() {
   if (targets.length === 0 || (targets.length === 1 && targets[0] === sourceTd && !sourceIsSplit)) return;
 
   const editableTargets = targets.filter((td) =>
-    (td !== sourceTd || sourceIsSplit) && !isHourLocked(Number(td.dataset.personId), Number(td.dataset.hour))
+    (td !== sourceTd || sourceIsSplit) && !isHourLocked(Number(/** @type {HTMLElement} */ (td).dataset.personId), Number(/** @type {HTMLElement} */ (td).dataset.hour))
   );
   const lockedTargetCount = targets.filter((td) =>
-    (td !== sourceTd || sourceIsSplit) && isHourLocked(Number(td.dataset.personId), Number(td.dataset.hour))
+    (td !== sourceTd || sourceIsSplit) && isHourLocked(Number(/** @type {HTMLElement} */ (td).dataset.personId), Number(/** @type {HTMLElement} */ (td).dataset.hour))
   ).length;
   if (!editableTargets.length) {
     if (lockedTargetCount) showLockedCellToast();
@@ -471,8 +472,8 @@ async function finishDrag() {
   const cells = targets
     .filter((td) => editableTargets.includes(td))
     .flatMap((td) => {
-      const personId = Number(td.dataset.personId);
-      const hour = Number(td.dataset.hour);
+      const personId = Number(/** @type {HTMLElement} */ (td).dataset.personId);
+      const hour = Number(/** @type {HTMLElement} */ (td).dataset.hour);
       const segments = sortSegments(segmentsForHour(personId, hour));
       const fullSegment = segments.length === 1
         && segments[0].minute_start === 0
@@ -563,22 +564,22 @@ function setupDrag() {
   body.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     if (scheduleIsReadOnly()) return;
-    if (e.target.closest("select")) return;
-    const td = e.target.closest("td[data-hour]");
+    if (/** @type {Element} */ (e.target).closest("select")) return;
+    const td = /** @type {Element} */ (e.target).closest("td[data-hour]");
     if (!td) return;
-    const part = e.target.closest(".hour-segment");
+    const part = /** @type {Element} */ (e.target).closest(".hour-segment");
     if (part) {
-      startPendingDrag(td, e, Number(part.dataset.minuteStart), Number(part.dataset.minuteEnd));
+      startPendingDrag(td, e, Number(/** @type {HTMLElement} */ (part).dataset.minuteStart), Number(/** @type {HTMLElement} */ (part).dataset.minuteEnd));
       return;
     }
-    if (td.dataset.split === "1") return;
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") return;
     startPendingDrag(td, e, 0, 60);
   });
 
   body.addEventListener("contextmenu", (e) => {
-    const td = e.target.closest("td[data-hour]");
+    const td = /** @type {Element} */ (e.target).closest("td[data-hour]");
     if (!td) return;
-    if (td.dataset.split === "1") {
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") {
       const part = splitPartFromEvent(td, e);
       if (!part) {
         e.preventDefault();
@@ -592,9 +593,9 @@ function setupDrag() {
   }, true);
 
   body.addEventListener("dblclick", (e) => {
-    const td = e.target.closest("td[data-hour]");
+    const td = /** @type {Element} */ (e.target).closest("td[data-hour]");
     if (!td) return;
-    if (td.dataset.split === "1") {
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") {
       const part = splitPartFromEvent(td, e);
       if (part) {
         openSplitSegmentSelect(
@@ -619,12 +620,12 @@ function setupDrag() {
     }
     const td = scheduleCellFromPoint(e.clientX, e.clientY);
     if (!td) return;
-    drag.currentRow = Number(td.dataset.rowIndex);
-    drag.currentCol = Number(td.dataset.colIndex);
+    drag.currentRow = Number(/** @type {HTMLElement} */ (td).dataset.rowIndex);
+    drag.currentCol = Number(/** @type {HTMLElement} */ (td).dataset.colIndex);
     const targetRange = targetRangeFromPoint(td, e.clientX, e.clientY);
     drag.currentTargetMinuteStart = targetRange.minute_start;
     drag.currentTargetMinuteEnd = targetRange.minute_end;
-    if (td.dataset.split === "1") {
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") {
       drag.targetRangesByCell.set(dragCellKeyForTd(td), targetRange);
     }
     updateDragTargets();
@@ -642,7 +643,7 @@ function setupDrag() {
 
   document.addEventListener("click", (e) => {
     if (!drag.suppressClick) return;
-    if (!e.target.closest("#scheduleBody td[data-hour]")) return;
+    if (!/** @type {Element} */ (e.target).closest("#scheduleBody td[data-hour]")) return;
     e.preventDefault();
     e.stopPropagation();
     drag.suppressClick = false;
@@ -650,14 +651,14 @@ function setupDrag() {
 
   body.addEventListener("click", (e) => {
     if (drag.suppressClick) return;
-    const row = e.target.closest("tr[data-person-id]");
-    if (row && body.contains(row)) selectPersonRow(row.dataset.personId);
-    const td = e.target.closest("td[data-hour]");
+    const row = /** @type {Element} */ (e.target).closest("tr[data-person-id]");
+    if (row && body.contains(row)) selectPersonRow(/** @type {HTMLElement} */ (row).dataset.personId);
+    const td = /** @type {Element} */ (e.target).closest("td[data-hour]");
     if (!td) return;
-    if (td.dataset.split === "1") {
-      const part = e.target.closest(".hour-segment");
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") {
+      const part = /** @type {Element} */ (e.target).closest(".hour-segment");
       if (part) {
-        focusSegment(td, part, Number(part.dataset.minuteStart), Number(part.dataset.minuteEnd));
+        focusSegment(td, part, Number(/** @type {HTMLElement} */ (part).dataset.minuteStart), Number(/** @type {HTMLElement} */ (part).dataset.minuteEnd));
       }
       return;
     }
@@ -665,12 +666,12 @@ function setupDrag() {
   });
 
   body.addEventListener("change", (e) => {
-    const td = e.target.closest("td[data-hour]");
+    const td = /** @type {Element} */ (e.target).closest("td[data-hour]");
     if (!td) return;
-    if (td.dataset.split === "1") {
-      const part = e.target.closest(".hour-segment");
+    if (/** @type {HTMLElement} */ (td).dataset.split === "1") {
+      const part = /** @type {Element} */ (e.target).closest(".hour-segment");
       if (part) {
-        focusSegment(td, part, Number(part.dataset.minuteStart), Number(part.dataset.minuteEnd));
+        focusSegment(td, part, Number(/** @type {HTMLElement} */ (part).dataset.minuteStart), Number(/** @type {HTMLElement} */ (part).dataset.minuteEnd));
       }
       return;
     }

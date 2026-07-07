@@ -1,3 +1,4 @@
+// @ts-check
 const SCHEDULE_RFID_REFRESH_MS = 7000;
 
 function scheduleRfidKey() {

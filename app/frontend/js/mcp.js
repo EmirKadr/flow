@@ -1,3 +1,4 @@
+// @ts-check
 const mcpState = {
   user: null,
   tools: [],
@@ -42,9 +43,9 @@ function mcpRenderBrainControls() {
     providerSelect.innerHTML = `<option value="">Ingen provider</option>`;
     modelSelect.innerHTML = `<option value="">Ingen modell</option>`;
     thinkingSelect.innerHTML = `<option value="none">Ingen thinking</option>`;
-    providerSelect.disabled = true;
-    modelSelect.disabled = true;
-    thinkingSelect.disabled = true;
+    /** @type {HTMLInputElement} */ (providerSelect).disabled = true;
+    /** @type {HTMLInputElement} */ (modelSelect).disabled = true;
+    /** @type {HTMLInputElement} */ (thinkingSelect).disabled = true;
     return;
   }
 
@@ -72,9 +73,9 @@ function mcpRenderBrainControls() {
   thinkingSelect.innerHTML = thinkingModes.map((mode) =>
     `<option value="${mcpEscape(mode.value)}"${mode.value === mcpState.thinkingMode ? " selected" : ""}>${mcpEscape(mode.label || mode.value)}</option>`
   ).join("");
-  providerSelect.disabled = mcpState.busy;
-  modelSelect.disabled = mcpState.busy || models.length <= 1;
-  thinkingSelect.disabled = mcpState.busy || thinkingModes.length <= 1;
+  /** @type {HTMLInputElement} */ (providerSelect).disabled = mcpState.busy;
+  /** @type {HTMLInputElement} */ (modelSelect).disabled = mcpState.busy || models.length <= 1;
+  /** @type {HTMLInputElement} */ (thinkingSelect).disabled = mcpState.busy || thinkingModes.length <= 1;
 }
 
 function mcpSetBusy(busy, message = "") {
@@ -83,9 +84,9 @@ function mcpSetBusy(busy, message = "") {
   const refresh = document.getElementById("mcpRefresh");
   const question = document.getElementById("mcpQuestion");
   const statusText = document.getElementById("mcpStatusText");
-  if (send) send.disabled = mcpState.busy || !mcpState.ready || !mcpState.canAsk;
-  if (refresh) refresh.disabled = mcpState.busy;
-  if (question) question.disabled = mcpState.busy || !mcpState.canAsk;
+  if (send) /** @type {HTMLInputElement} */ (send).disabled = mcpState.busy || !mcpState.ready || !mcpState.canAsk;
+  if (refresh) /** @type {HTMLInputElement} */ (refresh).disabled = mcpState.busy;
+  if (question) /** @type {HTMLInputElement} */ (question).disabled = mcpState.busy || !mcpState.canAsk;
   if (statusText && message) statusText.textContent = message;
   if (send) send.textContent = mcpState.busy ? "Skickar..." : "Skicka";
   mcpRenderBrainControls();
@@ -260,7 +261,7 @@ async function submitMcpQuestion(event) {
   event.preventDefault();
   if (mcpState.busy || !mcpState.canAsk) return;
   const questionEl = document.getElementById("mcpQuestion");
-  const question = String(questionEl?.value || "").trim();
+  const question = String(/** @type {HTMLInputElement} */ (questionEl)?.value || "").trim();
   if (!question) {
     showToast("Skriv en fråga först.", "warn", 3000);
     return;
@@ -309,27 +310,27 @@ async function initMcpPage() {
   mcpState.canAsk = canEditPage(user, "mcp");
   document.getElementById("mcpQuestionForm")?.addEventListener("submit", submitMcpQuestion);
   document.getElementById("mcpProviderSelect")?.addEventListener("change", (event) => {
-    mcpState.brain = String(event.target.value || "");
+    mcpState.brain = String(/** @type {HTMLInputElement} */ (event.target).value || "");
     const provider = mcpCurrentProvider();
     mcpState.model = provider?.default_model || (provider?.models || [])[0] || "";
     mcpState.thinkingMode = provider?.default_thinking || (provider?.thinking_modes || [])[0]?.value || "none";
     mcpRenderBrainControls();
   });
   document.getElementById("mcpModelSelect")?.addEventListener("change", (event) => {
-    mcpState.model = String(event.target.value || "");
+    mcpState.model = String(/** @type {HTMLInputElement} */ (event.target).value || "");
   });
   document.getElementById("mcpThinkingSelect")?.addEventListener("change", (event) => {
-    mcpState.thinkingMode = String(event.target.value || "none");
+    mcpState.thinkingMode = String(/** @type {HTMLInputElement} */ (event.target).value || "none");
   });
   document.getElementById("mcpRefresh")?.addEventListener("click", loadMcpStatus);
   document.getElementById("mcpClear")?.addEventListener("click", () => {
-    document.getElementById("mcpQuestion").value = "";
+    /** @type {HTMLInputElement} */ (document.getElementById("mcpQuestion")).value = "";
     mcpClearAnswer();
   });
   document.getElementById("mcpQuestion")?.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      document.getElementById("mcpQuestionForm")?.requestSubmit();
+      /** @type {HTMLFormElement | null} */ (document.getElementById("mcpQuestionForm"))?.requestSubmit();
     }
   });
   await loadMcpStatus();

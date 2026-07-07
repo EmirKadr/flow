@@ -1,3 +1,4 @@
+// @ts-check
 async function refreshSummary() {
   const filteredUrl = `/api/schedule/summary?year=${state.year}&week=${state.week}&weekday=${state.weekday}` +
     (state.areaId ? `&area_id=${state.areaId}` : "");

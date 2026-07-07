@@ -1,3 +1,4 @@
+// @ts-check
 function productivityOverviewSourceWarnings(report) {
   const warnings = [];
   const seen = new Set();
@@ -313,7 +314,7 @@ function openProductivityOverviewExportDialog() {
     event.preventDefault();
     const includedTypes = new Set(
       [...backdrop.querySelectorAll('input[name="export-level"]:checked')]
-        .map((input) => input.value)
+        .map((input) => /** @type {HTMLInputElement} */ (input).value)
         .filter(Boolean)
     );
     includedTypes.add(focusNode.type);
@@ -322,7 +323,7 @@ function openProductivityOverviewExportDialog() {
     performProductivityOverviewFlowchartExport(includedTypes);
   });
   document.body.appendChild(backdrop);
-  backdrop.querySelector('input[name="export-level"]:not(:disabled)')?.focus();
+  /** @type {HTMLElement} */ (backdrop.querySelector('input[name="export-level"]:not(:disabled)'))?.focus();
 }
 
 function exportProductivityOverviewFlowchart() {
@@ -342,13 +343,13 @@ function renderProductivityOverviewReport(report) {
   productivityOverviewReport = report;
   if (report?.period?.type) productivityOverviewPeriod = report.period.type;
   const dateInput = document.getElementById("productivityOverviewDate");
-  if (dateInput && report?.date) dateInput.value = report.date;
+  if (dateInput && report?.date) /** @type {HTMLInputElement} */ (dateInput).value = report.date;
   updateProductivityOverviewDateDisplay();
   updateProductivityOverviewPeriodControls();
   const dates = availableProductivityOverviewDates();
   if (dateInput && dates.length > 1) {
-    dateInput.min = dates[0];
-    dateInput.max = dates[dates.length - 1];
+    /** @type {HTMLInputElement} */ (dateInput).min = dates[0];
+    /** @type {HTMLInputElement} */ (dateInput).max = dates[dates.length - 1];
   }
   updateProductivityOverviewDateNav();
 
@@ -393,8 +394,8 @@ async function shiftProductivityOverviewDate(direction) {
   const input = document.getElementById("productivityOverviewDate");
   if (!input) return;
   const next = adjacentProductivityOverviewDate(direction);
-  if (!next || next === input.value) return;
-  input.value = next;
+  if (!next || next === /** @type {HTMLInputElement} */ (input).value) return;
+  /** @type {HTMLInputElement} */ (input).value = next;
   updateProductivityOverviewDateDisplay();
   updateProductivityOverviewDateNav();
   await loadProductivityOverview();
@@ -567,15 +568,15 @@ async function initProductivityOverviewPage() {
   productivityOverviewUser = await initPage("productivity");
   if (!productivityOverviewUser) return;
   const input = document.getElementById("productivityOverviewDate");
-  if (input && !input.value) input.value = localProductivityOverviewIsoDate();
+  if (input && !/** @type {HTMLInputElement} */ (input).value) /** @type {HTMLInputElement} */ (input).value = localProductivityOverviewIsoDate();
   updateProductivityOverviewDateDisplay();
   updateProductivityOverviewPeriodControls();
   document.querySelectorAll(".productivity-overview-period-toggle button[data-period]").forEach((button) => {
-    if (["week", "month", "year"].includes(button.dataset.period)) {
-      button.title = "Vänsterklick: byt period · Högerklick: välj specifik";
+    if (["week", "month", "year"].includes(/** @type {HTMLElement} */ (button).dataset.period)) {
+      /** @type {HTMLElement} */ (button).title = "Vänsterklick: byt period · Högerklick: välj specifik";
     }
     button.addEventListener("click", () => {
-      const nextPeriod = button.dataset.period || "day";
+      const nextPeriod = /** @type {HTMLElement} */ (button).dataset.period || "day";
       if (nextPeriod === productivityOverviewPeriod) return;
       productivityOverviewPeriod = nextPeriod;
       updateProductivityOverviewPeriodControls();
@@ -583,16 +584,16 @@ async function initProductivityOverviewPage() {
       void loadProductivityOverview();
     });
     button.addEventListener("contextmenu", (event) => {
-      const period = button.dataset.period || "day";
+      const period = /** @type {HTMLElement} */ (button).dataset.period || "day";
       if (!["week", "month", "year"].includes(period)) return;
       event.preventDefault();
       const input = document.getElementById("productivityOverviewDate");
       window.flowPeriodPicker?.open({
         period,
-        anchorEl: button,
+        anchorEl: /** @type {HTMLElement} */ (button),
         currentIso: productivityOverviewDateValue(),
         onPick: (iso) => {
-          if (input) input.value = iso;
+          if (input) /** @type {HTMLInputElement} */ (input).value = iso;
           productivityOverviewPeriod = period;
           updateProductivityOverviewDateDisplay();
           updateProductivityOverviewPeriodControls();
@@ -618,12 +619,12 @@ async function initProductivityOverviewPage() {
   });
   const overviewTree = document.getElementById("productivityOverviewTree");
   overviewTree?.addEventListener("click", (event) => {
-    const button = event.target.closest?.("[data-node-id]");
+    const button = event.target instanceof Element ? event.target.closest("[data-node-id]") : null;
     if (!button) return;
     focusProductivityOverviewNode(button.getAttribute("data-node-id"));
   });
   overviewTree?.addEventListener("contextmenu", (event) => {
-    const target = event.target.closest?.("[data-node-id]");
+    const target = event.target instanceof Element ? event.target.closest("[data-node-id]") : null;
     if (!target) return;
     const node = productivityOverviewNodeIndex.get(target.getAttribute("data-node-id"));
     if (!node || node.type !== "business") return;
@@ -631,14 +632,14 @@ async function initProductivityOverviewPage() {
     openProductivityOverviewContextMenu(event, node);
   });
   document.addEventListener("click", (event) => {
-    if (event.target.closest?.("[data-productivity-overview-context-menu]")) return;
+    if (event.target instanceof Element && event.target.closest("[data-productivity-overview-context-menu]")) return;
     closeProductivityOverviewContextMenu();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeProductivityOverviewContextMenu();
   });
   document.getElementById("productivityOverviewBreadcrumbs")?.addEventListener("click", (event) => {
-    const button = event.target.closest?.("[data-node-id]");
+    const button = event.target instanceof Element ? event.target.closest("[data-node-id]") : null;
     if (!button) return;
     focusProductivityOverviewNode(button.getAttribute("data-node-id"));
   });

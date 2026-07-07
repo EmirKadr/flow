@@ -1,3 +1,4 @@
+// @ts-check
 const PRESENCE_API_PATH = "/api/schedule/presence";
 
 function presenceEscapeHtml(value) {
@@ -72,7 +73,7 @@ function openPresenceScopeDialog(selection) {
       if (event.target === backdrop) close(null);
     });
     backdrop.querySelector("#presence-print")?.addEventListener("click", () => {
-      const scope = backdrop.querySelector('input[name="presence-scope"]:checked')?.value || "all";
+      const scope = /** @type {HTMLInputElement} */ (backdrop.querySelector('input[name="presence-scope"]:checked'))?.value || "all";
       close(scope);
     });
   });
@@ -379,7 +380,7 @@ function openSchedulePrintDialog() {
       if (event.target === backdrop) close(null);
     });
     backdrop.querySelector("#schedule-print-submit")?.addEventListener("click", () => {
-      close(backdrop.querySelector('input[name="schedule-print-type"]:checked')?.value || "staffing");
+      close(/** @type {HTMLInputElement} */ (backdrop.querySelector('input[name="schedule-print-type"]:checked'))?.value || "staffing");
     });
   });
 }
@@ -526,7 +527,7 @@ function setupSchedulePrintButton(buttonId, options) {
       showToast("Välj en giltig dag innan du skriver ut.", "warn", 6000, { logTitle: "Skriv ut" });
       return;
     }
-    const type = await openSchedulePrintDialog(selection);
+    const type = await openSchedulePrintDialog();  // dialogen tar inga argument; urvalet lases i getSelection-callbacken
     if (!type) return;
     const persons = schedulePrintPersonsForDay();
     if (!persons.length) {

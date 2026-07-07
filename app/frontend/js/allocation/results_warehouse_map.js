@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/results.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter results.js via <script>-tagg.
 
@@ -82,7 +83,7 @@ function allocationMapLocationSortValue(value) {
 function allocationMapCompareLocation(a, b) {
   const left = allocationMapLocationSortValue(a);
   const right = allocationMapLocationSortValue(b);
-  return left[0] - right[0] || left[1].localeCompare(right[1], "sv");
+  return Number(left[0]) - Number(right[0]) || String(left[1]).localeCompare(String(right[1]), "sv");
 }
 
 function allocationMapTsvCell(value) {
@@ -391,7 +392,7 @@ function setupAllocationWarehouseMap(host, entry) {
     labelLines.forEach((line, index) => {
       const span = document.createElementNS(ALLOCATION_MAP_NS, "tspan");
       span.setAttribute("x", contentX);
-      span.setAttribute("y", firstLineY + index * lineHeight);
+      span.setAttribute("y", String(firstLineY + index * lineHeight));
       if (allocationMapEstimatedTextWidth(line, mainFont) > contentWidth) {
         span.setAttribute("textLength", String(Math.round(contentWidth)));
         span.setAttribute("lengthAdjust", "spacingAndGlyphs");
@@ -850,9 +851,9 @@ function setupAllocationWarehouseMap(host, entry) {
   svg.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     host.focus?.({ preventScroll: true });
-    const rect = event.target.closest("[data-map-location]");
+    const rect = /** @type {Element} */ (event.target).closest("[data-map-location]");
     if (rect) {
-      const location = rect.dataset.mapLocation;
+      const location = /** @type {HTMLElement} */ (rect).dataset.mapLocation;
       selectLocation(location);
       const assignment = assignmentByLocation.get(location);
       if (assignment) {
@@ -892,7 +893,7 @@ function setupAllocationWarehouseMap(host, entry) {
         state.drag.ghost.style.left = `${event.clientX + 14}px`;
         state.drag.ghost.style.top = `${event.clientY + 14}px`;
         const targetEl = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-map-location]");
-        const target = targetEl?.dataset.mapLocation || "";
+        const target = /** @type {HTMLElement} */ (targetEl)?.dataset.mapLocation || "";
         setDragTarget(target && target !== state.drag.source ? target : "");
       }
       return;
@@ -924,9 +925,9 @@ function setupAllocationWarehouseMap(host, entry) {
   });
 
   overview?.addEventListener("click", (event) => {
-    const row = event.target.closest("[data-map-overview-location]");
+    const row = /** @type {Element} */ (event.target).closest("[data-map-overview-location]");
     if (!row) return;
-    const location = row.dataset.mapOverviewLocation;
+    const location = /** @type {HTMLElement} */ (row).dataset.mapOverviewLocation;
     host.focus?.({ preventScroll: true });
     selectLocation(location, true);
     void copyMapOverviewShipment(location);

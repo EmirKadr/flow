@@ -1,3 +1,4 @@
+// @ts-check
 function renderProductivityFinanceSettingsPanel(panel = document.getElementById("allocation-settings-panel")) {
   if (!panel) return;
   closeProductivityFinanceContextMenu();
@@ -80,7 +81,7 @@ function renderProductivityFinanceSettingsPanel(panel = document.getElementById(
     row.addEventListener("contextmenu", (event) => openProductivityFinanceContextMenu(event, row));
   });
   panel.querySelector("[data-productivity-finance-process-check]")?.addEventListener("click", (event) => {
-    void openProductivityFinanceProcessCheckDialog(event.currentTarget.closest("[data-productivity-finance-settings-form]"));
+    void openProductivityFinanceProcessCheckDialog(/** @type {Element} */ (event.currentTarget).closest("[data-productivity-finance-settings-form]"));
   });
 }
 
@@ -164,7 +165,7 @@ function renderAllocationProcessMatrixSettingsPanel(panel = document.getElementB
   });
   panel.querySelector("#allocation-process-matrix-settings-save")?.addEventListener("click", async () => {
     const button = panel.querySelector("#allocation-process-matrix-settings-save");
-    button.disabled = true;
+    /** @type {HTMLInputElement} */ (button).disabled = true;
     try {
       const query = allocationScopedQuery({ fallbackToUser: true, includeAreaFocus: true });
       const response = await allocationJson(`${ALLOCATION_API}/process-matrix${query}`, {
@@ -178,7 +179,7 @@ function renderAllocationProcessMatrixSettingsPanel(panel = document.getElementB
       showToast("Bearbeta-matris sparades.", "success", 2500);
       renderAllocationProcessMatrixSettingsPanel(panel);
     } catch (error) {
-      button.disabled = false;
+      /** @type {HTMLInputElement} */ (button).disabled = false;
       allocationState.processMatrixError = error.message || "Kunde inte spara Bearbeta-matris.";
       showToast(allocationState.processMatrixError, "error", 7000);
     }
@@ -243,10 +244,10 @@ function renderStaffingSettingsPanel(panel = document.getElementById("allocation
     void saveStaffingSettings(event.currentTarget);
   });
   panel.querySelector("[data-staffing-capacity-all]")?.addEventListener("change", (event) => {
-    const checked = Boolean(event.currentTarget?.checked);
+    const checked = Boolean(/** @type {HTMLInputElement} */ (event.currentTarget)?.checked);
     panel.querySelectorAll("[data-staffing-capacity-activity]").forEach((input) => {
-      input.disabled = checked || Boolean(disabled);
-      if (checked) input.checked = true;
+      /** @type {HTMLInputElement} */ (input).disabled = checked || Boolean(disabled);
+      if (checked) /** @type {HTMLInputElement} */ (input).checked = true;
     });
   });
 }
@@ -279,7 +280,7 @@ function renderAllocationMapSettingsView() {
   `);
   document.querySelectorAll("[data-settings-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      const nextTab = button.dataset.settingsTab || "";
+      const nextTab = /** @type {HTMLElement} */ (button).dataset.settingsTab || "";
       if (!tabs.some((tab) => tab.id === nextTab) || nextTab === allocationState.settingsTab) return;
       allocationState.settingsTab = nextTab;
       allocationReplaceSettingsTabUrl(nextTab);

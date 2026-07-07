@@ -1,3 +1,4 @@
+// @ts-check
 function deriveAllocationSlots(flows) {
   const map = new Map();
   for (const flow of flows) {
@@ -324,7 +325,7 @@ function allocationDropSlotsForTarget(target) {
 function bindAllocationCommonEvents(root) {
   root.querySelectorAll("label[for]").forEach((label) => {
     const input = document.getElementById(label.getAttribute("for") || "");
-    if (!input || input.type !== "file") return;
+    if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
     label.addEventListener("click", async (event) => {
       if (!allocationDesktopAvailable()) return;
       event.preventDefault();
@@ -440,7 +441,7 @@ function renderUploadsView() {
     ${renderPersistentDataFilesView()}
   `);
   document.getElementById("allocation-upload-all")?.addEventListener("change", async (event) => {
-    await routeAllocationFiles(event.target.files, slots);
+    await routeAllocationFiles(/** @type {HTMLInputElement} */ (event.target).files, slots);
   });
   document.getElementById("allocation-clear-all-files")?.addEventListener("click", async () => {
     try {

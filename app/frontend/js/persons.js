@@ -1,3 +1,4 @@
+// @ts-check
 // ---- Excelimport ----
 function openImportResultModal(result) {
   const errors = result.errors || [];
@@ -54,7 +55,7 @@ async function importPersonFile(file) {
   const formData = new FormData();
   formData.append("file", file);
   const importButton = document.getElementById("import-persons");
-  importButton.disabled = true;
+  /** @type {HTMLInputElement} */ (importButton).disabled = true;
   try {
     const result = await api.postForm("/api/persons/import", formData);
     showImportResult(result);
@@ -62,7 +63,7 @@ async function importPersonFile(file) {
   } catch (error) {
     showToast(error.message, "error", 7000);
   } finally {
-    importButton.disabled = false;
+    /** @type {HTMLInputElement} */ (importButton).disabled = false;
   }
 }
 
@@ -120,8 +121,8 @@ function setupImportControls() {
   });
   importButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = "";
+    const file = /** @type {HTMLInputElement} */ (fileInput).files?.[0];
+    /** @type {HTMLInputElement} */ (fileInput).value = "";
     if (!file) return;
     await importPersonFile(file);
   });
@@ -171,16 +172,16 @@ function openModal(person) {
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
     const payload = {
-      name: document.getElementById("m-name").value.trim(),
-      noman: document.getElementById("m-noman").value.trim(),
-      rfid_code: document.getElementById("m-rfid").value.trim(),
-      collar_type: document.getElementById("m-collar-type").value || "blue_collar",
-      home_area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
-      home_activity_id: document.getElementById("m-activity").value ? Number(document.getElementById("m-activity").value) : null,
-      sort_order: Number(document.getElementById("m-sort").value) || 0,
+      name: /** @type {HTMLInputElement} */ (document.getElementById("m-name")).value.trim(),
+      noman: /** @type {HTMLInputElement} */ (document.getElementById("m-noman")).value.trim(),
+      rfid_code: /** @type {HTMLInputElement} */ (document.getElementById("m-rfid")).value.trim(),
+      collar_type: /** @type {HTMLInputElement} */ (document.getElementById("m-collar-type")).value || "blue_collar",
+      home_area_id: /** @type {HTMLInputElement} */ (document.getElementById("m-area")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-area")).value) : null,
+      home_activity_id: /** @type {HTMLInputElement} */ (document.getElementById("m-activity")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-activity")).value) : null,
+      sort_order: Number(/** @type {HTMLInputElement} */ (document.getElementById("m-sort")).value) || 0,
     };
     if (currentUser?.is_super_user && !isEdit) {
-      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+      payload.business_id = /** @type {HTMLInputElement} */ (document.getElementById("m-business")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-business")).value) : null;
     }
     if (!payload.name) { showToast("Namn krävs", "error"); return; }
     if (!payload.noman) { showToast("NoMan krävs", "error"); return; }
@@ -251,27 +252,27 @@ async function openScheduleModal(person) {
 
   template.days.forEach((d) => {
     const row = backdrop.querySelector(`tr[data-weekday="${d.weekday}"]`);
-    row.querySelector(".m-from").value = String(d.start_hour ?? 7);
-    row.querySelector(".m-to").value = String(d.end_hour ?? 16);
+    /** @type {HTMLInputElement} */ (row.querySelector(".m-from")).value = String(d.start_hour ?? 7);
+    /** @type {HTMLInputElement} */ (row.querySelector(".m-to")).value = String(d.end_hour ?? 16);
     updateRowDisabled(row);
   });
   updateScheduleModalDisabled(backdrop);
 
   backdrop.querySelectorAll(".m-off").forEach((cb) =>
     cb.addEventListener("change", (e) => {
-      updateRowDisabled(e.target.closest("tr"));
+      updateRowDisabled(/** @type {Element} */ (e.target).closest("tr"));
     })
   );
 
   document.getElementById("sch-hourly").addEventListener("change", () => updateScheduleModalDisabled(backdrop));
 
   document.getElementById("sch-default").addEventListener("click", () => {
-    document.getElementById("sch-hourly").checked = false;
+    /** @type {HTMLInputElement} */ (document.getElementById("sch-hourly")).checked = false;
     backdrop.querySelectorAll("tr[data-weekday]").forEach((row) => {
-      const weekday = Number(row.dataset.weekday);
-      row.querySelector(".m-off").checked = weekday >= 6;
-      row.querySelector(".m-from").value = "7";
-      row.querySelector(".m-to").value = "16";
+      const weekday = Number(/** @type {HTMLElement} */ (row).dataset.weekday);
+      /** @type {HTMLInputElement} */ (row.querySelector(".m-off")).checked = weekday >= 6;
+      /** @type {HTMLInputElement} */ (row.querySelector(".m-from")).value = "7";
+      /** @type {HTMLInputElement} */ (row.querySelector(".m-to")).value = "16";
       updateRowDisabled(row);
     });
     updateScheduleModalDisabled(backdrop);
@@ -279,15 +280,15 @@ async function openScheduleModal(person) {
 
   document.getElementById("sch-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("sch-save").addEventListener("click", async () => {
-    const hasFixedSchedule = !document.getElementById("sch-hourly").checked;
+    const hasFixedSchedule = !/** @type {HTMLInputElement} */ (document.getElementById("sch-hourly")).checked;
     const days = [];
     if (hasFixedSchedule) {
       for (const row of backdrop.querySelectorAll("tr[data-weekday]")) {
-        const wd = Number(row.dataset.weekday);
-        const isOff = row.querySelector(".m-off").checked;
+        const wd = Number(/** @type {HTMLElement} */ (row).dataset.weekday);
+        const isOff = /** @type {HTMLInputElement} */ (row.querySelector(".m-off")).checked;
         if (isOff) { days.push({ weekday: wd, is_off: true, start_hour: null, end_hour: null }); continue; }
-        const sh = Number(row.querySelector(".m-from").value);
-        const eh = Number(row.querySelector(".m-to").value);
+        const sh = Number(/** @type {HTMLInputElement} */ (row.querySelector(".m-from")).value);
+        const eh = Number(/** @type {HTMLInputElement} */ (row.querySelector(".m-to")).value);
         if (sh >= eh) {
           showToast(`${DAY_LABELS[wd]}: Från måste vara mindre än Till`, "error");
           return;
@@ -304,7 +305,7 @@ async function openScheduleModal(person) {
 }
 
 function updateScheduleModalDisabled(backdrop) {
-  const hourly = document.getElementById("sch-hourly").checked;
+  const hourly = /** @type {HTMLInputElement} */ (document.getElementById("sch-hourly")).checked;
   backdrop.querySelectorAll("tr[data-weekday]").forEach((row) => {
     const offCheckbox = row.querySelector(".m-off");
     offCheckbox.disabled = hourly;
@@ -313,7 +314,7 @@ function updateScheduleModalDisabled(backdrop) {
 }
 
 function updateRowDisabled(row) {
-  const off = document.getElementById("sch-hourly")?.checked || row.querySelector(".m-off").checked;
+  const off = /** @type {HTMLInputElement | null} */ (document.getElementById("sch-hourly"))?.checked || row.querySelector(".m-off").checked;
   row.querySelector(".m-from").disabled = off;
   row.querySelector(".m-to").disabled = off;
 }
@@ -334,13 +335,13 @@ function updateRowDisabled(row) {
 
   document.querySelectorAll("tr.filter-row input").forEach((inp) => {
     inp.addEventListener("input", () => {
-      filters[inp.dataset.filter] = inp.value;
+      filters[/** @type {HTMLElement} */ (inp).dataset.filter] = /** @type {HTMLInputElement} */ (inp).value;
       renderRows();
     });
   });
   document.querySelectorAll("tr.sort-row th[data-sort]").forEach((th) => {
     th.addEventListener("click", () => {
-      const key = th.dataset.sort;
+      const key = /** @type {HTMLElement} */ (th).dataset.sort;
       if (sortKey === key) sortAsc = !sortAsc;
       else { sortKey = key; sortAsc = true; }
       renderRows();

@@ -1,3 +1,4 @@
+// @ts-check
 let scheduleCellContextMenu = null;
 
 function buildDisplayLabel(text, className) {
@@ -43,7 +44,7 @@ function focusSegment(td, focusEl, minuteStart, minuteEnd) {
   };
   focusEl.classList.add("focused");
   if (document.activeElement && document.activeElement.tagName === "SELECT") {
-    document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   setTimeout(() => {
     try {
@@ -139,15 +140,15 @@ function requestScheduleSplitMinutes(defaultMinutes = DEFAULT_SPLIT_MINUTES) {
       resolve(value);
     };
     const inputs = () => Array.from(fields.querySelectorAll("input[data-split-boundary]"));
-    const parsedBoundaries = () => inputs().map((input) => Number.parseInt(String(input.value || "").trim(), 10));
+    const parsedBoundaries = () => inputs().map((input) => Number.parseInt(String(/** @type {HTMLInputElement} */ (input).value || "").trim(), 10));
     const persistValues = () => {
-      boundaryValues.set(partCount, inputs().map((input) => String(input.value || "").trim()));
+      boundaryValues.set(partCount, inputs().map((input) => String(/** @type {HTMLInputElement} */ (input).value || "").trim()));
     };
     const focusFirstInput = () => {
       const input = inputs()[0];
       if (!input) return;
-      input.focus();
-      input.select();
+      /** @type {HTMLElement} */ (input).focus();
+      /** @type {HTMLInputElement} */ (input).select();
     };
     const updateHint = () => {
       const ranges = splitSegmentsForBoundaries(parsedBoundaries(), partCount);
@@ -157,7 +158,7 @@ function requestScheduleSplitMinutes(defaultMinutes = DEFAULT_SPLIT_MINUTES) {
     };
     const renderFields = (selectFirst = false) => {
       modeButtons.forEach((button) => {
-        const isActive = Number(button.dataset.splitParts) === partCount;
+        const isActive = Number(/** @type {HTMLElement} */ (button).dataset.splitParts) === partCount;
         button.classList.toggle("active", isActive);
         button.setAttribute("aria-pressed", isActive ? "true" : "false");
       });
@@ -208,7 +209,7 @@ function requestScheduleSplitMinutes(defaultMinutes = DEFAULT_SPLIT_MINUTES) {
     modeButtons.forEach((button) => {
       button.addEventListener("click", () => {
         persistValues();
-        partCount = normalizeSplitPartCount(button.dataset.splitParts);
+        partCount = normalizeSplitPartCount(/** @type {HTMLElement} */ (button).dataset.splitParts);
         renderFields(true);
       });
     });
@@ -333,7 +334,7 @@ function requestScheduleCellRemark(initialRemark = "") {
     };
     backdrop.querySelector("#scheduleRemarkCancel").addEventListener("click", () => close(null));
     backdrop.querySelector("#scheduleRemarkClear").addEventListener("click", () => close(""));
-    backdrop.querySelector("#scheduleRemarkSave").addEventListener("click", () => close(input.value));
+    backdrop.querySelector("#scheduleRemarkSave").addEventListener("click", () => close(/** @type {HTMLInputElement} */ (input).value));
     backdrop.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -341,8 +342,8 @@ function requestScheduleCellRemark(initialRemark = "") {
       }
     });
     setTimeout(() => {
-      input.focus();
-      input.select();
+      /** @type {HTMLElement} */ (input).focus();
+      /** @type {HTMLInputElement} */ (input).select();
     }, 0);
   });
 }
@@ -853,7 +854,7 @@ function buildRows() {
   state.persons.forEach((person, rowIndex) => {
     const tr = document.createElement("tr");
     tr.dataset.personId = person.id;
-    tr.dataset.rowIndex = rowIndex;
+    tr.dataset.rowIndex = String(rowIndex);
 
     const name = document.createElement("td");
     name.className = "name";
@@ -876,9 +877,9 @@ function buildRows() {
     HOURS.forEach((hour, colIndex) => {
       const td = document.createElement("td");
       td.dataset.personId = person.id;
-      td.dataset.hour = hour;
-      td.dataset.rowIndex = rowIndex;
-      td.dataset.colIndex = colIndex;
+      td.dataset.hour = String(hour);
+      td.dataset.rowIndex = String(rowIndex);
+      td.dataset.colIndex = String(colIndex);
       td.tabIndex = -1;
       renderHourCell(td);
       tr.appendChild(td);

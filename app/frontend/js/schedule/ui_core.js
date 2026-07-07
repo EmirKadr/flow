@@ -1,3 +1,4 @@
+// @ts-check
 function setupScheduleHorizontalScroll() {
   if (typeof setupSyncedHorizontalScroll === "function") {
     setupSyncedHorizontalScroll(document.getElementById("scheduleTable"));
@@ -184,7 +185,7 @@ function applyScheduleReadOnlyMode() {
     const button = document.getElementById(id);
     if (!button) return;
     button.hidden = readOnly;
-    button.disabled = readOnly;
+    /** @type {HTMLInputElement} */ (button).disabled = readOnly;
   });
   updateUndoRedoButtons();
 }
@@ -199,7 +200,7 @@ function isoWeek(d = new Date()) {
   const dayNum = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return { year: date.getUTCFullYear(), week, weekday: dayNum };
 }
 
@@ -253,7 +254,7 @@ function buildHeader() {
   while (header.children.length > 3) header.removeChild(header.lastChild);
   HOURS.forEach((h) => {
     const th = document.createElement("th");
-    th.dataset.hour = h;
+    th.dataset.hour = String(h);
     th.textContent = String(h).padStart(2, "0") + ":00";
     header.appendChild(th);
   });
@@ -330,7 +331,7 @@ function buildScheduleProductivityMapFromSummary(summary) {
 
 function updateScheduleProductivityCells() {
   document.querySelectorAll("#scheduleBody td.schedule-productivity[data-person-id]").forEach((td) => {
-    const person = personById(Number(td.dataset.personId));
+    const person = personById(Number(/** @type {HTMLElement} */ (td).dataset.personId));
     renderScheduleProductivityCell(td, person);
   });
 }

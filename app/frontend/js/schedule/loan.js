@@ -1,3 +1,4 @@
+// @ts-check
 function homeActivityIdForPerson(person) {
   return person?.home_activity_id || null;
 }

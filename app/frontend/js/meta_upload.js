@@ -1,3 +1,4 @@
+// @ts-check
 const form = document.getElementById("metaUploadForm");
 const input = document.getElementById("metaFiles");
 const dropzone = document.getElementById("metaDropzone");
@@ -201,7 +202,7 @@ async function loadSelectedVideoDurations() {
 
 function setUploadControlsLocked(locked) {
   uploading = locked;
-  input.disabled = locked;
+  /** @type {HTMLInputElement} */ (input).disabled = locked;
   dropzone.classList.toggle("uploading", locked);
   dropzone.setAttribute("aria-busy", locked ? "true" : "false");
 }
@@ -248,7 +249,7 @@ function updateProgress(loadedBytes, totalBytes = totalSelectedBytes()) {
     const filePercent = Math.min(100, Math.round((fileLoaded / fileSize) * 100));
     const bar = fileList.querySelector(`[data-file-progress="${index}"]`);
     const state = fileList.querySelector(`[data-file-state="${index}"]`);
-    if (bar) bar.style.width = `${filePercent}%`;
+    if (bar) /** @type {HTMLElement} */ (bar).style.width = `${filePercent}%`;
     if (state) {
       const uploadState = fileUploadStates[index] || {};
       if (uploadState.type === "success" || uploadState.type === "error") {
@@ -277,7 +278,7 @@ function setFiles(files) {
   if (selectedFiles.length) void startUpload();
 }
 
-input.addEventListener("change", () => setFiles(input.files));
+input.addEventListener("change", () => setFiles(/** @type {HTMLInputElement} */ (input).files));
 
 ["dragenter", "dragover"].forEach((eventName) => {
   dropzone.addEventListener(eventName, (event) => {
@@ -354,7 +355,7 @@ async function startUpload() {
       uploadedBeforeBytes += batchBytes;
       updateProgress(uploadedBeforeBytes, totalBytes);
     }
-    input.value = "";
+    /** @type {HTMLInputElement} */ (input).value = "";
     if (failed.length) {
       publicMetaTrack("public_meta_upload_error", {
         ...publicMetaFileSummary(selectedFiles),
@@ -401,7 +402,7 @@ async function startUpload() {
     }
   } catch (error) {
     setUploadControlsLocked(false);
-    input.value = "";
+    /** @type {HTMLInputElement} */ (input).value = "";
     renderFiles();
     publicMetaTrack("public_meta_upload_error", {
       ...publicMetaFileSummary(selectedFiles),
@@ -420,7 +421,7 @@ form.addEventListener("submit", (event) => {
   void startUpload();
 });
 
-function uploadWithProgress(files, onProgress = () => {}) {
+function uploadWithProgress(files, onProgress = (_loaded, _total) => {}) {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file, file.name));

@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/state.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter state.js via <script>-tagg.
 
@@ -76,8 +77,8 @@ function normalizeAllocationSourceModes(value = {}) {
 }
 
 function normalizeAllocationFilterProfile(profile = {}) {
-  const rawFlows = profile && typeof profile === "object" && profile.flows && typeof profile.flows === "object"
-    ? profile.flows
+  const rawFlows = profile && typeof profile === "object" && /** @type {any} */ (profile).flows && typeof (/** @type {any} */ (profile).flows) === "object"
+    ? /** @type {any} */ (profile).flows
     : {};
   const flows = {};
   for (const [flowId, flowData] of Object.entries(rawFlows)) {

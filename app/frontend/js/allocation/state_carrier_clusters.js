@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur allocation/state.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter state.js via <script>-tagg.
 

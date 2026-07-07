@@ -50,8 +50,10 @@ interface Window {
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
   // Sidspecifika prefetch-krokar (definieras av respektive domän-boot).
   preloadAllocationUploadsData?: () => void;
-  // Etiketteditorns symbolkatalog (label_editor/symbols.js).
+  // Etiketteditorns symbolkatalog, streckkoder och ritverktyg (label_editor/).
   FlowLabelSymbols?: any;
+  FlowLabelBarcodes?: any;
+  FlowLabelPaint?: any;
   // Buggrapportering (common/bug_report.js, lazy-laddad) + vendrad rrweb.
   flowBugReport?: { open: () => void; isRecording: () => boolean };
   rrweb?: {

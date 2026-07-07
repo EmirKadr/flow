@@ -1,3 +1,4 @@
+// @ts-check
 (function () {
   const state = {
     view: document.getElementById("personalApp")?.dataset.personalView || document.body?.dataset.personalView || "schedule",
@@ -40,7 +41,7 @@
     const day = utc.getUTCDay() || 7;
     utc.setUTCDate(utc.getUTCDate() + 4 - day);
     const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-    const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+    const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
     return { year: utc.getUTCFullYear(), week, weekday: day };
   }
 
@@ -388,14 +389,14 @@
       loadProductivity();
     });
     document.getElementById("personalDateInput")?.addEventListener("change", (event) => {
-      state.date = event.target.value || localDateString(new Date());
+      state.date = /** @type {HTMLInputElement} */ (event.target).value || localDateString(new Date());
       loadProductivity();
     });
   }
 
   function bindCommonControls(onReload) {
     document.getElementById("personalPersonSelect")?.addEventListener("change", (event) => {
-      state.personId = Number(event.target.value);
+      state.personId = Number(/** @type {HTMLInputElement} */ (event.target).value);
       onReload();
     });
   }

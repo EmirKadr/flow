@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur sankey_inbound.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter sankey_inbound.js via <script>-tagg.
 
@@ -242,7 +243,7 @@ function sankeyTraceRowHtml(row) {
 async function fetchSankeyTraceRows(scope, id, offset, limit) {
   const token = sankeyInboundPayload?.trace_token;
   if (!token) {
-    const error = new Error("Spårningen har gått ut. Kör om rapporten.");
+    const error = /** @type {Error & { status?: number }} */ (new Error("Spårningen har gått ut. Kör om rapporten."));
     error.status = 410;
     throw error;
   }

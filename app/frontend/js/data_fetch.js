@@ -1,3 +1,4 @@
+// @ts-check
 const dataFetchState = {
   plan: null,
   pendingRemovedColumns: new Set(),
@@ -144,18 +145,18 @@ function dataFetchUpdateActions() {
   const runButton = document.getElementById("dataFetchRun");
   const exportButton = document.getElementById("dataFetchExport");
   if (planButton) {
-    planButton.disabled =
+    /** @type {HTMLInputElement} */ (planButton).disabled =
       dataFetchState.busy || !dataFetchState.catalogReady || !dataFetchState.minimaxReady;
   }
   if (runButton) {
-    runButton.disabled =
+    /** @type {HTMLInputElement} */ (runButton).disabled =
       dataFetchState.busy
       || !dataFetchState.catalogReady
       || !dataFetchState.apiReady
       || dataFetchState.plan?.status !== "ok";
   }
   if (exportButton) {
-    exportButton.disabled = dataFetchState.busy || !dataFetchState.result?.session_id;
+    /** @type {HTMLInputElement} */ (exportButton).disabled = dataFetchState.busy || !dataFetchState.result?.session_id;
   }
 }
 
@@ -168,7 +169,7 @@ function dataFetchSetBusy(active, text = "") {
 }
 
 function dataFetchMaxRows() {
-  const rawValue = document.getElementById("dataFetchMaxRows").value.trim();
+  const rawValue = /** @type {HTMLInputElement} */ (document.getElementById("dataFetchMaxRows")).value.trim();
   if (!rawValue) return null;
   const value = Number(rawValue);
   if (!Number.isFinite(value)) return null;
@@ -375,7 +376,7 @@ async function planDataFetch() {
     showToast("MiniMax saknar API-nyckel. Ingen AI-fråga skickades.", "warn", 6000);
     return;
   }
-  const prompt = document.getElementById("dataFetchPrompt").value.trim();
+  const prompt = /** @type {HTMLInputElement} */ (document.getElementById("dataFetchPrompt")).value.trim();
   if (!prompt) {
     showToast("Skriv vad du vill hämta först.", "warn");
     return;

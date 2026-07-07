@@ -1,3 +1,4 @@
+// @ts-check
 (function () {
   const PAINT_FILL_RASTER_SCALE = 4;
   const PAINT_FILL_MAX_PIXELS = 2200000;
@@ -200,7 +201,7 @@
     function setPaintTool(tool) {
       state.paintTool = ["select", "pencil", "fill", "eraser"].includes(tool) ? tool : "select";
       document.querySelectorAll("[data-paint-tool]").forEach((button) => {
-        const active = button.dataset.paintTool === state.paintTool;
+        const active = /** @type {HTMLElement} */ (button).dataset.paintTool === state.paintTool;
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
       });
@@ -333,9 +334,9 @@
 
     function applyPaintFill(event) {
       const { color } = readPaintState();
-      const objectElement = event.target instanceof Element ? event.target.closest(".label-object") : null;
+      const objectElement = event.target instanceof Element ? /** @type {Element} */ (event.target).closest(".label-object") : null;
       const object = objectElement
-        ? state.objects.find((item) => item.id === objectElement.dataset.objectId)
+        ? state.objects.find((item) => item.id === /** @type {HTMLElement} */ (objectElement).dataset.objectId)
         : null;
       if (object && object.type !== "background") {
         fillObject(object, color);
@@ -362,7 +363,7 @@
 
     function setupPaintTools() {
       document.querySelectorAll("[data-paint-tool]").forEach((button) => {
-        button.addEventListener("click", () => setPaintTool(button.dataset.paintTool));
+        button.addEventListener("click", () => setPaintTool(/** @type {HTMLElement} */ (button).dataset.paintTool));
       });
       $("labelPaintColor")?.addEventListener("input", readPaintState);
       $("labelPaintSize")?.addEventListener("input", readPaintState);

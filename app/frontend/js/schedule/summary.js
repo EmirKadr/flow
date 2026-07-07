@@ -1,3 +1,4 @@
+// @ts-check
 function clearSummaryRefreshTimer() {
   if (!summaryState.timer) return;
   clearTimeout(summaryState.timer);
@@ -176,7 +177,7 @@ function rowIsSummarySelected(row) {
 
 function applySummarySelectionStyles() {
   document.querySelectorAll("#summaryBody tr[data-summary-index]").forEach((tr) => {
-    const row = state.summaryRenderedRows[Number(tr.dataset.summaryIndex)];
+    const row = state.summaryRenderedRows[Number(/** @type {HTMLElement} */ (tr).dataset.summaryIndex)];
     const selected = row ? rowIsSummarySelected(row) : false;
     tr.classList.toggle("summary-row-selected", selected);
     if (selected) tr.setAttribute("aria-selected", "true");
@@ -406,7 +407,7 @@ function openSummaryContextMenu(event, row, anchor) {
   const host = summaryContextMenuHost(anchor);
   host.appendChild(menu);
   positionSummaryContextMenu(menu, event, anchor, host);
-  menu.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
+  /** @type {HTMLElement} */ (menu.querySelector("button:not(:disabled)"))?.focus({ preventScroll: true });
 }
 
 function summaryRowForEventTarget(target) {
@@ -499,7 +500,7 @@ function setupSummaryInteractions(tbody) {
   tbody.addEventListener("contextmenu", handleSummaryContextMenu);
   document.addEventListener("mouseup", finishSummaryDragSelection);
   document.addEventListener("click", (event) => {
-    if (event.target.closest?.(".summary-context-menu")) return;
+    if (event.target instanceof Element && event.target.closest(".summary-context-menu")) return;
     closeSummaryContextMenu();
   });
   document.addEventListener("keydown", (event) => {

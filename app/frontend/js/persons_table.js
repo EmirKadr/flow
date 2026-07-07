@@ -1,3 +1,4 @@
+// @ts-check
 // Utdelad ur persons.js for radtaket i arkitektur-kontraktet.
 // Globala symboler, laddas efter persons.js via <script>-tagg.
 
@@ -99,7 +100,7 @@ function installPersonUndoShortcut() {
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
     if (e.key.toLowerCase() !== "z") return;
-    if (e.target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+    if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable='true']")) return;
     if (document.querySelector(".modal-backdrop")) return;
     e.preventDefault();
     void undoLastPersonAction();
@@ -270,7 +271,7 @@ function renderRows() {
     const tr = document.createElement("tr");
     tr.dataset.personId = p.id;
     tr.addEventListener("dblclick", (e) => {
-      if (e.target.closest("button")) return;
+      if (/** @type {Element} */ (e.target).closest("button")) return;
       e.preventDefault();
       openPersonProductivityModal(p);
     });
@@ -356,7 +357,7 @@ function renderRows() {
     tbody.querySelectorAll("button[data-delete]").forEach((button) =>
       button.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const person = persons.find((item) => item.id === Number(button.dataset.delete));
+        const person = persons.find((item) => item.id === Number(/** @type {HTMLElement} */ (button).dataset.delete));
         if (!person || !confirm("Ta bort personen permanent?")) return;
         try {
           await api.del(`/api/persons/${person.id}`);
@@ -370,13 +371,13 @@ function renderRows() {
   tbody.querySelectorAll("button[data-schedule]").forEach((b) =>
     b.addEventListener("click", (e) => {
       e.stopPropagation();
-      openScheduleModal(persons.find((p) => p.id === Number(b.dataset.schedule)));
+      openScheduleModal(persons.find((p) => p.id === Number(/** @type {HTMLElement} */ (b).dataset.schedule)));
     })
   );
 
   document.querySelectorAll("tr.sort-row th[data-sort]").forEach((th) => {
     const ind = th.querySelector(".sort-ind");
-    ind.textContent = th.dataset.sort === sortKey ? (sortAsc ? "▲" : "▼") : "";
+    ind.textContent = /** @type {HTMLElement} */ (th).dataset.sort === sortKey ? (sortAsc ? "▲" : "▼") : "";
   });
 }
 
