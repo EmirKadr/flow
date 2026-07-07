@@ -59,8 +59,10 @@ interface Window {
   FlowLabelBarcodes?: any;
   FlowLabelPaint?: any;
   FlowLabelDesigns?: any;
+  // Vybehörighetsmatrisen (common/role_access.js) — renderas i Inställningar.
+  flowRoleAccess?: { renderRoleAccessPanel: (container: Element | null, options?: { canEdit?: boolean }) => Promise<void> };
   // Buggrapportering (common/bug_report.js, lazy-laddad) + vendrad rrweb.
-  flowBugReport?: { open: () => void; isRecording: () => boolean; sendSalvaged: () => Promise<void> };
+  flowBugReport?: { open: () => void; isRecording: () => boolean };
   rrweb?: {
     record: (options: Record<string, unknown>) => (() => void) | undefined;
     Replayer: new (events: unknown[], options?: Record<string, unknown>) => {

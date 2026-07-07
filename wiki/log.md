@@ -2813,3 +2813,18 @@ Emirs fråga "du sa att jag inte kunde byta sida under inspelning" — luckan
 - **Varning**: länk-klick under inspelning fångas i capture-fas och ger
   modal "Stanna kvar"/"Byt sida och skicka" (Escape via Avbryt-mönstret).
 - Browsertest: test_page_navigation_salvages_recording (grönt lokalt).
+
+## [2026-07-07] bygge | Buggrapporter: inspelningen fortsätter över sidbyten (alt 3)
+
+Emirs beslut: hoppa direkt på cross-page-inspelning i stället för
+räddningsflödet (som blev en mellanlandning samma dag, aldrig deployad):
+
+- pagehide sparar segmentet i sessionStorage (flow-bug-report-session);
+  nästa sida återupptar inspelningen med ny full snapshot och nedräkningen
+  fortsätter där den var. EN rapport med "scenbyte" per sida —
+  rrweb-Replayer hanterar flera fulla snapshots i samma ström.
+- Varningsmodalen vid navigering togs bort (sidbyten är nu naturliga);
+  consent-texten säger att inspelningen fortsätter över sidbyten.
+- Deadline som passeras under sidbytet ⇒ det inspelade skickas direkt.
+- Browsertest: test_recording_continues_across_page_navigation verifierar
+  indikator + isRecording på sida 2 och ≥2 fulla snapshots i rapporten.

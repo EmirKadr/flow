@@ -127,9 +127,9 @@ def test_consent_gate_and_full_report_flow(local_server, chromium_browser):
         context.close()
 
 
-def test_page_navigation_salvages_recording(local_server, chromium_browser):
-    """Sidbyte under inspelning: varningsmodal vid länk-klick, och det som
-    hunnit spelas in skickas som rapport av nästa sida (räddningsflödet)."""
+def test_recording_continues_across_page_navigation(local_server, chromium_browser):
+    """Sidbyte under inspelning: inspelningen återupptas på nya sidan (ny
+    full snapshot) och allt skickas som EN rapport vid stopp."""
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()
     try:
@@ -137,33 +137,37 @@ def test_page_navigation_salvages_recording(local_server, chromium_browser):
 
         page.click("#bug-report-toggle")
         page.wait_for_selector("#bug-report-note", timeout=15000)
-        page.fill("#bug-report-note", "Salvage-test")
+        page.fill("#bug-report-note", "Cross-page-test")
         page.click("#bug-report-start")
         page.wait_for_selector("#bug-report-indicator", timeout=15000)
-        page.wait_for_timeout(800)  # låt rrweb ta fullsnapshot
+        page.wait_for_timeout(800)  # låt rrweb ta fullsnapshot på sida 1
 
-        # Länk-klick under inspelning ger varningsmodal; Stanna kvar avbryter.
+        # Sidbyte mitt i inspelningen: indikatorn kommer tillbaka på nya
+        # sidan och inspelningen är fortfarande aktiv.
         page.click('a[href="/personer.html"]')
-        page.wait_for_selector("#bug-report-nav-backdrop", timeout=15000)
-        page.click("#bug-report-nav-cancel")
-        expect(page.locator("#bug-report-nav-backdrop")).to_have_count(0)
-        assert is_recording(page)
-        assert "personer" not in page.url
-
-        # Byt sida och skicka: räddningen postar rapporten på nästa sida.
-        page.click('a[href="/personer.html"]')
-        page.wait_for_selector("#bug-report-nav-backdrop", timeout=15000)
-        page.click("#bug-report-nav-continue")
         page.wait_for_url("**/personer.html", timeout=15000)
-        expect(page.locator(".toast.success").last).to_contain_text(
-            "avbröts av sidbytet", timeout=15000
-        )
+        page.wait_for_selector("#bug-report-indicator", timeout=15000)
+        assert is_recording(page)
+        page.wait_for_timeout(500)  # låt sida 2 få sin fullsnapshot
 
-        # Rapporten finns i vyn, märkt med sidbytesmarkören.
+        page.click("#bug-report-stop")
+        expect(page.locator(".toast.success").last).to_contain_text(
+            "Buggrapporten är skickad", timeout=15000
+        )
+        assert not is_recording(page)
+
+        # En rapport, med segment från båda sidorna (två fulla snapshots).
         page.goto(f"{local_server}/bug-rapporter.html", wait_until="load")
         page.wait_for_selector("tr[data-report-id]", timeout=15000)
-        expect(page.locator("tr[data-report-id]").first).to_contain_text(
-            "Salvage-test (inspelningen avbröts av sidbyte)"
+        expect(page.locator("tr[data-report-id]")).to_have_count(1)
+        expect(page.locator("tr[data-report-id]").first).to_contain_text("Cross-page-test")
+        snapshots = page.evaluate(
+            """async () => {
+                const list = await window.api.get("/api/bug-reports");
+                const detail = await window.api.get(`/api/bug-reports/${list.reports[0].id}`);
+                return JSON.parse(detail.events_json).filter((event) => event.type === 2).length;
+            }"""
         )
+        assert snapshots >= 2, f"väntade fullsnapshot per sida, fick {snapshots}"
     finally:
         context.close()

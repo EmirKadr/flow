@@ -582,13 +582,13 @@ function loadBugReportScript(onload) {
 function initBugReportButton() {
   const button = document.getElementById("bug-report-toggle");
   if (!button) return;
-  // En inspelning som avbröts av ett sidbyte väntar i sessionStorage:
-  // eagerladda modulen så rapporten skickas direkt (modulen skickar själv).
+  // En pågående inspelning väntar efter sidbyte: eagerladda modulen så
+  // inspelningen återupptas direkt (modulen hanterar det själv vid laddning).
   try {
-    if (sessionStorage.getItem("flow-bug-report-salvage") && !window.flowBugReport) {
+    if (sessionStorage.getItem("flow-bug-report-session") && !window.flowBugReport) {
       loadBugReportScript();
     }
-  } catch (_ignored) { /* utan sessionStorage finns inget att rädda */ }
+  } catch (_ignored) { /* utan sessionStorage finns inget att återuppta */ }
   button.addEventListener("click", () => {
     if (window.flowBugReport) {
       window.flowBugReport.open();

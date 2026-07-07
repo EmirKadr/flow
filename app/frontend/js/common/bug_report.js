@@ -3,27 +3,33 @@
 // sidebar-footern. Laddas lazy av sidebar.js först när användaren klickar —
 // vanliga sidladdningar betalar aldrig för rrweb-bundeln.
 //
+// Inspelningen överlever sidbyten (2026-07-07): Flow är en multi-page-app,
+// så vid pagehide sparas sidans segment i sessionStorage och nästa sida
+// återupptar inspelningen med en ny full snapshot (sidebar.js eagerladdar
+// modulen när en session väntar). Uppspelningen får ett "scenbyte" per sida
+// och allt skickas som EN rapport vid stopp/deadline. sendBeacon/keepalive
+// valdes bort: deras 64 kB-tak är mindre än en inspelning.
+//
 // Integritet: inspelningen visar bara det användaren själv såg i appen,
 // lösenordsfält maskas alltid, och ingen inspelning startar utan OK i popupen.
 (function () {
   const RECORD_SECONDS = 30;
   const VENDOR_SRC = "/js/vendor/rrweb.min.js";
-  // Sidbytesräddning: Flow är en multi-page-app, så ett sidbyte kastar
-  // inspelningsläget i minnet. Vid pagehide sparas det som hunnit spelas in
-  // här (sessionStorage = per flik) och skickas av nästa sidladdning.
-  // sendBeacon/keepalive går inte: 64 kB-taket är mindre än en inspelning.
-  const SALVAGE_KEY = "flow-bug-report-salvage";
-  const SALVAGE_MAX_AGE_MS = 5 * 60 * 1000;
+  const SESSION_KEY = "flow-bug-report-session";
+  const SESSION_MAX_AGE_MS = 5 * 60 * 1000; // övergiven session förfaller
 
-  /** @type {{ stop: null | (() => void), events: any[], consoleErrors: string[], jsErrors: string[], timer: number | null, deadline: number, note: string, restoreConsole: null | (() => void) }} */
+  /** @type {{ stop: null | (() => void), events: any[], segments: any[][], consoleErrors: string[], jsErrors: string[], timer: number | null, deadline: number, note: string, viewId: string | null, pagePath: string | null, restoreConsole: null | (() => void) }} */
   const state = {
     stop: null,
     events: [],
+    segments: [],
     consoleErrors: [],
     jsErrors: [],
     timer: null,
     deadline: 0,
     note: "",
+    viewId: null,
+    pagePath: null,
     restoreConsole: null,
   };
 
@@ -57,7 +63,8 @@
           När du klickar på <strong>Starta inspelning</strong> spelas de kommande
           ${RECORD_SECONDS} sekunderna av vad du ser och gör i appen in och skickas
           till administratören tillsammans med tekniska fel. Återskapa buggen under
-          inspelningen. Lösenord maskas alltid och inget utanför appen spelas in.
+          inspelningen — den fortsätter även om du byter sida i appen. Lösenord
+          maskas alltid och inget utanför appen spelas in.
         </p>
         <label for="bug-report-note">Vad hände? (valfritt)</label>
         <textarea id="bug-report-note" rows="3" maxlength="2000"
@@ -133,17 +140,11 @@
     }
   }
 
-  async function startRecording() {
-    if (state.stop) return;
-    try {
-      await loadVendor();
-    } catch (error) {
-      window.showToast?.(error instanceof Error ? error.message : "Kunde inte starta inspelningen.", "error", 7000);
-      return;
-    }
+  // Startar rrweb och indikatorn för aktuellt state — delas av nystart och
+  // återupptagning efter sidbyte.
+  async function beginCapture() {
+    await loadVendor();
     state.events = [];
-    state.consoleErrors = [];
-    state.jsErrors = [];
     hookErrorCapture();
     const rrweb = window.rrweb;
     state.stop = rrweb.record({
@@ -153,31 +154,31 @@
     if (!state.stop) {
       state.restoreConsole?.();
       state.restoreConsole = null;
-      window.showToast?.("Inspelningen kunde inte starta.", "error", 7000);
-      return;
+      throw new Error("Inspelningen kunde inte starta.");
     }
-    state.deadline = Date.now() + RECORD_SECONDS * 1000;
     renderIndicator();
     state.timer = window.setInterval(updateCountdown, 250);
+    updateCountdown();
+  }
+
+  async function startRecording() {
+    if (state.stop) return;
+    state.segments = [];
+    state.consoleErrors = [];
+    state.jsErrors = [];
+    state.viewId = document.body?.dataset.activePage || window.flowActivePage || null;
+    state.pagePath = window.location.pathname;
+    state.deadline = Date.now() + RECORD_SECONDS * 1000;
+    try {
+      await beginCapture();
+    } catch (error) {
+      window.showToast?.(error instanceof Error ? error.message : "Kunde inte starta inspelningen.", "error", 7000);
+      return;
+    }
     window.flowTrack?.("bug_report_recording_started", {
       control_id: "bug-report-toggle",
       control_label: "Rapportera bugg",
     });
-  }
-
-  function buildPayload(note = state.note) {
-    return {
-      events_json: JSON.stringify(state.events),
-      note: note || null,
-      view_id: document.body?.dataset.activePage || window.flowActivePage || null,
-      page_path: window.location.pathname,
-      context: {
-        console_errors: state.consoleErrors,
-        js_errors: state.jsErrors.slice(0, 20),
-        user_agent: String(navigator.userAgent || "").slice(0, 200),
-        viewport: `${window.innerWidth}x${window.innerHeight}`,
-      },
-    };
   }
 
   function stopRecordingSilently() {
@@ -197,14 +198,28 @@
     return true;
   }
 
-  async function finishRecording() {
-    if (!stopRecordingSilently()) return;
+  function combinedEvents() {
+    return [...state.segments.flat(), ...state.events];
+  }
 
-    if (!state.events.length) {
-      window.showToast?.("Ingen inspelning att skicka.", "warn", 4000);
-      return;
-    }
-    const payload = buildPayload();
+  function buildPayload(events) {
+    return {
+      events_json: JSON.stringify(events),
+      note: state.note || null,
+      view_id: state.viewId,
+      page_path: state.pagePath,
+      context: {
+        console_errors: state.consoleErrors,
+        js_errors: state.jsErrors.slice(0, 20),
+        user_agent: String(navigator.userAgent || "").slice(0, 200),
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+      },
+    };
+  }
+
+  async function submitReport(events) {
+    const payload = buildPayload(events);
+    state.segments = [];
     state.events = [];
     try {
       await window.api.post("/api/bug-reports", payload);
@@ -215,94 +230,84 @@
     }
   }
 
-  // Sidbyte under inspelning: spara det inspelade så nästa sidladdning kan
-  // skicka det i stället för att allt tyst försvinner med sidan.
-  window.addEventListener("pagehide", () => {
-    if (!state.stop) return;
-    const note = state.note;
-    stopRecordingSilently();
-    if (!state.events.length) return;
-    const marker = "(inspelningen avbröts av sidbyte)";
-    const payload = buildPayload(note ? `${note} ${marker}` : marker);
-    state.events = [];
-    try {
-      sessionStorage.setItem(SALVAGE_KEY, JSON.stringify({ savedAt: Date.now(), payload }));
-    } catch (_ignored) { /* kvotfullt: räddningen är best effort */ }
-  });
-
-  // Varning vid navigering under inspelning: länkar fångas i capture-fasen
-  // så användaren väljer aktivt mellan att stanna kvar eller byta sida (och
-  // få det inspelade skickat via räddningen). JS-navigering utan länk täcks
-  // ändå av pagehide-räddningen ovan.
-  function openNavigationWarningModal(targetHref) {
-    document.getElementById("bug-report-nav-backdrop")?.remove();
-    const backdrop = document.createElement("div");
-    backdrop.id = "bug-report-nav-backdrop";
-    backdrop.className = "modal-backdrop";
-    backdrop.innerHTML = `
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bug-report-nav-title">
-        <h3 id="bug-report-nav-title">Inspelning pågår</h3>
-        <p>
-          Sidbytet stoppar inspelningen. Det som hunnit spelas in skickas som
-          buggrapport direkt efter sidbytet.
-        </p>
-        <div class="modal-actions">
-          <button type="button" class="secondary" id="bug-report-nav-cancel">Stanna kvar</button>
-          <button type="button" id="bug-report-nav-continue">Byt sida och skicka</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(backdrop);
-    document.getElementById("bug-report-nav-cancel")?.addEventListener("click", () => backdrop.remove());
-    document.getElementById("bug-report-nav-continue")?.addEventListener("click", () => {
-      backdrop.remove();
-      window.location.href = targetHref;
-    });
-  }
-
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (!state.stop) return;
-      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (!(anchor instanceof HTMLAnchorElement)) return;
-      const href = anchor.getAttribute("href") || "";
-      if (!href || href.startsWith("#")) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openNavigationWarningModal(anchor.href);
-    },
-    true
-  );
-
-  // Skickar en räddad inspelning från förra sidan. Anropas vid sidladdning
-  // (sidebar.js eagerladdar modulen när räddningsflaggan finns).
-  async function sendSalvagedReport() {
-    let saved = null;
-    try {
-      const raw = sessionStorage.getItem(SALVAGE_KEY);
-      sessionStorage.removeItem(SALVAGE_KEY);
-      saved = raw ? JSON.parse(raw) : null;
-    } catch (_ignored) {
+  async function finishRecording() {
+    if (!stopRecordingSilently()) return;
+    const events = combinedEvents();
+    if (!events.length) {
+      window.showToast?.("Ingen inspelning att skicka.", "warn", 4000);
       return;
     }
-    if (!saved?.payload?.events_json) return;
-    if (!Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt > SALVAGE_MAX_AGE_MS) return;
+    await submitReport(events);
+  }
+
+  // Sidbyte under inspelning: spara sessionen så nästa sidladdning kan
+  // återuppta inspelningen (eller skicka den om tiden hann gå ut).
+  window.addEventListener("pagehide", () => {
+    if (!state.stop) return;
+    stopRecordingSilently();
+    const session = {
+      savedAt: Date.now(),
+      deadline: state.deadline,
+      note: state.note,
+      viewId: state.viewId,
+      pagePath: state.pagePath,
+      segments: state.events.length ? [...state.segments, state.events] : state.segments,
+      consoleErrors: state.consoleErrors,
+      jsErrors: state.jsErrors,
+    };
+    state.segments = [];
+    state.events = [];
     try {
-      await window.api.post("/api/bug-reports", saved.payload);
-      window.showToast?.("Buggrapporten skickades – inspelningen avbröts av sidbytet.", "success", 6000);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Den avbrutna buggrapporten kunde inte skickas.";
-      window.showToast?.(message, "error", 8000);
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    } catch (_ignored) { /* kvotfullt: fortsättningen är best effort */ }
+  });
+
+  function takeStoredSession() {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
+      const session = raw ? JSON.parse(raw) : null;
+      if (!session || !Array.isArray(session.segments)) return null;
+      if (!Number.isFinite(session.savedAt) || Date.now() - session.savedAt > SESSION_MAX_AGE_MS) return null;
+      return session;
+    } catch (_ignored) {
+      return null;
     }
+  }
+
+  function restoreSessionState(session) {
+    state.segments = session.segments.filter((segment) => Array.isArray(segment) && segment.length);
+    state.consoleErrors = Array.isArray(session.consoleErrors) ? session.consoleErrors : [];
+    state.jsErrors = Array.isArray(session.jsErrors) ? session.jsErrors : [];
+    state.note = typeof session.note === "string" ? session.note : "";
+    state.viewId = session.viewId ?? null;
+    state.pagePath = session.pagePath ?? null;
+    state.deadline = Number(session.deadline) || 0;
+  }
+
+  // Återupptar en inspelning som avbröts av ett sidbyte. Nya sidan får en
+  // egen full snapshot — uppspelningen visar det som ett scenbyte.
+  async function resumeStoredSession() {
+    const session = takeStoredSession();
+    if (!session) return;
+    restoreSessionState(session);
+    if (Date.now() < state.deadline) {
+      try {
+        await beginCapture();
+        return;
+      } catch (_ignored) {
+        // rrweb gick inte att ladda på nya sidan — skicka det som finns.
+      }
+    }
+    const events = combinedEvents();
+    if (events.length) await submitReport(events);
   }
 
   window.flowBugReport = {
     open: openConsentModal,
     isRecording: () => Boolean(state.stop),
-    sendSalvaged: sendSalvagedReport,
   };
 
-  // Modulen laddas eagert av sidebar.js när en räddad inspelning väntar.
-  void sendSalvagedReport();
+  // Modulen laddas eagert av sidebar.js när en inspelningssession väntar.
+  void resumeStoredSession();
 })();

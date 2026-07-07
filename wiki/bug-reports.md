@@ -27,13 +27,17 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
    "Stoppa och skicka nu" visas.
 3. Vid stopp/30 s: händelserna + kontext (konsolfel, JS-fel, user agent,
    viewport) POST:as till `/api/bug-reports`. Toast bekräftar.
-   - **Sidbyte under inspelning** (2026-07-07): länk-klick ger en
-     varningsmodal ("Stanna kvar" / "Byt sida och skicka"). Vid sidbyte
-     sparas det inspelade i sessionStorage (`flow-bug-report-salvage`) och
-     skickas automatiskt av nästa sidladdning, märkt
-     "(inspelningen avbröts av sidbyte)". Ingen tyst dataförlust längre.
-     sendBeacon/keepalive valdes bort: deras 64 kB-tak är mindre än en
-     inspelning. Räddningen är per flik och förfaller efter 5 minuter.
+   - **Sidbyte under inspelning** (2026-07-07): inspelningen fortsätter
+     över sidbyten inom samma flik. Vid pagehide sparas sidans segment i
+     sessionStorage (`flow-bug-report-session`); sidebar.js eagerladdar
+     modulen på nästa sida som återupptar inspelningen med en ny full
+     snapshot. Allt skickas som EN rapport vid stopp/deadline —
+     uppspelningen visar ett "scenbyte" per sida (rrweb-Replayer hanterar
+     flera fulla snapshots i samma ström). Hann deadline gå ut under
+     sidbytet skickas det som finns direkt. Sessionen är per flik och
+     förfaller efter 5 minuter; byte till en annan webbläsarflik kan inte
+     spelas in (rrweb ser bara sin egen sidas DOM). sendBeacon/keepalive
+     valdes bort: deras 64 kB-tak är mindre än en inspelning.
 4. Behörig användare (vy-id `bugReports`, default endast Super User) öppnar
    **Buggrapporter** i Verktyg-menyn: lista → klick → uppspelning i
    rrweb-Replayer + kontext. Status (Ny/Att göra/Klar) sätts via dropdown
@@ -101,10 +105,11 @@ Inspelningar från äldre appversioner kan sakna full snapshot. Kontrollera
 fullsnapshot för att inspelningen stoppades direkt.
 
 **"Jag bytte sida under inspelningen — försvann den?"**
-Nej (sedan 2026-07-07): det inspelade räddas via sessionStorage och skickas
-av nästa sidladdning med notismarkören "(inspelningen avbröts av sidbyte)".
-Kommer inget: kontrollera att användaren stannade i samma flik (räddningen
-är per flik) och att nästa sida laddades inom 5 minuter.
+Nej (sedan 2026-07-07): inspelningen fortsätter på nästa sida (röd
+indikator kommer tillbaka) och allt skickas som en rapport. Kommer inget:
+kontrollera att användaren stannade i samma flik (sessionen är per flik)
+och att nästa sida laddades inom 5 minuter. I uppspelningen syns sidbytet
+som ett scenbyte — det är förväntat, inte en trasig inspelning.
 
 **"Vem kan se rapporterna?"**
 Endast Super User tills vyn `bugReports` delas ut per roll i
