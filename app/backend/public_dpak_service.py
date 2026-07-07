@@ -787,7 +787,7 @@ def sync_public_dpak_pick_chunks(
     end: date | None = None,
     chunk_days: int | None = None,
     force: bool = False,
-    progress: Callable[[str], None] | None = None,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> DpakSyncResult:
     business = public_dpak_business_code(business_code)
     start_day = start or parse_settings_date(settings.PUBLIC_DPAK_START_DATE, date(2025, 7, 1))
@@ -798,8 +798,10 @@ def sync_public_dpak_pick_chunks(
     alias_rows, attribute_rows = load_support_csvs(support_directory)
     supplier_map = _supplier_by_item(attribute_rows)
     client = _api_client()
-    views = [settings.PUBLIC_DPAK_LIVE_PICK_VIEW, settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW]
     span = chunk_days or settings.PUBLIC_DPAK_CHUNK_DAYS
+    views = [settings.PUBLIC_DPAK_LIVE_PICK_VIEW, settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW]
+    chunk_ranges = list(_chunks(start_day, end_day, span))
+    total_chunks = len(views) * len(chunk_ranges)
     chunks_fetched = 0
     chunks_skipped = 0
     rows_imported = 0
@@ -807,8 +809,23 @@ def sync_public_dpak_pick_chunks(
     _mark_public_dpak_dataset_status(db, business_code=business, status="syncing")
     db.commit()
 
+    if progress:
+        progress(
+            {
+                "type": "start",
+                "business_code": business,
+                "start": start_day.isoformat(),
+                "end": end_day.isoformat(),
+                "chunk_days": span,
+                "views": views,
+                "total_chunks": total_chunks,
+            }
+        )
+
+    chunk_index = 0
     for view_id in views:
-        for chunk_start, chunk_end in _chunks(start_day, end_day, span):
+        for chunk_start, chunk_end in chunk_ranges:
+            chunk_index += 1
             chunk = _sync_chunk(
                 db,
                 business_code=business,
@@ -819,7 +836,20 @@ def sync_public_dpak_pick_chunks(
             if chunk.status == "complete" and not force:
                 chunks_skipped += 1
                 if progress:
-                    progress(f"skip {view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}")
+                    progress(
+                        {
+                            "type": "skip",
+                            "index": chunk_index,
+                            "total_chunks": total_chunks,
+                            "view": view_id,
+                            "start": chunk_start.isoformat(),
+                            "end": chunk_end.isoformat(),
+                            "rows": int(chunk.row_count or 0),
+                            "rows_imported": rows_imported,
+                            "chunks_fetched": chunks_fetched,
+                            "chunks_skipped": chunks_skipped,
+                        }
+                    )
                 continue
 
             chunk.status = "running"
@@ -830,7 +860,19 @@ def sync_public_dpak_pick_chunks(
 
             try:
                 if progress:
-                    progress(f"fetch {view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}")
+                    progress(
+                        {
+                            "type": "chunk_start",
+                            "index": chunk_index,
+                            "total_chunks": total_chunks,
+                            "view": view_id,
+                            "start": chunk_start.isoformat(),
+                            "end": chunk_end.isoformat(),
+                            "rows_imported": rows_imported,
+                            "chunks_fetched": chunks_fetched,
+                            "chunks_skipped": chunks_skipped,
+                        }
+                    )
                 api_rows = client.fetch_data(view_id, filters=_date_filter_for_view(view_id, chunk_start, chunk_end))
                 normalized_rows = normalize_pick_rows(
                     view_id,
@@ -868,8 +910,18 @@ def sync_public_dpak_pick_chunks(
                 rows_imported += len(normalized_rows)
                 if progress:
                     progress(
-                        f"done {view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}: "
-                        f"{len(normalized_rows)} rows"
+                        {
+                            "type": "chunk_done",
+                            "index": chunk_index,
+                            "total_chunks": total_chunks,
+                            "view": view_id,
+                            "start": chunk_start.isoformat(),
+                            "end": chunk_end.isoformat(),
+                            "rows": len(normalized_rows),
+                            "rows_imported": rows_imported,
+                            "chunks_fetched": chunks_fetched,
+                            "chunks_skipped": chunks_skipped,
+                        }
                     )
             except Exception as exc:
                 db.rollback()
@@ -892,6 +944,17 @@ def sync_public_dpak_pick_chunks(
                 db.commit()
                 raise
 
+    if progress:
+        progress(
+            {
+                "type": "rebuild_start",
+                "total_chunks": total_chunks,
+                "rows_imported": rows_imported,
+                "chunks_fetched": chunks_fetched,
+                "chunks_skipped": chunks_skipped,
+            }
+        )
+
     build = rebuild_public_dpak_facts(
         db,
         business_code=business,
@@ -910,6 +973,19 @@ def sync_public_dpak_pick_chunks(
         },
     )
     db.commit()
+    if progress:
+        progress(
+            {
+                "type": "rebuild_done",
+                "total_chunks": total_chunks,
+                "rows_imported": rows_imported,
+                "chunks_fetched": chunks_fetched,
+                "chunks_skipped": chunks_skipped,
+                "pick_rows": build.pick_rows,
+                "order_article_rows": build.order_article_rows,
+                "order_supplier_rows": build.order_supplier_rows,
+            }
+        )
     return DpakSyncResult(
         build=build,
         chunks_fetched=chunks_fetched,

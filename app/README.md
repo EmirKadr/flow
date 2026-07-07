@@ -110,7 +110,13 @@ python -m backend.public_dpak_sync --from-api --start 2025-07-01 --end 2026-07-0
 python -m backend.public_dpak_sync status
 ```
 
-Synken hämtar både `v_ask_pick_log_full` och `dblog_pick_log` i chunks, sparar varje chunk i Postgres med status och bygger sedan faktatabeller för snabba frågor. Om körningen avbryts ligger färdiga chunks kvar och nästa körning fortsätter. Använd `--force` för att hämta om redan klara chunks. `item_alias` och `item_attribute` läses från supportmappen; `--support-dir` kan användas i stället för env-variabeln.
+Synken visar en terminal-progressbar med chunkantal, rader, tid och ETA. Den hämtar både `v_ask_pick_log_full` och `dblog_pick_log` i chunks, sparar varje chunk i Postgres med status och bygger sedan faktatabeller för snabba frågor. Om körningen avbryts ligger färdiga chunks kvar och nästa körning fortsätter. Använd `--force` för att hämta om redan klara chunks. `item_alias` och `item_attribute` läses från supportmappen; `--support-dir` kan användas i stället för env-variabeln.
+
+Om terminalen saknar Nowaste/ASK-variablerna kan `--env-file` peka på en lokal env-fil som innehåller `DATA_SOURCE_*`-värdena:
+
+```powershell
+python -m backend.public_dpak_sync --from-api --env-file "C:\path\to\.env" --start 2025-07-01 --end 2026-07-01
+```
 
 ## Halsa
 

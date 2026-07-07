@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import time
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from .config import settings
 from .database import SessionLocal
@@ -42,6 +45,146 @@ def _normalize_legacy_args(argv: list[str]) -> list[str]:
     return normalized
 
 
+def _coerce_env_value(current: Any, value: str) -> Any:
+    if isinstance(current, bool):
+        return value.strip().lower() in {"1", "true", "yes", "on", "ja"}
+    if isinstance(current, int) and not isinstance(current, bool):
+        try:
+            return int(value)
+        except ValueError:
+            return current
+    if isinstance(current, float):
+        try:
+            return float(value)
+        except ValueError:
+            return current
+    return value
+
+
+def _load_env_file(path: Path | None) -> None:
+    if path is None:
+        return
+    if not path.is_file():
+        raise SystemExit(f"Env-filen finns inte: {path}")
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if not key:
+            continue
+        os.environ.setdefault(key, value)
+        if hasattr(settings, key):
+            setattr(settings, key, _coerce_env_value(getattr(settings, key), value))
+
+
+def _fmt_int(value: Any) -> str:
+    try:
+        return f"{int(value):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        return "0"
+
+
+def _fmt_duration(seconds: float | None) -> str:
+    if seconds is None or seconds < 0:
+        return "--:--"
+    seconds = int(seconds)
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
+
+
+class DpakProgressBar:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.started_at = time.perf_counter()
+        self.total = 0
+        self.done = 0
+        self.rows = 0
+        self.current = ""
+        self.finished_line = True
+
+    def __call__(self, event: dict[str, Any] | str) -> None:
+        if isinstance(event, str):
+            self._line(event)
+            return
+        event_type = str(event.get("type") or "")
+        if event_type == "start":
+            self.total = int(event.get("total_chunks") or 0)
+            self._line(
+                "Startar D-pak-sync: "
+                f"{self.total} chunks, {', '.join(event.get('views') or [])}, "
+                f"{event.get('start')}..{event.get('end')}"
+            )
+            self._render()
+            return
+        if event_type == "chunk_start":
+            self.current = f"{event.get('view')} {event.get('start')}..{event.get('end')}"
+            self._render()
+            return
+        if event_type in {"chunk_done", "skip"}:
+            self.done = int(event.get("index") or self.done)
+            self.total = int(event.get("total_chunks") or self.total)
+            self.rows = int(event.get("rows_imported") or self.rows)
+            label = "skip" if event_type == "skip" else "klar"
+            self.current = (
+                f"{label}: {event.get('view')} {event.get('start')}..{event.get('end')} "
+                f"({_fmt_int(event.get('rows'))} rader)"
+            )
+            self._render()
+            return
+        if event_type == "rebuild_start":
+            self.done = self.total
+            self.rows = int(event.get("rows_imported") or self.rows)
+            self.current = "bygger faktatabeller i Postgres"
+            self._render()
+            self._newline()
+            return
+        if event_type == "rebuild_done":
+            self.rows = int(event.get("pick_rows") or self.rows)
+            self.current = (
+                f"faktatabeller klara: {_fmt_int(event.get('order_article_rows'))} order/artikel, "
+                f"{_fmt_int(event.get('order_supplier_rows'))} order/leverantor"
+            )
+            self._render(force_percent=100.0)
+            self._newline()
+            return
+
+    def _line(self, text: str) -> None:
+        self._newline()
+        print(text, flush=True)
+
+    def _newline(self) -> None:
+        if self.enabled and not self.finished_line:
+            print()
+            self.finished_line = True
+
+    def _render(self, force_percent: float | None = None) -> None:
+        elapsed = max(0.001, time.perf_counter() - self.started_at)
+        percent = force_percent if force_percent is not None else ((self.done / self.total * 100) if self.total else 0)
+        eta = None
+        if self.done > 0 and self.total and self.done < self.total:
+            eta = (elapsed / self.done) * (self.total - self.done)
+        filled = int(max(0, min(1, percent / 100)) * 28)
+        bar = "#" * filled + "-" * (28 - filled)
+        text = (
+            f"\r[{bar}] {percent:5.1f}% "
+            f"{self.done}/{self.total or '?'} chunks "
+            f"rader {_fmt_int(self.rows)} "
+            f"tid {_fmt_duration(elapsed)} eta {_fmt_duration(eta)} "
+            f"{self.current[:70]}"
+        )
+        if self.enabled:
+            print(text.ljust(150), end="", flush=True)
+            self.finished_line = False
+        else:
+            print(text.strip(), flush=True)
+
+
 def _print_status(status: dict) -> None:
     print(f"business: {status.get('business_code')}")
     print(f"status: {status.get('status')} ready={status.get('ready')}")
@@ -71,15 +214,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Sync and rebuild the public D-pak chat dataset.")
     business_help = "Business code. Defaults to PUBLIC_DPAK_DEFAULT_BUSINESS_CODE."
     parser.add_argument("--business-code", default=None, help=business_help)
+    parser.add_argument("--env-file", type=Path, default=None, help="Load DATA_SOURCE_* values from a local env file.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     api_parser = subparsers.add_parser("api", help="Fetch pick logs from the external API in persistent chunks.")
     api_parser.add_argument("--business-code", default=argparse.SUPPRESS, help=business_help)
+    api_parser.add_argument("--env-file", type=Path, default=argparse.SUPPRESS, help="Load DATA_SOURCE_* values from a local env file.")
     api_parser.add_argument("--support-dir", type=Path, help="Directory containing item_alias and item_attribute CSVs.")
     api_parser.add_argument("--start", default=None, help="Inclusive start date, YYYY-MM-DD.")
     api_parser.add_argument("--end", default=None, help="Inclusive end date, YYYY-MM-DD.")
     api_parser.add_argument("--chunk-days", type=int, default=None, help="Days per API chunk.")
     api_parser.add_argument("--force", action="store_true", help="Re-fetch chunks even if they are already complete.")
+    api_parser.add_argument("--no-progress", action="store_true", help="Print plain progress lines instead of a progress bar.")
 
     csv_parser = subparsers.add_parser("csv", help="Replace the dataset from local CSV exports.")
     csv_parser.add_argument("--business-code", default=argparse.SUPPRESS, help=business_help)
@@ -96,6 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args(_normalize_legacy_args(sys.argv[1:]))
+    _load_env_file(getattr(args, "env_file", None))
     business_code = public_dpak_business_code(args.business_code)
     db = SessionLocal()
     try:
@@ -140,7 +287,7 @@ def main() -> None:
                 end=end,
                 chunk_days=args.chunk_days,
                 force=args.force,
-                progress=print,
+                progress=DpakProgressBar(enabled=not bool(getattr(args, "no_progress", False))),
             )
             _print_build("API sync complete.", result.build)
             print(f"chunks fetched: {result.chunks_fetched}")

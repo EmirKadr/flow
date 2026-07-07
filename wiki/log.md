@@ -1029,6 +1029,10 @@ Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster o
 
 Forecast filtrerar nu orderoversikten sa hela ordernumret ignoreras om nagon orderhuvudrad for samma `Ordernr` har `Status=11`, oavsett om en annan rad/snapshot har annan status. Det gor att matchande rader i Detalj Kundorder ocksa faller bort nar Forecast inner-joinar orderdetaljer mot orderoversikten, sa stoppade/avvikande status-11-ordrar inte skapar sandningar eller pallplatsprognos.
 
+## [2026-07-07] polish | D-pak-sync visar lokal progress
+
+`backend.public_dpak_sync --from-api` visar nu progressbar med chunkantal, procent, rader, elapsed time, ETA och aktuell vy/intervall. CLI:t kan ocksa lasa `DATA_SOURCE_*` for Nowaste/ASK fran en lokal `--env-file`, sa den lokala syncen ar enklare att kora fran en ny terminal.
+
 ## [2026-07-07] feature | Publik D-pak-chatt med lokal Postgres-synk
 
 Flow har nu en direktlankad publik D-pak-chatt utan login. Pickloggarna seedas lokalt fran dator som nar API:t och skrivs chunkvis till Postgres, medan servern bara laser fardiga fakta vid kundfragor. Wikin dokumenterar lokal `backend.public_dpak_sync`, MiniMax-formulering via servernyckel och att ingen tung hamtning sker vid startup eller fragetillfalle.
