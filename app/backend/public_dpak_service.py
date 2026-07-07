@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import pandas as pd
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -1057,6 +1057,39 @@ def _source_chunks(start: date, end: date, chunk_days: int) -> list[tuple[str, d
     ]
 
 
+def _cleanup_public_dpak_sync_scope(
+    db: Session,
+    *,
+    business_code: str,
+    source_ranges: list[tuple[str, date, date]],
+    planned_chunks: list[tuple[str, date, date]],
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> None:
+    if progress:
+        progress("Städar bort gamla D-pak-rader och chunkstatusar utanför aktiv källa...")
+
+    planned_keys = {(view_id, _dt(chunk_start), _dt(chunk_end)) for view_id, chunk_start, chunk_end in planned_chunks}
+    for chunk in db.query(PublicDpakSyncChunk).filter(PublicDpakSyncChunk.business_code == business_code).all():
+        key = (chunk.source_view, chunk.chunk_start, chunk.chunk_end)
+        if key not in planned_keys:
+            db.delete(chunk)
+
+    keep_filters = [
+        and_(
+            PublicDpakPickRow.source_view == view_id,
+            PublicDpakPickRow.pick_date >= _dt(range_start),
+            PublicDpakPickRow.pick_date <= _range_end_dt(range_end),
+        )
+        for view_id, range_start, range_end in source_ranges
+    ]
+    if keep_filters:
+        db.query(PublicDpakPickRow).filter(
+            PublicDpakPickRow.business_code == business_code,
+            ~or_(*keep_filters),
+        ).delete(synchronize_session=False)
+    db.commit()
+
+
 def _range_end_dt(day: date) -> datetime:
     return datetime.combine(day, time.max, tzinfo=timezone.utc)
 
@@ -1388,6 +1421,14 @@ def sync_public_dpak_pick_chunks(
                 db.rollback()
             raise
 
+    _cleanup_public_dpak_sync_scope(
+        db,
+        business_code=business,
+        source_ranges=source_ranges,
+        planned_chunks=planned_chunks,
+        progress=progress,
+    )
+
     if progress:
         progress(
             {
@@ -1677,7 +1718,7 @@ def _top_broken_articles(db: Session, business_code: str, supplier: str | None, 
     rows = (
         query.with_entities(
             PublicDpakOrderArticleFact.item_num,
-            PublicDpakOrderArticleFact.item_desc,
+            func.max(PublicDpakOrderArticleFact.item_desc).label("item_desc"),
             PublicDpakOrderArticleFact.supplier,
             func.coalesce(func.sum(PublicDpakOrderArticleFact.dpack_broken), 0).label("broken"),
             func.count(PublicDpakOrderArticleFact.id).label("occasions"),
@@ -1685,7 +1726,6 @@ def _top_broken_articles(db: Session, business_code: str, supplier: str | None, 
         .filter(PublicDpakOrderArticleFact.dpack_broken > 0)
         .group_by(
             PublicDpakOrderArticleFact.item_num,
-            PublicDpakOrderArticleFact.item_desc,
             PublicDpakOrderArticleFact.supplier,
         )
         .order_by(func.coalesce(func.sum(PublicDpakOrderArticleFact.dpack_broken), 0).desc(), func.count(PublicDpakOrderArticleFact.id).desc())
@@ -1767,6 +1807,7 @@ def answer_public_dpak_question(
     normalized = _normalize_question(latest)
     period = infer_period(user_messages, dataset)
     zone = infer_zone([latest]) or (infer_zone(user_messages[:-1]) if len(normalized) <= 12 else None)
+    previous_text = user_messages[-2] if len(user_messages) >= 2 else ""
     previous = _normalize_question(user_messages[-2]) if len(user_messages) >= 2 else ""
 
     if "vilka datum" in normalized or ("datum" in normalized and "kollar" in normalized):
@@ -1791,6 +1832,13 @@ def answer_public_dpak_question(
 
     if ("d-pak" in latest.lower() or "dpak" in normalized or "dfp" in normalized) and ("salde" in normalized or "sålde" in latest.lower() or "sålda" in latest.lower()):
         return _sum_dpack_sold(db, business, period, zone)
+
+    if previous and ("tabell" in normalized or "onodigt" in normalized) and (
+        "artiklar" in previous or "bryt" in previous or "brut" in previous
+    ):
+        supplier = infer_supplier(latest) or infer_supplier(previous_text)
+        if supplier:
+            return _top_broken_articles(db, business, supplier, period, zone)
 
     if "onodigt" in normalized and ("brut" in normalized or "bryt" in normalized):
         supplier = infer_supplier(latest)
