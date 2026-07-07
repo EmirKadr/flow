@@ -9417,3 +9417,11 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   pointer-events: none;
 }
+
+/* Tomma lägen i registertabeller */
+td.empty-state {
+  text-align: center;
+  color: var(--muted, #777);
+  padding: 22px 12px;
+  font-style: italic;
+}

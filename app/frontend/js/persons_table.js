@@ -266,6 +266,10 @@ function renderRows() {
   const tbody = document.getElementById("persons-body");
   const canEditPersons = canEditPage(currentUser, "persons");
   tbody.innerHTML = "";
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="99" class="empty-state">Inga personer matchar filtret. Rensa filterfälten eller byt områdesfokus.</td></tr>';
+    return;
+  }
 
   filtered.forEach((p) => {
     const tr = document.createElement("tr");

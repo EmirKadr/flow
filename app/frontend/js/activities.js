@@ -209,6 +209,10 @@ function render() {
   const tbody = document.getElementById("acts-body");
   document.getElementById("code-column-header").hidden = !canSeeCodes();
   tbody.innerHTML = "";
+  if (!acts.length) {
+    tbody.innerHTML = '<tr><td colspan="99" class="empty-state">Inga aktiviteter i valt fokus. Byt områdesfokus eller skapa en ny aktivitet.</td></tr>';
+    return;
+  }
   acts.forEach((a) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `

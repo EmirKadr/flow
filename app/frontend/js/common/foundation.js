@@ -361,3 +361,21 @@ if ("serviceWorker" in navigator && window.location.protocol === "https:") {
   });
 }
 
+
+// Tangentbord: Escape stänger översta modalen via dess EGEN Avbryt-/Stäng-knapp
+// (a11y-svepet 2026-07-07). Vi klickar knappen i stället för att ta bort
+// backdropen blint — modaler som resolvar promises vid avbryt (t.ex.
+// utskriftsdialogen) behåller sin semantik. Finns ingen kandidat: no-op.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented) return;
+  const backdrops = document.querySelectorAll(".modal-backdrop");
+  if (!backdrops.length) return;
+  const topmost = backdrops[backdrops.length - 1];
+  const cancel = topmost.querySelector(
+    '[id$="-cancel"], [id="m-cancel"], [id$="-close"], button.secondary'
+  );
+  if (cancel instanceof HTMLElement) {
+    event.preventDefault();
+    cancel.click();
+  }
+});

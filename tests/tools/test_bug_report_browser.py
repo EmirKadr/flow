@@ -71,6 +71,13 @@ def test_consent_gate_and_full_report_flow(local_server, chromium_browser):
         assert not is_recording(page)
         assert page.locator("#bug-report-indicator").count() == 0
 
+        # Escape stänger modalen via dess Avbryt-knapp (globala tangentbordsregeln).
+        page.click("#bug-report-toggle")
+        page.wait_for_selector("#bug-report-backdrop", timeout=15000)
+        page.keyboard.press("Escape")
+        expect(page.locator("#bug-report-backdrop")).to_have_count(0)
+        assert not is_recording(page)
+
         # 2) OK -> inspelning + indikator; stoppa -> rapport skickas.
         page.click("#bug-report-toggle")
         page.wait_for_selector("#bug-report-note", timeout=15000)

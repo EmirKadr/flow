@@ -424,8 +424,13 @@ function renderUsers() {
   const tbody = document.getElementById("users-body");
   const canEditUsers = canEditPage(currentUser, "users");
   tbody.innerHTML = "";
+  const visibleUsers = users.filter(matchesAreaFocus);
+  if (!visibleUsers.length) {
+    tbody.innerHTML = '<tr><td colspan="99" class="empty-state">Inga användare i valt fokus. Byt områdesfokus eller skapa en ny användare.</td></tr>';
+    return;
+  }
 
-  users.filter(matchesAreaFocus).forEach((user) => {
+  visibleUsers.forEach((user) => {
     const tr = document.createElement("tr");
     const selfLabel = user.id === currentUser.id ? " (du)" : "";
     const demoLabel = user.is_demo ? ' <span class="demo-user-pill">DEMO</span>' : "";
