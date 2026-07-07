@@ -62,15 +62,22 @@ Körs med `python -m tools.api_benchmark ... --budget tools/latency_budgets.json
 `DEPLOY.md`. Budgetarna är generösa startvärden; dra åt dem när riktiga
 rapporter finns i `artifacts/api_benchmark/`.
 
-## Workers-beslutet (2026-07-06)
+## Workers-beslutet (2026-07-06, uppdaterat 2026-07-07)
 
-1 uvicorn-worker står fast. Audit fann att sankeys spårnings-cache
-(`backend/sankey_inbound/trace.py`, `_TRACE_CACHE`) lagrar trace-tokens i
-processminne: med flera workers kan drill-down landa i fel process → 410.
+1 uvicorn-worker står fast — men blockeraren är borta. Sankeys spårnings-
+cache (`backend/sankey_inbound/trace.py`) är sedan 2026-07-07 tvåskiktad:
+processlokal L1 (`_TRACE_CACHE`, samma beteende som förr) plus disk-spill
+(gzip-JSON under media-roten, som delas av workers i samma pod). En
+drill-down som landar i en annan process hittar raderna på disk i stället
+för att ge 410 — kontraktstestat i `test_sankey_trace_cache.py` genom att
+tömma L1 och läsa igen. DB valdes medvetet bort: trace-rader för ett helår
+är hundratals MB och hör inte hemma i MSSQL. Tokens valideras som
+uuid4-hex innan de rör filsystemet.
+
 Övriga in-memory-cacher (person-/produktivitetsrapporter, ytgenerering,
-sankey source-cache) dupliceras bara (minne/CPU, inte fel). Eskalering:
-om Väntetider visar köbildning vid samtidig last → flytta trace-cachen till
-DB, sedan `--workers 2` (ledarlåset skyddar redan bakgrundsjobben).
+sankey source-cache) dupliceras bara vid fler workers (minne/CPU, inte
+fel). Att höja `--workers` är fortfarande ett medvetet beslut som kräver
+uppdaterat arkitekturkontrakt — men numera bara ett beslut, ingen refaktor.
 
 ## Fallgropar
 

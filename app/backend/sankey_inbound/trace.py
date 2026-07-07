@@ -1,23 +1,92 @@
 """Server-side trace-rader: tokenlagring, filtrering, räkning och CSV-export."""
 from __future__ import annotations
 
-from datetime import date, datetime
+import gzip
+import json
+import logging
+import os
+import re
+import tempfile
 import threading
 import time
 import uuid
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
+from ..config import settings
 from ..settings_service import clean_productivity_finance_company_code
+
+logger = logging.getLogger(__name__)
 
 
 # Spårnings-rader (trace_rows) lazy-laddas: de skickas INTE i huvud-payloaden (för ett
 # helår blir de hundratals MB och spränger webbläsarfliken). Istället lagras de här
 # server-side under en token; frontend hämtar dem paginerat per nod/länk och exporterar
 # via en streamad CSV. TTL alltid på (även lokalt), och få poster hålls samtidigt.
+#
+# Lagringen är tvåskiktad sedan 2026-07-07:
+# - _TRACE_CACHE är processlokal L1 (snabb, samma beteende som förr).
+# - Varje token spills även till disk (gzip-JSON under media-roten, som delas
+#   av alla workers i podden). En GET som landar i en annan process hittar då
+#   raderna på disk i stället för att ge 410 — det var den enda blockeraren
+#   för --workers 2 enligt prestanda-sidan i wikin. DB valdes medvetet bort:
+#   trace-rader för ett helår är hundratals MB och hör inte hemma i MSSQL.
 _TRACE_CACHE_LOCK = threading.Lock()
 _TRACE_CACHE_TTL_SECONDS = 30 * 60
 _TRACE_CACHE_MAX_ITEMS = 4
 _TRACE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_TRACE_DISK_MAX_ITEMS = 8
+_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _trace_disk_dir() -> Path:
+    root = (settings.MEDIA_STORE_ROOT or "").strip()
+    base = Path(root) if root else Path(tempfile.gettempdir()) / "flow_media_store"
+    path = base / "trace_cache"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _disk_prune(now: float) -> None:
+    entries = sorted(_trace_disk_dir().glob("*.json.gz"), key=lambda item: item.stat().st_mtime)
+    for path in entries:
+        if path.stat().st_mtime + _TRACE_CACHE_TTL_SECONDS <= now:
+            path.unlink(missing_ok=True)
+    entries = [path for path in entries if path.exists()]
+    for path in entries[: max(0, len(entries) - _TRACE_DISK_MAX_ITEMS)]:
+        path.unlink(missing_ok=True)
+
+
+def _disk_write(token: str, rows: list[dict[str, Any]], now: float) -> None:
+    """Bästa-försök: disk-spill får aldrig fälla huvudflödet (L1 täcker 1 worker)."""
+    try:
+        path = _trace_disk_dir() / f"{token}.json.gz"
+        tmp_path = path.with_suffix(".tmp")
+        with gzip.open(tmp_path, "wt", encoding="utf-8") as handle:
+            json.dump(rows, handle, ensure_ascii=False, default=str)
+        os.replace(tmp_path, path)
+        _disk_prune(now)
+    except Exception:  # noqa: BLE001
+        logger.warning("Trace-cache: kunde inte spilla till disk.", exc_info=True)
+
+
+def _disk_read(token: str, now: float) -> list[dict[str, Any]] | None:
+    if not _TOKEN_PATTERN.fullmatch(token):
+        return None  # tokens är alltid uuid4-hex; allt annat avvisas (path-säkerhet)
+    try:
+        path = _trace_disk_dir() / f"{token}.json.gz"
+        if not path.is_file():
+            return None
+        if path.stat().st_mtime + _TRACE_CACHE_TTL_SECONDS <= now:
+            path.unlink(missing_ok=True)
+            return None
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            rows = json.load(handle)
+        return rows if isinstance(rows, list) else None
+    except Exception:  # noqa: BLE001
+        logger.warning("Trace-cache: kunde inte läsa disk-spill.", exc_info=True)
+        return None
 
 # Kolumner + svenska rubriker för trace-CSV (speglar frontendens tidigare klient-CSV).
 _TRACE_CSV_BASE_COLUMNS = (
@@ -54,21 +123,33 @@ def store_trace_rows(rows: list[dict[str, Any]]) -> str:
     with _TRACE_CACHE_LOCK:
         _TRACE_CACHE[token] = (now + _TRACE_CACHE_TTL_SECONDS, rows)
         _prune_trace_cache(now)
+    _disk_write(token, rows, now)
     return token
 
 
 def get_trace_rows(token: str) -> list[dict[str, Any]] | None:
-    """Hämta lagrade trace_rows, eller None om token saknas/gått ut."""
+    """Hämta lagrade trace_rows, eller None om token saknas/gått ut.
+
+    L1 (processminne) först; miss faller tillbaka på disk-spillet så att
+    drill-down överlever att requesten landar i en annan worker-process.
+    """
     now = time.time()
+    cleaned = str(token or "")
     with _TRACE_CACHE_LOCK:
-        entry = _TRACE_CACHE.get(str(token or ""))
-        if not entry:
-            return None
-        expires_at, rows = entry
-        if expires_at <= now:
-            _TRACE_CACHE.pop(str(token), None)
-            return None
-        return rows
+        entry = _TRACE_CACHE.get(cleaned)
+        if entry:
+            expires_at, rows = entry
+            if expires_at <= now:
+                _TRACE_CACHE.pop(cleaned, None)
+            else:
+                return rows
+    rows = _disk_read(cleaned, now)
+    if rows is None:
+        return None
+    with _TRACE_CACHE_LOCK:
+        _TRACE_CACHE[cleaned] = (now + _TRACE_CACHE_TTL_SECONDS, rows)
+        _prune_trace_cache(now)
+    return rows
 
 
 def _trace_date(value: Any) -> date | None:
