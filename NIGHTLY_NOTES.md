@@ -161,3 +161,37 @@ främst bekräfta det. Rekommendation: lågprio; kör som engångsanalys i CI
 - Namnrymdsflytt för de 9 sista @ts-check-filerna (overview.js + 8
   kolliderande sidfiler).
 - Historik-vyn (analytics.js, 36 fel) ingick i de reverterade.
+
+## PASS 5, 2026-07-07 (Emirs tre svar: benchmark klar, ja+ja, release sist)
+
+### Klart och pushat
+
+- **3B KLAR**: Emirs baslinje analyserad (overview 970 ms, schedule 765 ms,
+  summary 631 ms). Empirisk frågeräkning med 30 seedade personer: INGEN N+1
+  existerar — tyngsta endpointen kör konstant 10 frågor; latensen är
+  rundresor × Azure-latens. Leverans: test_query_count_budgets.py (låser
+  frågeantal per endpoint, spränger vid framtida N+1) + latensbudgetar
+  åtdragna till 60-80 % marginal över uppmätta medianer.
+- **3C KLAR**: SWR-piloten live på Personer + Översikt. Nya
+  js/common/api_swr.js (api.js slog i radtaket → split med typeof-guards;
+  splitten tog först clearApiGetCache med sig av misstag — fångat av
+  browsertest + felsökning, återställt). Browsertest: API:et helt nedsläckt
+  → båda sidorna renderar ändå från snapshot; POST rensar snapshots.
+  Fyra källsträngskontrakt uppdaterade (persons_view ×3, visual_tools ×1).
+
+### ÅTERSTÅR till sista passet (kör i FÄRSK session: "kör igen")
+
+1. **Namnrymdsflytten (Emirs JA)**: 9 filer. VARNING till nästa pass:
+   schedule/state.js delar toppnivåtillstånd med hela schedule/-katalogen
+   och persons-sidan är en trio (persons/persons_table/persons_productivity)
+   med delade globaler — kartlägg VILKA symboler som delas per sida innan
+   någon rename (grep varje kolliderande symbol över sidans script-lista
+   i HTML:en). Standalone-sidorna (businesses, meta, users, activities,
+   analytics) är enklast — börja där. overview_state/overview sist.
+2. **Svepen**: 5.1 tangentbord i dialoger, 5.3 WCAG-kontrast, 5.4
+   mobilviewport, 6.1 felmeddelanden, 6.2 tomma lägen, 3D spinnersvep.
+3. **SIST (Emirs ordning)**: release — NÄSTA LEDIGA sekvens (28.4 och 28.5
+   är redan tagna på origin → release/2026.28.6 eller 2026.29.x beroende på
+   vecka), mergea feature-branchen dit, EGEN push av release-refen,
+   verifiera `gh run list --workflow=flow-docker.yml`, därefter merga
+   release → main och pusha main separat.
