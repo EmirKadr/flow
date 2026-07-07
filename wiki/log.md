@@ -2679,3 +2679,15 @@ Nattagentens uppgift 4 och 7 (OVERNIGHT_PLAN.md, branch feature/nightly-quality-
   vendor-undantag i ALLOWED_PAGE_DOMAINS. Tester: test_bug_reports.py.
 - **@ts-check-utrullning** (uppgift 2, delvis): 4 → 26 av 82 filer, bl.a. hela
   js/common/. Fynd utan beteendeändring; nya window-globaler deklarerade.
+
+## [2026-07-07] test/prestanda | Pass 2: buggrapportören browsertestad + trace-cachens disk-spill
+
+- Browsertest (test_bug_report_browser.py): consent-gaten (Avbryt = aldrig
+  inspelning), inspelning→skicka→uppspelning verifierat i Chromium;
+  desktop-smoke exit 0. Buggrapportören därmed komplett testad.
+- Trace-cachen tvåskiktad (sankey_inbound/trace.py): L1 processminne +
+  gzip-JSON-spill under media-roten. Drill-down överlever processbyte
+  (test_sankey_trace_cache.py) — workers-blockeraren borta, workers
+  förblir 1. DB medvetet bortvalt (hundratals MB). Prestanda-sidan
+  uppdaterad.
+- @ts-check: 34 av 82 filer.

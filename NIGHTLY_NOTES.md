@@ -4,6 +4,26 @@ Arbetslogg för OVERNIGHT_PLAN.md. Nyaste passet överst.
 
 ## Pass 2026-07-06 (branch feature/nightly-quality-20260706)
 
+### PASS 2, morgonen 2026-07-07 ("gör det nu")
+
+**Klart och pushat (4 commits till, totalt 18):**
+- Buggrapportören FÄRDIG: browsertest för consent-gaten och hela flödet
+  (Avbryt = aldrig inspelning; OK → inspelning → skicka → uppspelning i
+  admin-vyn med rrweb-iframe) + desktop-smoke exit 0.
+- Uppgift 3E KLAR: trace-cachen tvåskiktad (L1 processminne + gzip-JSON
+  disk-spill under media-roten). Workers-blockeraren borta — medvetet
+  disk i stället för DB (hundratals MB hör inte hemma i MSSQL), tokens
+  path-valideras. Kontraktstest simulerar processbyte. Workers förblir 1.
+- @ts-check: 26 → 34 av 82 (allocation- och schedule-batchar). Fynd:
+  nummer-till-.value-tilldelningar, otypade drag&drop-kedjor.
+
+**Kvar (prioritetsordning för nästa pass):**
+1. Uppgift 3 A/B/C/D: benchmark-körning, N+1/index-jakt,
+   stale-while-revalidate-pilot, spinner-svep. (3E är klar.)
+2. @ts-check: 48 filer kvar.
+3. Uppgift 5 (a11y/mobil), 6 (UX-svep), 8-10 (coverage/Hypothesis/JS-harness).
+4. Uppgift 12-analyserna (MCP-server, Sankey-minnesbudget, mutationstestning).
+
 ### SAMMANFATTNING AV PASSET (skrivet vid avslut, natt mot 2026-07-07)
 
 **Klart och pushat (13 commits, hela icke-browser-sviten grön i pre-push):**
