@@ -1,11 +1,15 @@
 ---
 title: Etiketter
 status: experiment
-updated: 2026-07-02
+updated: 2026-07-07
 tags: [etiketter, label, utskrift, qr, code128]
 ---
 
 # Etiketter
+
+**Beslutsdatum för experimentet: 2026-08-07** (satt av nattagenten 2026-07-07 —
+sidan saknade beslutsdatum, vilket indexregeln kräver). Emir avgör då: släpp
+bredare, förläng med nytt datum, eller ta bort.
 
 Kort svar: Etiketter är en lokal label editor där användaren väljer etikettens
 storlek från vanliga profiler som `104 x 199`, A3, A4 och A5, eller anger egna

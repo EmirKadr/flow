@@ -2701,3 +2701,26 @@ kl 23. A11y-svepet visade att ikonknappar redan får title+aria-label
 dynamiskt; tematogglens tomma initialläge fixat. Benchmark-baslinjen
 flyttad till driftmiljön (lokal syntetisk data ger inte meningsfulla
 medianer) — se NIGHTLY_NOTES.md.
+
+## [2026-07-07] test/kvalitet | Pass 4: @ts-check 75/84, properties, harness, overview-tester
+
+Slutspurten på nattplanen (branch feature/nightly-quality-20260706):
+
+- **@ts-check: 34 → 75 av 84 frontendfiler.** Codemod + fel-driven patchning
+  + handfixar. Riktiga fynd: fyra kopior av veckoberäkningen subtraherade
+  Date-objekt, dataset/setAttribute med nummer, död dialogargument i
+  presence_print, fel aritet på onProgress-default. Kvarvarande 9 filer
+  (overview.js + 8 sidfiler) delar toppnivåvariabler och kräver
+  namnrymdsflytt — eget arbete, se NIGHTLY_NOTES.md.
+- **Hypothesis**: to_num total/ändlig + svensk sifferform, find_col
+  case-insensitivt kontrakt (Hypothesis hittade ß→SS-fällan själv),
+  smart_to_datetime rundresa ISO + ÅÅÅÅMMDD.
+- **JS-harnessen**: normalizeAppZoom (klampning/stegning/skräp) och
+  tabellsorteringens tokenlogik (svenska tal, tomma sist, ISO-datum,
+  å/ä/ö efter z).
+- **Översikt-routern** (27 % täckning): åtta kontraktstester; tre
+  produktregler dokumenterade (dag utan mall = ledig, mallar kräver
+  has_fixed_schedule, mallar gäller inte före created_at).
+- **Etiketter**: beslutsdatum 2026-08-07 satt (saknades, indexregeln).
+- Uppgift 12-analyserna (MCP-server, Sankey-minnesbudget, mutations-
+  testning) skissade i NIGHTLY_NOTES.md.

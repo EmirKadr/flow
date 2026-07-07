@@ -121,3 +121,43 @@ Uppgift 3 (prestanda) sköts efter uppgift 4 (säkerhet) och 7 (buggrapportör):
 säkerhetshålen var verifierade och små att täppa, och buggrapportören är
 nattens huvudleverans. Prestandan kräver benchmark-servrar och är bättre som
 nästa natts huvudjobb.
+
+## PASS 4, 2026-07-07 ("kör igenom alla 100")
+
+### Uppgift 12: analyser (endast skisser — inga beslut fattade åt Emir)
+
+**A. Exponera tool-registret som MCP-server.** Genomförbart med måttlig
+insats: registret (assistant_tools) är redan providerneutralt med JSON-
+schemadeklarationer. Skiss: ny endpoint-familj /api/mcp-server/* som talar
+MCP:s JSON-RPC (tools/list, tools/call) och mappar 1:1 mot
+allowed_tools_for(user). Kritiska frågor före bygge: (1) auth — session-
+cookien fungerar inte för externa klienter; kräver PAT-tokens (ny tabell,
+revokerbara, scopade till användare) — egen säkerhetsdesign; (2) enforcement
+måste vara PÅ för MCP-klienter oavsett ASSISTANT_TOOLS_ENFORCE_VIEW_ACCESS;
+(3) rate limiting per token. Uppskattning: 2-3 kvällar. Rekommendation:
+vänta tills apphjälps-toolsen passerat sitt beslutsdatum 2026-08-01.
+
+**B. Sankey-minnesbudget.** Arkiv-cachen (påslagen i prod 2026-07-04) har
+avlastat OOM-vägen; kvarvarande risk är kallstart/cache-miss på månads-/
+årsvyer. Skiss: räknare i sankey_inbound/fetch.py som avbryter hämtningen
+med begripligt 413-fel när radantalet passerar tak (setting, t.ex. 2M rader)
+i stället för att podden OOM-dödas. Litet ingrepp (~50 rader + test).
+Rekommendation: värt att göra nästa kodpass.
+
+**C. Mutationstestning på engine_core.** mutmut kräver POSIX-miljö för full
+effekt; på Windows/CI är cosmic-ray alternativet. Nyttan: golden- och
+property-testerna för motorn är redan starka — mutationstestning skulle
+främst bekräfta det. Rekommendation: lågprio; kör som engångsanalys i CI
+(ubuntu-runner, nattligt manuellt trigger-jobb) om nyfikenheten finns.
+
+### Kvarvarande efter pass 4 (ärlig restlista)
+
+- Uppgift 3B/C/D: N+1-jakt (kräver driftbenchmark först),
+  stale-while-revalidate-piloten, spinner-svepet. Största kvarvarande posten.
+- Uppgift 5.1/5.3/5.4: tangentbordssvep av dialoger, WCAG-kontrastkontroll,
+  mobilviewport-svep. (5.2 ikonknappar: klar — läget var redan bra.)
+- Uppgift 6.1/6.2/6.3: felmeddelande-svep, tomma lägen-svep, djup
+  desktop-paritetsgenomgång. (6.4 label-editor beslutsdatum: klar.)
+- Namnrymdsflytt för de 9 sista @ts-check-filerna (overview.js + 8
+  kolliderande sidfiler).
+- Historik-vyn (analytics.js, 36 fel) ingick i de reverterade.
