@@ -37,7 +37,13 @@ def frontend_literal_api_calls() -> list[tuple[str, str, str]]:
 
 def backend_route_methods() -> dict[str, set[str]]:
     routes: dict[str, set[str]] = {}
-    for route in app.routes:
+    pending = list(app.routes)
+    while pending:
+        route = pending.pop(0)
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            pending.extend(getattr(original_router, "routes", []) or [])
+            continue
         path = getattr(route, "path", "")
         if not path.startswith("/api/"):
             continue

@@ -59,6 +59,8 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("query_data.plan", "POST", "/api/query-data/plan", "Tolka datafråga med MiniMax"),
     ApiRoute("query_data.run", "POST", "/api/query-data/run", "Hämta data från extern datakälla"),
     ApiRoute("query_data.export", "GET", "/api/query-data/export/{session_id}", "Exportera datahämtning till Excel"),
+    ApiRoute("public_dpak.status", "GET", "/api/public/dpak-chat/status", "Publik D-pak-chat status utan login"),
+    ApiRoute("public_dpak.message", "POST", "/api/public/dpak-chat/message", "Publik D-pak-chat fraga utan login"),
     ApiRoute("allocation.health", "GET", "/api/allokering/health", "Lagerverktyg health"),
     ApiRoute("allocation.flows", "GET", "/api/allokering/flows", "Lista lagerverktygsflöden"),
     ApiRoute("allocation.pool", "GET", "/api/allokering/pool", "Lista lagerverktygens uppladdningsslots"),

@@ -94,6 +94,24 @@ python tools/build_external_data_catalog.py --views <views.xlsx> --columns <colu
 
 Den skriver `data/external_data_catalog.json`, som commitas så Render får katalogen direkt. Endast riktiga API-värden, endpointmallar och headernamn ska ligga i `.env`/Render secrets.
 
+## Publik D-pak-fråga
+
+Sidan `/dpak-fraga.html` är en fristående publik chatvy utan login och utan sidomeny. Den ska bara delas via direktlänk. Om `PUBLIC_DPAK_LINK_TOKEN` är satt måste länken innehålla `?token=...`; annars är endpointen öppen.
+
+Chatten använder serverns `MINIMAX_API_KEY` för formulering, så kunder behöver ingen egen nyckel och betalar inte för användningen. Alla siffror räknas först deterministiskt i backend från Postgres-tabellerna; MiniMax får bara formulera svaret och får inte hitta på eller ändra tal.
+
+Picklogg-API:t fungerar inte från driftservern, så den tunga laddningen körs lokalt från en dator som når API:t. Kommandot skriver till databasen i `DATABASE_URL`, till exempel Render Postgres extern URL om produktionen ska fyllas. Servern hämtar aldrig pickloggar vid start och aldrig när kunden frågar.
+
+```powershell
+cd app
+$env:DATABASE_URL = "postgresql://..."
+$env:PUBLIC_DPAK_SUPPORT_DIR = "C:\Users\emikad\OneDrive - Dole Nordic AB\Skrivbordet\projects\D-pak"
+python -m backend.public_dpak_sync --from-api --start 2025-07-01 --end 2026-07-01
+python -m backend.public_dpak_sync status
+```
+
+Synken hämtar både `v_ask_pick_log_full` och `dblog_pick_log` i chunks, sparar varje chunk i Postgres med status och bygger sedan faktatabeller för snabba frågor. Om körningen avbryts ligger färdiga chunks kvar och nästa körning fortsätter. Använd `--force` för att hämta om redan klara chunks. `item_alias` och `item_attribute` läses från supportmappen; `--support-dir` kan användas i stället för env-variabeln.
+
 ## Halsa
 
 Historik-fliken Halsa kan kora server-, databas- och Render-kontroller. Lokalt

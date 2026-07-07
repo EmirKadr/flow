@@ -1029,6 +1029,10 @@ Forecast laser nu verksamhetens `trans_agency`-karnfil som transportorskluster o
 
 Forecast filtrerar nu orderoversikten sa hela ordernumret ignoreras om nagon orderhuvudrad for samma `Ordernr` har `Status=11`, oavsett om en annan rad/snapshot har annan status. Det gor att matchande rader i Detalj Kundorder ocksa faller bort nar Forecast inner-joinar orderdetaljer mot orderoversikten, sa stoppade/avvikande status-11-ordrar inte skapar sandningar eller pallplatsprognos.
 
+## [2026-07-07] feature | Publik D-pak-chatt med lokal Postgres-synk
+
+Flow har nu en direktlankad publik D-pak-chatt utan login. Pickloggarna seedas lokalt fran dator som nar API:t och skrivs chunkvis till Postgres, medan servern bara laser fardiga fakta vid kundfragor. Wikin dokumenterar lokal `backend.public_dpak_sync`, MiniMax-formulering via servernyckel och att ingen tung hamtning sker vid startup eller fragetillfalle.
+
 ## [2026-06-01] feature | Kortkommandon i Ytgenerering-kartan
 
 Ytgenerering-kartan i Bearbeta kan nu fa fokus och hanterar `Ctrl+C`, `Ctrl+X`, `Ctrl+V` och `Ctrl+Z` for att kopiera/klippa vald placering, klistra in den pa vald UTL-yta och angra senaste kartandringen. Kortkommandona anvander samma flytt-/byteslogik som drag i kartan och visar toastar nar anvandaren kopierar, klipper, klistrar in eller angrar.

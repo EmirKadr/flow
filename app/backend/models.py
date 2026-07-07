@@ -262,6 +262,150 @@ class CoreDataFile(Base):
     )
 
 
+class PublicDpakDataset(Base):
+    __tablename__ = "public_dpak_datasets"
+    __table_args__ = (
+        UniqueConstraint("business_code", name="uq_public_dpak_datasets_business"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    coverage_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    coverage_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pick_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    order_article_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    order_supplier_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    alias_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    attribute_rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    source_summary: Mapped[dict | None] = mapped_column(JsonField)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="missing")
+    error_text: Mapped[str | None] = mapped_column(Text)
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PublicDpakSyncChunk(Base):
+    __tablename__ = "public_dpak_sync_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "business_code",
+            "source_view",
+            "chunk_start",
+            "chunk_end",
+            name="uq_public_dpak_sync_chunk",
+        ),
+        Index("ix_public_dpak_sync_business_status", "business_code", "status"),
+        Index("ix_public_dpak_sync_business_view", "business_code", "source_view"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_view: Mapped[str] = mapped_column(String(80), nullable=False)
+    chunk_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    chunk_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
+    row_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    error_text: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PublicDpakPickRow(Base):
+    __tablename__ = "public_dpak_pick_rows"
+    __table_args__ = (
+        Index("ix_public_dpak_pick_business_date", "business_code", "pick_date"),
+        Index("ix_public_dpak_pick_business_zone", "business_code", "pick_zone"),
+        Index("ix_public_dpak_pick_business_location", "business_code", "location"),
+        Index("ix_public_dpak_pick_business_supplier", "business_code", "supplier"),
+        Index("ix_public_dpak_pick_business_item", "business_code", "item_num"),
+        Index("ix_public_dpak_pick_business_order", "business_code", "order_num"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_view: Mapped[str | None] = mapped_column(String(80))
+    source_rowid: Mapped[str | None] = mapped_column(String(120))
+    pick_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_int: Mapped[int | None] = mapped_column(Integer)
+    order_num: Mapped[str | None] = mapped_column(String(80))
+    customer_num: Mapped[str | None] = mapped_column(String(80))
+    customer_desc: Mapped[str | None] = mapped_column(String(255))
+    line_num: Mapped[str | None] = mapped_column(String(80))
+    pick_zone: Mapped[str | None] = mapped_column(String(20))
+    location: Mapped[str | None] = mapped_column(String(120))
+    item_num: Mapped[str | None] = mapped_column(String(80))
+    item_desc: Mapped[str | None] = mapped_column(String(255))
+    qty_pre: Mapped[float | None] = mapped_column(Float)
+    qty_suf: Mapped[float | None] = mapped_column(Float)
+    pick_pall_num: Mapped[str | None] = mapped_column(String(120))
+    responsible: Mapped[str | None] = mapped_column(String(120))
+    company: Mapped[str | None] = mapped_column(String(30))
+    supplier: Mapped[str | None] = mapped_column(String(255))
+
+
+class PublicDpakOrderArticleFact(Base):
+    __tablename__ = "public_dpak_order_article_facts"
+    __table_args__ = (
+        Index("ix_public_dpak_fact_business_date", "business_code", "pick_date"),
+        Index("ix_public_dpak_fact_business_zone", "business_code", "pick_zone"),
+        Index("ix_public_dpak_fact_business_supplier", "business_code", "supplier"),
+        Index("ix_public_dpak_fact_business_item", "business_code", "item_num"),
+        Index("ix_public_dpak_fact_business_order", "business_code", "order_num"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    order_num: Mapped[str] = mapped_column(String(80), nullable=False)
+    item_num: Mapped[str] = mapped_column(String(80), nullable=False)
+    item_desc: Mapped[str | None] = mapped_column(String(255))
+    customer_num: Mapped[str | None] = mapped_column(String(80))
+    customer_desc: Mapped[str | None] = mapped_column(String(255))
+    pick_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_int: Mapped[int | None] = mapped_column(Integer)
+    pick_zone: Mapped[str | None] = mapped_column(String(20))
+    company: Mapped[str | None] = mapped_column(String(30))
+    supplier: Mapped[str | None] = mapped_column(String(255))
+    responsible: Mapped[str | None] = mapped_column(String(120))
+    qty_pre: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    qty_suf: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    factor: Mapped[float | None] = mapped_column(Float)
+    whole_dpak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loose_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dpack_sold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dpack_broken: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unnecessary_break: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pick_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locations: Mapped[list | None] = mapped_column(JsonField)
+    has_autostore: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class PublicDpakOrderSupplierBoxFact(Base):
+    __tablename__ = "public_dpak_order_supplier_box_facts"
+    __table_args__ = (
+        Index("ix_public_dpak_box_business_date", "business_code", "pick_date"),
+        Index("ix_public_dpak_box_business_supplier", "business_code", "supplier"),
+        Index("ix_public_dpak_box_business_order", "business_code", "order_num"),
+        Index("ix_public_dpak_box_business_zone", "business_code", "pick_zone"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    order_num: Mapped[str] = mapped_column(String(80), nullable=False)
+    supplier: Mapped[str] = mapped_column(String(255), nullable=False)
+    pick_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_int: Mapped[int | None] = mapped_column(Integer)
+    pick_zone: Mapped[str | None] = mapped_column(String(20))
+    pick_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    article_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    box_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    boxes: Mapped[list | None] = mapped_column(JsonField)
+    can_spread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    spread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_autostore: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class MetaMediaUpload(Base):
     __tablename__ = "meta_media_uploads"
     __table_args__ = (

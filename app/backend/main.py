@@ -32,6 +32,7 @@ from .routers import (
     personal,
     productivity,
     public,
+    public_dpak,
     schedule,
     settings as app_settings,
     users,
@@ -212,6 +213,7 @@ app.include_router(app_settings.router)
 app.include_router(users.router)
 app.include_router(workflow_data.router)
 app.include_router(public.router)
+app.include_router(public_dpak.router)
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"

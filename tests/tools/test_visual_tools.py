@@ -763,7 +763,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert ".date-display-wrap" in styles
     assert "refreshProductivityBtn" not in productivity_html
 
-    public_standalone_pages = {"meta-upload.html"}
+    public_standalone_pages = {"meta-upload.html", "dpak-fraga.html"}
     for html_path in frontend.glob("*.html"):
         if html_path.name in public_standalone_pages:
             continue
@@ -1497,7 +1497,7 @@ def test_api_fetch_failures_get_clear_swedish_message():
 
 def test_sidebar_pages_reserve_layout_before_auth_finishes():
     frontend = ROOT / "app" / "frontend"
-    public_pages = {"login.html", "set-password.html", "stallen.html", "meta-upload.html"}
+    public_pages = {"login.html", "set-password.html", "stallen.html", "meta-upload.html", "dpak-fraga.html"}
 
     for html_path in frontend.glob("*.html"):
         html = html_path.read_text(encoding="utf-8")
@@ -1566,6 +1566,20 @@ def test_public_meta_upload_page_is_standalone_and_mobile_focused():
     assert ".meta-file-state.error" in css
     assert ".meta-upload-button" not in css
     assert "@media (max-width: 520px)" in css
+
+
+def test_public_dpak_chat_page_is_standalone():
+    frontend = ROOT / "app" / "frontend"
+    html = (frontend / "dpak-fraga.html").read_text(encoding="utf-8")
+    js = (frontend / "js" / "public_dpak_chat.js").read_text(encoding="utf-8")
+
+    assert '<body class="with-sidebar">' not in html
+    assert "/js/common.js" not in html
+    assert "/js/api.js" not in html
+    assert "/api/public/dpak-chat/status" in js
+    assert "/api/public/dpak-chat/message" in js
+    assert "initPage" not in html
+    assert "initPage" not in js
 
 
 def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():

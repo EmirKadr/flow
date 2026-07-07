@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     DATA_SOURCE_MAX_ROWS: int = 1000
     DATA_SOURCE_CATALOG_PATH: str = ""
     DATA_SOURCE_CATALOG_JSON: str = ""
+    PUBLIC_DPAK_LINK_TOKEN: str = ""
+    PUBLIC_DPAK_DEFAULT_BUSINESS_CODE: str = "STIGAMO"
+    PUBLIC_DPAK_LIVE_PICK_VIEW: str = "v_ask_pick_log_full"
+    PUBLIC_DPAK_ARCHIVE_PICK_VIEW: str = "dblog_pick_log"
+    PUBLIC_DPAK_START_DATE: str = "2025-07-01"
+    PUBLIC_DPAK_END_DATE: str = "2026-07-01"
+    PUBLIC_DPAK_CHUNK_DAYS: int = 14
+    PUBLIC_DPAK_SUPPORT_DIR: str = ""
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0
     RENDER_API_KEY: str = ""

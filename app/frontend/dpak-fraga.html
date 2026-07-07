@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D-pak frågor - flow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="public-dpak-page">
+  <main class="public-dpak-shell">
+    <section class="public-dpak-chat-surface" aria-labelledby="publicDpakTitle">
+      <header class="public-dpak-head">
+        <div>
+          <p class="public-dpak-kicker">Dole Nordic</p>
+          <h1 id="publicDpakTitle">D-pak frågor</h1>
+        </div>
+        <div id="publicDpakStatus" class="public-dpak-status" aria-live="polite">Kontrollerar underlag...</div>
+      </header>
+
+      <div id="publicDpakMessages" class="public-dpak-messages" role="log" aria-live="polite"></div>
+
+      <form id="publicDpakForm" class="public-dpak-form">
+        <textarea
+          id="publicDpakInput"
+          rows="3"
+          spellcheck="true"
+          placeholder="Ställ en fråga om D-pak, zon R, AUTOSTORE eller leverantörer..."
+        ></textarea>
+        <div class="public-dpak-actions">
+          <button id="publicDpakClear" type="button" class="public-dpak-secondary">Rensa</button>
+          <button id="publicDpakSend" type="submit" class="public-dpak-primary">Skicka</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/js/public_dpak_chat.js?v=20260707-public-dpak"></script>
+</body>
+</html>

@@ -5990,3 +5990,265 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
     min-height: 0;
   }
 }
+
+.public-dpak-page {
+  min-height: 100vh;
+  margin: 0;
+  color: #1d2730;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(235, 241, 245, 0.98)),
+    #eef3f5;
+}
+
+.public-dpak-page button,
+.public-dpak-page textarea {
+  font: inherit;
+}
+
+.public-dpak-shell {
+  min-height: 100vh;
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+}
+
+.public-dpak-chat-surface {
+  width: 100%;
+  min-height: calc(100vh - 48px);
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  gap: 16px;
+}
+
+.public-dpak-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid rgba(29, 39, 48, 0.12);
+}
+
+.public-dpak-kicker {
+  margin: 0 0 4px;
+  color: #607080;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.public-dpak-head h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.public-dpak-status {
+  max-width: 460px;
+  color: #5b6873;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.public-dpak-status.is-ready {
+  color: #1d6f4a;
+}
+
+.public-dpak-status.is-error {
+  color: #a33d28;
+}
+
+.public-dpak-messages {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 8px;
+}
+
+.public-dpak-empty {
+  margin: auto;
+  display: grid;
+  gap: 8px;
+  text-align: center;
+  color: #64717d;
+}
+
+.public-dpak-empty strong {
+  color: #24313d;
+  font-size: 18px;
+}
+
+.public-dpak-message {
+  width: min(760px, 92%);
+  border: 1px solid rgba(29, 39, 48, 0.1);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(31, 42, 52, 0.08);
+}
+
+.public-dpak-message.user {
+  align-self: flex-end;
+  background: #20384d;
+  color: #ffffff;
+  border-color: #20384d;
+}
+
+.public-dpak-message.assistant {
+  align-self: flex-start;
+}
+
+.public-dpak-message.loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #53616d;
+}
+
+.public-dpak-message.loading span {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #bed0db;
+  border-top-color: #2c7b62;
+  border-radius: 50%;
+  animation: assistantSpin 0.8s linear infinite;
+}
+
+.public-dpak-message p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.public-dpak-table-wrap {
+  max-width: 100%;
+  margin-top: 12px;
+  overflow-x: auto;
+  border: 1px solid #d9e2e7;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.public-dpak-table-wrap table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.public-dpak-table-wrap th,
+.public-dpak-table-wrap td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e5ecef;
+  text-align: left;
+  vertical-align: top;
+}
+
+.public-dpak-table-wrap th {
+  background: #f3f7f8;
+  color: #31414f;
+  font-weight: 800;
+}
+
+.public-dpak-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding-top: 10px;
+  border-top: 1px solid rgba(29, 39, 48, 0.12);
+}
+
+.public-dpak-form textarea {
+  width: 100%;
+  min-height: 82px;
+  max-height: 190px;
+  resize: vertical;
+  border: 1px solid #cbd8df;
+  border-radius: 8px;
+  padding: 12px;
+  color: #1d2730;
+  background: #ffffff;
+  line-height: 1.35;
+}
+
+.public-dpak-form textarea:focus {
+  outline: 3px solid rgba(44, 123, 98, 0.2);
+  border-color: #2c7b62;
+}
+
+.public-dpak-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.public-dpak-primary,
+.public-dpak-secondary {
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-dpak-primary {
+  color: #ffffff;
+  background: #2c7b62;
+}
+
+.public-dpak-primary:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.public-dpak-secondary {
+  color: #2b3a46;
+  background: #ffffff;
+  border-color: #cbd8df;
+}
+
+@media (max-width: 720px) {
+  .public-dpak-shell {
+    padding: 14px;
+  }
+
+  .public-dpak-chat-surface {
+    min-height: calc(100vh - 28px);
+  }
+
+  .public-dpak-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .public-dpak-head h1 {
+    font-size: 28px;
+  }
+
+  .public-dpak-status {
+    max-width: none;
+    text-align: left;
+  }
+
+  .public-dpak-message {
+    width: 100%;
+  }
+
+  .public-dpak-form {
+    grid-template-columns: 1fr;
+  }
+
+  .public-dpak-actions {
+    justify-content: stretch;
+  }
+
+  .public-dpak-primary,
+  .public-dpak-secondary {
+    flex: 1 1 0;
+  }
+}

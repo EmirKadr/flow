@@ -74,6 +74,8 @@ verksamheter.
 | `query_data.plan` | `POST` | `/api/query-data/plan` | Tolka datafråga med MiniMax |
 | `query_data.run` | `POST` | `/api/query-data/run` | Hämta data från extern datakälla |
 | `query_data.export` | `GET` | `/api/query-data/export/{session_id}` | Exportera datahämtning till Excel |
+| `public_dpak.status` | `GET` | `/api/public/dpak-chat/status` | Publik D-pak-chat status utan login |
+| `public_dpak.message` | `POST` | `/api/public/dpak-chat/message` | Publik D-pak-chat fråga utan login |
 | `allocation.health` | `GET` | `/api/allokering/health` | Lagerverktyg health |
 | `allocation.flows` | `GET` | `/api/allokering/flows` | Lista lagerverktygsflöden |
 | `allocation.pool` | `GET` | `/api/allokering/pool` | Lista lagerverktygens uppladdningsslots |

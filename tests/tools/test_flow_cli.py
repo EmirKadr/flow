@@ -80,7 +80,13 @@ def start_cli_test_server():
 
 def test_cli_route_registry_covers_every_fastapi_api_route():
     app_routes = set()
-    for route in app.routes:
+    pending = list(app.routes)
+    while pending:
+        route = pending.pop(0)
+        original_router = getattr(route, "original_router", None)
+        if original_router is not None:
+            pending.extend(getattr(original_router, "routes", []) or [])
+            continue
         if not isinstance(route, APIRoute):
             continue
         if not route.path.startswith("/api/"):
