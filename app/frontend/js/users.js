@@ -1,3 +1,8 @@
+// @ts-check
+// Sidans script körs i en IIFE så toppnivånamn (currentUser, areas, ...)
+// inte kolliderar med andra sidors i TS globala scope. Ingen "use strict"
+// — semantiken ska vara exakt densamma som före inpackningen.
+(function () {
 let currentUser = null;
 let users = [];
 let areas = [];
@@ -257,7 +262,7 @@ async function loadUsers() {
 async function loadSettings() {
   if (!canViewPage(currentUser, "appSettings")) return;
   appSettings = await api.get("/api/settings");
-  document.getElementById("lock-foreign-schedule-cells").checked = !!appSettings.lock_foreign_schedule_cells;
+  /** @type {HTMLInputElement} */ (document.getElementById("lock-foreign-schedule-cells")).checked = !!appSettings.lock_foreign_schedule_cells;
 }
 
 async function loadRoleViewAccess() {
@@ -278,21 +283,21 @@ function setupSettingsControls() {
   const checkbox = document.getElementById("lock-foreign-schedule-cells");
   const wrapper = checkbox.closest(".controls-checkbox");
   if (!canViewPage(currentUser, "appSettings")) {
-    if (wrapper) wrapper.hidden = true;
+    if (wrapper) /** @type {HTMLElement} */ (wrapper).hidden = true;
     return;
   }
-  checkbox.disabled = !canEditPage(currentUser, "appSettings");
+  /** @type {HTMLInputElement} */ (checkbox).disabled = !canEditPage(currentUser, "appSettings");
   if (!canEditPage(currentUser, "appSettings")) return;
   checkbox.addEventListener("change", async () => {
-    const previous = !checkbox.checked;
+    const previous = !/** @type {HTMLInputElement} */ (checkbox).checked;
     try {
       appSettings = await api.put("/api/settings", {
-        lock_foreign_schedule_cells: checkbox.checked,
+        lock_foreign_schedule_cells: /** @type {HTMLInputElement} */ (checkbox).checked,
       });
-      checkbox.checked = !!appSettings.lock_foreign_schedule_cells;
+      /** @type {HTMLInputElement} */ (checkbox).checked = !!appSettings.lock_foreign_schedule_cells;
       showToast("Inställning sparad", "success", 2000);
     } catch (error) {
-      checkbox.checked = previous;
+      /** @type {HTMLInputElement} */ (checkbox).checked = previous;
       showToast(error.message, "error");
     }
   });
@@ -393,11 +398,11 @@ async function openRoleAccessModal() {
   });
   backdrop.querySelector("#role-access-save").addEventListener("click", async () => {
     const saveButton = backdrop.querySelector("#role-access-save");
-    saveButton.disabled = true;
+    /** @type {HTMLInputElement} */ (saveButton).disabled = true;
     const next = roleViewDefaultAccess();
     tableHost.querySelectorAll(".role-access-toggle[data-role][data-view]").forEach((button) => {
-      if (button.disabled) return;
-      next[button.dataset.role][button.dataset.view] = button.dataset.level || "none";
+      if (/** @type {HTMLInputElement} */ (button).disabled) return;
+      next[/** @type {HTMLElement} */ (button).dataset.role][/** @type {HTMLElement} */ (button).dataset.view] = /** @type {HTMLElement} */ (button).dataset.level || "none";
     });
     try {
       const response = await api.put("/api/settings/role-access", { access: roleViewAccessPayload(next) });
@@ -406,7 +411,7 @@ async function openRoleAccessModal() {
       backdrop.remove();
       showToast("Vybehörigheter sparades.", "success", 2500);
     } catch (error) {
-      saveButton.disabled = false;
+      /** @type {HTMLInputElement} */ (saveButton).disabled = false;
       showToast(error.message || "Kunde inte spara vybehörigheter.", "error", 7000);
     }
   });
@@ -444,11 +449,11 @@ function renderUsers() {
 
   if (!canEditUsers) return;
   tbody.querySelectorAll("button[data-edit]").forEach((button) =>
-    button.addEventListener("click", () => openModal(users.find((user) => user.id === Number(button.dataset.edit))))
+    button.addEventListener("click", () => openModal(users.find((user) => user.id === Number(/** @type {HTMLElement} */ (button).dataset.edit))))
   );
   tbody.querySelectorAll("button[data-delete]").forEach((button) =>
     button.addEventListener("click", async () => {
-      const user = users.find((item) => item.id === Number(button.dataset.delete));
+      const user = users.find((item) => item.id === Number(/** @type {HTMLElement} */ (button).dataset.delete));
       if (!user) return;
       if (!confirm("Ta bort användaren permanent?")) return;
       try {
@@ -497,23 +502,23 @@ function openModal(user) {
 
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
-    const password = document.getElementById("m-password").value;
+    const password = /** @type {HTMLInputElement} */ (document.getElementById("m-password")).value;
     const roleSelect = document.getElementById("m-role");
-    const checkedRoles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => input.value);
+    const checkedRoles = Array.from(document.querySelectorAll('input[name="m-role"]:checked')).map((input) => /** @type {HTMLInputElement} */ (input).value);
     const roles = roleSelect
-      ? (roleSelect.value ? [roleSelect.value] : [])
+      ? (/** @type {HTMLInputElement} */ (roleSelect).value ? [/** @type {HTMLInputElement} */ (roleSelect).value] : [])
       : ((!currentUser?.is_super_user && selectedRoles.includes("super_user") && !checkedRoles.includes("super_user"))
         ? [...checkedRoles, "super_user"]
         : checkedRoles);
     const payload = {
-      username: document.getElementById("m-username").value.trim(),
-      display_name: document.getElementById("m-display-name").value.trim() || null,
+      username: /** @type {HTMLInputElement} */ (document.getElementById("m-username")).value.trim(),
+      display_name: /** @type {HTMLInputElement} */ (document.getElementById("m-display-name")).value.trim() || null,
       role: primaryRoleFromRoles(roles),
       roles,
-      area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
+      area_id: /** @type {HTMLInputElement} */ (document.getElementById("m-area")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-area")).value) : null,
     };
     if (currentUser?.is_super_user) {
-      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+      payload.business_id = /** @type {HTMLInputElement} */ (document.getElementById("m-business")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-business")).value) : null;
     }
 
     if (!payload.username) {
@@ -599,7 +604,7 @@ async function importUserFile(file) {
   const formData = new FormData();
   formData.append("file", file);
   const importButton = document.getElementById("import-users");
-  importButton.disabled = true;
+  /** @type {HTMLInputElement} */ (importButton).disabled = true;
   try {
     const result = await api.postForm("/api/users/import", formData);
     showImportResult(result);
@@ -607,7 +612,7 @@ async function importUserFile(file) {
   } catch (error) {
     showToast(error.message, "error", 7000);
   } finally {
-    importButton.disabled = false;
+    /** @type {HTMLInputElement} */ (importButton).disabled = false;
   }
 }
 
@@ -670,8 +675,8 @@ function setupImportControls() {
     });
     importButton.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", async () => {
-      const file = fileInput.files?.[0];
-      fileInput.value = "";
+      const file = /** @type {HTMLInputElement} */ (fileInput).files?.[0];
+      /** @type {HTMLInputElement} */ (fileInput).value = "";
       if (!file) return;
       await importUserFile(file);
     });
@@ -698,4 +703,5 @@ function setupImportControls() {
   await loadUsers();
   if (canEditPage(currentUser, "users")) newUserButton.addEventListener("click", () => openModal(null));
   window.addEventListener("flow:areaFocusChanged", renderUsers);
+})();
 })();

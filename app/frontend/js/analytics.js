@@ -1,3 +1,8 @@
+// @ts-check
+// Sidans script körs i en IIFE så toppnivånamn (currentUser, areas, ...)
+// inte kolliderar med andra sidors i TS globala scope. Ingen "use strict"
+// — semantiken ska vara exakt densamma som före inpackningen.
+(function () {
 let currentUser = null;
 let users = [];
 let persons = [];
@@ -318,23 +323,23 @@ function currentParams(limit = 200) {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
 
-  const period = document.getElementById("periodSelect").value;
+  const period = /** @type {HTMLInputElement} */ (document.getElementById("periodSelect")).value;
   const fromAt = periodStartIso(period);
   if (fromAt) params.set("from_at", fromAt);
 
-  const businessId = document.getElementById("businessFilter").value;
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
   if (businessId) params.set("business_id", businessId);
 
-  const userId = document.getElementById("userFilter").value;
+  const userId = /** @type {HTMLInputElement} */ (document.getElementById("userFilter")).value;
   if (userId) params.set("user_id", userId);
 
-  const entityType = document.getElementById("entityFilter").value.trim();
+  const entityType = /** @type {HTMLInputElement} */ (document.getElementById("entityFilter")).value.trim();
   if (entityType) params.set("entity_type", entityType);
 
-  const action = document.getElementById("actionFilter").value.trim();
+  const action = /** @type {HTMLInputElement} */ (document.getElementById("actionFilter")).value.trim();
   if (action) params.set("action", action);
 
-  const entityId = document.getElementById("entityIdFilter").value.trim();
+  const entityId = /** @type {HTMLInputElement} */ (document.getElementById("entityIdFilter")).value.trim();
   if (entityId) params.set("entity_id", entityId);
 
   return params;
@@ -395,12 +400,12 @@ function renderAuditRows(entries) {
 function setHistoryMode(mode) {
   currentHistoryMode = mode || "history";
   document.querySelectorAll("[data-history-mode]").forEach((button) => {
-    const active = button.dataset.historyMode === currentHistoryMode;
+    const active = /** @type {HTMLElement} */ (button).dataset.historyMode === currentHistoryMode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
   document.querySelectorAll("[data-history-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.historyPanel !== currentHistoryMode;
+    /** @type {HTMLElement} */ (panel).hidden = /** @type {HTMLElement} */ (panel).dataset.historyPanel !== currentHistoryMode;
   });
 }
 
@@ -458,13 +463,13 @@ function formatMs(value) {
 
 function waitMetricParams() {
   const params = new URLSearchParams();
-  params.set("period", document.getElementById("periodSelect").value || "24h");
+  params.set("period", /** @type {HTMLInputElement} */ (document.getElementById("periodSelect")).value || "24h");
   params.set("limit", "10000");
-  const businessId = document.getElementById("businessFilter").value;
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
   if (businessId) params.set("business_id", businessId);
-  const userId = document.getElementById("userFilter").value;
+  const userId = /** @type {HTMLInputElement} */ (document.getElementById("userFilter")).value;
   if (userId) params.set("user_id", userId);
-  const query = document.getElementById("actionFilter").value.trim();
+  const query = /** @type {HTMLInputElement} */ (document.getElementById("actionFilter")).value.trim();
   if (query) params.set("q", query);
   return params;
 }
@@ -482,24 +487,24 @@ function renderBucketsIfPresent(bodyId, buckets) {
 function interactionParams(limit = 5000) {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
-  const period = document.getElementById("periodSelect").value;
+  const period = /** @type {HTMLInputElement} */ (document.getElementById("periodSelect")).value;
   const fromAt = periodStartIso(period);
   if (fromAt) params.set("from_at", fromAt);
-  const businessId = document.getElementById("businessFilter").value;
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
   if (businessId) params.set("business_id", businessId);
-  const userId = document.getElementById("userFilter").value;
+  const userId = /** @type {HTMLInputElement} */ (document.getElementById("userFilter")).value;
   if (userId) params.set("user_id", userId);
-  const query = document.getElementById("actionFilter").value.trim();
+  const query = /** @type {HTMLInputElement} */ (document.getElementById("actionFilter")).value.trim();
   if (query) params.set("q", query);
   return params;
 }
 
 function interactionCoverageParams() {
   const params = new URLSearchParams();
-  params.set("period", document.getElementById("periodSelect").value || "30d");
-  const businessId = document.getElementById("businessFilter").value;
+  params.set("period", /** @type {HTMLInputElement} */ (document.getElementById("periodSelect")).value || "30d");
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
   if (businessId) params.set("business_id", businessId);
-  const userId = document.getElementById("userFilter").value;
+  const userId = /** @type {HTMLInputElement} */ (document.getElementById("userFilter")).value;
   if (userId) params.set("user_id", userId);
   return params;
 }
@@ -564,12 +569,12 @@ function renderTrackingDashboards(summary = {}, coverage = {}, entries = []) {
 }
 
 function trackingChatPayload(question) {
-  const businessId = document.getElementById("businessFilter").value;
-  const userId = document.getElementById("userFilter").value;
-  const query = document.getElementById("actionFilter").value.trim();
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
+  const userId = /** @type {HTMLInputElement} */ (document.getElementById("userFilter")).value;
+  const query = /** @type {HTMLInputElement} */ (document.getElementById("actionFilter")).value.trim();
   return {
     question,
-    period: document.getElementById("periodSelect").value || "30d",
+    period: /** @type {HTMLInputElement} */ (document.getElementById("periodSelect")).value || "30d",
     business_id: businessId ? Number(businessId) : null,
     user_id: userId ? Number(userId) : null,
     q: query || null,
@@ -580,7 +585,7 @@ async function submitTrackingChat(event) {
   event.preventDefault();
   const input = document.getElementById("historyTrackingQuestion");
   const answer = document.getElementById("historyTrackingChatAnswer");
-  const question = input.value.trim();
+  const question = /** @type {HTMLInputElement} */ (input).value.trim();
   if (!question) {
     answer.textContent = "Skriv en fraga om historiken forst.";
     return;
@@ -595,7 +600,7 @@ async function submitTrackingChat(event) {
 }
 
 async function clearTrackingChat() {
-  document.getElementById("historyTrackingQuestion").value = "";
+  /** @type {HTMLInputElement} */ (document.getElementById("historyTrackingQuestion")).value = "";
   document.getElementById("historyTrackingChatAnswer").textContent = "Ingen fraga skickad.";
   try {
     await api.post("/api/audit/interactions/chat/clear", {});
@@ -737,8 +742,8 @@ async function loadHealthReport(force = false) {
 
 function fillUserFilter() {
   const select = document.getElementById("userFilter");
-  const selected = select.value;
-  const businessId = document.getElementById("businessFilter").value;
+  const selected = /** @type {HTMLInputElement} */ (select).value;
+  const businessId = /** @type {HTMLInputElement} */ (document.getElementById("businessFilter")).value;
   const visibleUsers = businessId
     ? users.filter((user) => Number(user.business_id) === Number(businessId))
     : users;
@@ -750,7 +755,7 @@ function fillUserFilter() {
     select.appendChild(option);
   });
   if (selected && visibleUsers.some((user) => String(user.id) === selected)) {
-    select.value = selected;
+    /** @type {HTMLInputElement} */ (select).value = selected;
   }
 }
 
@@ -819,7 +824,7 @@ async function refreshAnalytics() {
   document.getElementById("historyTrackingChatClear")?.addEventListener("click", clearTrackingChat);
   document.querySelectorAll("[data-history-mode]").forEach((button) => {
     button.addEventListener("click", () => {
-      setHistoryMode(button.dataset.historyMode);
+      setHistoryMode(/** @type {HTMLElement} */ (button).dataset.historyMode);
       void refreshAnalytics();
     });
   });
@@ -835,4 +840,9 @@ async function refreshAnalytics() {
       if (event.key === "Enter") void refreshAnalytics();
     });
   });
+})();
+// Exponeras globalt: browsertesterna (och felsökning i konsolen) byter
+// Historik-läge via setHistoryMode.
+window.setHistoryMode = setHistoryMode;
+window.submitTrackingChat = submitTrackingChat;
 })();

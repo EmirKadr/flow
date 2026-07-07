@@ -1,3 +1,8 @@
+// @ts-check
+// Sidans script körs i en IIFE så toppnivånamn (currentUser, areas, ...)
+// inte kolliderar med andra sidors i TS globala scope. Ingen "use strict"
+// — semantiken ska vara exakt densamma som före inpackningen.
+(function () {
 let businesses = [];
 let areas = [];
 let allAreas = [];
@@ -12,7 +17,7 @@ function escapeHtml(value) {
 }
 
 function includeInactive() {
-  return Boolean(document.getElementById("show-inactive")?.checked);
+  return Boolean(/** @type {HTMLInputElement} */ (document.getElementById("show-inactive"))?.checked);
 }
 
 function isAllAreasMarker(area) {
@@ -83,7 +88,7 @@ function sortButton(label, key, state, scope) {
 
 function updateBusinessSortHeader() {
   document.querySelectorAll("[data-business-sort]").forEach((button) => {
-    const key = button.dataset.businessSort;
+    const key = /** @type {HTMLElement} */ (button).dataset.businessSort;
     button.closest("th")?.setAttribute(
       "aria-sort",
       businessSort.key === key ? (businessSort.direction === "asc" ? "ascending" : "descending") : "none"
@@ -525,18 +530,18 @@ function openBusinessModal() {
     let companyCodes = [];
     let tenant = "";
     try {
-      companyCodes = normalizeCompanyCodes(document.getElementById("m-company-codes").value);
-      tenant = normalizeTenant(document.getElementById("m-tenant").value);
+      companyCodes = normalizeCompanyCodes(/** @type {HTMLInputElement} */ (document.getElementById("m-company-codes")).value);
+      tenant = normalizeTenant(/** @type {HTMLInputElement} */ (document.getElementById("m-tenant")).value);
     } catch (error) {
       showToast(error.message || "Bolag eller tenant kunde inte tolkas.", "warn", 3000);
       return;
     }
     const payload = {
-      name: document.getElementById("m-name").value.trim(),
+      name: /** @type {HTMLInputElement} */ (document.getElementById("m-name")).value.trim(),
       company_codes: companyCodes,
       tenant: tenant || null,
-      sort_order: Number(document.getElementById("m-sort").value) || 0,
-      is_active: document.getElementById("m-active").checked,
+      sort_order: Number(/** @type {HTMLInputElement} */ (document.getElementById("m-sort")).value) || 0,
+      is_active: /** @type {HTMLInputElement} */ (document.getElementById("m-active")).checked,
     };
     if (!payload.name) {
       showToast("Namn krävs.", "warn", 3000);
@@ -574,9 +579,9 @@ function openAreaModal(business) {
   backdrop.querySelector("#area-save").addEventListener("click", async () => {
     const payload = {
       business_id: Number(business.id),
-      name: document.getElementById("m-area-name").value.trim(),
-      sort_order: Number(document.getElementById("m-area-sort").value) || 0,
-      is_active: document.getElementById("m-area-active").checked,
+      name: /** @type {HTMLInputElement} */ (document.getElementById("m-area-name")).value.trim(),
+      sort_order: Number(/** @type {HTMLInputElement} */ (document.getElementById("m-area-sort")).value) || 0,
+      is_active: /** @type {HTMLInputElement} */ (document.getElementById("m-area-active")).checked,
     };
     if (!payload.name) {
       showToast("Namn krävs.", "warn", 3000);
@@ -602,10 +607,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.querySelectorAll("[data-business-sort]").forEach((button) => {
     button.addEventListener("click", () => {
-      toggleSort(businessSort, button.dataset.businessSort);
+      toggleSort(businessSort, /** @type {HTMLElement} */ (button).dataset.businessSort);
       renderBusinesses();
     });
   });
   updateBusinessSortHeader();
   await loadBusinesses();
 });
+})();

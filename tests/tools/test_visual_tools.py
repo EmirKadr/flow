@@ -1856,7 +1856,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "ROLE_ACCESS_LEVEL_ORDER" in users_js
     assert "roleAccessToggle" in users_js
     assert 'role.lockedLevel || ""' in users_js
-    assert "if (button.disabled) return;" in users_js
+    assert "if (/** @type {HTMLInputElement} */ (button).disabled) return;" in users_js
     assert "nextRoleAccessLevel" in users_js
     assert "select[data-role][data-view]" not in users_js
 
@@ -1887,7 +1887,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert "kpi_process_name" in activities_js
     assert "activityWorkTypeLabel" in activities_js
     assert "syncWorkTypeState" in activities_js
-    assert "workTypeSelect.disabled = isAbsence" in activities_js
+    assert "(workTypeSelect).disabled = isAbsence" in activities_js
     assert "work_type: category === \"absence\" ? \"normal\"" in activities_js
     assert "KPI Mål ska bara vara processnamn, utan bolag" in activities_js
     assert 'api.download("/api/activities/import-template", "aktiviteter-importmall.xlsx")' in activities_js
@@ -1908,7 +1908,7 @@ def test_new_user_creation_uses_single_role_select_but_edit_keeps_multiple_roles
     assert "function roleFieldHtml" in users
     assert '<label>Roll</label>' in users
     assert 'id="m-role"' in users
-    assert "roleSelect.value ? [roleSelect.value] : []" in users
+    assert "(roleSelect).value ? [/** @type {HTMLInputElement} */ (roleSelect).value] : []" in users
     assert 'showToast(isEdit ? "Välj minst en roll" : "Välj en roll", "error")' in users
     assert '<label>Roller</label>' in users
     assert 'type="checkbox" name="m-role"' in users

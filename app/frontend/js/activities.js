@@ -1,3 +1,8 @@
+// @ts-check
+// Sidans script körs i en IIFE så toppnivånamn (currentUser, areas, ...)
+// inte kolliderar med andra sidors i TS globala scope. Ingen "use strict"
+// — semantiken ska vara exakt densamma som före inpackningen.
+(function () {
 // Aktivitetsregister - CRUD av aktiviteter.
 
 let areas = [];
@@ -114,14 +119,14 @@ function kpiProcessPickerHtml(value) {
 }
 
 function selectedKpiProcessNames(root = document) {
-  return Array.from(root.querySelectorAll("[data-kpi-process]:checked")).map((input) => input.value.trim()).filter(Boolean);
+  return Array.from(root.querySelectorAll("[data-kpi-process]:checked")).map((input) => /** @type {HTMLInputElement} */ (input).value.trim()).filter(Boolean);
 }
 
 function syncKpiProcessPicker(root = document) {
   const hidden = root.getElementById ? root.getElementById("m-kpi-process-name") : root.querySelector("#m-kpi-process-name");
   const summary = root.getElementById ? root.getElementById("m-kpi-process-summary") : root.querySelector("#m-kpi-process-summary");
   const values = selectedKpiProcessNames(root);
-  if (hidden) hidden.value = values.join(", ");
+  if (hidden) /** @type {HTMLInputElement} */ (hidden).value = values.join(", ");
   if (summary) summary.textContent = kpiProcessSummary(values);
 }
 
@@ -228,12 +233,12 @@ function render() {
 
   if (!canEditActivities) return;
   tbody.querySelectorAll("button[data-edit]").forEach((b) =>
-    b.addEventListener("click", () => openModal(acts.find((x) => x.id === Number(b.dataset.edit))))
+    b.addEventListener("click", () => openModal(acts.find((x) => x.id === Number(/** @type {HTMLElement} */ (b).dataset.edit))))
   );
   tbody.querySelectorAll("button[data-delete]").forEach((b) =>
     b.addEventListener("click", async () => {
       if (!confirm("Ta bort aktiviteten permanent?")) return;
-      try { await api.del(`/api/activities/${b.dataset.delete}`); load(); }
+      try { await api.del(`/api/activities/${/** @type {HTMLElement} */ (b).dataset.delete}`); load(); }
       catch (e) { showToast(e.message, "error"); }
     })
   );
@@ -294,9 +299,9 @@ function openModal(act) {
   const categorySelect = document.getElementById("m-cat");
   const workTypeSelect = document.getElementById("m-work-type");
   const syncWorkTypeState = () => {
-    const isAbsence = categorySelect.value === "absence";
-    if (isAbsence) workTypeSelect.value = "normal";
-    workTypeSelect.disabled = isAbsence;
+    const isAbsence = /** @type {HTMLInputElement} */ (categorySelect).value === "absence";
+    if (isAbsence) /** @type {HTMLInputElement} */ (workTypeSelect).value = "normal";
+    /** @type {HTMLInputElement} */ (workTypeSelect).disabled = isAbsence;
   };
   categorySelect.addEventListener("change", syncWorkTypeState);
   syncWorkTypeState();
@@ -304,19 +309,19 @@ function openModal(act) {
 
   document.getElementById("m-cancel").addEventListener("click", () => backdrop.remove());
   document.getElementById("m-save").addEventListener("click", async () => {
-    const category = categorySelect.value;
+    const category = /** @type {HTMLInputElement} */ (categorySelect).value;
     const payload = {
-      label: document.getElementById("m-label").value.trim(),
-      area_id: document.getElementById("m-area").value ? Number(document.getElementById("m-area").value) : null,
-      summary_activity_id: document.getElementById("m-summary").value ? Number(document.getElementById("m-summary").value) : null,
-      kpi_process_name: document.getElementById("m-kpi-process-name").value.trim() || null,
-      color: document.getElementById("m-color").value,
+      label: /** @type {HTMLInputElement} */ (document.getElementById("m-label")).value.trim(),
+      area_id: /** @type {HTMLInputElement} */ (document.getElementById("m-area")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-area")).value) : null,
+      summary_activity_id: /** @type {HTMLInputElement} */ (document.getElementById("m-summary")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-summary")).value) : null,
+      kpi_process_name: /** @type {HTMLInputElement} */ (document.getElementById("m-kpi-process-name")).value.trim() || null,
+      color: /** @type {HTMLInputElement} */ (document.getElementById("m-color")).value,
       category,
-      work_type: category === "absence" ? "normal" : workTypeSelect.value,
-      sort_order: Number(document.getElementById("m-sort").value) || 0,
+      work_type: category === "absence" ? "normal" : /** @type {HTMLInputElement} */ (workTypeSelect).value,
+      sort_order: Number(/** @type {HTMLInputElement} */ (document.getElementById("m-sort")).value) || 0,
     };
     if (currentUser?.is_super_user && !isEdit) {
-      payload.business_id = document.getElementById("m-business").value ? Number(document.getElementById("m-business").value) : null;
+      payload.business_id = /** @type {HTMLInputElement} */ (document.getElementById("m-business")).value ? Number(/** @type {HTMLInputElement} */ (document.getElementById("m-business")).value) : null;
     }
 
     if (!payload.label) {
@@ -395,7 +400,7 @@ async function importActivityFile(file) {
   const formData = new FormData();
   formData.append("file", file);
   const importButton = document.getElementById("import-activities");
-  importButton.disabled = true;
+  /** @type {HTMLInputElement} */ (importButton).disabled = true;
   try {
     const result = await api.postForm("/api/activities/import", formData);
     showImportResult(result);
@@ -403,7 +408,7 @@ async function importActivityFile(file) {
   } catch (error) {
     showToast(error.message, "error", 7000);
   } finally {
-    importButton.disabled = false;
+    /** @type {HTMLInputElement} */ (importButton).disabled = false;
   }
 }
 
@@ -457,8 +462,8 @@ function setupImportControls() {
   });
   importButton.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = "";
+    const file = /** @type {HTMLInputElement} */ (fileInput).files?.[0];
+    /** @type {HTMLInputElement} */ (fileInput).value = "";
     if (!file) return;
     await importActivityFile(file);
   });
@@ -492,4 +497,5 @@ async function loadKpiProcessOptions() {
   // Områdesfokus filtrerar bara redan hämtade aktiviteter – rendera om klientside
   // istället för att hämta /api/activities på nytt (samma data).
   window.addEventListener("flow:areaFocusChanged", () => render());
+})();
 })();

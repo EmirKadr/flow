@@ -1,3 +1,8 @@
+// @ts-check
+// Sidans script körs i en IIFE så toppnivånamn (currentUser, areas, ...)
+// inte kolliderar med andra sidors i TS globala scope. Ingen "use strict"
+// — semantiken ska vara exakt densamma som före inpackningen.
+(function () {
 let metaItems = [];
 let shipmentItems = [];
 let currentUser = null;
@@ -236,19 +241,19 @@ function filteredShipmentItems() {
 function updateExportButtons(visibleItems) {
   const exportFiltered = document.getElementById("metaExportFiltered");
   const exportAll = document.getElementById("metaExportAll");
-  if (exportFiltered) exportFiltered.disabled = !visibleItems.length;
-  if (exportAll) exportAll.disabled = !shipmentItems.length;
+  if (exportFiltered) /** @type {HTMLInputElement} */ (exportFiltered).disabled = !visibleItems.length;
+  if (exportAll) /** @type {HTMLInputElement} */ (exportAll).disabled = !shipmentItems.length;
 }
 
 function renderSortIndicators() {
   document.querySelectorAll("[data-sort-key]").forEach((button) => {
-    if (!button.dataset.sortLabel) button.dataset.sortLabel = button.textContent.trim();
-    const active = button.dataset.sortKey === metaSortState.key;
+    if (!/** @type {HTMLElement} */ (button).dataset.sortLabel) /** @type {HTMLElement} */ (button).dataset.sortLabel = button.textContent.trim();
+    const active = /** @type {HTMLElement} */ (button).dataset.sortKey === metaSortState.key;
     button.classList.toggle("active", active);
     button.textContent = active
-      ? `${button.dataset.sortLabel} ${metaSortState.direction === "asc" ? "↑" : "↓"}`
-      : button.dataset.sortLabel;
-    button.setAttribute("aria-label", active ? `${button.dataset.sortLabel}, sorterad` : `Sortera på ${button.dataset.sortLabel}`);
+      ? `${/** @type {HTMLElement} */ (button).dataset.sortLabel} ${metaSortState.direction === "asc" ? "↑" : "↓"}`
+      : /** @type {HTMLElement} */ (button).dataset.sortLabel;
+    button.setAttribute("aria-label", active ? `${/** @type {HTMLElement} */ (button).dataset.sortLabel}, sorterad` : `Sortera på ${/** @type {HTMLElement} */ (button).dataset.sortLabel}`);
   });
 }
 
@@ -318,19 +323,19 @@ function renderShipmentRows() {
 
   tbody.querySelectorAll("[data-download-shipment-video]").forEach((button) => {
     button.addEventListener("click", () => {
-      const item = shipmentItems.find((entry) => Number(entry.id) === Number(button.dataset.downloadShipmentVideo));
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentVideo));
       void downloadShipmentMedia(item, "video", button);
     });
   });
   tbody.querySelectorAll("[data-download-shipment-label]").forEach((button) => {
     button.addEventListener("click", () => {
-      const item = shipmentItems.find((entry) => Number(entry.id) === Number(button.dataset.downloadShipmentLabel));
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentLabel));
       void downloadShipmentMedia(item, "label", button);
     });
   });
   tbody.querySelectorAll("[data-analyze-upload]").forEach((button) => {
     button.addEventListener("click", () => {
-      const item = shipmentItems.find((entry) => Number(entry.id) === Number(button.dataset.analyzeUpload));
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.analyzeUpload));
       void analyzeShipmentVideo(item, button);
     });
   });
@@ -384,12 +389,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("metaRefresh").addEventListener("click", () => loadMetaItems(true));
   document.getElementById("metaSearch").addEventListener("input", (event) => {
-    metaSearchTerm = event.target.value || "";
+    metaSearchTerm = (event.target instanceof HTMLInputElement ? event.target.value : "") || "";
     renderShipmentRows();
   });
   document.querySelectorAll("[data-sort-key]").forEach((button) => {
     button.addEventListener("click", () => {
-      const key = button.dataset.sortKey;
+      const key = /** @type {HTMLElement} */ (button).dataset.sortKey;
       if (metaSortState.key === key) {
         metaSortState = { key, direction: metaSortState.direction === "asc" ? "desc" : "asc" };
       } else {
@@ -406,3 +411,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   await loadMetaItems();
 });
+})();

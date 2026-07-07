@@ -51,6 +51,9 @@ interface Window {
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
   // Sidspecifika prefetch-krokar (definieras av respektive domän-boot).
   preloadAllocationUploadsData?: () => void;
+  // Historik-sidans testkrokar (analytics.js kör i IIFE och exponerar dessa).
+  setHistoryMode?: (mode: string) => void;
+  submitTrackingChat?: (question: string) => Promise<void> | void;
   // Etiketteditorns symbolkatalog, streckkoder och ritverktyg (label_editor/).
   FlowLabelSymbols?: any;
   FlowLabelBarcodes?: any;
