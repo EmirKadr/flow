@@ -590,17 +590,15 @@ class InteractiveRun:
         self.page.wait_for_timeout(700)
         self.record("history_filter", screenshot=self.screenshot("24-history-filtered"))
 
-    def open_role_access_modal(self) -> None:
-        self.goto("/anvandare.html", "#users-body")
-        self.page.click("#role-view-access")
-        self.page.wait_for_selector("#role-access-table .role-access-toggle", timeout=15000)
+    def open_role_access_panel(self) -> None:
+        self.goto("/installningar.html?tab=role-access", "#role-access-table .role-access-toggle")
 
-    def assert_role_access_modal_uses_canonical_labels(self) -> None:
-        text = self.page.locator(".role-access-modal").inner_text(timeout=15000)
+    def assert_role_access_panel_uses_canonical_labels(self) -> None:
+        text = self.page.locator(".role-access-panel").inner_text(timeout=15000)
         for expected in role_access_required_terms():
             if expected not in text:
-                raise AssertionError(f"Role access modal is missing {expected}")
-        assert_no_forbidden_terms_in_text(text, context="role access modal")
+                raise AssertionError(f"Role access panel is missing {expected}")
+        assert_no_forbidden_terms_in_text(text, context="role access panel")
 
     def role_access_toggle(self, role: str, view_id: str):
         return self.page.locator(f'.role-access-toggle[data-role="{role}"][data-view="{view_id}"]')
@@ -626,19 +624,19 @@ class InteractiveRun:
         actual = toggle.get_attribute("data-level")
         raise AssertionError(f"Could not set {role}/{view_id} to {level}; current level is {actual}")
 
-    def save_role_access_modal(self) -> None:
+    def save_role_access_panel(self) -> None:
         self.click_and_expect_api("#role-access-save", "/api/settings/role-access", "PUT")
-        self.page.wait_for_selector(".modal-backdrop", state="detached", timeout=15000)
+        self.page.wait_for_timeout(300)
 
     def restore_role_access_defaults(self) -> None:
-        self.open_role_access_modal()
+        self.open_role_access_panel()
         self.page.click("#role-access-defaults")
-        self.save_role_access_modal()
+        self.save_role_access_panel()
         self.record("role_access_defaults_restored", screenshot=self.screenshot("25-role-access-defaults-restored"))
 
     def exercise_role_access_settings(self) -> None:
-        self.open_role_access_modal()
-        self.assert_role_access_modal_uses_canonical_labels()
+        self.open_role_access_panel()
+        self.assert_role_access_panel_uses_canonical_labels()
         self.page.click("#role-access-defaults")
         self.assert_role_access_state("viewer", "persons", "none", "Ingen")
         self.role_access_toggle("viewer", "persons").click()
@@ -650,7 +648,7 @@ class InteractiveRun:
         self.record("role_access_click_cycle", screenshot=self.screenshot("25-role-access-click-cycle"))
 
         self.set_role_access_level("viewer", "persons", "view")
-        self.save_role_access_modal()
+        self.save_role_access_panel()
         self.logout()
         self.login("visual_viewer", visual_smoke.VISUAL_PASSWORD)
         self.page.goto(self.url("/personer.html"), wait_until="networkidle")
@@ -667,9 +665,9 @@ class InteractiveRun:
 
         self.logout()
         self.login("admin", "admin123")
-        self.open_role_access_modal()
+        self.open_role_access_panel()
         self.set_role_access_level("viewer", "persons", "edit")
-        self.save_role_access_modal()
+        self.save_role_access_panel()
         self.logout()
         self.login("visual_viewer", visual_smoke.VISUAL_PASSWORD)
         self.page.goto(self.url("/personer.html"), wait_until="networkidle")
@@ -686,9 +684,9 @@ class InteractiveRun:
 
         self.logout()
         self.login("admin", "admin123")
-        self.open_role_access_modal()
+        self.open_role_access_panel()
         self.set_role_access_level("viewer", "persons", "none")
-        self.save_role_access_modal()
+        self.save_role_access_panel()
         self.logout()
         self.login("visual_viewer", visual_smoke.VISUAL_PASSWORD)
         self.page.goto(self.url("/personer.html"), wait_until="networkidle")

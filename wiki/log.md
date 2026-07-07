@@ -2742,3 +2742,115 @@ Nattplanens slutförande (feature/nightly-quality-20260706, Emirs godkännanden)
 - **UX/a11y**: tomma lägen i Personer/Användare/Aktiviteter, global
   Escape-stängning av modaler (klickar modalens egen Avbryt-knapp),
   mobiloverflow 96-723px på 13 sidor fixad med en scrollregel i main.
+
+## [2026-07-07] bygge | Buggrapporter: Ta bort + Att göra-status + agent-påminnelse
+
+Emirs önskemål efter första skarpa testet på flow-development:
+
+- **Ta bort**: ny `DELETE /api/bug-reports/{id}` (bugReports edit, scopad,
+  auditrad `bug_report`/`delete` utan inspelningsinnehåll). Ta bort-knapp
+  per rad och i detaljpanelen, bekräftelsemodal enligt dialogregeln
+  (Escape via Avbryt-knappen).
+- **Status i vyn**: dropdown per rad + detaljknappar; `seen` omdöpt i UI
+  till "Att göra" (DB-värden oförändrade new/seen/done).
+- **Agent-påminnelse**: nytt verktyg `tools.bug_reports_status` (best
+  effort, healthcheck-cookiejar, mjuk exit utan inloggning) + AGENTS.md-
+  regel: påminn Emir om öppna buggrapporter vid arbetsstart i repot.
+- Tester: delete-kontrakt (behörighet, audit, 404), summarize/soft-exit
+  för verktyget, browsertestet utökat med statusdropdown + ta bort-flödet
+  (kört grönt lokalt). API-typer regenererade.
+
+## [2026-07-07] bygge | Fokustogglar: vertikal stapling + verksamhetsfilter vid ∞-områden
+
+Emirs önskemål: togglarna i sidebar-footern var horisontella med öppen
+sidebar (nu staplade vertikalt, som i ihopfällt läge), och verksamhets-
+togglen filtrerade inte när områdesfokus stod på ∞.
+
+- **Filterregeln**: vald verksamhet + ∞ områden = bara den verksamheten;
+  ∞ + ∞ = allt. Nya helpers `areaFocusListParams` (Personer skickar
+  business_id serverledes; Översikt vecko-/månads-URL:er + revision) och
+  `matchesAreaFocusBusiness` (aktiviteter/användare/personalvyer klient-
+  ledes). Översiktens cache-nycklar inkluderar verksamhetsfokus så
+  toggle-byte aldrig målar cachat data från fel verksamhet.
+- **Omhämtning**: writeBusinessFocus skickar alltid flow:areaFocusChanged
+  (tidigare bara när områdesfokus ändrades) så alla vyer laddar om vid
+  verksamhetsbyte.
+- Kontrakt: tests/tools/test_area_focus_business_filter.py (JS-harness,
+  6 tester). Backend oförändrad — alla endpoints tog redan business_id.
+
+## [2026-07-07] bygge | Etiketter: namngivna storleksprofiler, etikettprofiler + copy/paste-feedback
+
+Emirs önskemål i Etiketter-vyn:
+
+- **Namn på etikettstorlekar**: `Spara` i måttpanelen frågar nu efter namn
+  (måttet, t.ex. `104 x 200 mm`, är förslag) i stället för att alltid döpa
+  profilen till måttet.
+- **Etikettprofiler**: ny panelsektion som sparar hela etiketten (mått +
+  alla objekt) lokalt i `flow-label-editor-designs-v1` via nya
+  `label_editor/designs.js` (max 20, sanering vid läsning, quota-fel ger
+  synlig loggrad). Ladda via dropdown (ångringsbart med Ctrl+Z), ta bort
+  med bekräftelse.
+- **"Kopierade en Code128 men inget hände"**: Ctrl+C/X utan markerat objekt
+  och Ctrl+V utan internt kopierat objekt var helt tysta – nu skriver de en
+  hjälprad i dokumentloggen. Trolig orsak till buggen: Ctrl+C med fokus i
+  Värde-textarean kopierar text, inte objektet.
+
+Tester: kontraktstest utökat (designs.js, nya id:n, promptar, hjälprader),
+nytt browsertest spara/ladda/ångra/ta bort etikettprofil + namnprompt för
+storleksprofil (kört grönt lokalt). Desktop = samma frontend via QWebEngine
+(prompt/confirm stöds) så pariteten håller.
+
+## [2026-07-07] bygge | Buggrapporter: sidbytesräddning + navigeringsvarning
+
+Emirs fråga "du sa att jag inte kunde byta sida under inspelning" — luckan
+är täppt (alternativ 1+2; cross-page-inspelning väntar till beslutsdatumet):
+
+- **Räddning**: pagehide sparar events+kontext i sessionStorage
+  (flow-bug-report-salvage, 5 min TTL, per flik); sidebar.js eagerladdar
+  bug_report.js vid nästa sidladdning som skickar rapporten märkt
+  "(inspelningen avbröts av sidbyte)". sendBeacon/keepalive valdes bort
+  (64 kB-tak < inspelningsstorlek).
+- **Varning**: länk-klick under inspelning fångas i capture-fas och ger
+  modal "Stanna kvar"/"Byt sida och skicka" (Escape via Avbryt-mönstret).
+- Browsertest: test_page_navigation_salvages_recording (grönt lokalt).
+
+## [2026-07-07] bygge | Buggrapporter: inspelningen fortsätter över sidbyten (alt 3)
+
+Emirs beslut: hoppa direkt på cross-page-inspelning i stället för
+räddningsflödet (som blev en mellanlandning samma dag, aldrig deployad):
+
+- pagehide sparar segmentet i sessionStorage (flow-bug-report-session);
+  nästa sida återupptar inspelningen med ny full snapshot och nedräkningen
+  fortsätter där den var. EN rapport med "scenbyte" per sida —
+  rrweb-Replayer hanterar flera fulla snapshots i samma ström.
+- Varningsmodalen vid navigering togs bort (sidbyten är nu naturliga);
+  consent-texten säger att inspelningen fortsätter över sidbyten.
+- Deadline som passeras under sidbytet ⇒ det inspelade skickas direkt.
+- Browsertest: test_recording_continues_across_page_navigation verifierar
+  indikator + isRecording på sida 2 och ≥2 fulla snapshots i rapporten.
+
+## [2026-07-07] bygge | Vybehörigheter flyttad från Användare till Inställningar
+
+Emirs önskemål: rollmatrisen (roll × vy, Ingen/Visa/Redigera) skulle ligga
+under Inställningar i stället för som knapp/modal i Användare.
+
+- **Ny delad modul** `js/common/role_access.js` (`window.flowRoleAccess.
+  renderRoleAccessPanel`) med matris-render, registry-laddning, toggle-cykling
+  och spara/standard. Laddas i `installningar.html`.
+- **Ny flik** `Vybehörigheter` i `allocation/settings_view.js`
+  (`?tab=role-access`), gated på `canViewPage(user,"roleAccess")`; `view` ger
+  låst matris, `edit` får spara. `boot.js` lade `roleAccess` i
+  settings-sidans `anyViewIds`.
+- **Borttaget från Användare**: knappen `#role-view-access` i `anvandare.html`
+  och all matris-/modal-kod + `VIEW_ACCESS_OPTIONS`/`ROLE_ACCESS_LEVEL_*` i
+  `users.js` (registry-rollladdning för användarmodalen kvar). Demo-tourtexten
+  i `demo_prefetch_init.js` pekar nu på Inställningar.
+- **Tester ompekade**: visual_smoke (`installningar-vybehorigheter`,
+  `role_access_panel`), interactive_e2e (panel i stället för modal),
+  audit_logs_helpers KNOWN_INTERACTION_CONTROLS (`role-access-save` under
+  allocationSettings), test_visual_tools/test_access_contracts/
+  test_label_editor_frontend läser matris-labels från role_access.js,
+  test_legacy_activity_browser verifierar panelen + att knappen är borta.
+  Assistant-systemprompt nämner att Vybehörigheter är en flik under
+  Inställningar.
+- Desktop = samma frontend (QWebEngine) så pariteten håller automatiskt.

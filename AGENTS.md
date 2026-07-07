@@ -83,6 +83,24 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   och migreringsskriptet `backend.migrate_pg_to_mssql` ar borttagna ur repot;
   historiken finns i git.
 
+## Buggrapport-paminnelse vid arbetsstart
+
+Anvandare rapporterar buggar via Bugg-knappen (vyn Buggrapporter, se
+`wiki/bug-reports.md`). Agenter ska hjalpa till att inga rapporter blir
+liggande:
+
+- Nar en agent borjar en ny arbetsinsats i repot ska den kora
+  `python -m tools.bug_reports_status` och, om det finns oppna rapporter,
+  paminna Emir tidigt i konversationen: "Du har X oppna buggrapporter
+  (Y nya, Z att gora)".
+- Verktyget ar best effort: det ateranvander healthcheck-cookiejaren
+  (`.flow-cli-cookies.txt`) och hoppar mjukt over sig sjalvt om inloggning
+  saknas eller miljon inte nas. Paminnelsen far aldrig blockera eller
+  fordroja det egentliga arbetet, och agenten ska inte jaga inloggning
+  enbart for paminnelsens skull.
+- Paminn en gang per arbetsinsats, inte vid varje meddelande. Om Emir redan
+  pratar om buggrapporterna behover de inte paminnas.
+
 ## Hemligheter, commits och pushar
 
 `AGENTS.md` ska vara kvar i git. Den ar till for att framtida agenter och

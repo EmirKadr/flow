@@ -198,6 +198,33 @@ def get_bug_report(
     return row
 
 
+@router.delete("/{report_id}")
+def delete_bug_report(
+    report_id: int,
+    user: User = Depends(require_view_access("bugReports", "edit")),
+    db: Session = Depends(get_db),
+) -> dict:
+    report = _visible_report_or_404(db, user, report_id)
+    audit_log(
+        db,
+        entity_type="bug_report",
+        entity_id=report.id,
+        action="delete",
+        old_value={
+            "status": report.status,
+            "view_id": report.view_id,
+            "page_path": report.page_path,
+            "events_bytes": report.events_bytes,
+        },
+        new_value=None,
+        user_id=user.id,
+        business_id=report.business_id,
+    )
+    db.delete(report)
+    db.commit()
+    return {"id": report_id, "deleted": True}
+
+
 @router.patch("/{report_id}/status")
 def set_bug_report_status(
     report_id: int,

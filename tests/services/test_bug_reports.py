@@ -155,6 +155,28 @@ def test_validation_size_cap_and_rate_limit(client, monkeypatch):
     assert "senaste timmen" in limited.json()["detail"]
 
 
+def test_delete_report_requires_edit_access_and_writes_audit(client, db_session):
+    login(client, "anna")
+    report_id = create_report(client).json()["id"]
+
+    # Vanlig användare utan bugReports-edit kan inte ta bort.
+    assert client.delete(f"/api/bug-reports/{report_id}").status_code in (401, 403)
+
+    login(client, "root")
+    deleted = client.delete(f"/api/bug-reports/{report_id}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"id": report_id, "deleted": True}
+
+    assert db_session.query(BugReport).count() == 0
+    audit_row = db_session.query(AuditLog).filter_by(entity_type="bug_report", action="delete").one()
+    assert audit_row.old_value["status"] == "new"
+    assert "events_json" not in str(audit_row.old_value)
+
+    # Borta är borta: nytt anrop ger 404, liksom okända id:n.
+    assert client.delete(f"/api/bug-reports/{report_id}").status_code == 404
+    assert client.get(f"/api/bug-reports/{report_id}").status_code == 404
+
+
 def test_disabled_flag_hides_feature(client, monkeypatch):
     login(client, "anna")
     monkeypatch.setattr(settings, "BUG_REPORTS_ENABLED", False)

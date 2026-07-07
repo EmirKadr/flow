@@ -28,6 +28,7 @@ COMMON_SCRIPT_FILES = [
     "telemetry.js",
     "access.js",
     "sidebar.js",
+    "role_access.js",
     "uploads.js",
     "demo_prefetch_init.js",
     "import_tools.js",
@@ -142,7 +143,7 @@ def test_schedule_view_uses_bemanning_label_in_visible_navigation():
     assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
 
     assert 'id: "schedule",\n      label: "Bemanning",' in common
-    assert '{ id: "schedule", label: "Bemanning" }' in users
+    assert '{ id: "schedule", label: "Bemanning" }' in common
     assert "<title>Bemanning - flow</title>" in index
     assert 'id="sectionTitle">Bemanning</div>' in index
     assert '"schedule": "Bemanning"' in assistant
@@ -282,8 +283,8 @@ def test_known_interaction_controls_match_frontend_control_ids():
 
     assert not missing
     control_ids = {item["control_id"] for item in KNOWN_INTERACTION_CONTROLS}
-    assert control_ids.isdisjoint({"newPerson", "bulkPersons", "importPersons", "newActivity", "bulkActivities", "newUser", "roleAccess"})
-    assert {"new-person", "bulk-persons", "import-persons", "new-act", "bulk-activities", "new-user", "role-view-access"} <= control_ids
+    assert control_ids.isdisjoint({"newPerson", "bulkPersons", "importPersons", "newActivity", "bulkActivities", "newUser", "roleAccess", "role-view-access"})
+    assert {"new-person", "bulk-persons", "import-persons", "new-act", "bulk-activities", "new-user", "role-access-save"} <= control_ids
 
 
 def test_visual_smoke_covers_critical_scenarios():
@@ -307,7 +308,7 @@ def test_visual_smoke_covers_critical_scenarios():
         "aktiviteter-import-hjalp",
         "aktiviteter-redigera-aktivitet-modal",
         "anvandare-redigera-anvandare-modal",
-        "anvandare-vybehorigheter-modal",
+        "installningar-vybehorigheter",
         "verksamheter-ny-verksamhet-modal",
         "historik-filter",
         "historik-funktioner",
@@ -720,7 +721,7 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert "ROLE_VIEW_DEFAULT_ACCESS" in common
     assert "ROLE_VIEW_IDS" in common
     assert '"staffingSettings"' in common
-    assert '{ id: "staffingSettings", label: "Bemanningsinställningar" }' in users
+    assert '{ id: "staffingSettings", label: "Bemanningsinställningar" }' in common
     assert "new Set(ROLE_VIEW_IDS)" in common
     assert "roleViewAccessLevel" in common
     assert "refreshRoleViewAccess" in common
@@ -729,7 +730,8 @@ def test_frontend_theme_toggle_is_wired_globally():
     assert 'api.get("/api/settings/role-access", { cacheTtlMs: 5 * 60 * 1000 })' in common
     assert "function hasCachedRoleViewAccess" in common
     assert "shouldBlockForRoleAccess" in common
-    assert 'api.put("/api/settings/role-access"' in users
+    assert 'api.put("/api/settings/role-access"' in common
+    assert 'api.put("/api/settings/role-access"' not in users
     assert "readCachedSidebarUser" in common
     assert "sidebar-initializing" in common
     assert "id=\"theme-toggle\"" in common
@@ -1177,7 +1179,9 @@ def test_area_focus_toggle_is_wired_to_views():
     assert "matchesAreaFocus" in activities
     assert "matchesAreaFocus" in persons
     assert "matchesAreaFocus" in users
-    assert 'params.set("area_id", String(areaId))' in persons
+    # areaFocusListParams: area_id vid områdesfokus, business_id vid ∞ +
+    # verksamhetsfokus (2026-07-07).
+    assert "const params = areaFocusListParams(areas);" in persons
     assert 'api.getSwr(`/api/persons${query ? `?${query}` : ""}`' in persons
     assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons
     assert "PRODUCTIVITY_GROUPS" not in productivity_overview
@@ -1304,7 +1308,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-staffing-capacity-all" in allocation
     assert "data-staffing-capacity-activity" in allocation
     assert "staffing-capacity-activity-grid" in styles
-    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings"]' in allocation
+    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings", "roleAccess"]' in allocation
     assert "canEditStaffingSettings" in allocation
     assert "canEditProductivityFinanceSettings" in allocation
     assert '{ id: "productivity-finance", label: "Intäkt/utgift" }' in allocation
@@ -1841,7 +1845,7 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'id="bulk-users"' in users_html
     assert "+ Flera nya användare" in users_html
     assert 'id="download-user-template"' in users_html
-    assert 'id="role-view-access"' in users_html
+    assert 'id="role-view-access"' not in users_html
     assert 'id="user-import-help"' in users_html
     assert "/api/users/import-rows" in users_js
     assert "openBulkUsersModal" in users_js
@@ -1851,14 +1855,28 @@ def test_import_views_have_templates_and_help_buttons():
     assert 'setupImportHelpButton("user-import-help", "Importera användare")' in users_js
     assert 'api.download("/api/users/import-template", "anvandare-importmall.xlsx")' in users_js
     assert 'window.location.href = "/api/users/import-template"' not in users_js
-    assert "openRoleAccessModal" in users_js
-    assert "ROLE_ACCESS_LEVEL_OPTIONS" in users_js
-    assert "ROLE_ACCESS_LEVEL_ORDER" in users_js
-    assert "roleAccessToggle" in users_js
-    assert 'role.lockedLevel || ""' in users_js
-    assert "if (/** @type {HTMLInputElement} */ (button).disabled) return;" in users_js
-    assert "nextRoleAccessLevel" in users_js
-    assert "select[data-role][data-view]" not in users_js
+
+    # Vybehörighetsmatrisen ligger i common/role_access.js och renderas som
+    # panel under Inställningar > Vybehörigheter (flyttad från Användare).
+    role_access_js = (frontend / "js" / "common" / "role_access.js").read_text(encoding="utf-8")
+    settings_view_js = (frontend / "js" / "allocation" / "settings_view.js").read_text(encoding="utf-8")
+    installningar_html = (frontend / "installningar.html").read_text(encoding="utf-8")
+    assert "openRoleAccessModal" not in users_js
+    assert "roleAccessToggle" not in users_js
+    assert "renderRoleAccessPanel" in role_access_js
+    assert "ROLE_ACCESS_LEVEL_OPTIONS" in role_access_js
+    assert "ROLE_ACCESS_LEVEL_ORDER" in role_access_js
+    assert "roleAccessToggle" in role_access_js
+    assert 'role.lockedLevel || ""' in role_access_js
+    assert "if (/** @type {HTMLButtonElement} */ (button).disabled) return;" in role_access_js
+    assert "nextRoleAccessLevel" in role_access_js
+    assert "select[data-role][data-view]" not in role_access_js
+    assert 'id="role-access-save"' in role_access_js
+    assert 'id="role-access-defaults"' in role_access_js
+    assert '{ id: "role-access", label: "Vybehörigheter" }' in settings_view_js
+    assert 'canViewPage(allocationState.user, "roleAccess")' in settings_view_js
+    assert 'canEditPage(allocationState.user, "roleAccess")' in settings_view_js
+    assert "/js/common/role_access.js" in installningar_html
 
     assert 'id="bulk-activities"' in activities_html
     assert 'id="download-activity-template"' in activities_html

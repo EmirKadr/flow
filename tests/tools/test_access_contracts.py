@@ -25,6 +25,7 @@ COMMON_SCRIPT_FILES = [
     "js/common/telemetry.js",
     "js/common/access.js",
     "js/common/sidebar.js",
+    "js/common/role_access.js",
     "js/common/uploads.js",
     "js/common/demo_prefetch_init.js",
     "js/common/import_tools.js",
@@ -123,10 +124,10 @@ def extract_js_nested_access_object(source: str, const_name: str) -> dict[str, d
 
 def test_backend_frontend_and_user_admin_view_ids_match():
     common = read_common_frontend()
-    users = read_frontend("js/users.js")
+    role_access = read_frontend("js/common/role_access.js")
 
     common_view_ids = extract_js_string_array(common, "ROLE_VIEW_IDS")
-    admin_view_ids = extract_ids_from_object_array(users, "VIEW_ACCESS_OPTIONS")
+    admin_view_ids = extract_ids_from_object_array(role_access, "VIEW_ACCESS_OPTIONS")
 
     assert common_view_ids == admin_view_ids
     assert set(common_view_ids) == ROLE_VIEW_IDS
@@ -138,10 +139,11 @@ def test_backend_frontend_and_user_admin_view_ids_match():
 def test_backend_feature_registry_matches_frontend_access_contracts():
     common = read_common_frontend()
     users = read_frontend("js/users.js")
+    role_access = read_frontend("js/common/role_access.js")
     registry = feature_registry_payload()
 
     common_view_ids = extract_js_string_array(common, "ROLE_VIEW_IDS")
-    admin_view_ids = extract_ids_from_object_array(users, "VIEW_ACCESS_OPTIONS")
+    admin_view_ids = extract_ids_from_object_array(role_access, "VIEW_ACCESS_OPTIONS")
     registry_view_ids = [view["id"] for view in registry["views"]]
     registry_view_labels = [view["label"] for view in registry["views"]]
     registry_roles = [role["value"] for role in registry["roles"]]
@@ -157,8 +159,8 @@ def test_backend_feature_registry_matches_frontend_access_contracts():
 
 
 def test_user_admin_role_access_labels_follow_terminology_contracts():
-    users = read_frontend("js/users.js")
-    labels = extract_labels_from_object_array(users, "VIEW_ACCESS_OPTIONS")
+    role_access = read_frontend("js/common/role_access.js")
+    labels = extract_labels_from_object_array(role_access, "VIEW_ACCESS_OPTIONS")
     label_text = "\n".join(labels)
 
     for expected in role_access_required_terms():

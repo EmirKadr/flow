@@ -70,8 +70,9 @@ def test_label_editor_keyboard_shortcuts_and_symbol_picker(local_label_editor_se
 
         expect(page.locator("#labelProfileName")).to_have_count(0)
         page.fill("#labelHeight", "200")
+        page.once("dialog", lambda dialog: dialog.accept("Palletikett hög"))
         page.click("#labelSaveProfile")
-        expect(page.locator("#labelProfileSelect")).to_contain_text("104 x 200 mm")
+        expect(page.locator("#labelProfileSelect")).to_contain_text("Palletikett hög (104 x 200 mm)")
 
         expect(objects).to_have_count(1)
         east_handle = page.locator('#labelCanvas .label-object.selected .label-object-resize-handle[data-resize-direction="e"]')
@@ -126,6 +127,47 @@ def test_label_editor_keyboard_shortcuts_and_symbol_picker(local_label_editor_se
         page.get_by_role("button", name="Paket").click()
         expect(objects).to_have_count(2)
         expect(page.locator("#labelCanvas .label-object").last).to_contain_text("📦")
+    finally:
+        context.close()
+
+
+def test_label_editor_design_profiles_save_load_delete(local_label_editor_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    objects = page.locator("#labelCanvas .label-object")
+    try:
+        login_admin(page, local_label_editor_server)
+        page.goto(f"{local_label_editor_server}/label-editor.html", wait_until="networkidle")
+        page.wait_for_selector("#labelCanvas .label-object", timeout=15000)
+
+        expect(objects).to_have_count(1)
+        page.fill("#labelObjectValue", "PALL-123")
+        page.get_by_role("button", name="Code128").click()
+        expect(objects).to_have_count(2)
+        page.fill("#labelObjectY", "60")
+
+        page.once("dialog", lambda dialog: dialog.accept("Min palletikett"))
+        page.click("#labelSaveDesign")
+        expect(page.locator("#labelDesignSelect")).to_contain_text("Min palletikett (104 x 199 mm)")
+        expect(page.locator("#labelDeleteDesign")).to_be_enabled()
+
+        page.reload(wait_until="networkidle")
+        page.wait_for_selector("#labelCanvas .label-object", timeout=15000)
+        expect(objects).to_have_count(1)
+
+        page.select_option("#labelDesignSelect", label="Min palletikett (104 x 199 mm)")
+        expect(objects).to_have_count(2)
+        expect(page.locator('#labelCanvas .label-object[data-object-type="code128"]')).to_have_count(1)
+        page.click('#labelCanvas .label-object[data-object-type="text"]')
+        expect(page.locator("#labelObjectValue")).to_have_value("PALL-123")
+
+        page.keyboard.press("Control+Z")
+        expect(objects).to_have_count(1)
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.click("#labelDeleteDesign")
+        expect(page.locator("#labelDesignSelect option")).to_have_count(1)
+        expect(page.locator("#labelDeleteDesign")).to_be_disabled()
     finally:
         context.close()
 

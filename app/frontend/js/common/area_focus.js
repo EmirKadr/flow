@@ -184,6 +184,31 @@ function areaFocusBusinessId(value = readAreaFocus()) {
   return null;
 }
 
+// Fokusfiltrets serverparametrar för listvyer: specifikt område → area_id,
+// Alla områden (∞) med verksamhetsfokus (Super User) → business_id. Så gäller
+// verksamhetstogglen även när områdesfokus är ∞ — och alla verksamheter +
+// alla områden ger ofiltrerat.
+function areaFocusListParams(areas) {
+  const params = new URLSearchParams();
+  const areaId = preferredAreaIdFromFocus(areas);
+  if (areaId != null) {
+    params.set("area_id", String(areaId));
+    return params;
+  }
+  const businessId = areaFocusBusinessId();
+  if (businessId != null) params.set("business_id", String(businessId));
+  return params;
+}
+
+// Klientfiltrets verksamhetsdimension: används av vyer som filtrerar lokalt
+// (aktiviteter, användare, personalvyer) när inget specifikt område är valt.
+// Objekt utan verksamhet (business_id null) döljs aldrig.
+function matchesAreaFocusBusiness(itemBusinessId) {
+  const businessId = areaFocusBusinessId();
+  if (businessId == null || itemBusinessId == null) return true;
+  return Number(itemBusinessId) === businessId;
+}
+
 function areaFocusName(areas, value = readAreaFocus()) {
   const focus = normalizeAreaFocus(value);
   if (focus === "ALLT") return "Alla områden";
@@ -509,7 +534,12 @@ function writeBusinessFocus(value) {
   try { localStorage.setItem(BUSINESS_FOCUS_STORAGE_KEY, normalized); } catch (e) {}
   updateBusinessFocusToggle(normalized);
   window.dispatchEvent(new CustomEvent("flow:businessFocusChanged", { detail: { value: normalized } }));
-  refreshAreaFocusOptionsForBusinessFocus();
+  // Vyerna lyssnar på areaFocusChanged för att ladda om sina listor. Ett
+  // verksamhetsbyte ändrar filtreringen även när områdesfokus står kvar på ∞,
+  // så eventet skickas alltid — refresh skickar det bara vid ändrat område.
+  if (!refreshAreaFocusOptionsForBusinessFocus()) {
+    window.dispatchEvent(new CustomEvent("flow:areaFocusChanged", { detail: { value: readAreaFocus() } }));
+  }
   return normalized;
 }
 
@@ -538,8 +568,9 @@ function businessFocusName(value = readBusinessFocus()) {
 
 // Bygger om områdesalternativen från cachen när verksamhetsfokus ändras.
 // Om aktuellt områdesfokus inte längre finns kvar normaliseras det (till ∞).
+// Returnerar true om ett areaFocusChanged-event skickades.
 function refreshAreaFocusOptionsForBusinessFocus() {
-  if (!Array.isArray(areaFocusAreasCache)) return;
+  if (!Array.isArray(areaFocusAreasCache)) return false;
   const before = readAreaFocus();
   dynamicAreaFocusOptions = buildAreaFocusOptions(areaFocusAreasCache, areaFocusUserCache);
   const after = readAreaFocus();
@@ -550,7 +581,9 @@ function refreshAreaFocusOptionsForBusinessFocus() {
   updateAreaFocusToggle(after);
   if (after !== before) {
     window.dispatchEvent(new CustomEvent("flow:areaFocusChanged", { detail: { value: after } }));
+    return true;
   }
+  return false;
 }
 
 function businessFocusToggleLabel(option) {

@@ -60,10 +60,10 @@ const DEMO_TOUR_DESCRIPTIONS = {
     + "<strong>Filter</strong>-fält per kolumn för att hitta specifika händelser.<br>"
     + "Klicka på en rad för att <strong>se gamla och nya värden</strong> sida vid sida.",
   users:
-    "Användarvyn är där admin skapar konton, sätter roller och vybehörigheter.<br><br>"
+    "Användarvyn är där admin skapar konton och sätter roller.<br><br>"
     + "<strong>Ny användare</strong> öppnar modal för konto + roll + område.<br>"
     + "<strong>Flera nya användare</strong> för bulk-skapande med en roll per rad.<br>"
-    + "<strong>Vybehörigheter</strong>-knappen öppnar rollmatrisen där du sätter per roll vilka vyer som är Ingen/Visa/Redigera.<br>"
+    + "Rollmatrisen <strong>Vybehörigheter</strong> (Ingen/Visa/Redigera per vy) ligger under <strong>Inställningar</strong>.<br>"
     + "<strong>Redigera</strong> ändrar enskilt konto. <strong>Ta bort</strong> raderar det.<br>"
     + "Checkboxen <strong>Lås bemanningsceller</strong> styr om arbetsledare kan ändra varandras celler.",
   businesses:

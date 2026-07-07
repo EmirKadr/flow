@@ -81,12 +81,21 @@ function overviewIsReadOnly() {
   return overviewState.currentUser?.role === "viewer" && !overviewState.currentUser?.is_super_user;
 }
 
+// Verksamhetsfiltret vid ∞-områdesfokus: Super Users verksamhetstoggle ska
+// filtrera Översikt även utan valt område. Ingår i URL och cache-nycklar så
+// ett toggle-byte aldrig kan måla cachat data från fel verksamhet.
+function overviewFocusBusinessId(areaId = overviewState.areaId) {
+  if (areaId != null) return null; // området pekar redan ut verksamheten
+  return typeof areaFocusBusinessId === "function" ? areaFocusBusinessId() : null;
+}
+
 function overviewScopeKey() {
   const user = overviewState.currentUser || {};
   return [
     user.id ?? user.username ?? "anonymous",
     user.is_super_user ? "super" : "scoped",
     user.business_id ?? "global",
+    `biz:${overviewFocusBusinessId(null) ?? "alla"}`,
   ].join(":");
 }
 
@@ -101,22 +110,28 @@ function overviewAreaCacheKey(areaId = overviewState.areaId, baseKey = overviewC
   return `${baseKey}|area:${areaId == null ? "ALLT" : Number(areaId)}`;
 }
 
+function overviewFocusQuery(areaId) {
+  if (areaId) return `&area_id=${areaId}`;
+  const businessId = overviewFocusBusinessId(areaId ?? null);
+  return businessId != null ? `&business_id=${businessId}` : "";
+}
+
 function overviewUrl(areaId = overviewState.areaId) {
   if (overviewState.view === "week") {
     return `/api/overview?year=${overviewState.year}&week=${overviewState.week}` +
-      (areaId ? `&area_id=${areaId}` : "");
+      overviewFocusQuery(areaId);
   }
   return `/api/overview/month?year=${overviewState.year}&month=${overviewState.month}` +
-    (areaId ? `&area_id=${areaId}` : "");
+    overviewFocusQuery(areaId);
 }
 
 function overviewRevisionUrl(areaId = null) {
   if (overviewState.view === "week") {
     return `/api/overview/revision?year=${overviewState.year}&week=${overviewState.week}` +
-      (areaId ? `&area_id=${areaId}` : "");
+      overviewFocusQuery(areaId);
   }
   return `/api/overview/revision/month?year=${overviewState.year}&month=${overviewState.month}` +
-    (areaId ? `&area_id=${areaId}` : "");
+    overviewFocusQuery(areaId);
 }
 
 function setOverviewAllCache(key, data) {

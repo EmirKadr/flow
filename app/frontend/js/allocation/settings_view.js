@@ -92,6 +92,7 @@ function allocationSettingsTabs() {
   if (canViewAllocationProcessMatrix()) tabs.push({ id: "process-matrix", label: "Bearbeta" });
   if (canViewStaffingSettings()) tabs.push({ id: "staffing", label: "Bemanning" });
   if (canViewProductivityFinanceSettings()) tabs.push({ id: "productivity-finance", label: "Intäkt/utgift" });
+  if (canViewPage(allocationState.user, "roleAccess")) tabs.push({ id: "role-access", label: "Vybehörigheter" });
   return tabs;
 }
 
@@ -103,6 +104,7 @@ function allocationRequestedSettingsTab() {
     bearbeta: "process-matrix", "process-matrix": "process-matrix", process: "process-matrix",
     staffing: "staffing", bemanning: "staffing",
     finance: "productivity-finance", "productivity-finance": "productivity-finance", "intakt-utgift": "productivity-finance", "intäkt-utgift": "productivity-finance",
+    vybehorigheter: "role-access", "vybehörigheter": "role-access", "role-access": "role-access", behorigheter: "role-access",
   };
   return aliases[normalized] || "";
 }
@@ -294,6 +296,10 @@ function renderAllocationMapSettingsView() {
     renderProductivityFinanceSettingsPanel(panel);
   } else if (allocationState.settingsTab === "process-matrix") {
     renderAllocationProcessMatrixSettingsPanel(panel);
+  } else if (allocationState.settingsTab === "role-access") {
+    void window.flowRoleAccess?.renderRoleAccessPanel(panel, {
+      canEdit: canEditPage(allocationState.user, "roleAccess"),
+    });
   } else {
     panel.innerHTML = `
       <section class="allocation-map-settings-page-panel">

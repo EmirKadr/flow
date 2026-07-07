@@ -238,7 +238,10 @@
   function saveCurrentProfile() {
     const width = clamp($("labelWidth").value, LABEL_MIN_WIDTH_MM, LABEL_MAX_WIDTH_MM);
     const height = clamp($("labelHeight").value, LABEL_MIN_HEIGHT_MM, LABEL_MAX_HEIGHT_MM);
-    const name = `${width} x ${height} mm`.slice(0, 40);
+    const defaultName = `${width} x ${height} mm`.slice(0, 40);
+    const input = prompt("Namn på storleksprofilen:", defaultName);
+    if (input === null) return;
+    const name = (input.trim() || defaultName).slice(0, 40);
     const profiles = readCustomProfiles();
     const existingIndex = profiles.findIndex((profile) => profile.name.toLowerCase() === name.toLowerCase());
     const profile = {
@@ -253,7 +256,7 @@
     writeCustomProfiles(profiles);
     applyLabelSize(width, height, { skipProfiles: true });
     renderProfileSelect(profileValue(profile));
-    logInfo("Profilen sparades.", "success");
+    logInfo(`Storleksprofilen "${name}" sparades.`, "success");
     track("save-profile");
   }
 
@@ -619,6 +622,28 @@
     ].forEach((id) => $(id)?.addEventListener("input", applyInspectorChange));
   }
 
+  function setupDesigns() {
+    window.FlowLabelDesigns.createLabelDesigns({
+      $,
+      state,
+      backgroundObjectId: LABEL_BACKGROUND_OBJECT_ID,
+      clamp,
+      fitObject,
+      pushUndoSnapshot,
+      renderCanvas,
+      renderProfileSelect,
+      logInfo,
+      track,
+      escapeHtml,
+      limits: {
+        minWidth: LABEL_MIN_WIDTH_MM,
+        maxWidth: LABEL_MAX_WIDTH_MM,
+        minHeight: LABEL_MIN_HEIGHT_MM,
+        maxHeight: LABEL_MAX_HEIGHT_MM,
+      },
+    }).setupDesigns();
+  }
+
   function setupPaintTools() {
     paintTools = window.FlowLabelPaint.createPaintTools({
       $,
@@ -803,21 +828,30 @@
     const key = String(event.key || "").toLowerCase();
     const shortcut = event.ctrlKey || event.metaKey;
     if (shortcut && key === "c") {
-      if (!selectedObject()) return;
+      if (!selectedObject()) {
+        logInfo("Inget objekt är markerat – klicka på objektet i etikettytan och tryck Ctrl+C igen.", "info");
+        return;
+      }
       event.preventDefault();
       event.labelEditorHandled = true;
       copySelected();
       return;
     }
     if (shortcut && key === "x") {
-      if (!selectedObject()) return;
+      if (!selectedObject()) {
+        logInfo("Inget objekt är markerat – klicka på objektet i etikettytan och tryck Ctrl+X igen.", "info");
+        return;
+      }
       event.preventDefault();
       event.labelEditorHandled = true;
       cutSelected();
       return;
     }
     if (shortcut && key === "v") {
-      if (!state.clipboard) return;
+      if (!state.clipboard) {
+        logInfo("Inget kopierat etikettobjekt att klistra in – markera ett objekt i etikettytan och tryck Ctrl+C först.", "info");
+        return;
+      }
       event.preventDefault();
       event.labelEditorHandled = true;
       pasteClipboard();
@@ -894,6 +928,7 @@
     if (!user) return;
     setupSymbolOptions();
     setupDimensions();
+    setupDesigns();
     bindInspector();
     setupPaintTools();
     setupActions();

@@ -27,9 +27,24 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
    "Stoppa och skicka nu" visas.
 3. Vid stopp/30 s: händelserna + kontext (konsolfel, JS-fel, user agent,
    viewport) POST:as till `/api/bug-reports`. Toast bekräftar.
+   - **Sidbyte under inspelning** (2026-07-07): inspelningen fortsätter
+     över sidbyten inom samma flik. Vid pagehide sparas sidans segment i
+     sessionStorage (`flow-bug-report-session`); sidebar.js eagerladdar
+     modulen på nästa sida som återupptar inspelningen med en ny full
+     snapshot. Allt skickas som EN rapport vid stopp/deadline —
+     uppspelningen visar ett "scenbyte" per sida (rrweb-Replayer hanterar
+     flera fulla snapshots i samma ström). Hann deadline gå ut under
+     sidbytet skickas det som finns direkt. Sessionen är per flik och
+     förfaller efter 5 minuter; byte till en annan webbläsarflik kan inte
+     spelas in (rrweb ser bara sin egen sidas DOM). sendBeacon/keepalive
+     valdes bort: deras 64 kB-tak är mindre än en inspelning.
 4. Behörig användare (vy-id `bugReports`, default endast Super User) öppnar
    **Buggrapporter** i Verktyg-menyn: lista → klick → uppspelning i
-   rrweb-Replayer + kontext, statusknappar Ny/Sedd/Klar.
+   rrweb-Replayer + kontext. Status (Ny/Att göra/Klar) sätts via dropdown
+   direkt på raden eller knappar i detaljpanelen; **Ta bort** (per rad och i
+   detaljpanelen) raderar rapporten permanent efter bekräftelsemodal.
+   DB-värdena är oförändrade `new`/`seen`/`done` — `seen` visas som
+   "Att göra" sedan 2026-07-07.
 
 ## Teknik
 
@@ -49,7 +64,7 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
   `bug_reports_retention_purge` och vid varje inskick), av/på via
   `BUG_REPORTS_ENABLED`.
 - **Behörighet**: skapa = alla inloggade; lista/spela upp = vy `bugReports`
-  (view), status = `bugReports` (edit). Vyn är inte i någon rolls default —
+  (view), status och ta bort = `bugReports` (edit). Vyn är inte i någon rolls default —
   bara Super User ser den tills den delas ut i vybehörighetsmatrisen.
   Verksamhetsscope via `visible_business_id`.
 - **Uppspelning**: `bug-rapporter.html` + `js/bug_reports_admin.js` +
@@ -62,7 +77,18 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
 - `bug_report`/`create`: view_id, page_path, notislängd, events_bytes,
   event_count — aldrig inspelningsinnehåll eller notistext.
 - `bug_report`/`status_change`: gammal/ny status.
+- `bug_report`/`delete`: status, view_id, page_path, events_bytes vid
+  borttagning — aldrig inspelningsinnehåll.
 - Frontend trackar `bug_report_recording_started` via flowTrack.
+
+## Agent-påminnelse
+
+Agenter som börjar en arbetsinsats i repot kör
+`python -m tools.bug_reports_status` och påminner Emir om öppna rapporter
+(status `new`/`seen`). Verktyget återanvänder healthcheck-cookiejaren
+(`.flow-cli-cookies.txt`), är best effort och hoppar mjukt över sig självt
+utan inloggning. Regeln står i `AGENTS.md` ("Buggrapport-påminnelse vid
+arbetsstart").
 
 ## Felsökningssvar för framtida chat
 
@@ -77,6 +103,13 @@ Rate limit: max `BUG_REPORTS_RATE_LIMIT_PER_HOUR` per användare och timme.
 Inspelningar från äldre appversioner kan sakna full snapshot. Kontrollera
 `events_bytes` i listan; mycket små inspelningar (<5 kB) saknar ofta
 fullsnapshot för att inspelningen stoppades direkt.
+
+**"Jag bytte sida under inspelningen — försvann den?"**
+Nej (sedan 2026-07-07): inspelningen fortsätter på nästa sida (röd
+indikator kommer tillbaka) och allt skickas som en rapport. Kommer inget:
+kontrollera att användaren stannade i samma flik (sessionen är per flik)
+och att nästa sida laddades inom 5 minuter. I uppspelningen syns sidbytet
+som ett scenbyte — det är förväntat, inte en trasig inspelning.
 
 **"Vem kan se rapporterna?"**
 Endast Super User tills vyn `bugReports` delas ut per roll i
