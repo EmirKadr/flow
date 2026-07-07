@@ -115,7 +115,7 @@ STATES: tuple[VisualState, ...] = (
     VisualState("aktiviteter-redigera-aktivitet-modal", "/aktiviteter.html", "#acts-body button[data-edit]", "activity_edit_modal"),
     VisualState("anvandare-ny-anvandare-modal", "/anvandare.html", "#new-user", "click_new_user"),
     VisualState("anvandare-redigera-anvandare-modal", "/anvandare.html", "#users-body button[data-edit]", "user_edit_modal"),
-    VisualState("anvandare-vybehorigheter-modal", "/anvandare.html", "#role-view-access", "role_access_modal"),
+    VisualState("installningar-vybehorigheter", "/installningar.html?tab=role-access", "#allocation-settings-panel", "role_access_panel"),
     VisualState("verksamheter-ny-verksamhet-modal", "/verksamheter.html", "#new-business", "click_new_business", ("admin",)),
     VisualState("historik-filter", "/historik.html", "#auditBody", "analytics_filter", ("admin",)),
     VisualState("historik-funktioner", "/historik.html", "#trackingTopFeaturesBody", "history_functions", ("admin",)),
@@ -404,9 +404,8 @@ def _apply_state(page, state: VisualState) -> None:
         page.locator("#users-body button[data-edit]").first.click()
         page.wait_for_selector(".modal-backdrop .modal", timeout=15000)
         return
-    if state.action == "role_access_modal":
-        page.click("#role-view-access")
-        page.wait_for_selector(".role-access-modal", timeout=15000)
+    if state.action == "role_access_panel":
+        page.wait_for_selector(".role-access-panel #role-access-table .role-access-toggle", timeout=15000)
         return
     if state.action == "click_new_business":
         page.click("#new-business")

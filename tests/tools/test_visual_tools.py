@@ -143,7 +143,7 @@ def test_schedule_view_uses_bemanning_label_in_visible_navigation():
     assistant = (ROOT / "app" / "backend" / "routers" / "assistant.py").read_text(encoding="utf-8")
 
     assert 'id: "schedule",\n      label: "Bemanning",' in common
-    assert '{ id: "schedule", label: "Bemanning" }' in users
+    assert '{ id: "schedule", label: "Bemanning" }' in common
     assert "<title>Bemanning - flow</title>" in index
     assert 'id="sectionTitle">Bemanning</div>' in index
     assert '"schedule": "Bemanning"' in assistant
@@ -1308,7 +1308,7 @@ def test_bearbeta_area_focus_filter_contract():
     assert "data-staffing-capacity-all" in allocation
     assert "data-staffing-capacity-activity" in allocation
     assert "staffing-capacity-activity-grid" in styles
-    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings"]' in allocation
+    assert 'anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings", "roleAccess"]' in allocation
     assert "canEditStaffingSettings" in allocation
     assert "canEditProductivityFinanceSettings" in allocation
     assert '{ id: "productivity-finance", label: "Intäkt/utgift" }' in allocation

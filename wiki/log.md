@@ -2828,3 +2828,29 @@ räddningsflödet (som blev en mellanlandning samma dag, aldrig deployad):
 - Deadline som passeras under sidbytet ⇒ det inspelade skickas direkt.
 - Browsertest: test_recording_continues_across_page_navigation verifierar
   indikator + isRecording på sida 2 och ≥2 fulla snapshots i rapporten.
+
+## [2026-07-07] bygge | Vybehörigheter flyttad från Användare till Inställningar
+
+Emirs önskemål: rollmatrisen (roll × vy, Ingen/Visa/Redigera) skulle ligga
+under Inställningar i stället för som knapp/modal i Användare.
+
+- **Ny delad modul** `js/common/role_access.js` (`window.flowRoleAccess.
+  renderRoleAccessPanel`) med matris-render, registry-laddning, toggle-cykling
+  och spara/standard. Laddas i `installningar.html`.
+- **Ny flik** `Vybehörigheter` i `allocation/settings_view.js`
+  (`?tab=role-access`), gated på `canViewPage(user,"roleAccess")`; `view` ger
+  låst matris, `edit` får spara. `boot.js` lade `roleAccess` i
+  settings-sidans `anyViewIds`.
+- **Borttaget från Användare**: knappen `#role-view-access` i `anvandare.html`
+  och all matris-/modal-kod + `VIEW_ACCESS_OPTIONS`/`ROLE_ACCESS_LEVEL_*` i
+  `users.js` (registry-rollladdning för användarmodalen kvar). Demo-tourtexten
+  i `demo_prefetch_init.js` pekar nu på Inställningar.
+- **Tester ompekade**: visual_smoke (`installningar-vybehorigheter`,
+  `role_access_panel`), interactive_e2e (panel i stället för modal),
+  audit_logs_helpers KNOWN_INTERACTION_CONTROLS (`role-access-save` under
+  allocationSettings), test_visual_tools/test_access_contracts/
+  test_label_editor_frontend läser matris-labels från role_access.js,
+  test_legacy_activity_browser verifierar panelen + att knappen är borta.
+  Assistant-systemprompt nämner att Vybehörigheter är en flik under
+  Inställningar.
+- Desktop = samma frontend (QWebEngine) så pariteten håller automatiskt.

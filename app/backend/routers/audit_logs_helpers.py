@@ -104,7 +104,7 @@ KNOWN_INTERACTION_CONTROLS = [
     {"view_id": "activities", "control_id": "new-act", "label": "Ny aktivitet"},
     {"view_id": "activities", "control_id": "bulk-activities", "label": "Flera nya aktiviteter"},
     {"view_id": "users", "control_id": "new-user", "label": "Ny anvandare"},
-    {"view_id": "users", "control_id": "role-view-access", "label": "Vybehorigheter"},
+    {"view_id": "allocationSettings", "control_id": "role-access-save", "label": "Spara vybehorigheter"},
     {"view_id": "businesses", "control_id": "new-business", "label": "Ny verksamhet"},
     {"view_id": "productivity", "control_id": "productivityOverviewPrevDate", "label": "Foregaende datum"},
     {"view_id": "productivity", "control_id": "productivityOverviewNextDate", "label": "Nasta datum"},

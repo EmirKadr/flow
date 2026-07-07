@@ -87,19 +87,22 @@ def test_direct_activity_page_never_renders_legacy_label(local_activity_server, 
         context.close()
 
 
-def test_role_access_modal_follows_terminology_contracts(local_activity_server, chromium_browser):
+def test_role_access_panel_follows_terminology_contracts(local_activity_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()
     try:
         login_admin(page, local_activity_server)
+        page.goto(f"{local_activity_server}/installningar.html?tab=role-access", wait_until="networkidle")
+        page.wait_for_selector(".role-access-panel #role-access-table .role-access-toggle", timeout=15000)
+
+        panel_text = page.locator(".role-access-panel").inner_text(timeout=15000)
+        for expected in role_access_required_terms():
+            assert expected in panel_text
+        assert_no_forbidden_terms_in_text(panel_text, context="role access panel")
+
+        # Knappen är borttagen från Användare — matrisen nås via Inställningar.
         page.goto(f"{local_activity_server}/anvandare.html", wait_until="networkidle")
         page.wait_for_selector("#users-body", timeout=15000)
-        page.click("#role-view-access")
-        page.wait_for_selector(".role-access-modal", timeout=15000)
-
-        modal_text = page.locator(".role-access-modal").inner_text(timeout=15000)
-        for expected in role_access_required_terms():
-            assert expected in modal_text
-        assert_no_forbidden_terms_in_text(modal_text, context="role access modal")
+        assert page.locator("#role-view-access").count() == 0
     finally:
         context.close()

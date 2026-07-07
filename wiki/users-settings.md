@@ -1,13 +1,13 @@
 ---
 title: Anvandare och installningar
 status: aktiv
-updated: 2026-06-17
+updated: 2026-07-07
 tags: [anvandare, settings, roller, ui]
 ---
 
 # Anvandare och installningar
 
-Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord, verksamhetsspecifik cell-lasning och rollernas globala vyatkomst. Installningar-sidan samlar lager-, bemannings- och produktivitetsinstallningar: Ytkarta, Bearbeta-matris, Bemanningens historiska snitt och Produktivitetens intakt/utgift. Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
+Kort svar: Anvandare-sidan hanterar konton, verksamhet, roller, omrade, forsta losenord och verksamhetsspecifik cell-lasning. Installningar-sidan samlar lager-, bemannings-, produktivitets- och behorighetsinstallningar: Ytkarta, Bearbeta-matris, Bemanningens historiska snitt, Produktivitetens intakt/utgift samt Vybehorigheter (rollernas globala vyatkomst, flyttad fran Anvandare till en egen flik 2026-07-07). Anvandare ar alltid aktiva; konton som inte ska finnas kvar tas bort. Super User har dessutom vyn Verksamheter dar verksamheter och deras omraden administreras.
 
 Hogerklick pa `Installningar` i sidebaren visar samma installningsflikar som
 sidan: Ytkarta, Bearbeta, Bemanning och Intakt/utgift, filtrerat efter rollens
@@ -23,7 +23,7 @@ Omradesfokus i sidebar filtrerar anvandarlistan inom anvandarens verksamhet. `�
 | Flera nya anvandare | Oppnar tabellmodal | Skapar flera konton direkt i appen med en roll per rad | `POST /api/users/import-rows` | Dubbletter, okanda roller och okanda omraden visas i resultatmodal. |
 | Ladda ner importmall | Hamter Excelmall | Laddar ner mall | `GET /api/users/import-template` | Kräver `userImport` edit/super user enligt backend. |
 | Importera Excel | Oppnar filval | Importerar anvandare | `POST /api/users/import` | Importerade utan losenord far `must_change_password=true`. |
-| Vybehorigheter | Oppnar rollmatris | Sparar global vyatkomst for roller | `GET/PUT /api/settings/role-access` | Fel matris kan dolja vyer for rollen i alla verksamheter. |
+| Vybehorigheter | Flik under `installningar.html` (`?tab=role-access`) | Visar rollmatrisen och sparar global vyatkomst for roller | `js/common/role_access.js`, `GET/PUT /api/settings/role-access` | Kraver `roleAccess`; `view` ser last matris, `edit` far spara. Fel matris kan dolja vyer for rollen i alla verksamheter. |
 | Import-hjalp | Oppnar hjalpmodal | Visar importstod | `setupImportHelpButton` | Ingen serverkoppling. |
 | Las bemanningsceller... | Checkbox | Sparar setting per verksamhet | `PUT /api/settings` | Nar aktiv kan ledare stoppas fran celler andra fyllt i aktuell verksamhet. |
 | Bemanningsinställningar | Flik under `installningar.html` | Sparar `staffing_history_hours` och vilka aktiviteter som far visa historiskt snitt vid cell-hover per verksamhet | `GET/PUT /api/settings/staffing`, `GET /api/activities` med `business_id`/`area_focus` | Kräver `staffingSettings`; utan edit kan rollen bara se värdena. |
@@ -66,7 +66,14 @@ Knappar:
 
 Det fasta `demo`-kontot (se [demo-laget](demo-mode.md)) visas med en `DEMO`-pill i listan, har dold delete-knapp och har disablade `Anvandarnamn` + `Roller` i edit-modalen. Lösenord, visningsnamn och omrade kan fortfarande andras av super_user — backend nekar 409 om någon försoker dopa om, ta bort admin-rollen eller inaktivera kontot. Kontot skapas inte längre automatiskt vid production-deploy; det måste redan finnas eller skapas via kontrollerad bootstrap.
 
-## Vybehorigheter-modal
+## Vybehorigheter-flik
+
+Rollmatrisen ligger sedan 2026-07-07 som en egen flik `Vybehorigheter` under
+`installningar.html` (`?tab=role-access`), inte langre som en modal i Anvandare.
+Fliken visas bara for roller med `roleAccess`-atkomst (standard: Super User,
+admin och demo). `view` visar matrisen med lasta togglar och disablade
+`Standard`/`Spara`; `edit` far andra och spara. Matris-koden ar delad i
+`js/common/role_access.js` (`window.flowRoleAccess.renderRoleAccessPanel`).
 
 Rollmatrisen visar vyer som rader och roller som kolumner. Matrisen ar global, sa samma roll far samma vyatkomst i Stigamo och R3. Super User-kolumnen visas som last `Redigera` eftersom rollen alltid har full atkomst. Demo-kolumnen styr extra vyatkomst for det fasta `demo`-kontot, som fortfarande ar skyddat som admin-konto. Varje vanlig knapp cyklar:
 
@@ -103,9 +110,11 @@ Installningar foljer sidebarens omradesfokus for verksamhetsscope. Nar fokus ar 
 
 Knappar:
 
-- `Standard`: aterstaller modalens draft till defaultmatris.
-- `Avbryt`: stanger utan att spara.
+- `Standard`: aterstaller fliken till defaultmatris (sparas inte forran `Spara`).
 - `Spara`: skickar `PUT /api/settings/role-access` och galler alla verksamheter.
+
+Fliken har ingen `Avbryt`-knapp langre eftersom den ar en panel och inte en
+modal; osparade andringar forsvinner nar man byter flik eller lamnar sidan.
 
 ## Importregler
 
@@ -154,7 +163,10 @@ Denna finns i sidebar, inte i `anvandare.html`, men hor till settings:
 ## Kallor
 
 - `../app/frontend/anvandare.html`
+- `../app/frontend/installningar.html`
 - `../app/frontend/js/users.js`
+- `../app/frontend/js/common/role_access.js`
+- `../app/frontend/js/allocation/settings_view.js`
 - `../app/frontend/js/businesses.js`
 - `../app/frontend/js/common.js`
 - `../app/backend/routers/users.py`

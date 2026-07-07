@@ -72,7 +72,7 @@ async function initAllocationPage() {
   if (!root) return;
   allocationState.page = root.dataset.allocationView || "uploads";
   const pageOptions = allocationState.page === "settings"
-    ? { anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings"] }
+    ? { anyViewIds: ["allocationSettings", "staffingSettings", "allocationProcessMatrix", "productivityFinanceSettings", "roleAccess"] }
     : { requireAllocationTools: true };
   if (allocationState.page === "process") {
     pageOptions.requireAllocationProcess = true;

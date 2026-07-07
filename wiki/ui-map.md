@@ -45,7 +45,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Oversikt | `overblick.html` | Vy vecka/manad, prev/next, ar, vecka/manad, undo/redo, dagceller | [Oversikt](overview-page.md) |
 | Personer | `personer.html` | Ny person, Flera nya personer, importmall, importera Excel, hjalp, filter/sortering, Schema, Ta bort | [Personer](persons.md) |
 | Aktiviteter | `aktiviteter.html` | Ny aktivitet, Flera nya aktiviteter, importmall, importera Excel, hjalp, Redigera, Ta bort | [Aktiviteter och omraden](activities-areas.md) |
-| Anvandare | `anvandare.html` | Ny anvandare, Flera nya anvandare, importmall, importera Excel, Vybehorigheter, cell-las, Visa inaktiva | [Anvandare och installningar](users-settings.md) |
+| Anvandare | `anvandare.html` | Ny anvandare, Flera nya anvandare, importmall, importera Excel, cell-las, Visa inaktiva | [Anvandare och installningar](users-settings.md) |
 | Verksamheter | `verksamheter.html` | Ny verksamhet, klickbara celler, rubriksortering, Visa inaktiva, Nytt omrade, Lagg till `∞`, Ta bort omrade | [Anvandare och installningar](users-settings.md) |
 | Historik | `historik.html` | Vy-toggle, period, verksamhet, anvandare, typ, atgard, objekt-id, Uppdatera, Funktioner, Knappar, Kolumner, Floden, AI-analys | [Historik och audit](history-audit.md) |
 | Hamta data | `hamta-data.html` | Prompt, max rader, Tolka, Hamta data, Exportera Excel | [Hamta data](data-fetch.md) |
@@ -55,7 +55,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Sankey - Inbound | `sankey-inbound.html` | Periodval Dag/Vecka/Manad/Ar, datum, bolag, Visa endast forverkade, Aterstall vy, Exportera SVG, Exportera sparning, klickbara Sankey-noder och lankar med pallgrenstabell/export i detaljpanelen, outboundtabell for Butik/E-handel | [Sankey - Inbound](sankey-inbound.md) |
 | Uppladdningar | `uppladdningar.html` | Valj filer, Rensa alla, per-slot Valj/rensa, drag-drop | [Lagerverktyg](warehouse-tools.md) |
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
-| Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md) |
+| Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt, Vybehorigheter-flik (rollmatrisen, flyttad fran Anvandare 2026-07-07) | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md), [Anvandare och installningar](users-settings.md) |
 | Dela | `dela.html` | Textfil/textarea, antal per kolumn, Dela varden | [Lagerverktyg](warehouse-tools.md) |
 | Meta | `meta.html` | Sok, Uppdatera, export, Sandningsanalys med ordernummer, sandningsnummer, Video-ID/langd/storlek, Analysera och nedladdning av video/stillbild | [Meta-uppladdning](meta-upload.md) |
 | Meta-uppladdning | `meta-upload.html` | Valj flera bilder/videor, visa vald videolangd nar metadata finns, automatisk uppladdning | [Meta-uppladdning](meta-upload.md) |
