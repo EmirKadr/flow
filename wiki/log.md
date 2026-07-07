@@ -2724,3 +2724,21 @@ Slutspurten på nattplanen (branch feature/nightly-quality-20260706):
 - **Etiketter**: beslutsdatum 2026-08-07 satt (saknades, indexregeln).
 - Uppgift 12-analyserna (MCP-server, Sankey-minnesbudget, mutations-
   testning) skissade i NIGHTLY_NOTES.md.
+
+## [2026-07-07] kvalitet | Pass 6: @ts-check 100 %, SWR-pilot, frågebudgetar, mobilfix
+
+Nattplanens slutförande (feature/nightly-quality-20260706, Emirs godkännanden):
+
+- **@ts-check: 85 av 85 frontendfiler.** Fem standalone-sidor via IIFE
+  (analytics exponerar setHistoryMode/submitTrackingChat för tester),
+  overview-sidans globaler döpta till overviewState/overviewDrag/
+  overviewPersonOrderDrag, presence_print läser explicit rätt sidas state.
+- **SWR-piloten** (Personer + Översikt): snapshot i sessionStorage målas
+  direkt vid sidbyte, färskt hämtas i bakgrunden med Uppdaterar…-pill.
+  Nya js/common/api_swr.js (radtakssplit). Se prestanda-leveranslager.md.
+- **Frågebudget-kontrakt**: ingen N+1 fanns (10 frågor konstant för
+  tyngsta endpointen); test_query_count_budgets.py låser antalet och
+  latensbudgetarna åtdragna mot Emirs driftbaslinje.
+- **UX/a11y**: tomma lägen i Personer/Användare/Aktiviteter, global
+  Escape-stängning av modaler (klickar modalens egen Avbryt-knapp),
+  mobiloverflow 96-723px på 13 sidor fixad med en scrollregel i main.
