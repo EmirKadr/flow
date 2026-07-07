@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import pandas as pd
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -475,9 +475,20 @@ def _bulk_insert(
     chunk_size: int | None = None,
     *,
     commit_each_batch: bool = False,
+    label: str | None = None,
     progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> None:
     chunk_size = max(1, int(chunk_size or settings.PUBLIC_DPAK_INSERT_BATCH_SIZE or 500))
+    if _copy_insert_postgres(
+        db,
+        model,
+        rows,
+        chunk_size=chunk_size,
+        commit_each_batch=commit_each_batch,
+        label=label,
+        progress=progress,
+    ):
+        return
     last_reported = 0
     for index in range(0, len(rows), chunk_size):
         db.bulk_insert_mappings(model, rows[index : index + chunk_size])
@@ -490,10 +501,84 @@ def _bulk_insert(
             progress(
                 {
                     "type": "db_insert",
+                    "label": label,
                     "inserted": inserted,
                     "rows": len(rows),
                 }
             )
+
+
+def _copy_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            value = value.item()
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, (list, dict)):
+        from psycopg.types.json import Jsonb
+
+        return Jsonb(value)
+    return value
+
+
+def _quote_pg_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _copy_insert_postgres(
+    db: Session,
+    model,
+    rows: list[dict[str, Any]],
+    *,
+    chunk_size: int,
+    commit_each_batch: bool,
+    label: str | None = None,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> bool:
+    if not rows:
+        return True
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return False
+
+    table = model.__table__
+    columns = [column.name for column in table.columns if column.name != "id" and column.name in rows[0]]
+    if not columns:
+        return True
+    table_name = _quote_pg_identifier(table.name)
+    column_names = ", ".join(_quote_pg_identifier(column) for column in columns)
+    copy_sql = f"COPY {table_name} ({column_names}) FROM STDIN"
+    last_reported = 0
+
+    for index in range(0, len(rows), chunk_size):
+        batch = rows[index : index + chunk_size]
+        connection = db.connection()
+        raw_connection = connection.connection.driver_connection
+        with raw_connection.cursor() as cursor:
+            with cursor.copy(copy_sql) as copy:
+                for row in batch:
+                    copy.write_row(tuple(_copy_value(row.get(column)) for column in columns))
+        db.flush()
+        if commit_each_batch:
+            db.commit()
+        inserted = min(index + chunk_size, len(rows))
+        if progress and (inserted == len(rows) or inserted - last_reported >= max(chunk_size, 5000)):
+            last_reported = inserted
+            progress(
+                {
+                    "type": "db_insert",
+                    "label": label,
+                    "inserted": inserted,
+                    "rows": len(rows),
+                }
+            )
+    return True
 
 
 def replace_public_dpak_dataset(
@@ -600,6 +685,77 @@ def _stored_pick_rows(db: Session, business_code: str) -> list[dict[str, Any]]:
     return rows
 
 
+PUBLIC_DPAK_FACT_INDEX_SQL: tuple[tuple[str, str], ...] = (
+    (
+        "ix_public_dpak_fact_business_date",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_fact_business_date "
+        "ON public_dpak_order_article_facts (business_code, pick_date)",
+    ),
+    (
+        "ix_public_dpak_fact_business_zone",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_fact_business_zone "
+        "ON public_dpak_order_article_facts (business_code, pick_zone)",
+    ),
+    (
+        "ix_public_dpak_fact_business_supplier",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_fact_business_supplier "
+        "ON public_dpak_order_article_facts (business_code, supplier)",
+    ),
+    (
+        "ix_public_dpak_fact_business_item",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_fact_business_item "
+        "ON public_dpak_order_article_facts (business_code, item_num)",
+    ),
+    (
+        "ix_public_dpak_fact_business_order",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_fact_business_order "
+        "ON public_dpak_order_article_facts (business_code, order_num)",
+    ),
+    (
+        "ix_public_dpak_box_business_date",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_box_business_date "
+        "ON public_dpak_order_supplier_box_facts (business_code, pick_date)",
+    ),
+    (
+        "ix_public_dpak_box_business_supplier",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_box_business_supplier "
+        "ON public_dpak_order_supplier_box_facts (business_code, supplier)",
+    ),
+    (
+        "ix_public_dpak_box_business_order",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_box_business_order "
+        "ON public_dpak_order_supplier_box_facts (business_code, order_num)",
+    ),
+    (
+        "ix_public_dpak_box_business_zone",
+        "CREATE INDEX IF NOT EXISTS ix_public_dpak_box_business_zone "
+        "ON public_dpak_order_supplier_box_facts (business_code, pick_zone)",
+    ),
+)
+
+
+def _drop_public_dpak_fact_indexes(
+    db: Session,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> None:
+    if progress:
+        progress("Droppar temporara fact-index for snabbare bulk-load...")
+    for index_name, _create_sql in PUBLIC_DPAK_FACT_INDEX_SQL:
+        db.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+    db.commit()
+
+
+def _create_public_dpak_fact_indexes(
+    db: Session,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> None:
+    if progress:
+        progress("Aterskapar fact-index...")
+    for _index_name, create_sql in PUBLIC_DPAK_FACT_INDEX_SQL:
+        db.execute(text(create_sql))
+    db.commit()
+
+
 def rebuild_public_dpak_facts(
     db: Session,
     *,
@@ -607,9 +763,14 @@ def rebuild_public_dpak_facts(
     alias_rows: list[dict[str, Any]],
     attribute_rows: list[dict[str, Any]],
     source_summary: dict[str, Any] | None = None,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> DpakBuildResult:
     business = public_dpak_business_code(business_code)
+    if progress:
+        progress("Läser lagrade pickrader från Postgres...")
     raw_rows = _stored_pick_rows(db, business)
+    if progress:
+        progress(f"Bygger D-pak-fakta från {len(raw_rows):,} pickrader...".replace(",", " "))
     supplier_map = _supplier_by_item(attribute_rows)
     for row in raw_rows:
         item_num = row.get("item_num")
@@ -619,6 +780,11 @@ def rebuild_public_dpak_facts(
     factor_map = _factor_by_item(alias_rows)
     article_facts = build_order_article_facts(normalized_rows, factor_map, business_code=business)
     supplier_facts = build_order_supplier_box_facts(normalized_rows, business_code=business)
+    if progress:
+        progress(
+            "Fakta klara i minnet: "
+            f"{len(article_facts):,} order/artikel, {len(supplier_facts):,} order/leverantor.".replace(",", " ")
+        )
 
     coverage_days = [_day(row.get("pick_date")) for row in normalized_rows if row.get("pick_date") is not None]
     coverage_start = min(coverage_days) if coverage_days else None
@@ -631,10 +797,34 @@ def rebuild_public_dpak_facts(
         PublicDpakOrderSupplierBoxFact.business_code == business
     ).delete(synchronize_session=False)
     db.query(PublicDpakDataset).filter(PublicDpakDataset.business_code == business).delete(synchronize_session=False)
-    db.flush()
+    db.commit()
 
-    _bulk_insert(db, PublicDpakOrderArticleFact, article_facts)
-    _bulk_insert(db, PublicDpakOrderSupplierBoxFact, supplier_facts)
+    fact_chunk_size = max(1, int(settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE or settings.PUBLIC_DPAK_INSERT_BATCH_SIZE))
+    _drop_public_dpak_fact_indexes(db, progress=progress)
+    try:
+        _bulk_insert(
+            db,
+            PublicDpakOrderArticleFact,
+            article_facts,
+            chunk_size=fact_chunk_size,
+            commit_each_batch=True,
+            label="order/artikel",
+            progress=progress,
+        )
+        _bulk_insert(
+            db,
+            PublicDpakOrderSupplierBoxFact,
+            supplier_facts,
+            chunk_size=fact_chunk_size,
+            commit_each_batch=True,
+            label="order/leverantor",
+            progress=progress,
+        )
+    except BaseException:
+        db.rollback()
+        raise
+    finally:
+        _create_public_dpak_fact_indexes(db, progress=progress)
 
     summary = dict(source_summary or {})
     summary.setdefault("raw_pick_rows", len(raw_rows))
@@ -696,6 +886,39 @@ def _api_client() -> ExternalDataClient:
         verify_ssl=settings.DATA_SOURCE_VERIFY_SSL,
         ca_bundle=settings.DATA_SOURCE_CA_BUNDLE.strip() or None,
     )
+
+
+def _fetch_api_rows_with_retries(
+    client: ExternalDataClient,
+    view_id: str,
+    *,
+    filters: list[dict[str, Any]],
+    chunk_start: date,
+    chunk_end: date,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> list[dict[str, Any]]:
+    attempts = max(1, int(settings.PUBLIC_DPAK_API_RETRIES or 1))
+    delay = max(0.0, float(settings.PUBLIC_DPAK_API_RETRY_DELAY_SECONDS or 0))
+    for attempt in range(1, attempts + 1):
+        try:
+            return client.fetch_data(view_id, filters=filters)
+        except ExternalDataClientError as exc:
+            if attempt >= attempts:
+                raise
+            if progress:
+                progress(
+                    {
+                        "type": "api_retry",
+                        "attempt": attempt + 1,
+                        "attempts": attempts,
+                        "view": view_id,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "error": str(exc).splitlines()[0][:200],
+                    }
+                )
+            time_module.sleep(min(90, delay * attempt))
+    return []
 
 
 def _date_filter_for_view(view_id: str, start: date, end: date) -> list[dict[str, Any]]:
@@ -813,6 +1036,8 @@ def _pick_source_ranges(start: date, end: date, *, today: date | None = None) ->
     archive_view = settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW
     if not archive_view or live_view == archive_view:
         return [(live_view, start, end)]
+    if settings.PUBLIC_DPAK_PREFER_ARCHIVE_DUCKDB and _archive_duckdb_path() is not None:
+        return [(archive_view, start, end)]
 
     today = today or datetime.now(timezone.utc).date()
     cutoff = today - timedelta(days=PUBLIC_DPAK_LIVE_RETENTION_DAYS)
@@ -1078,9 +1303,13 @@ def sync_public_dpak_pick_chunks(
             row_source = "api"
             api_rows = _fetch_archive_duckdb_rows(view_id, chunk_start, chunk_end, company_codes)
             if api_rows is None:
-                api_rows = client.fetch_data(
+                api_rows = _fetch_api_rows_with_retries(
+                    client,
                     view_id,
                     filters=_pick_filters_for_view(view_id, chunk_start, chunk_end, company_codes),
+                    chunk_start=chunk_start,
+                    chunk_end=chunk_end,
+                    progress=progress,
                 )
             else:
                 row_source = "local_archive"
@@ -1196,6 +1425,7 @@ def sync_public_dpak_pick_chunks(
             "chunks_skipped": chunks_skipped,
             "rows_imported": rows_imported,
         },
+        progress=progress,
     )
     db.commit()
     if progress:
@@ -1256,6 +1486,22 @@ def dataset_status(db: Session, business_code: str | None = None) -> dict[str, A
 
 def _normalize_question(text: str) -> str:
     return str(text or "").strip().lower().replace("å", "a").replace("ä", "a").replace("ö", "o")
+
+
+def _normalize_question(text: str) -> str:
+    normalized = str(text or "").strip().lower()
+    replacements = {
+        "\u00e5": "a",
+        "\u00e4": "a",
+        "\u00f6": "o",
+        "\u00c3\u00a5": "a",
+        "\u00c3\u00a4": "a",
+        "\u00c3\u00b6": "o",
+        "\ufffd": "a",
+    }
+    for before, after in replacements.items():
+        normalized = normalized.replace(before, after)
+    return normalized
 
 
 def _format_int(value: Any) -> str:
@@ -1328,6 +1574,20 @@ def infer_supplier(text: str) -> str | None:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             supplier = re.sub(r"[^A-Za-z0-9ÅÄÖåäö .&-].*$", "", match.group(1)).strip()
+            return supplier or None
+    return None
+
+
+def infer_supplier(text: str) -> str | None:
+    patterns = (
+        r"leverant[o\u00f6]ren\s+(.+?)(?:\s+bryts|\s+brut|$)",
+        r"leverant[o\u00f6]r\s+(.+?)(?:\s+bryts|\s+brut|$)",
+        r"fr[a\u00e5]n\s+(.+?)(?:\s+bryts|\s+brut|$)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            supplier = re.sub(r"[^A-Za-z0-9\u00c5\u00c4\u00d6\u00e5\u00e4\u00f6 .&-].*$", "", match.group(1)).strip()
             return supplier or None
     return None
 

@@ -143,12 +143,21 @@ class DpakProgressBar:
         if event_type == "db_insert":
             inserted = _fmt_int(event.get("inserted"))
             rows = _fmt_int(event.get("rows"))
-            self.current = f"skriver till Postgres {inserted}/{rows} rader"
+            label = str(event.get("label") or "").strip()
+            prefix = f"skriver {label} till Postgres" if label else "skriver till Postgres"
+            self.current = f"{prefix} {inserted}/{rows} rader"
             self._render()
             return
         if event_type == "db_retry":
             self.current = (
                 f"tappar DB-anslutning, testar igen "
+                f"{event.get('attempt')}/{event.get('attempts')}"
+            )
+            self._render()
+            return
+        if event_type == "api_retry":
+            self.current = (
+                f"tappar API-anslutning, testar igen "
                 f"{event.get('attempt')}/{event.get('attempts')}"
             )
             self._render()
@@ -285,6 +294,7 @@ def main() -> None:
                 alias_rows=alias_rows,
                 attribute_rows=attribute_rows,
                 source_summary={"mode": "rebuild_from_stored_pick_rows", "support_directory": str(support_dir)},
+                progress=DpakProgressBar(enabled=True),
             )
             db.commit()
             _print_build("Fact rebuild complete.", build)

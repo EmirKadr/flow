@@ -148,6 +148,16 @@ def test_public_dpak_sold_in_june_and_follow_up_zone_r():
         session.close()
 
 
+def test_public_dpak_sold_question_handles_real_swedish_characters():
+    session = _session()
+    try:
+        _seed(session)
+        question = "hur m" + chr(229) + "nga d-pak s" + chr(229) + "lde vi i juni"
+        assert "6 D-pak" in _ask(session, question)["answer"]
+    finally:
+        session.close()
+
+
 def test_public_dpak_supplier_count_and_autostore_orders():
     session = _session()
     try:
@@ -197,13 +207,26 @@ def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
         session.close()
 
 
-def test_public_dpak_pick_source_ranges_split_archive_and_live():
+def test_public_dpak_pick_source_ranges_split_archive_and_live(monkeypatch):
+    from app.backend.config import settings
+
+    monkeypatch.setattr(settings, "PUBLIC_DPAK_PREFER_ARCHIVE_DUCKDB", False)
     ranges = _pick_source_ranges(date(2025, 7, 1), date(2026, 7, 1), today=date(2026, 7, 7))
 
     assert ranges == [
         ("dblog_pick_log", date(2025, 7, 1), date(2026, 5, 27)),
         ("v_ask_pick_log_full", date(2026, 5, 28), date(2026, 7, 1)),
     ]
+
+
+def test_public_dpak_pick_source_ranges_prefers_local_archive(monkeypatch):
+    from app.backend.config import settings
+
+    monkeypatch.setattr(settings, "PUBLIC_DPAK_PREFER_ARCHIVE_DUCKDB", True)
+    monkeypatch.setattr(settings, "PUBLIC_DPAK_ARCHIVE_DUCKDB", __file__)
+    ranges = _pick_source_ranges(date(2025, 7, 1), date(2026, 7, 1), today=date(2026, 7, 7))
+
+    assert ranges == [("dblog_pick_log", date(2025, 7, 1), date(2026, 7, 1))]
 
 
 def test_public_dpak_pick_filters_include_company():
