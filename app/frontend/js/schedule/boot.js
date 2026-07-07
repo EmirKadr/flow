@@ -1,3 +1,4 @@
+// @ts-check
 (async () => {
   state.currentUser = await initPage("schedule", { requirePlanningView: true, denyRedirect: "/overblick.html" });
   if (!state.currentUser) return;
@@ -28,16 +29,16 @@
   const syncDateInputFromState = () => {
     const date = dateFromYWD(state.year, state.week, state.weekday);
     const ymd = ymdString(date);
-    const dateInput = document.getElementById("dateInput");
+    const dateInput = /** @type {HTMLInputElement | null} */ (document.getElementById("dateInput"));
     const dateDisplay = document.getElementById("dateDisplayText");
     if (dateInput) dateInput.value = ymd;
     if (dateDisplay) dateDisplay.textContent = ymd;
   };
 
   const writeYWDToInputs = () => {
-    document.getElementById("yearInput").value = state.year;
-    document.getElementById("weekInput").value = state.week;
-    document.getElementById("daySelect").value = String(state.weekday);
+    /** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value = String(state.year);
+    /** @type {HTMLInputElement} */ (document.getElementById("weekInput")).value = String(state.week);
+    /** @type {HTMLSelectElement} */ (document.getElementById("daySelect")).value = String(state.weekday);
     syncDateInputFromState();
     persistState();
     refreshCurrentHourHighlight();
@@ -65,9 +66,9 @@
 
   const onControlChange = async () => {
     markScheduleActivity();
-    state.year = Number(document.getElementById("yearInput").value) || state.year;
-    state.week = Number(document.getElementById("weekInput").value) || state.week;
-    state.weekday = Number(document.getElementById("daySelect").value);
+    state.year = Number(/** @type {HTMLInputElement} */ (document.getElementById("yearInput")).value) || state.year;
+    state.week = Number(/** @type {HTMLInputElement} */ (document.getElementById("weekInput")).value) || state.week;
+    state.weekday = Number(/** @type {HTMLSelectElement} */ (document.getElementById("daySelect")).value);
     syncCalculatorWithSelectedArea();
     syncDateInputFromState();
     persistState();
@@ -77,7 +78,7 @@
 
   const onDateChange = async () => {
     markScheduleActivity();
-    const date = dateFromYmd(document.getElementById("dateInput").value);
+    const date = dateFromYmd(/** @type {HTMLInputElement} */ (document.getElementById("dateInput")).value);
     if (!date) return;
     const { year, week, weekday } = isoWeek(date);
     state.year = year;
@@ -163,7 +164,7 @@
   updateUndoRedoButtons();
 
   document.getElementById("nameFilter").addEventListener("input", (e) => {
-    state.nameFilter = e.target.value;
+    state.nameFilter = e.target instanceof HTMLInputElement ? e.target.value : "";
     refreshPersons();
     buildRows();
     setupScheduleHorizontalScroll();
@@ -176,7 +177,7 @@
   }, 5 * 60 * 1000);
   window.setInterval(() => scheduleAutomaticCalculatorRefresh(0), 60 * 1000);
 
-  document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("table.matrix th[data-sort]")).forEach((th) => {
     th.addEventListener("click", (e) => {
       if (th.dataset.filterTrigger && !e.shiftKey) {
         focusNameFilter();

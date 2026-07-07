@@ -1,3 +1,4 @@
+// @ts-check
 (function () {
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => (
@@ -98,7 +99,7 @@
       ],
     },
   ];
-  const SYMBOL_CHOICES = SYMBOL_PICKER_GROUPS.flatMap((group) => group.items);
+  const SYMBOL_CHOICES = SYMBOL_PICKER_GROUPS.flatMap((group) => /** @type {any[]} */ (group.items));
   const SYMBOL_CHOICE_BY_VALUE = new Map(SYMBOL_CHOICES.map((choice) => [choice.value, choice]));
 
   function choice(value) {

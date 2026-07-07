@@ -1,3 +1,4 @@
+// @ts-check
 function allocationDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(ALLOCATION_DB_NAME, ALLOCATION_DB_VERSION);

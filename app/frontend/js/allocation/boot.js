@@ -1,6 +1,7 @@
+// @ts-check
 function bindRunButtons() {
   const root = document.getElementById("allocationRoot");
-  root.querySelectorAll("[data-run-flow]").forEach((button) => {
+  /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll("[data-run-flow]")).forEach((button) => {
     button.addEventListener("click", () => runAllocationFlow(flowById(button.dataset.runFlow)));
   });
   bindFlowInfoToggles(root);

@@ -1,3 +1,4 @@
+// @ts-check
 async function writeClipboardText(text) {
   if (navigator.clipboard?.writeText) {
     try {

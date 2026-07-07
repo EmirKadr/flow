@@ -1,6 +1,7 @@
+// @ts-check
 function focusNameFilter() {
   const input = document.getElementById("nameFilter");
-  if (!input) return;
+  if (!(input instanceof HTMLInputElement)) return;
   input.focus();
   input.select();
 }
@@ -29,7 +30,7 @@ function refreshPersons() {
   });
   state.persons = list;
 
-  document.querySelectorAll("table.matrix th[data-sort]").forEach((th) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("table.matrix th[data-sort]")).forEach((th) => {
     const ind = th.querySelector(".sort-ind");
     if (ind) ind.textContent = th.dataset.sort === state.sortKey ? (state.sortAsc ? "▲" : "▼") : "";
   });
@@ -169,7 +170,7 @@ async function savePersonOrder(sourceId, targetId, position) {
 function setupPersonOrderDrag() {
   const body = document.getElementById("scheduleBody");
   body.addEventListener("dragstart", (event) => {
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = event.target instanceof Element ? /** @type {HTMLElement | null} */ (event.target.closest("td.name[data-person-id]")) : null;
     if (!cell) return;
     const person = personById(Number(cell.dataset.personId));
     if (!canReorderPerson(person) || state.nameFilter.trim()) {
@@ -186,7 +187,7 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("dragover", (event) => {
     if (personOrderDrag.sourceId == null) return;
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = event.target instanceof Element ? /** @type {HTMLElement | null} */ (event.target.closest("td.name[data-person-id]")) : null;
     if (!cell) return;
     const person = personById(Number(cell.dataset.personId));
     if (!canReorderPerson(person)) return;
@@ -197,7 +198,7 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("drop", (event) => {
     if (personOrderDrag.sourceId == null) return;
-    const cell = event.target.closest("td.name[data-person-id]");
+    const cell = event.target instanceof Element ? /** @type {HTMLElement | null} */ (event.target.closest("td.name[data-person-id]")) : null;
     if (!cell) return;
     event.preventDefault();
     const sourceId = Number(personOrderDrag.sourceId);
@@ -209,7 +210,7 @@ function setupPersonOrderDrag() {
 
   body.addEventListener("dragend", resetPersonOrderDrag);
   body.addEventListener("dragleave", (event) => {
-    if (!body.contains(event.relatedTarget)) clearPersonOrderDropMarkers();
+    if (!(event.relatedTarget instanceof Node && body.contains(event.relatedTarget))) clearPersonOrderDropMarkers();
   });
 }
 
