@@ -224,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     api_parser.add_argument("--start", default=None, help="Inclusive start date, YYYY-MM-DD.")
     api_parser.add_argument("--end", default=None, help="Inclusive end date, YYYY-MM-DD.")
     api_parser.add_argument("--chunk-days", type=int, default=None, help="Days per API chunk.")
+    api_parser.add_argument("--archive-duckdb", type=Path, default=None, help="DuckDB archive cache for dblog pick rows.")
     api_parser.add_argument("--force", action="store_true", help="Re-fetch chunks even if they are already complete.")
     api_parser.add_argument("--no-progress", action="store_true", help="Print plain progress lines instead of a progress bar.")
 
@@ -271,6 +272,8 @@ def main() -> None:
             return
 
         if args.command == "api":
+            if args.archive_duckdb is not None:
+                settings.PUBLIC_DPAK_ARCHIVE_DUCKDB = str(args.archive_duckdb)
             start = _parse_date(
                 args.start,
                 parse_settings_date(settings.PUBLIC_DPAK_START_DATE, date(2025, 7, 1)),

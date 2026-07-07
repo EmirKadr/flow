@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     PUBLIC_DPAK_START_DATE: str = "2025-07-01"
     PUBLIC_DPAK_END_DATE: str = "2026-07-01"
     PUBLIC_DPAK_CHUNK_DAYS: int = 14
+    PUBLIC_DPAK_COMPANY_CODES: str = "GG"
+    PUBLIC_DPAK_ARCHIVE_DUCKDB: str = ""
     PUBLIC_DPAK_SUPPORT_DIR: str = ""
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0

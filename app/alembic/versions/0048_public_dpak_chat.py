@@ -1,7 +1,7 @@
 """public dpak chat data tables
 
-Revision ID: 0037_public_dpak_chat
-Revises: 0036_activity_kpi_backfill
+Revision ID: 0048_public_dpak_chat
+Revises: 0047_bug_reports
 Create Date: 2026-07-07
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 
-revision: str = "0037_public_dpak_chat"
-down_revision: Union[str, None] = "0036_activity_kpi_backfill"
+revision: str = "0048_public_dpak_chat"
+down_revision: Union[str, None] = "0047_bug_reports"
 branch_labels: Union[str, tuple[str, ...], None] = None
 depends_on: Union[str, tuple[str, ...], None] = None
 

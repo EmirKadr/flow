@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,7 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.backend.database import Base
-from app.backend.public_dpak_service import answer_public_dpak_question, replace_public_dpak_dataset
+from app.backend.public_dpak_service import (
+    _pick_filters_for_view,
+    _pick_source_ranges,
+    answer_public_dpak_question,
+    replace_public_dpak_dataset,
+)
 from app.backend.routers import public_dpak
 
 
@@ -172,7 +179,8 @@ def test_public_dpak_top_broken_articles_and_dates():
         session.close()
 
 
-def test_public_dpak_status_endpoint_does_not_require_login():
+def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
     session = _session()
     app = FastAPI()
     app.include_router(public_dpak.router)
@@ -187,3 +195,18 @@ def test_public_dpak_status_endpoint_does_not_require_login():
         assert response.json()["status"] == "missing"
     finally:
         session.close()
+
+
+def test_public_dpak_pick_source_ranges_split_archive_and_live():
+    ranges = _pick_source_ranges(date(2025, 7, 1), date(2026, 7, 1), today=date(2026, 7, 7))
+
+    assert ranges == [
+        ("dblog_pick_log", date(2025, 7, 1), date(2026, 5, 27)),
+        ("v_ask_pick_log_full", date(2026, 5, 28), date(2026, 7, 1)),
+    ]
+
+
+def test_public_dpak_pick_filters_include_company():
+    filters = _pick_filters_for_view("dblog_pick_log", date(2025, 7, 1), date(2025, 7, 1), ["GG"])
+
+    assert {"id": "company", "operator": "EQ", "value": "GG"} in filters

@@ -4,7 +4,7 @@ import calendar
 import math
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -88,6 +88,8 @@ MONTH_PATTERN = re.compile(
     + r")\s*(20\d{2})?\b",
     re.IGNORECASE,
 )
+
+PUBLIC_DPAK_LIVE_RETENTION_DAYS = 40
 
 
 @dataclass(frozen=True)
@@ -681,6 +683,98 @@ def _date_filter_for_view(view_id: str, start: date, end: date) -> list[dict[str
     return [{"id": column.id, "operator": "Between", "value": _period_values_for_column(period, column)}]
 
 
+def _public_dpak_company_codes() -> list[str]:
+    return [
+        code
+        for code in (normalize_business_code(part) for part in settings.PUBLIC_DPAK_COMPANY_CODES.split(","))
+        if code
+    ]
+
+
+def _pick_filters_for_view(view_id: str, start: date, end: date, company_codes: list[str]) -> list[dict[str, Any]]:
+    filters = _date_filter_for_view(view_id, start, end)
+    if not company_codes:
+        return filters
+    view = load_catalog().view(view_id)
+    if "company" not in view.column_by_id:
+        return filters
+    if len(company_codes) == 1:
+        filters.append({"id": "company", "operator": "EQ", "value": company_codes[0]})
+    else:
+        filters.append({"id": "company", "operator": "Terms", "value": company_codes})
+    return filters
+
+
+def _quote_duckdb_identifier(value: str) -> str:
+    return '"' + str(value).replace('"', '""') + '"'
+
+
+def _archive_duckdb_path() -> Path | None:
+    configured = settings.PUBLIC_DPAK_ARCHIVE_DUCKDB.strip()
+    if not configured:
+        return None
+    path = Path(configured)
+    if not path.is_file():
+        raise ExternalDataClientError(f"PUBLIC_DPAK_ARCHIVE_DUCKDB finns inte: {path}")
+    return path
+
+
+def _fetch_archive_duckdb_rows(
+    view_id: str,
+    start: date,
+    end: date,
+    company_codes: list[str],
+) -> list[dict[str, Any]] | None:
+    path = _archive_duckdb_path()
+    if path is None or view_id != settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW:
+        return None
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise ExternalDataClientError("PUBLIC_DPAK_ARCHIVE_DUCKDB kräver Python-paketet duckdb.") from exc
+
+    con = duckdb.connect(str(path), read_only=True)
+    try:
+        exists = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
+            [view_id],
+        ).fetchone()
+        if exists is None:
+            raise ExternalDataClientError(f"DuckDB-arkivet saknar tabellen {view_id}.")
+        columns = [
+            str(row[0])
+            for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position",
+                [view_id],
+            ).fetchall()
+            if str(row[0]) != "_row_date"
+        ]
+        if "_row_date" not in {
+            str(row[0])
+            for row in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                [view_id],
+            ).fetchall()
+        }:
+            raise ExternalDataClientError(f"DuckDB-arkivet saknar _row_date för {view_id}.")
+        select_sql = ", ".join(_quote_duckdb_identifier(column) for column in columns)
+        where_parts = ["_row_date BETWEEN ? AND ?"]
+        params: list[Any] = [start, end]
+        if company_codes and "company" in columns:
+            placeholders = ", ".join("?" for _code in company_codes)
+            where_parts.append(f"upper({_quote_duckdb_identifier('company')}) IN ({placeholders})")
+            params.extend(company_codes)
+        query = (
+            f"SELECT {select_sql} FROM {_quote_duckdb_identifier(view_id)} "
+            f"WHERE {' AND '.join(where_parts)} ORDER BY _row_date"
+        )
+        cursor = con.execute(query, params)
+        names = [str(item[0]) for item in cursor.description]
+        return [dict(zip(names, row)) for row in cursor.fetchall()]
+    finally:
+        con.close()
+
+
 def _chunks(start: date, end: date, chunk_days: int) -> Iterable[tuple[date, date]]:
     current = start
     span = max(1, int(chunk_days or 1))
@@ -688,6 +782,30 @@ def _chunks(start: date, end: date, chunk_days: int) -> Iterable[tuple[date, dat
         chunk_end = min(end, date.fromordinal(current.toordinal() + span - 1))
         yield current, chunk_end
         current = date.fromordinal(chunk_end.toordinal() + 1)
+
+
+def _pick_source_ranges(start: date, end: date, *, today: date | None = None) -> list[tuple[str, date, date]]:
+    live_view = settings.PUBLIC_DPAK_LIVE_PICK_VIEW
+    archive_view = settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW
+    if not archive_view or live_view == archive_view:
+        return [(live_view, start, end)]
+
+    today = today or datetime.now(timezone.utc).date()
+    cutoff = today - timedelta(days=PUBLIC_DPAK_LIVE_RETENTION_DAYS)
+    if end < cutoff:
+        return [(archive_view, start, end)]
+    if start >= cutoff:
+        return [(live_view, start, end)]
+    archive_end = cutoff - timedelta(days=1)
+    return [(archive_view, start, archive_end), (live_view, cutoff, end)]
+
+
+def _source_chunks(start: date, end: date, chunk_days: int) -> list[tuple[str, date, date]]:
+    return [
+        (view_id, chunk_start, chunk_end)
+        for view_id, range_start, range_end in _pick_source_ranges(start, end)
+        for chunk_start, chunk_end in _chunks(range_start, range_end, chunk_days)
+    ]
 
 
 def _range_end_dt(day: date) -> datetime:
@@ -799,9 +917,11 @@ def sync_public_dpak_pick_chunks(
     supplier_map = _supplier_by_item(attribute_rows)
     client = _api_client()
     span = chunk_days or settings.PUBLIC_DPAK_CHUNK_DAYS
-    views = [settings.PUBLIC_DPAK_LIVE_PICK_VIEW, settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW]
-    chunk_ranges = list(_chunks(start_day, end_day, span))
-    total_chunks = len(views) * len(chunk_ranges)
+    company_codes = _public_dpak_company_codes()
+    source_ranges = _pick_source_ranges(start_day, end_day)
+    planned_chunks = _source_chunks(start_day, end_day, span)
+    views = list(dict.fromkeys(view_id for view_id, _range_start, _range_end in source_ranges))
+    total_chunks = len(planned_chunks)
     chunks_fetched = 0
     chunks_skipped = 0
     rows_imported = 0
@@ -818,14 +938,97 @@ def sync_public_dpak_pick_chunks(
                 "end": end_day.isoformat(),
                 "chunk_days": span,
                 "views": views,
+                "company_codes": company_codes,
+                "archive_duckdb": str(_archive_duckdb_path() or ""),
+                "source_ranges": [
+                    {
+                        "view": view_id,
+                        "start": range_start.isoformat(),
+                        "end": range_end.isoformat(),
+                    }
+                    for view_id, range_start, range_end in source_ranges
+                ],
                 "total_chunks": total_chunks,
             }
         )
 
-    chunk_index = 0
-    for view_id in views:
-        for chunk_start, chunk_end in chunk_ranges:
-            chunk_index += 1
+    for chunk_index, (view_id, chunk_start, chunk_end) in enumerate(planned_chunks, start=1):
+        chunk = _sync_chunk(
+            db,
+            business_code=business,
+            source_view=view_id,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+        )
+        if chunk.status == "complete" and not force:
+            chunks_skipped += 1
+            if progress:
+                progress(
+                    {
+                        "type": "skip",
+                        "index": chunk_index,
+                        "total_chunks": total_chunks,
+                        "view": view_id,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "rows": int(chunk.row_count or 0),
+                        "rows_imported": rows_imported,
+                        "chunks_fetched": chunks_fetched,
+                        "chunks_skipped": chunks_skipped,
+                    }
+                )
+            continue
+
+        chunk.status = "running"
+        chunk.started_at = datetime.now(timezone.utc)
+        chunk.completed_at = None
+        chunk.error_text = None
+        db.commit()
+
+        try:
+            if progress:
+                progress(
+                    {
+                        "type": "chunk_start",
+                        "index": chunk_index,
+                        "total_chunks": total_chunks,
+                        "view": view_id,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "rows_imported": rows_imported,
+                        "chunks_fetched": chunks_fetched,
+                        "chunks_skipped": chunks_skipped,
+                    }
+                )
+            row_source = "api"
+            api_rows = _fetch_archive_duckdb_rows(view_id, chunk_start, chunk_end, company_codes)
+            if api_rows is None:
+                api_rows = client.fetch_data(
+                    view_id,
+                    filters=_pick_filters_for_view(view_id, chunk_start, chunk_end, company_codes),
+                )
+            else:
+                row_source = "local_archive"
+            normalized_rows = normalize_pick_rows(
+                view_id,
+                api_rows,
+                business_code=business,
+                supplier_by_item=supplier_map,
+            )
+            normalized_rows = [
+                row
+                for row in normalized_rows
+                if (pick_day := _day(row.get("pick_date"))) is not None and chunk_start <= pick_day <= chunk_end
+            ]
+            normalized_rows = _dedupe_pick_rows(normalized_rows)
+            _replace_pick_rows_for_chunk(
+                db,
+                business_code=business,
+                source_view=view_id,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+                rows=normalized_rows,
+            )
             chunk = _sync_chunk(
                 db,
                 business_code=business,
@@ -833,116 +1036,49 @@ def sync_public_dpak_pick_chunks(
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
             )
-            if chunk.status == "complete" and not force:
-                chunks_skipped += 1
-                if progress:
-                    progress(
-                        {
-                            "type": "skip",
-                            "index": chunk_index,
-                            "total_chunks": total_chunks,
-                            "view": view_id,
-                            "start": chunk_start.isoformat(),
-                            "end": chunk_end.isoformat(),
-                            "rows": int(chunk.row_count or 0),
-                            "rows_imported": rows_imported,
-                            "chunks_fetched": chunks_fetched,
-                            "chunks_skipped": chunks_skipped,
-                        }
-                    )
-                continue
-
-            chunk.status = "running"
-            chunk.started_at = datetime.now(timezone.utc)
-            chunk.completed_at = None
+            chunk.status = "complete"
+            chunk.row_count = len(normalized_rows)
+            chunk.completed_at = datetime.now(timezone.utc)
             chunk.error_text = None
             db.commit()
-
-            try:
-                if progress:
-                    progress(
-                        {
-                            "type": "chunk_start",
-                            "index": chunk_index,
-                            "total_chunks": total_chunks,
-                            "view": view_id,
-                            "start": chunk_start.isoformat(),
-                            "end": chunk_end.isoformat(),
-                            "rows_imported": rows_imported,
-                            "chunks_fetched": chunks_fetched,
-                            "chunks_skipped": chunks_skipped,
-                        }
-                    )
-                api_rows = client.fetch_data(view_id, filters=_date_filter_for_view(view_id, chunk_start, chunk_end))
-                normalized_rows = normalize_pick_rows(
-                    view_id,
-                    api_rows,
-                    business_code=business,
-                    supplier_by_item=supplier_map,
+            chunks_fetched += 1
+            rows_imported += len(normalized_rows)
+            if progress:
+                progress(
+                    {
+                        "type": "chunk_done",
+                        "index": chunk_index,
+                        "total_chunks": total_chunks,
+                        "view": view_id,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "rows": len(normalized_rows),
+                        "source": row_source,
+                        "rows_imported": rows_imported,
+                        "chunks_fetched": chunks_fetched,
+                        "chunks_skipped": chunks_skipped,
+                    }
                 )
-                normalized_rows = [
-                    row
-                    for row in normalized_rows
-                    if (pick_day := _day(row.get("pick_date"))) is not None and chunk_start <= pick_day <= chunk_end
-                ]
-                normalized_rows = _dedupe_pick_rows(normalized_rows)
-                _replace_pick_rows_for_chunk(
-                    db,
-                    business_code=business,
-                    source_view=view_id,
-                    chunk_start=chunk_start,
-                    chunk_end=chunk_end,
-                    rows=normalized_rows,
-                )
-                chunk = _sync_chunk(
-                    db,
-                    business_code=business,
-                    source_view=view_id,
-                    chunk_start=chunk_start,
-                    chunk_end=chunk_end,
-                )
-                chunk.status = "complete"
-                chunk.row_count = len(normalized_rows)
-                chunk.completed_at = datetime.now(timezone.utc)
-                chunk.error_text = None
-                db.commit()
-                chunks_fetched += 1
-                rows_imported += len(normalized_rows)
-                if progress:
-                    progress(
-                        {
-                            "type": "chunk_done",
-                            "index": chunk_index,
-                            "total_chunks": total_chunks,
-                            "view": view_id,
-                            "start": chunk_start.isoformat(),
-                            "end": chunk_end.isoformat(),
-                            "rows": len(normalized_rows),
-                            "rows_imported": rows_imported,
-                            "chunks_fetched": chunks_fetched,
-                            "chunks_skipped": chunks_skipped,
-                        }
-                    )
-            except Exception as exc:
-                db.rollback()
-                failed_chunk = _sync_chunk(
-                    db,
-                    business_code=business,
-                    source_view=view_id,
-                    chunk_start=chunk_start,
-                    chunk_end=chunk_end,
-                )
-                failed_chunk.status = "failed"
-                failed_chunk.error_text = str(exc)[:4000]
-                failed_chunk.completed_at = datetime.now(timezone.utc)
-                _mark_public_dpak_dataset_status(
-                    db,
-                    business_code=business,
-                    status="error",
-                    error_text=f"{view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}: {exc}",
-                )
-                db.commit()
-                raise
+        except Exception as exc:
+            db.rollback()
+            failed_chunk = _sync_chunk(
+                db,
+                business_code=business,
+                source_view=view_id,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+            )
+            failed_chunk.status = "failed"
+            failed_chunk.error_text = str(exc)[:4000]
+            failed_chunk.completed_at = datetime.now(timezone.utc)
+            _mark_public_dpak_dataset_status(
+                db,
+                business_code=business,
+                status="error",
+                error_text=f"{view_id} {chunk_start.isoformat()}..{chunk_end.isoformat()}: {exc}",
+            )
+            db.commit()
+            raise
 
     if progress:
         progress(
@@ -967,6 +1103,16 @@ def sync_public_dpak_pick_chunks(
             "end": end_day.isoformat(),
             "chunk_days": span,
             "views": views,
+            "company_codes": company_codes,
+            "archive_duckdb": str(_archive_duckdb_path() or ""),
+            "source_ranges": [
+                {
+                    "view": view_id,
+                    "start": range_start.isoformat(),
+                    "end": range_end.isoformat(),
+                }
+                for view_id, range_start, range_end in source_ranges
+            ],
             "chunks_fetched": chunks_fetched,
             "chunks_skipped": chunks_skipped,
             "rows_imported": rows_imported,

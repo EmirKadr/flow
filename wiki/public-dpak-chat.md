@@ -33,7 +33,7 @@ python -m backend.public_dpak_sync --from-api --start 2025-07-01 --end 2026-07-0
 python -m backend.public_dpak_sync status
 ```
 
-Kommandot visar en terminal-progressbar med antal chunks, procent, rader, elapsed time, ETA och aktuell vy/intervall. Det hämtar `v_ask_pick_log_full` och `dblog_pick_log` i datumchunks, sparar varje chunk direkt i Postgres och markerar den `complete`. Om körningen bryts fortsätter nästa körning genom att hoppa över klara chunks. `--force` hämtar om även klara chunks. `item_alias` och `item_attribute` läses från `PUBLIC_DPAK_SUPPORT_DIR` eller `--support-dir`.
+Kommandot visar en terminal-progressbar med antal chunks, procent, rader, elapsed time, ETA och aktuell vy/intervall. Det delar perioden enligt ASK-retention: gamla datum hämtas från `dblog_pick_log`, färska datum från `v_ask_pick_log_full`. Sätt `PUBLIC_DPAK_ARCHIVE_DUCKDB` eller `--archive-duckdb` för att läsa arkivdelen från lokal DuckDB-cache, samma idé som Produktivitet/Sankey använder när dblog-API:t är långsamt eller trasigt. Varje chunk sparas direkt i Postgres och markeras `complete`. Om körningen bryts fortsätter nästa körning genom att hoppa över klara chunks. `--force` hämtar om även klara chunks. `PUBLIC_DPAK_COMPANY_CODES` styr bolagsfilter och är `GG` som standard. `item_alias` och `item_attribute` läses från `PUBLIC_DPAK_SUPPORT_DIR` eller `--support-dir`.
 
 Om terminalen inte redan har Nowaste/ASK-konfigurationen kan `--env-file` läsa en lokal fil med `DATA_SOURCE_API_BASE_URL`, `DATA_SOURCE_API_KEY`, `DATA_SOURCE_API_CLIENT`, `DATA_SOURCE_API_KEY_HEADER`, `DATA_SOURCE_API_CLIENT_HEADER` och `DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE`.
 
