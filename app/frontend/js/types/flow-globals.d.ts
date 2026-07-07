@@ -58,8 +58,9 @@ interface Window {
   FlowLabelSymbols?: any;
   FlowLabelBarcodes?: any;
   FlowLabelPaint?: any;
+  FlowLabelDesigns?: any;
   // Buggrapportering (common/bug_report.js, lazy-laddad) + vendrad rrweb.
-  flowBugReport?: { open: () => void; isRecording: () => boolean };
+  flowBugReport?: { open: () => void; isRecording: () => boolean; sendSalvaged: () => Promise<void> };
   rrweb?: {
     record: (options: Record<string, unknown>) => (() => void) | undefined;
     Replayer: new (events: unknown[], options?: Record<string, unknown>) => {

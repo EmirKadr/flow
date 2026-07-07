@@ -27,6 +27,13 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
    "Stoppa och skicka nu" visas.
 3. Vid stopp/30 s: händelserna + kontext (konsolfel, JS-fel, user agent,
    viewport) POST:as till `/api/bug-reports`. Toast bekräftar.
+   - **Sidbyte under inspelning** (2026-07-07): länk-klick ger en
+     varningsmodal ("Stanna kvar" / "Byt sida och skicka"). Vid sidbyte
+     sparas det inspelade i sessionStorage (`flow-bug-report-salvage`) och
+     skickas automatiskt av nästa sidladdning, märkt
+     "(inspelningen avbröts av sidbyte)". Ingen tyst dataförlust längre.
+     sendBeacon/keepalive valdes bort: deras 64 kB-tak är mindre än en
+     inspelning. Räddningen är per flik och förfaller efter 5 minuter.
 4. Behörig användare (vy-id `bugReports`, default endast Super User) öppnar
    **Buggrapporter** i Verktyg-menyn: lista → klick → uppspelning i
    rrweb-Replayer + kontext. Status (Ny/Att göra/Klar) sätts via dropdown
@@ -92,6 +99,12 @@ Rate limit: max `BUG_REPORTS_RATE_LIMIT_PER_HOUR` per användare och timme.
 Inspelningar från äldre appversioner kan sakna full snapshot. Kontrollera
 `events_bytes` i listan; mycket små inspelningar (<5 kB) saknar ofta
 fullsnapshot för att inspelningen stoppades direkt.
+
+**"Jag bytte sida under inspelningen — försvann den?"**
+Nej (sedan 2026-07-07): det inspelade räddas via sessionStorage och skickas
+av nästa sidladdning med notismarkören "(inspelningen avbröts av sidbyte)".
+Kommer inget: kontrollera att användaren stannade i samma flik (räddningen
+är per flik) och att nästa sida laddades inom 5 minuter.
 
 **"Vem kan se rapporterna?"**
 Endast Super User tills vyn `bugReports` delas ut per roll i

@@ -2777,3 +2777,39 @@ togglen filtrerade inte när områdesfokus stod på ∞.
   verksamhetsbyte.
 - Kontrakt: tests/tools/test_area_focus_business_filter.py (JS-harness,
   6 tester). Backend oförändrad — alla endpoints tog redan business_id.
+
+## [2026-07-07] bygge | Etiketter: namngivna storleksprofiler, etikettprofiler + copy/paste-feedback
+
+Emirs önskemål i Etiketter-vyn:
+
+- **Namn på etikettstorlekar**: `Spara` i måttpanelen frågar nu efter namn
+  (måttet, t.ex. `104 x 200 mm`, är förslag) i stället för att alltid döpa
+  profilen till måttet.
+- **Etikettprofiler**: ny panelsektion som sparar hela etiketten (mått +
+  alla objekt) lokalt i `flow-label-editor-designs-v1` via nya
+  `label_editor/designs.js` (max 20, sanering vid läsning, quota-fel ger
+  synlig loggrad). Ladda via dropdown (ångringsbart med Ctrl+Z), ta bort
+  med bekräftelse.
+- **"Kopierade en Code128 men inget hände"**: Ctrl+C/X utan markerat objekt
+  och Ctrl+V utan internt kopierat objekt var helt tysta – nu skriver de en
+  hjälprad i dokumentloggen. Trolig orsak till buggen: Ctrl+C med fokus i
+  Värde-textarean kopierar text, inte objektet.
+
+Tester: kontraktstest utökat (designs.js, nya id:n, promptar, hjälprader),
+nytt browsertest spara/ladda/ångra/ta bort etikettprofil + namnprompt för
+storleksprofil (kört grönt lokalt). Desktop = samma frontend via QWebEngine
+(prompt/confirm stöds) så pariteten håller.
+
+## [2026-07-07] bygge | Buggrapporter: sidbytesräddning + navigeringsvarning
+
+Emirs fråga "du sa att jag inte kunde byta sida under inspelning" — luckan
+är täppt (alternativ 1+2; cross-page-inspelning väntar till beslutsdatumet):
+
+- **Räddning**: pagehide sparar events+kontext i sessionStorage
+  (flow-bug-report-salvage, 5 min TTL, per flik); sidebar.js eagerladdar
+  bug_report.js vid nästa sidladdning som skickar rapporten märkt
+  "(inspelningen avbröts av sidbyte)". sendBeacon/keepalive valdes bort
+  (64 kB-tak < inspelningsstorlek).
+- **Varning**: länk-klick under inspelning fångas i capture-fas och ger
+  modal "Stanna kvar"/"Byt sida och skicka" (Escape via Avbryt-mönstret).
+- Browsertest: test_page_navigation_salvages_recording (grönt lokalt).

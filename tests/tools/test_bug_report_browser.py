@@ -125,3 +125,45 @@ def test_consent_gate_and_full_report_flow(local_server, chromium_browser):
         expect(page.locator("#bugReportDetail")).to_be_hidden()
     finally:
         context.close()
+
+
+def test_page_navigation_salvages_recording(local_server, chromium_browser):
+    """Sidbyte under inspelning: varningsmodal vid länk-klick, och det som
+    hunnit spelas in skickas som rapport av nästa sida (räddningsflödet)."""
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        login(page, local_server)
+
+        page.click("#bug-report-toggle")
+        page.wait_for_selector("#bug-report-note", timeout=15000)
+        page.fill("#bug-report-note", "Salvage-test")
+        page.click("#bug-report-start")
+        page.wait_for_selector("#bug-report-indicator", timeout=15000)
+        page.wait_for_timeout(800)  # låt rrweb ta fullsnapshot
+
+        # Länk-klick under inspelning ger varningsmodal; Stanna kvar avbryter.
+        page.click('a[href="/personer.html"]')
+        page.wait_for_selector("#bug-report-nav-backdrop", timeout=15000)
+        page.click("#bug-report-nav-cancel")
+        expect(page.locator("#bug-report-nav-backdrop")).to_have_count(0)
+        assert is_recording(page)
+        assert "personer" not in page.url
+
+        # Byt sida och skicka: räddningen postar rapporten på nästa sida.
+        page.click('a[href="/personer.html"]')
+        page.wait_for_selector("#bug-report-nav-backdrop", timeout=15000)
+        page.click("#bug-report-nav-continue")
+        page.wait_for_url("**/personer.html", timeout=15000)
+        expect(page.locator(".toast.success").last).to_contain_text(
+            "avbröts av sidbytet", timeout=15000
+        )
+
+        # Rapporten finns i vyn, märkt med sidbytesmarkören.
+        page.goto(f"{local_server}/bug-rapporter.html", wait_until="load")
+        page.wait_for_selector("tr[data-report-id]", timeout=15000)
+        expect(page.locator("tr[data-report-id]").first).to_contain_text(
+            "Salvage-test (inspelningen avbröts av sidbyte)"
+        )
+    finally:
+        context.close()

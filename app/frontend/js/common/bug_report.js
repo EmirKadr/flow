@@ -8,6 +8,12 @@
 (function () {
   const RECORD_SECONDS = 30;
   const VENDOR_SRC = "/js/vendor/rrweb.min.js";
+  // Sidbytesräddning: Flow är en multi-page-app, så ett sidbyte kastar
+  // inspelningsläget i minnet. Vid pagehide sparas det som hunnit spelas in
+  // här (sessionStorage = per flik) och skickas av nästa sidladdning.
+  // sendBeacon/keepalive går inte: 64 kB-taket är mindre än en inspelning.
+  const SALVAGE_KEY = "flow-bug-report-salvage";
+  const SALVAGE_MAX_AGE_MS = 5 * 60 * 1000;
 
   /** @type {{ stop: null | (() => void), events: any[], consoleErrors: string[], jsErrors: string[], timer: number | null, deadline: number, note: string, restoreConsole: null | (() => void) }} */
   const state = {
@@ -159,8 +165,23 @@
     });
   }
 
-  async function finishRecording() {
-    if (!state.stop) return;
+  function buildPayload(note = state.note) {
+    return {
+      events_json: JSON.stringify(state.events),
+      note: note || null,
+      view_id: document.body?.dataset.activePage || window.flowActivePage || null,
+      page_path: window.location.pathname,
+      context: {
+        console_errors: state.consoleErrors,
+        js_errors: state.jsErrors.slice(0, 20),
+        user_agent: String(navigator.userAgent || "").slice(0, 200),
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+      },
+    };
+  }
+
+  function stopRecordingSilently() {
+    if (!state.stop) return false;
     const stop = state.stop;
     state.stop = null;
     if (state.timer !== null) {
@@ -173,23 +194,17 @@
     } catch (_ignored) { /* rrweb-stopp får inte blockera inskicket */ }
     state.restoreConsole?.();
     state.restoreConsole = null;
+    return true;
+  }
+
+  async function finishRecording() {
+    if (!stopRecordingSilently()) return;
 
     if (!state.events.length) {
       window.showToast?.("Ingen inspelning att skicka.", "warn", 4000);
       return;
     }
-    const payload = {
-      events_json: JSON.stringify(state.events),
-      note: state.note || null,
-      view_id: document.body?.dataset.activePage || window.flowActivePage || null,
-      page_path: window.location.pathname,
-      context: {
-        console_errors: state.consoleErrors,
-        js_errors: state.jsErrors.slice(0, 20),
-        user_agent: String(navigator.userAgent || "").slice(0, 200),
-        viewport: `${window.innerWidth}x${window.innerHeight}`,
-      },
-    };
+    const payload = buildPayload();
     state.events = [];
     try {
       await window.api.post("/api/bug-reports", payload);
@@ -200,8 +215,94 @@
     }
   }
 
+  // Sidbyte under inspelning: spara det inspelade så nästa sidladdning kan
+  // skicka det i stället för att allt tyst försvinner med sidan.
+  window.addEventListener("pagehide", () => {
+    if (!state.stop) return;
+    const note = state.note;
+    stopRecordingSilently();
+    if (!state.events.length) return;
+    const marker = "(inspelningen avbröts av sidbyte)";
+    const payload = buildPayload(note ? `${note} ${marker}` : marker);
+    state.events = [];
+    try {
+      sessionStorage.setItem(SALVAGE_KEY, JSON.stringify({ savedAt: Date.now(), payload }));
+    } catch (_ignored) { /* kvotfullt: räddningen är best effort */ }
+  });
+
+  // Varning vid navigering under inspelning: länkar fångas i capture-fasen
+  // så användaren väljer aktivt mellan att stanna kvar eller byta sida (och
+  // få det inspelade skickat via räddningen). JS-navigering utan länk täcks
+  // ändå av pagehide-räddningen ovan.
+  function openNavigationWarningModal(targetHref) {
+    document.getElementById("bug-report-nav-backdrop")?.remove();
+    const backdrop = document.createElement("div");
+    backdrop.id = "bug-report-nav-backdrop";
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bug-report-nav-title">
+        <h3 id="bug-report-nav-title">Inspelning pågår</h3>
+        <p>
+          Sidbytet stoppar inspelningen. Det som hunnit spelas in skickas som
+          buggrapport direkt efter sidbytet.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="bug-report-nav-cancel">Stanna kvar</button>
+          <button type="button" id="bug-report-nav-continue">Byt sida och skicka</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    document.getElementById("bug-report-nav-cancel")?.addEventListener("click", () => backdrop.remove());
+    document.getElementById("bug-report-nav-continue")?.addEventListener("click", () => {
+      backdrop.remove();
+      window.location.href = targetHref;
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!state.stop) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const href = anchor.getAttribute("href") || "";
+      if (!href || href.startsWith("#")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openNavigationWarningModal(anchor.href);
+    },
+    true
+  );
+
+  // Skickar en räddad inspelning från förra sidan. Anropas vid sidladdning
+  // (sidebar.js eagerladdar modulen när räddningsflaggan finns).
+  async function sendSalvagedReport() {
+    let saved = null;
+    try {
+      const raw = sessionStorage.getItem(SALVAGE_KEY);
+      sessionStorage.removeItem(SALVAGE_KEY);
+      saved = raw ? JSON.parse(raw) : null;
+    } catch (_ignored) {
+      return;
+    }
+    if (!saved?.payload?.events_json) return;
+    if (!Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt > SALVAGE_MAX_AGE_MS) return;
+    try {
+      await window.api.post("/api/bug-reports", saved.payload);
+      window.showToast?.("Buggrapporten skickades – inspelningen avbröts av sidbytet.", "success", 6000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Den avbrutna buggrapporten kunde inte skickas.";
+      window.showToast?.(message, "error", 8000);
+    }
+  }
+
   window.flowBugReport = {
     open: openConsentModal,
     isRecording: () => Boolean(state.stop),
+    sendSalvaged: sendSalvagedReport,
   };
+
+  // Modulen laddas eagert av sidebar.js när en räddad inspelning väntar.
+  void sendSalvagedReport();
 })();

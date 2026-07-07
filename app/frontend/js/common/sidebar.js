@@ -571,9 +571,24 @@ function ensureAssistantChatPanel(app) {
   renderAssistantMessages();
 }
 
+function loadBugReportScript(onload) {
+  const script = document.createElement("script");
+  script.src = "/js/common/bug_report.js";
+  if (onload) script.onload = onload;
+  script.onerror = () => showToast("Kunde inte ladda buggrapportören.", "error", 5000);
+  document.head.appendChild(script);
+}
+
 function initBugReportButton() {
   const button = document.getElementById("bug-report-toggle");
   if (!button) return;
+  // En inspelning som avbröts av ett sidbyte väntar i sessionStorage:
+  // eagerladda modulen så rapporten skickas direkt (modulen skickar själv).
+  try {
+    if (sessionStorage.getItem("flow-bug-report-salvage") && !window.flowBugReport) {
+      loadBugReportScript();
+    }
+  } catch (_ignored) { /* utan sessionStorage finns inget att rädda */ }
   button.addEventListener("click", () => {
     if (window.flowBugReport) {
       window.flowBugReport.open();
@@ -581,11 +596,7 @@ function initBugReportButton() {
     }
     // Lazy-laddning: rrweb + rapportlogiken hämtas först vid klick, så vanliga
     // sidladdningar betalar aldrig för buggrapportören.
-    const script = document.createElement("script");
-    script.src = "/js/common/bug_report.js";
-    script.onload = () => window.flowBugReport?.open();
-    script.onerror = () => showToast("Kunde inte ladda buggrapportören.", "error", 5000);
-    document.head.appendChild(script);
+    loadBugReportScript(() => window.flowBugReport?.open());
   });
 }
 
