@@ -2691,3 +2691,13 @@ Nattagentens uppgift 4 och 7 (OVERNIGHT_PLAN.md, branch feature/nightly-quality-
   förblir 1. DB medvetet bortvalt (hundratals MB). Prestanda-sidan
   uppdaterad.
 - @ts-check: 34 av 82 filer.
+
+## [2026-07-07] test | Pass 3: bulk-rutterna kontraktsskyddade + a11y-svep
+
+routers/bulk.py (copy/clear/fill-from-left) hade 12 % täckning — nu fem
+kontraktstester (test_schedule_bulk_routes.py): overwrite-semantik,
+weekday-validering, scope, audit med sanerad payload, fyllmönstret till
+kl 23. A11y-svepet visade att ikonknappar redan får title+aria-label
+dynamiskt; tematogglens tomma initialläge fixat. Benchmark-baslinjen
+flyttad till driftmiljön (lokal syntetisk data ger inte meningsfulla
+medianer) — se NIGHTLY_NOTES.md.

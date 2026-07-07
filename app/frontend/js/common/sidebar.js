@@ -877,7 +877,7 @@ function renderSidebar(user, activePage) {
         ${assistantUtility}
         ${logUtility}
         ${uploadUtility}
-        <button class="theme-toggle" id="theme-toggle" type="button"></button>
+        <button class="theme-toggle" id="theme-toggle" type="button" title="Växla tema" aria-label="Växla tema"></button>
       </div>
       <div class="sidebar-bottom">
         <div class="avatar">${initials(user?.display_name || user?.username)}</div>

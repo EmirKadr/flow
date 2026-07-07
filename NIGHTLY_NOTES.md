@@ -4,6 +4,26 @@ Arbetslogg för OVERNIGHT_PLAN.md. Nyaste passet överst.
 
 ## Pass 2026-07-06 (branch feature/nightly-quality-20260706)
 
+### PASS 3, morgonen 2026-07-07 ("kör igen")
+
+**Klart och pushat:**
+- Uppgift 8 påbörjad med värsta mörka hörnet: routers/bulk.py (12 % →
+  täckt). Fem kontraktstester för copy/clear/fill-from-left inkl. audit,
+  overwrite-semantik och scope. Nästa mörka hörn i tur:
+  routers/overview.py (27 %), assistant_tools/core_tools.py (38 %),
+  allocation_bridge_parts/export.py (45 %).
+- Uppgift 5.2 avklarad snabbare än väntat: svep visade att ikonknappar
+  redan får title+aria-label dynamiskt (theme/area_focus/zoom). Enda
+  luckan (tematogglens tomma initialläge) fixad.
+- Uppgift 3A MEDVETET SKIPPAD lokalt: benchmark mot syntetisk lokal data
+  ger inte meningsfulla medianer mot budgetarna (de är satta för
+  driftmiljön). Kör i stället api_benchmark mot flow-development enligt
+  DEPLOY.md-rutinen när du är inloggad — eller låt nästa nattpass göra
+  N+1-jakten statiskt per endpoint.
+
+**Kvarvarande topp-3:** overview.py-tester, stale-while-revalidate-piloten
+(3C), @ts-check (48 filer kvar).
+
 ### PASS 2, morgonen 2026-07-07 ("gör det nu")
 
 **Klart och pushat (4 commits till, totalt 18):**
