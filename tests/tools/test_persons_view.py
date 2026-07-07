@@ -167,12 +167,14 @@ def test_persons_view_refetches_with_area_focus_to_prevent_super_user_leaks():
     render_body = _function_body(persons_js, "renderRows")
     matches_body = _function_body(persons_js, "matchesAreaFocus")
 
-    assert "const areaId = focusedAreaId();" in load_body
-    assert 'params.set("area_id", String(areaId))' in load_body
+    # areaFocusListParams skickar area_id vid områdesfokus och business_id vid
+    # ∞ + verksamhetsfokus (2026-07-07) — samma läckageskydd, plus verksamhet.
+    assert "const params = areaFocusListParams(areas);" in load_body
     assert 'api.getSwr(`/api/persons${query ? `?${query}` : ""}`' in load_body
     assert 'api.get("/api/persons")' not in load_body
     assert "persons.filter(matchesAreaFocus).filter(passesFilter)" in render_body
     assert "Number(person?.home_area_id) === Number(areaId)" in matches_body
+    assert "matchesAreaFocusBusiness(person?.business_id)" in matches_body
     assert 'window.addEventListener("flow:areaFocusChanged", () => loadPersons())' in persons_js
     assert 'window.addEventListener("flow:areaFocusChanged", () => renderRows())' not in persons_js
 
