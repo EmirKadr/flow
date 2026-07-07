@@ -1,9 +1,9 @@
 {
-  "_kommentar": "Latensbudget per endpoint (max median-ms) för tools/api_benchmark --budget. Startvärdena är medvetet generösa och satta från kända mätningar mot dev (k8s Proact <-> Azure SQL, ~37 ms/fråga); dra åt dem allteftersom riktiga rapporter samlas i artifacts/api_benchmark. En överträdelse betyder: jämför mot senaste gröna rapport innan deploy godkänns.",
-  "/api/areas": 800,
-  "/api/activities": 800,
-  "/api/persons": 1000,
-  "/api/schedule?year=2026&week=27&weekday=5": 1500,
-  "/api/schedule/summary?year=2026&week=27&weekday=5": 1500,
-  "/api/overview?year=2026&week=27": 2500
+  "_kommentar": "Latensbudget per endpoint (max median-ms) för tools/api_benchmark --budget. Åtdragna 2026-07-07 mot baslinje-20260707 (medianer: areas 138, activities 146, persons 348, schedule 765, summary 631, overview 970) med ~60-80 % marginal. En överträdelse betyder: jämför mot senaste gröna rapport innan deploy godkänns.",
+  "/api/areas": 400,
+  "/api/activities": 400,
+  "/api/persons": 700,
+  "/api/schedule?year=2026&week=27&weekday=5": 1300,
+  "/api/schedule/summary?year=2026&week=27&weekday=5": 1100,
+  "/api/overview?year=2026&week=27": 1700
 }
