@@ -19,7 +19,13 @@ from app.backend.main import app
 from app.backend.models import Activity, Area, Business, Person, PersonScheduleTemplate, ScheduleCell, User
 from app.backend.security import hash_password
 
-YEAR, WEEK = 2026, 27  # måndag 2026-06-29
+# Nästa vecka, dynamiskt: mallar gäller inte datum före personens created_at
+# (tredje produktregeln testerna dokumenterar) — ett hårdkodat veckonummer
+# hade blivit en tidsbomb när kalendern hann ikapp.
+from datetime import date, timedelta
+
+_iso = (date.today() + timedelta(days=7)).isocalendar()
+YEAR, WEEK = _iso[0], _iso[1]
 
 
 @pytest.fixture
