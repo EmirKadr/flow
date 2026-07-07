@@ -9425,3 +9425,13 @@ td.empty-state {
   padding: 22px 12px;
   font-style: italic;
 }
+
+/* Mobilsvep 2026-07-07: brett innehåll (matriser, tabeller) ska scrolla
+   INUTI main — inte dra ut hela sidan horisontellt. Mätt med 390px-viewport:
+   13 av 16 sidor hade 96-723px overflow före regeln. */
+@media (max-width: 700px) {
+  .app > main {
+    overflow-x: auto;
+    min-width: 0;
+  }
+}
