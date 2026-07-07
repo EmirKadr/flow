@@ -24,6 +24,25 @@ DEFAULT_PAGES: dict[str, str] = {
 }
 
 
+# Full uppsättning riktiga sidor (~25) för det breda svepet. Path -> läsbart namn.
+# Login/set-password utelämnas (autentiseringsflöden, inte appvyer).
+ALL_PAGES: dict[str, str] = {
+    **DEFAULT_PAGES,
+    "/historik.html": "historik",
+    "/arkiv-status.html": "arkiv-status",
+    "/meta.html": "meta",
+    "/meta-upload.html": "meta-upload",
+    "/mcp.html": "mcp",
+    "/dela.html": "dela",
+    "/hamta-data.html": "hamta-data",
+    "/mitt-schema.html": "mitt-schema",
+    "/min-produktivitet.html": "min-produktivitet",
+    "/sankey-inbound.html": "sankey-inbound",
+    "/uppladdningar.html": "uppladdningar",
+    "/bearbeta.html": "bearbeta",
+}
+
+
 def _slug(text: str) -> str:
     keep = [c if (c.isalnum() or c in "-_") else "-" for c in text.strip().lower()]
     return "".join(keep).strip("-") or "sida"
@@ -138,6 +157,90 @@ def scenario_business_filter(session, report, args) -> None:
         report.add_finding("warn", "Ingen verksamhetstoggle (kräver Super User).")
 
 
+def scenario_sweep_all(session, report, args) -> None:
+    """Brett hälsosvep över ALLA riktiga sidor (~25 st, inkl. historik, arkiv-status,
+    meta, meta-upload, mcp, dela, hämta-data, mitt-schema, min-produktivitet,
+    sankey-inbound, uppladdningar, bearbeta). Per sida: capture_page +
+    assert att vi faktiskt landade på sidans egen path (inte redirect till login
+    eller access-denied). READ-ONLY: navigerar bara, klickar aldrig destruktivt."""
+    for path, name in ALL_PAGES.items():
+        capture_page(session, report, path, name)
+        landed = session.title_path()
+        base = path.split("?")[0]
+        low = landed.lower()
+        redirected = ("login" in low) or ("access-denied" in low) or ("set-password" in low)
+        report.add_assertion(
+            f"{name}: landade på egen sida (ej redirect/access-denied)",
+            (base in landed) and not redirected,
+            f"{path} -> {landed}",
+        )
+
+
+def scenario_history_health(session, report, args) -> None:
+    """Historik-vyn: klicka igenom [data-history-mode]-flikarna. På health-fliken
+    fånga #healthStatus/#healthDbLatency och verifiera att GET /api/healthcheck
+    faktiskt skickades. READ-ONLY."""
+    capture_page(session, report, "/historik.html", "historik")
+    modes = session.count("[data-history-mode]")
+    report.add_finding("info", f"Antal historik-lägen: {modes}")
+    report.add_assertion("Historik har lägesflikar", modes > 0, f"{modes} flikar")
+    if not session.exists('[data-history-mode="health"]'):
+        report.add_finding("warn", "Ingen health-flik i historik-vyn.")
+        return
+    # Fånga healthcheck-anropet innan vi klickar på fliken.
+    seen = {"healthcheck": False}
+
+    def _mark(response) -> None:
+        try:
+            if "/api/healthcheck" in str(response.url):
+                seen["healthcheck"] = True
+        except Exception:  # noqa: BLE001
+            pass
+
+    session.page.on("response", _mark)
+    session.click('[data-history-mode="health"]')
+    session.wait_ms(1500)  # låt healthcheck-anropet gå och statistiken renderas
+    report.add_assertion("Hälsostatus-elementet finns", session.exists("#healthStatus"))
+    status = session.text("#healthStatus")
+    latency = session.text("#healthDbLatency")
+    report.add_finding("info", f"Hälsa: status={status!r} db-latens={latency!r}")
+    report.add_assertion("GET /api/healthcheck skickades", seen["healthcheck"])
+    try:
+        report.add_screenshot("historik-halsa", session.screenshot("historik-halsa"), "Hälsofliken")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def scenario_theme_mobile(session, report, args) -> None:
+    """Tema + mobil: toggla #theme-toggle till mörkt läge (data-theme=dark) och
+    krymp till mobil viewport (375x812). Ta mörka + mobila skärmbilder av
+    översikten. READ-ONLY."""
+    capture_page(session, report, "/index.html", "tema-ljus")
+    if session.exists("#theme-toggle"):
+        session.click("#theme-toggle")
+        session.wait_ms(500)
+        theme = session.page.evaluate("() => document.documentElement.getAttribute('data-theme')")
+        report.add_finding("info", f"Tema efter toggle: {theme!r}")
+        report.add_assertion("Mörkt tema aktivt (data-theme=dark)", theme == "dark", str(theme))
+        try:
+            report.add_screenshot("tema-mork", session.screenshot("tema-mork"), "Mörkt tema (desktop)")
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        report.add_finding("warn", "Ingen temaväxlare (#theme-toggle) hittades.")
+    # Mobil viewport 375x812 (iPhone-liknande).
+    session.page.set_viewport_size({"width": 375, "height": 812})
+    session.wait_ms(500)
+    width = session.page.evaluate("() => window.innerWidth")
+    report.add_finding("info", f"Viewport-bredd efter mobil resize: {width}")
+    report.add_assertion("Mobil viewport (<=400px bred)", width <= 400, f"{width}px")
+    try:
+        report.add_screenshot("mobil-mork-oversikt", session.screenshot("mobil-mork-oversikt"),
+                              "Mobil 375x812, mörkt tema")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class Scenario(NamedTuple):
     description: str
     func: Callable[[Any, Any, dict], None]
@@ -150,4 +253,7 @@ SCENARIOS: dict[str, Scenario] = {
     "bug-reports": Scenario("Fördjupning i Buggrapporter-vyn", scenario_bug_reports),
     "role-access": Scenario("Vybehörigheter-panelen under Inställningar", scenario_role_access),
     "business-filter": Scenario("Verksamhetsfiltret vid ∞ områden (före/efter)", scenario_business_filter),
+    "sweep-all": Scenario("Brett hälsosvep över ALLA riktiga sidor (~25) med landnings-assert", scenario_sweep_all),
+    "history-health": Scenario("Historik-lägen + hälsofliken (#healthStatus, GET /api/healthcheck)", scenario_history_health),
+    "theme-mobile": Scenario("Mörkt tema + mobil viewport (375x812) med skärmbilder", scenario_theme_mobile),
 }
