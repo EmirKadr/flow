@@ -101,6 +101,22 @@ liggande:
 - Paminn en gang per arbetsinsats, inte vid varje meddelande. Om Emir redan
   pratar om buggrapporterna behover de inte paminnas.
 
+## E2E-undersökningar i webbläsaren
+
+För att verifiera att UI:t faktiskt fungerar live (inte bara att testerna är
+gröna) finns `python -m tools.e2e` — ett Playwright-baserat undersökningsverktyg
+som loggar in mot en körande miljö och kör scenarier (skärmbilder, konsol-/
+nätverksfelsfångst, DOM-inspektion, assertions) och skriver en agent-läsbar
+rapport. Se `wiki/e2e-investigation.md`.
+
+- Kör `python -m tools.e2e --list` för scenarier; `inspect --page /x.html` för
+  en godtycklig sida, `sweep` för hälsosvep, `smoke` för de nya funktionerna.
+- Inloggning läses ur `FLOW_E2E_*` i `app/.env` (gitignorerad). Verktyget hoppar
+  mjukt över sig självt om uppgifterna saknas. Lösenordet loggas/committas aldrig.
+- Utdata i `artifacts/e2e/` (gitignorerad): läs `report.md` och skärmbilderna.
+- Verktyget är read-only; det ska aldrig trigga destruktiva åtgärder (t.ex. ta
+  bort buggrapporter eller starta en riktig inspelning).
+
 ## Hemligheter, commits och pushar
 
 `AGENTS.md` ska vara kvar i git. Den ar till for att framtida agenter och

@@ -2854,3 +2854,20 @@ under Inställningar i stället för som knapp/modal i Användare.
   Assistant-systemprompt nämner att Vybehörigheter är en flik under
   Inställningar.
 - Desktop = samma frontend (QWebEngine) så pariteten håller automatiskt.
+
+## [2026-07-07] bygge | E2E-undersökningsverktyg (tools/e2e)
+
+Emirs önskemål efter den lyckade screenshot-verifieringen av release 2026.28.7:
+utveckla screenshot-skriptet till ett generellt browser-undersökningsverktyg
+och lägg kunskapen i repot.
+
+- **tools/e2e/**-paket: env (FLOW_E2E_* ur .env/app/.env, hoppar tomma), session
+  (FlowSession: login/goto/screenshot/interaktioner + konsol-/nätverksfångst/
+  DOM-läsning), report (md+json, agent-läsbar), scenarios (registry), CLI
+  (python -m tools.e2e, UTF-8-stdout mot cp1252-krasch).
+- **Scenarier**: smoke, inspect (--page, undersök vad som helst), sweep (--pages,
+  hälsosvep), bug-reports, role-access, business-filter.
+- **tools/e2e_screenshots.py** kvar som bakåtkompatibel genväg (kör smoke).
+- Non-browser-kontrakt: tests/tools/test_e2e_investigation.py (12 tester, gröna).
+- Dokumenterat i wiki/e2e-investigation.md + index. AGENTS-note om att köra
+  verktyget vid undersökningar. Utdata i artifacts/e2e/ (gitignorerad).
