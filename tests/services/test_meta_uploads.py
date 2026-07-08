@@ -355,6 +355,104 @@ def test_analyze_meta_upload_marks_audio_extraction_failure(monkeypatch):
         engine.dispose()
 
 
+def test_analyze_meta_upload_marks_unexpected_error_instead_of_leaking_500(monkeypatch):
+    """Ett oväntat fel (inte MetaAnalysisFailed) får inte lämna raden låst i
+    'analyzing' med en naken 500 — den ska bli 'analysis_failed' med felet synligt
+    så Analysera-knappen inte disablas för alltid."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+
+    def _boom(upload):
+        raise RuntimeError("oväntad krasch")
+
+    monkeypatch.setattr(meta_analysis_service, "_call_meta_analysis_provider", _boom)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="c" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"hello-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "analysis_failed"
+        assert "RuntimeError" in (result.analysis_error or "")
+        assert "oväntad krasch" in (result.analysis_error or "")
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_analyze_endpoint_returns_200_not_500_on_unexpected_error(monkeypatch):
+    """Endpoint-nivå: ett oväntat fel i analysen får inte läcka som HTTP 500. Med
+    buggen propagerade undantaget (TestClient reser det); med fixen svarar
+    endpointen 200 med analysis_failed och felet i message, och raden är inte
+    kvar i 'analyzing' (Analysera-knappen disablas annars för alltid)."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+
+    def _boom(upload):
+        raise RuntimeError("oväntad krasch")
+
+    monkeypatch.setattr(meta_analysis_service, "_call_meta_analysis_provider", _boom)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-500",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="e" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"boom-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    upload_id = row.id
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.post(f"/api/meta/uploads/{upload_id}/analyze")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "analysis_failed"
+        assert "RuntimeError" in (body["message"] or "")
+        observation = (
+            session.query(MetaShipmentObservation).filter_by(media_upload_id=upload_id).first()
+        )
+        assert observation is not None
+        assert observation.analysis_status == "analysis_failed"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_queued_meta_analysis_upload_ids_returns_oldest_queued_video():
     engine, session = make_session()
     first = MetaMediaUpload(
