@@ -38,10 +38,8 @@ class PublicDpakChatResponse(BaseModel):
     warning: str | None = None
 
 
-def _verify_public_token(token: str | None) -> None:
-    expected = settings.PUBLIC_DPAK_LINK_TOKEN.strip()
-    if expected and token != expected:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ogiltig publik länk.")
+def _verify_public_token(_token: str | None) -> None:
+    return None
 
 
 def _messages_payload(messages: list[PublicDpakMessage]) -> list[dict[str, str]]:

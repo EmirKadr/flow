@@ -236,6 +236,11 @@ function publicDpakInit() {
   publicDpakLoadStatus();
   document.getElementById("publicDpakForm")?.addEventListener("submit", publicDpakSubmit);
   document.getElementById("publicDpakClear")?.addEventListener("click", publicDpakClear);
+  document.getElementById("publicDpakInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    document.getElementById("publicDpakForm")?.requestSubmit();
+  });
 }
 
 publicDpakInit();

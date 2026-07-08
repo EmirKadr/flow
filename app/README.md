@@ -96,7 +96,7 @@ Den skriver `data/external_data_catalog.json`, som commitas så Render får kata
 
 ## Publik D-pak-fråga
 
-Sidan `/dpak-fraga.html` är en fristående publik chatvy utan login och utan sidomeny. Den ska bara delas via direktlänk. Om `PUBLIC_DPAK_LINK_TOKEN` är satt måste länken innehålla `?token=...`; annars är endpointen öppen.
+Sidan `/dpak-fraga.html` är en fristående publik chatvy utan login och utan sidomeny. Den ska bara delas via direktlänk och kräver ingen token.
 
 Chatten använder serverns `MINIMAX_API_KEY` för formulering, så kunder behöver ingen egen nyckel och betalar inte för användningen. Alla siffror räknas först deterministiskt i backend från Postgres-tabellerna; MiniMax får bara formulera svaret och får inte hitta på eller ändra tal.
 
