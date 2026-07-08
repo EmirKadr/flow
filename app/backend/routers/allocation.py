@@ -334,8 +334,11 @@ async def update_observations(
         )
         raise
     try:
-        buffer_df = engine_module.read_table(str(path))
-        result = engine_module.build_observations_update_result(
+        # Blockerande pandas-I/O + synkront GitHub-PUT: kör i tråd så den enda
+        # uvicorn-workern inte fryser alla requests under körningen.
+        buffer_df = await run_in_threadpool(engine_module.read_table, str(path))
+        result = await run_in_threadpool(
+            engine_module.build_observations_update_result,
             buffer_df,
             observations_path=data_paths["observations_path"],
             artikel_max_out=data_paths["article_max_path"],
@@ -453,11 +456,16 @@ async def run_flow(
             required_keys = allocation_helpers._allocation_flow_required_file_keys(flow_by_id.get(flow_id))
             try:
                 with start_span("allocation.flow.resolve_sources", {"allocation.flow_id": flow_id}):
-                    source_resolution = allocation_helpers.resolve_sources(
+                    # resolve_sources kör sekventiella externa API-hämtningar
+                    # (blockerande requests). Kör i tråd; tenant-uppslaget är en
+                    # kort lokal DB-fråga och stannar på loopen.
+                    _resolve_tenant = allocation_helpers._business_tenant_for_code(db, business_code)
+                    source_resolution = await run_in_threadpool(
+                        allocation_helpers.resolve_sources,
                         source_map,
                         files,
                         required_keys=required_keys,
-                        tenant=allocation_helpers._business_tenant_for_code(db, business_code),
+                        tenant=_resolve_tenant,
                     )
             except WorkflowDataError as exc:
                 source_status = exc.audit_entries

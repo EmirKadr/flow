@@ -438,6 +438,70 @@ def test_ordersaldo_shortage_includes_helpall_count_from_article_max(tmp_path):
     }
 
 
+def test_recompute_artikel_max_matches_per_group_reference(tmp_path):
+    """Differentialtest: den vektoriserade _recompute_artikel_max ska ge exakt
+    samma artikel_max.csv som den gamla per-grupp-loopen (_max_utan_outlier,
+    fortfarande kvar i modulen). Bevisar att prestandarefaktoreringen bevarar
+    beteende — inkl. övre-outlier-exkludering, tie-break på max, len<=2-fallback
+    och radordning."""
+    from warehouse_tools.engine_core.observations import (
+        _max_utan_outlier,
+        _recompute_artikel_max,
+    )
+
+    observations = pd.DataFrame(
+        [
+            # A: len>2 med en tydlig övre-outlier (100 > q3+1.5*IQR) -> ska EXKLUDERAS,
+            # max blir 13, inte 100.
+            {"artikelnummer": "A", "antal": 10, "pallid": "PA1"},
+            {"artikelnummer": "A", "antal": 11, "pallid": "PA2"},
+            {"artikelnummer": "A", "antal": 12, "pallid": "PA3"},
+            {"artikelnummer": "A", "antal": 13, "pallid": "PA4"},
+            {"artikelnummer": "A", "antal": 100, "pallid": "PA5"},
+            # B: tie på max (5,5) -> första förekomsten i radordning (PB1).
+            {"artikelnummer": "B", "antal": 5, "pallid": "PB1"},
+            {"artikelnummer": "B", "antal": 5, "pallid": "PB2"},
+            {"artikelnummer": "B", "antal": 3, "pallid": "PB3"},
+            # C: len==1 -> fallback, tar enda raden.
+            {"artikelnummer": "C", "antal": 7, "pallid": "PC1"},
+            # D: len==2 -> fallback, tar max.
+            {"artikelnummer": "D", "antal": 4, "pallid": "PD1"},
+            {"artikelnummer": "D", "antal": 9, "pallid": "PD2"},
+            # NaN/ogiltiga rader ska droppas som i originalet.
+            {"artikelnummer": "E", "antal": None, "pallid": "PE1"},
+        ]
+    )
+
+    out_path = tmp_path / "artikel_max.csv"
+    n = _recompute_artikel_max(observations.copy(), out_path)
+    got = pd.read_csv(out_path, dtype=str, encoding="utf-8-sig")
+
+    # Referens: exakt den gamla loopen som refaktoreringen ersatte.
+    ref_df = observations.copy()
+    ref_df["antal"] = pd.to_numeric(ref_df["antal"], errors="coerce")
+    ref_df = ref_df.dropna(subset=["artikelnummer", "antal", "pallid"])
+    ref_df["artikelnummer"] = ref_df["artikelnummer"].astype(str).str.strip()
+    ref_df["pallid"] = ref_df["pallid"].astype(str).str.strip()
+    ref_df = ref_df.drop_duplicates(subset="pallid").reset_index(drop=True)
+    ref_rows = []
+    for art, grupp in ref_df.groupby("artikelnummer"):
+        max_val, pall_id = _max_utan_outlier(grupp)
+        ref_rows.append({"artikelnummer": art, "max": max_val, "pallid": pall_id})
+
+    assert n == len(ref_rows)
+    assert list(got["artikelnummer"]) == [r["artikelnummer"] for r in ref_rows]
+    assert [float(v) for v in got["max"]] == [r["max"] for r in ref_rows]
+    assert list(got["pallid"]) == [r["pallid"] for r in ref_rows]
+
+    # Konkreta förväntningar (låser även referensen mot uppenbara buggar).
+    assert got.set_index("artikelnummer").loc["A", "pallid"] == "PA4"  # outlier 100 exkluderad
+    assert float(got.set_index("artikelnummer").loc["A", "max"]) == 13.0
+    assert got.set_index("artikelnummer").loc["B", "pallid"] == "PB1"  # tie -> första
+    assert got.set_index("artikelnummer").loc["C", "pallid"] == "PC1"
+    assert float(got.set_index("artikelnummer").loc["D", "max"]) == 9.0
+    assert list(got["artikelnummer"]) == ["A", "B", "C", "D"]  # sorterad ordning
+
+
 def test_warehouse_tool_testdata_is_local_to_flow():
     if not WAREHOUSE_TESTDATA.is_dir():
         pytest.skip("Lokala warehouse-regressionsfiler saknas.")

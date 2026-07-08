@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
@@ -138,8 +138,13 @@ def _coredata_db_rows_by_type(
 ) -> dict[str, CoreDataFile]:
     if db is None:
         return {}
+    # Enda anroparen (build_coredata_status) läser bara metadata, aldrig row.data
+    # (hela CSV-innehållet, tiotals MB). defer(data) undviker att SELECT:a
+    # binärkolumnen för alla filtyper på varje statusladdning. Raderna läcker
+    # aldrig ut som ORM-objekt, så ingen lazy-reload kan triggas.
     rows = (
         db.query(CoreDataFile)
+        .options(defer(CoreDataFile.data))
         .filter(CoreDataFile.business_code == _normalized_business_code(business_code))
         .all()
     )

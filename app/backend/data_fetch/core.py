@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import cached_property
 import json
 from pathlib import Path
 import re
@@ -241,14 +242,32 @@ class DataCatalog:
         except KeyError as exc:
             raise DataFetchPlanError(f"Okänd vy: {view_id}") from exc
 
+    @cached_property
+    def _search_terms(self) -> tuple:
+        # Precompute per vy/kolumn: (normalized, tokens, lower) för
+        # id/label_en/label_sv. Katalogtexten är statisk, så den regex-tunga
+        # _normalize/_tokens körs en gång i stället för per candidate_views-
+        # anrop. Cachas på katalog-objektet -> byts automatiskt vid omladdning.
+        return tuple(
+            (
+                view,
+                _precompute_match_terms(view.id, view.label_en, view.label_sv),
+                tuple(
+                    (column, _precompute_match_terms(column.id, column.label_en, column.label_sv))
+                    for column in view.columns
+                ),
+            )
+            for view in self.views.values()
+        )
+
     def candidate_views(self, prompt: str, limit: int = 12) -> list[DataView]:
         prompt_norm = _normalize(prompt)
         prompt_tokens = _tokens(prompt)
         scored: list[tuple[int, str, DataView]] = []
-        for view in self.views.values():
-            score = _match_score(prompt_norm, prompt_tokens, view.id, view.label_en, view.label_sv) * 4
-            for column in view.columns:
-                column_score = _match_score(prompt_norm, prompt_tokens, column.id, column.label_en, column.label_sv)
+        for view, view_terms, column_terms in self._search_terms:
+            score = _match_score_terms(prompt_norm, prompt_tokens, view_terms) * 4
+            for _column, col_terms in column_terms:
+                column_score = _match_score_terms(prompt_norm, prompt_tokens, col_terms)
                 if column_score:
                     score += min(column_score, 6)
             if score:
@@ -282,6 +301,33 @@ def _match_score(prompt_norm: str, prompt_tokens: set[str], *values: object) -> 
             score += 20
         score += 2 * len(prompt_tokens & _tokens(text))
         if str(value).lower() in prompt_norm:
+            score += 8
+    return score
+
+
+def _precompute_match_terms(*values: object) -> tuple[tuple[str, frozenset[str], str], ...]:
+    """Förberäkna (normalized, tokens, lower) per icke-tomt värde — motsvarar
+    exakt vad _match_score räknar om per anrop för statisk katalogtext."""
+    terms: list[tuple[str, frozenset[str], str]] = []
+    for value in values:
+        text = str(value or "")
+        if not text:
+            continue
+        terms.append((_normalize(text), frozenset(_tokens(text)), str(value).lower()))
+    return tuple(terms)
+
+
+def _match_score_terms(
+    prompt_norm: str,
+    prompt_tokens: set[str],
+    terms: tuple[tuple[str, frozenset[str], str], ...],
+) -> int:
+    score = 0
+    for normalized, tokens, lower in terms:
+        if normalized and normalized in prompt_norm:
+            score += 20
+        score += 2 * len(prompt_tokens & tokens)
+        if lower in prompt_norm:
             score += 8
     return score
 

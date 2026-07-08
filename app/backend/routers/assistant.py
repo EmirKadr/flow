@@ -718,24 +718,32 @@ async def chat_with_assistant(
                 detail="Max 10 fragor per session. Klicka Rensa dialog for att borja om.",
             )
 
-        try:
+        # Kontextbygget läser alla wiki-md-filer och (vid challenge-regex) hela
+        # repo-trädet + gör DB-läsningar — tung blockerande fil-/DB-I/O. Kör i
+        # tråd så den enda uvicorn-workern inte fryser alla requests. db används
+        # sekventiellt (aldrig samtidigt) mellan denna och _run_chat-tråden.
+        def _build_context():
             area_label = None
             if getattr(user, "area_id", None) is not None:
                 area = db.get(Area, user.area_id)
                 if area is not None:
                     area_label = f"{area.name} ({area.code})"
             try:
-                role_access = get_role_view_access(db, business_id=getattr(user, "business_id", None))
+                role_access_local = get_role_view_access(db, business_id=getattr(user, "business_id", None))
             except TypeError:
-                role_access = get_role_view_access(db)
-            tools = allowed_tools_for(user, role_access) if settings.ASSISTANT_TOOLS_ENABLED else []
-            minimax_payload = build_minimax_payload(
+                role_access_local = get_role_view_access(db)
+            tools_local = allowed_tools_for(user, role_access_local) if settings.ASSISTANT_TOOLS_ENABLED else []
+            minimax_payload_local = build_minimax_payload(
                 payload,
                 user,
-                role_access=role_access,
+                role_access=role_access_local,
                 area_label=area_label,
-                tools_available=bool(tools),
+                tools_available=bool(tools_local),
             )
+            return role_access_local, tools_local, minimax_payload_local
+
+        try:
+            role_access, tools, minimax_payload = await run_in_threadpool(_build_context)
         except Exception as exc:
             add_span_attributes({"agent.error_type": type(exc).__name__})
             logger.exception("Assistant context build failed")
