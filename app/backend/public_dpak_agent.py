@@ -33,6 +33,7 @@ SQL_BLOCKLIST = re.compile(
 
 MAX_AGENT_STEPS = 7
 MAX_SQL_ROWS = 80
+ANSWER_NUMBER_RE = re.compile(r"(?<![\w])\d[\d\s.,]*\d(?![\w])")
 
 
 class PublicDpakAgentError(Exception):
@@ -51,6 +52,64 @@ def _safe_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_safe_value(item) for item in value]
     return str(value)
+
+
+def _format_answer_int(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
+def _answer_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        digits = re.sub(r"\D", "", value)
+        if not digits:
+            return None
+        try:
+            return int(digits)
+        except ValueError:
+            return None
+    return None
+
+
+def _table_ints(table: list[Any]) -> list[int]:
+    values: list[int] = []
+    for row in table:
+        if not isinstance(row, dict):
+            continue
+        for value in row.values():
+            number = _answer_int(value)
+            if number is not None and abs(number) >= 1000:
+                values.append(number)
+    return values
+
+
+def _align_answer_numbers(answer: str, table: list[Any]) -> str:
+    table_values = sorted(set(_table_ints(table)))
+    if not table_values:
+        return answer
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        token_digits = re.sub(r"\D", "", token)
+        if len(token_digits) < 5:
+            return token
+        try:
+            value = int(token_digits)
+        except ValueError:
+            return token
+        if value in table_values:
+            return token
+        closest = min(table_values, key=lambda item: abs(item - value))
+        if len(str(abs(closest))) == len(token_digits) and abs(closest - value) / max(abs(closest), 1) <= 0.02:
+            return _format_answer_int(closest)
+        return token
+
+    return ANSWER_NUMBER_RE.sub(replace, answer)
 
 
 def _clean_table_name(raw: str) -> str:
@@ -389,6 +448,7 @@ def run_public_dpak_agent(
         if action_type == "final":
             answer = str(parsed.get("answer") or "").strip()
             table = parsed.get("table") if isinstance(parsed.get("table"), list) else []
+            answer = _align_answer_numbers(answer, table)
             return {
                 "answer": answer or "Jag hittade inget svar i råunderlaget.",
                 "table": table[:80],
@@ -408,6 +468,7 @@ def run_public_dpak_agent(
         if str(parsed.get("type") or "").strip().lower() == "final":
             answer = str(parsed.get("answer") or "").strip()
             table = parsed.get("table") if isinstance(parsed.get("table"), list) else []
+            answer = _align_answer_numbers(answer, table)
             return {
                 "answer": answer or "Jag hittade inget svar i råunderlaget.",
                 "table": table[:80],

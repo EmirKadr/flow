@@ -17,7 +17,7 @@ from app.backend.public_dpak_service import (
     replace_public_dpak_dataset,
 )
 from app.backend.models import PublicDpakRawItemAlias, PublicDpakRawItemAttribute, PublicDpakRawPicklog
-from app.backend.public_dpak_agent import PublicDpakAgentError, run_public_dpak_agent, run_sql_tool
+from app.backend.public_dpak_agent import PublicDpakAgentError, _align_answer_numbers, run_public_dpak_agent, run_sql_tool
 from app.backend.routers import public_dpak
 
 
@@ -287,6 +287,14 @@ def test_public_dpak_agent_uses_tools_over_raw_data():
         assert calls[1]["tool_trace"][0]["tool_result"]["files"][0]["companies"] == ["MG"]
     finally:
         session.close()
+
+
+def test_public_dpak_agent_aligns_answer_numbers_to_table():
+    answer = _align_answer_numbers(
+        "Hela datasetet innehåller 1 410 088 rader.",
+        [{"Bolag": "MG", "Rader": 1411088}],
+    )
+    assert "1 411 088" in answer
 
 
 def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
