@@ -987,6 +987,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/meta/shipment-observations/{observation_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Meta Shipment Status */
+        patch: operations["update_meta_shipment_status_api_meta_shipment_observations__observation_id__status_patch"];
+        trace?: never;
+    };
     "/api/meta/uploads": {
         parameters: {
             query?: never;
@@ -4159,6 +4176,11 @@ export interface components {
             /** Minute Start */
             minute_start: number;
         };
+        /** ShipmentStatusUpdate */
+        ShipmentStatusUpdate: {
+            /** Status */
+            status: string;
+        };
         /** SidebarLayoutItem */
         SidebarLayoutItem: {
             /**
@@ -6664,6 +6686,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_meta_shipment_status_api_meta_shipment_observations__observation_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShipmentStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -21,6 +21,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [E2E-undersökningsverktyg](e2e-investigation.md) - `python -m tools.e2e` loggar in mot en körande miljö och kör scenarier (skärmbilder, konsol-/nätverksfelsfångst, DOM-inspektion) med agent-läsbar rapport.
 - [Frontend-typning och lint](frontend-typing.md) - JSDoc + tsc --checkJs och ESLint utan byggsteg; utrullningsregler och domangranser.
 - [Kallkodshantering och release (NoWaste)](nowaste-git-release.md) - branchmodell, Octopus-releaser (`release/*` bygger automatiskt) och deploy till development/production.
+- [Prestandaoptimeringar - monster och revisionschecklista](prestanda-optimeringar.md) - kunskapsbas over prestandamonster vi tjanat sekunder/ms pa (ladda-och-reducera-i-Python, N+1, over-fetch, saknat index, pandas-loop, blocking-in-async, omrakning, compute-then-filter) med grep-signaturer for att svepa koden och uppmatta vinster med datum.
 - [Prestanda - leveranslagret](prestanda-leveranslager.md) - gzip, versionsstamplade statiska filer med immutable-cache, ETag/304 pa API-GET, service worker, latensbudget och workers-beslutet.
 - [Begrepp och agentordlista](terminology.md) - namngivna produktbegrepp som
   ska tolkas konsekvent i framtida chattar.
