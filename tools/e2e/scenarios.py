@@ -241,6 +241,57 @@ def scenario_theme_mobile(session, report, args) -> None:
         pass
 
 
+def scenario_meta_analyze(session, report, args) -> None:
+    """Reproducera 500 vid Meta-analys. Gå till /meta.html, klicka Analysera på
+    första videon och fånga svarets status + body + request. OBS: detta TRIGGAR
+    en riktig analys på miljön (inte read-only) — kör bara mot development."""
+    session.goto("/meta.html")
+    session.wait_ms(1200)  # låt sändningsanalys-tabellen renderas
+    total = session.count("[data-analyze-upload]")
+    enabled = session.count("[data-analyze-upload]:not([disabled])")
+    report.add_finding("info", f"Analysera-knappar: {total} totalt, {enabled} aktiva")
+    try:
+        report.add_screenshot("meta-innan", session.screenshot("meta-innan"), "Meta före analys")
+    except Exception:  # noqa: BLE001
+        pass
+    if enabled == 0:
+        report.add_finding("warn", "Ingen aktiv Analysera-knapp (allt disabled/analyzing) — inget att reproducera.")
+        return
+    btn = session.page.query_selector("[data-analyze-upload]:not([disabled])")
+    upload_id = btn.get_attribute("data-analyze-upload") if btn else "?"
+    report.add_finding("info", f"Klickar Analysera för rad-id {upload_id}")
+    captured: dict[str, Any] = {}
+    try:
+        with session.page.expect_response(
+            lambda r: "/analyze" in r.url and r.request.method == "POST",
+            timeout=180000,  # analysen kan ta tid (ffmpeg + LLM)
+        ) as resp_info:
+            btn.click()
+        resp = resp_info.value
+        captured["status"] = resp.status
+        captured["url"] = str(resp.url)
+        try:
+            captured["body"] = resp.text()[:3000]
+        except Exception as exc:  # noqa: BLE001
+            captured["body"] = f"<kunde inte läsa body: {exc.__class__.__name__}>"
+    except Exception as exc:  # noqa: BLE001
+        report.add_finding("error", f"Väntan på /analyze-svar misslyckades: {exc.__class__.__name__}: {exc}")
+    if captured:
+        level = "error" if int(captured.get("status", 0)) >= 500 else "info"
+        report.add_finding(
+            level,
+            f"/analyze svarade HTTP {captured.get('status')}\n"
+            f"URL: {captured.get('url')}\nBody: {captured.get('body')}",
+        )
+    session.wait_ms(1500)
+    report.add_console("meta-analyze", session.drain_console())
+    report.add_network("meta-analyze", session.drain_network())
+    try:
+        report.add_screenshot("meta-efter", session.screenshot("meta-efter"), "Meta efter analys")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class Scenario(NamedTuple):
     description: str
     func: Callable[[Any, Any, dict], None]
@@ -256,4 +307,5 @@ SCENARIOS: dict[str, Scenario] = {
     "sweep-all": Scenario("Brett hälsosvep över ALLA riktiga sidor (~25) med landnings-assert", scenario_sweep_all),
     "history-health": Scenario("Historik-lägen + hälsofliken (#healthStatus, GET /api/healthcheck)", scenario_history_health),
     "theme-mobile": Scenario("Mörkt tema + mobil viewport (375x812) med skärmbilder", scenario_theme_mobile),
+    "meta-analyze": Scenario("Reproducera 500 vid Meta-analys: klicka Analysera + fånga svar (TRIGGAR analys)", scenario_meta_analyze),
 }

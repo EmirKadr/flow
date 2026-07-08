@@ -46,6 +46,7 @@ testerna är gröna. Skapat 2026-07-07 efter release 2026.28.7.
 | `bug-reports` | Fördjupning i Buggrapporter-vyn: lista, status-dropdown, detaljpanel. |
 | `role-access` | Vybehörigheter-panelen under Inställningar (roll × vy-matris). |
 | `business-filter` | Verksamhetsfiltret vid ∞ områden: fotar personlistan före/efter verksamhetsbyte. |
+| `meta-analyze` | Reproducerar 500 vid Meta-analys: klickar Analysera på första videon i `/meta.html` och fångar svarets status + body + request. **Ej read-only** — triggar en riktig analys, kör bara mot development. |
 
 ## Arkitektur
 
