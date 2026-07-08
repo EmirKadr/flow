@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>D-pak frågor - flow</title>
+  <title>Leverantörspridning &amp; D-paks-information - flow</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="alternate icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/app-icon-192.png" />
@@ -14,10 +14,17 @@
   <main class="public-dpak-shell">
     <section class="public-dpak-chat-surface" aria-labelledby="publicDpakTitle">
       <header class="public-dpak-head">
-        <div>
-          <h1 id="publicDpakTitle">D-pak frågor</h1>
+        <div class="public-dpak-brand">
+          <div class="public-dpak-logos" aria-label="No Waste Logistics och Mestergruppen">
+            <img src="/assets/nowaste-logo.svg" alt="No Waste Logistics" />
+            <span aria-hidden="true"></span>
+            <img src="/assets/mestergruppen-logo.svg" alt="Mestergruppen" />
+          </div>
+          <h1 id="publicDpakTitle">Leverantörspridning &amp; D-paks-information</h1>
         </div>
-        <div id="publicDpakStatus" class="public-dpak-status" aria-live="polite">Kontrollerar underlag...</div>
+        <div class="public-dpak-head-meta">
+          <div id="publicDpakStatus" class="public-dpak-status" aria-live="polite">Kontrollerar underlag...</div>
+        </div>
       </header>
 
       <div id="publicDpakMessages" class="public-dpak-messages" role="log" aria-live="polite"></div>
@@ -37,6 +44,16 @@
     </section>
   </main>
 
-  <script src="/js/public_dpak_chat.js?v=20260708-public-dpak-shortcuts"></script>
+  <div id="publicDpakTableModal" class="public-dpak-table-modal" hidden>
+    <section class="public-dpak-table-modal-panel" role="dialog" aria-modal="true" aria-labelledby="publicDpakTableModalTitle">
+      <header class="public-dpak-table-modal-head">
+        <h2 id="publicDpakTableModalTitle">Tabell</h2>
+        <button id="publicDpakCloseTable" type="button" class="public-dpak-secondary">Stäng</button>
+      </header>
+      <div id="publicDpakTableModalBody" class="public-dpak-table-modal-body"></div>
+    </section>
+  </div>
+
+  <script src="/js/public_dpak_chat.js?v=20260708-public-dpak-tables"></script>
 </body>
 </html>

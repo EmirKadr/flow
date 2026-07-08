@@ -3,6 +3,7 @@ const publicDpakState = {
   busy: false,
   status: null,
 };
+const publicDpakTables = new Map();
 
 const publicDpakParams = new URLSearchParams(window.location.search);
 const publicDpakToken = publicDpakParams.get("token") || "";
@@ -95,7 +96,7 @@ function publicDpakStatusText(status) {
   return `Underlag är inte klart.${chunkText}`;
 }
 
-function publicDpakRenderTable(rows) {
+function publicDpakTableSpec(rows) {
   if (!Array.isArray(rows) || !rows.length) return "";
   const columns = Array.from(
     rows.reduce((set, row) => {
@@ -103,7 +104,14 @@ function publicDpakRenderTable(rows) {
       return set;
     }, new Set())
   );
-  if (!columns.length) return "";
+  if (!columns.length) return null;
+  return { rows, columns };
+}
+
+function publicDpakTableHtml(rows) {
+  const spec = publicDpakTableSpec(rows);
+  if (!spec) return "";
+  const { columns } = spec;
   const header = columns.map((column) => `<th>${publicDpakEscape(column)}</th>`).join("");
   const body = rows.map((row) => `
     <tr>
@@ -111,18 +119,54 @@ function publicDpakRenderTable(rows) {
     </tr>
   `).join("");
   return `
-    <div class="public-dpak-table-wrap">
-      <table>
-        <thead><tr>${header}</tr></thead>
-        <tbody>${body}</tbody>
-      </table>
+    <table>
+      <thead><tr>${header}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+function publicDpakRenderTable(rows, tableKey) {
+  const spec = publicDpakTableSpec(rows);
+  if (!spec) return "";
+  publicDpakTables.set(String(tableKey), rows);
+  const rowCount = rows.length.toLocaleString("sv-SE");
+  return `
+    <div class="public-dpak-table-shell">
+      <div class="public-dpak-table-toolbar">
+        <span>${rowCount} rader</span>
+        <button type="button" class="public-dpak-table-expand" data-public-dpak-open-table="${publicDpakEscape(tableKey)}">Öppna helskärm</button>
+      </div>
+      <div class="public-dpak-table-wrap">
+        ${publicDpakTableHtml(rows)}
+      </div>
     </div>
   `;
+}
+
+function publicDpakOpenTable(tableKey) {
+  const rows = publicDpakTables.get(String(tableKey));
+  const modal = document.getElementById("publicDpakTableModal");
+  const body = document.getElementById("publicDpakTableModalBody");
+  if (!rows || !modal || !body) return;
+  body.innerHTML = `<div class="public-dpak-table-wrap">${publicDpakTableHtml(rows)}</div>`;
+  modal.hidden = false;
+  document.body.classList.add("public-dpak-modal-open");
+  document.getElementById("publicDpakCloseTable")?.focus();
+}
+
+function publicDpakCloseTable() {
+  const modal = document.getElementById("publicDpakTableModal");
+  const body = document.getElementById("publicDpakTableModalBody");
+  if (modal) modal.hidden = true;
+  if (body) body.innerHTML = "";
+  document.body.classList.remove("public-dpak-modal-open");
 }
 
 function publicDpakRenderMessages() {
   const list = document.getElementById("publicDpakMessages");
   if (!list) return;
+  publicDpakTables.clear();
   if (!publicDpakState.messages.length) {
     list.innerHTML = `
       <div class="public-dpak-empty">
@@ -132,14 +176,14 @@ function publicDpakRenderMessages() {
     `;
     return;
   }
-  list.innerHTML = publicDpakState.messages.map((message) => {
+  list.innerHTML = publicDpakState.messages.map((message, index) => {
     if (message.role === "loading") {
       return `<div class="public-dpak-message assistant loading"><span></span> Räknar...</div>`;
     }
     return `
       <article class="public-dpak-message ${message.role}">
         <p>${publicDpakEscape(message.content).replace(/\n/g, "<br>")}</p>
-        ${publicDpakRenderTable(message.table)}
+        ${publicDpakRenderTable(message.table, index)}
       </article>
     `;
   }).join("");
@@ -236,6 +280,19 @@ function publicDpakInit() {
   publicDpakLoadStatus();
   document.getElementById("publicDpakForm")?.addEventListener("submit", publicDpakSubmit);
   document.getElementById("publicDpakClear")?.addEventListener("click", publicDpakClear);
+  document.getElementById("publicDpakMessages")?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest("[data-public-dpak-open-table]");
+    if (!button) return;
+    publicDpakOpenTable(button.getAttribute("data-public-dpak-open-table"));
+  });
+  document.getElementById("publicDpakCloseTable")?.addEventListener("click", publicDpakCloseTable);
+  document.getElementById("publicDpakTableModal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "publicDpakTableModal") publicDpakCloseTable();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") publicDpakCloseTable();
+  });
   document.getElementById("publicDpakInput")?.addEventListener("keydown", (event) => {
     const shortcut = event.ctrlKey || event.metaKey;
     if (shortcut && ["z", "x", "c", "v"].includes(event.key.toLowerCase())) {

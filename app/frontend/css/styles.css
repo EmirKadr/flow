@@ -6001,6 +6001,7 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
 }
 
 .public-dpak-page button,
+.public-dpak-page a,
 .public-dpak-page textarea {
   font: inherit;
 }
@@ -6023,25 +6024,60 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
 
 .public-dpak-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   padding: 4px 0 10px;
   border-bottom: 1px solid rgba(29, 39, 48, 0.12);
 }
 
-.public-dpak-kicker {
-  margin: 0 0 4px;
-  color: #607080;
-  font-size: 13px;
-  font-weight: 800;
-  text-transform: uppercase;
+.public-dpak-brand {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.public-dpak-logos {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.public-dpak-logos img {
+  display: block;
+  width: auto;
+  object-fit: contain;
+}
+
+.public-dpak-logos img:first-child {
+  height: 30px;
+  max-width: 118px;
+}
+
+.public-dpak-logos img:last-child {
+  height: 23px;
+  max-width: 190px;
+}
+
+.public-dpak-logos span {
+  width: 1px;
+  height: 26px;
+  background: rgba(29, 39, 48, 0.18);
 }
 
 .public-dpak-head h1 {
   margin: 0;
-  font-size: 34px;
+  font-size: 31px;
   line-height: 1.05;
+}
+
+.public-dpak-head-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .public-dpak-status {
@@ -6124,34 +6160,147 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
   line-height: 1.45;
 }
 
-.public-dpak-table-wrap {
+.public-dpak-table-shell {
   max-width: 100%;
-  margin-top: 12px;
-  overflow-x: auto;
+  margin-top: 10px;
+  overflow: hidden;
   border: 1px solid #d9e2e7;
   border-radius: 8px;
   background: #ffffff;
 }
 
+.public-dpak-table-toolbar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  color: #5b6873;
+  background: #f6f9fa;
+  border-bottom: 1px solid #e5ecef;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.public-dpak-table-expand {
+  min-height: 28px;
+  border: 1px solid #cbd8df;
+  border-radius: 8px;
+  padding: 0 9px;
+  color: #20384d;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.public-dpak-table-wrap {
+  max-width: 100%;
+  max-height: 280px;
+  overflow: auto;
+  background: #ffffff;
+  -webkit-overflow-scrolling: touch;
+}
+
 .public-dpak-table-wrap table {
-  width: 100%;
-  min-width: 620px;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .public-dpak-table-wrap th,
 .public-dpak-table-wrap td {
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid #e5ecef;
   text-align: left;
   vertical-align: top;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .public-dpak-table-wrap th {
+  position: sticky;
+  top: 0;
   background: #f3f7f8;
   color: #31414f;
   font-weight: 800;
+  z-index: 1;
+}
+
+body.public-dpak-modal-open {
+  overflow: hidden;
+}
+
+.public-dpak-table-modal[hidden] {
+  display: none !important;
+}
+
+.public-dpak-table-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  padding: 18px;
+  background: rgba(20, 31, 40, 0.52);
+}
+
+.public-dpak-table-modal-panel {
+  width: min(1180px, 100%);
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 70px rgba(20, 31, 40, 0.24);
+}
+
+.public-dpak-table-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #d9e2e7;
+}
+
+.public-dpak-table-modal-head h2 {
+  margin: 0;
+  color: #1d2730;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.public-dpak-table-modal-head .public-dpak-secondary {
+  flex: 0 0 auto;
+}
+
+.public-dpak-table-modal-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.public-dpak-table-modal-body .public-dpak-table-wrap {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  max-height: none;
+  border: 1px solid #d9e2e7;
+  border-radius: 8px;
+}
+
+.public-dpak-table-modal-body .public-dpak-table-wrap th,
+.public-dpak-table-modal-body .public-dpak-table-wrap td {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .public-dpak-form {
@@ -6226,8 +6375,32 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
     flex-direction: column;
   }
 
+  .public-dpak-logos {
+    gap: 10px;
+  }
+
+  .public-dpak-logos img:first-child {
+    height: 25px;
+    max-width: 98px;
+  }
+
+  .public-dpak-logos img:last-child {
+    height: 19px;
+    max-width: 160px;
+  }
+
+  .public-dpak-logos span {
+    height: 21px;
+  }
+
   .public-dpak-head h1 {
-    font-size: 28px;
+    font-size: 24px;
+  }
+
+  .public-dpak-head-meta {
+    width: 100%;
+    align-items: stretch;
+    justify-content: flex-start;
   }
 
   .public-dpak-status {
@@ -6237,6 +6410,38 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
 
   .public-dpak-message {
     width: 100%;
+    padding: 10px 11px;
+  }
+
+  .public-dpak-table-toolbar {
+    min-height: 31px;
+    padding: 5px 7px;
+  }
+
+  .public-dpak-table-expand {
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .public-dpak-table-wrap {
+    max-height: 146px;
+  }
+
+  .public-dpak-message .public-dpak-table-wrap table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+    font-size: 10px;
+  }
+
+  .public-dpak-table-wrap th,
+  .public-dpak-table-wrap td {
+    max-width: none;
+    overflow: hidden;
+    padding: 4px 5px;
+    text-overflow: ellipsis;
+    font-size: 10px;
   }
 
   .public-dpak-form {
@@ -6250,5 +6455,35 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
   .public-dpak-primary,
   .public-dpak-secondary {
     flex: 1 1 0;
+  }
+
+  .public-dpak-table-modal {
+    padding: 0;
+  }
+
+  .public-dpak-table-modal-panel {
+    width: 100%;
+    border-radius: 0;
+  }
+
+  .public-dpak-table-modal-body {
+    padding: 8px;
+  }
+
+  .public-dpak-table-modal-body .public-dpak-table-wrap {
+    border-radius: 8px;
+  }
+
+  .public-dpak-table-modal-body .public-dpak-table-wrap table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+    font-size: 12px;
+  }
+
+  .public-dpak-table-modal-body .public-dpak-table-wrap th,
+  .public-dpak-table-modal-body .public-dpak-table-wrap td {
+    padding: 5px 7px;
+    font-size: 12px;
   }
 }
