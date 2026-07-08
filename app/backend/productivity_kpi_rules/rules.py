@@ -5,6 +5,7 @@ import gzip
 import re
 import unicodedata
 from collections import defaultdict
+from functools import lru_cache
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -169,8 +170,12 @@ def split_process_names(value: str | None) -> list[str]:
     return names
 
 
-def _canonical_header(value: Any) -> str:
-    text = str(value or "").strip().lstrip("\ufeff")
+# Ren str->str-transform som anropas miljontals ganger per bygge (samma handful
+# kolumnnamn per rad). Memoisering pa modulniva kollapsar ~4M anrop till nagra
+# hundra unika och delar cachen mellan bolag/byggen. Se wiki/prestanda-optimeringar.md.
+@lru_cache(maxsize=8192)
+def _canonical_header_cached(text: str) -> str:
+    text = text.strip().lstrip("\ufeff")
     if "Ãƒ" in text:
         try:
             text = text.encode("latin1").decode("utf-8")
@@ -179,6 +184,12 @@ def _canonical_header(value: Any) -> str:
     text = unicodedata.normalize("NFKD", text)
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def _canonical_header(value: Any) -> str:
+    # Coerce utanfor cachen sa nyckeln alltid ar hashbar (str); beteendet blir
+    # identiskt med tidigare str(value or "").strip()...
+    return _canonical_header_cached(str(value or ""))
 
 
 def _row_text(row: dict[str, str], *names: str) -> str:
