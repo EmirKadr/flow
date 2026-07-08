@@ -2887,3 +2887,24 @@ och lägg kunskapen i repot.
 - Non-browser-kontrakt: tests/tools/test_e2e_investigation.py (12 tester, gröna).
 - Dokumenterat i wiki/e2e-investigation.md + index. AGENTS-note om att köra
   verktyget vid undersökningar. Utdata i artifacts/e2e/ (gitignorerad).
+
+## [2026-07-08] ingest | Prestandaoptimeringar: kunskapsbas + revisionschecklista
+
+Ny sida `prestanda-optimeringar.md` som samlar ALLA prestandavinster vi mätt
+(historiskt + denna vecka) som en anti-mönster-katalog med två syften:
+framåtbyggnad och revision. Varje mönster har en grep-signatur så koden kan
+svepas efter nya förekomster.
+
+Mönster med uppmätta vinster: A1 ladda-hela-tabellen-och-reducera-i-Python
+(coverage 3910→173ms, −96%), A2 N+1 (personliga schemat, staffing), A3
+over-fetch (coredata defer, −38%), A4 per-request-ping (pool_pre_ping −37ms/req),
+A5 saknat index (audit_log 0048), B1 pandas-loop/vektorisering (dispatch −99%,
+observations ~41×), B2 minnesladdning (Sankey OOM → DuckDB, trace tvåskikt),
+B3 omräkning (sankey package_ladders 512×→1×, katalog 26→4ms, prebuilt-cacher),
+B4 compute-then-filter (orderkontroll −87%), C1 blocking-in-async → tråd,
+D1–D3 transport/SWR (egen sida), E1–E3 guardrails (frågebudget, latensbudget,
+benchmark). Grävde git-historiken (72 perf-commits) för de historiska.
+
+Länkar till prestanda-leveranslager.md och local-archive-cache.md i stället för
+att dubblera. Indexpost tillagd. Kontext-varning: dev-latens (~37ms/DB-fråga
+Azure) != prod (samma DC) — extrapolera inte.
