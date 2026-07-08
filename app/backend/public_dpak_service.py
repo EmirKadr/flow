@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import pandas as pd
+from psycopg import OperationalError as PsycopgOperationalError
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -95,6 +96,7 @@ MONTH_PATTERN = re.compile(
 )
 
 PUBLIC_DPAK_LIVE_RETENTION_DAYS = 40
+DB_WRITE_ERRORS = (OperationalError, PsycopgOperationalError)
 
 
 @dataclass(frozen=True)
@@ -722,6 +724,11 @@ def _copy_insert_postgres(
     return True
 
 
+def _raw_picklog_batch_size() -> int:
+    configured = int(settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE or settings.PUBLIC_DPAK_INSERT_BATCH_SIZE or 5000)
+    return max(500, min(configured, 5000))
+
+
 def replace_raw_support_rows(
     db: Session,
     *,
@@ -810,7 +817,7 @@ def _replace_raw_picklog_for_chunk(
         db,
         PublicDpakRawPicklog,
         raw_rows,
-        chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+        chunk_size=_raw_picklog_batch_size(),
         label="raw picklog",
         progress=progress,
     )
@@ -841,11 +848,11 @@ def _replace_raw_picklog_for_chunk_with_retries(
             )
             db.commit()
             return inserted
-        except OperationalError as exc:
+        except DB_WRITE_ERRORS as exc:
             try:
                 db.rollback()
             except Exception:
-                pass
+                db.invalidate()
             if attempt >= attempts:
                 raise
             if progress:
@@ -907,7 +914,7 @@ def _replace_all_raw_picklog(
             db,
             PublicDpakRawPicklog,
             raw_rows,
-            chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+            chunk_size=_raw_picklog_batch_size(),
             label="raw picklog",
             progress=progress,
         )
@@ -1637,11 +1644,11 @@ def _replace_pick_rows_for_chunk_with_retries(
                 progress=progress,
             )
             return
-        except OperationalError as exc:
+        except DB_WRITE_ERRORS as exc:
             try:
                 db.rollback()
             except Exception:
-                pass
+                db.invalidate()
             if attempt >= attempts:
                 raise
             if progress:
@@ -1826,7 +1833,10 @@ def sync_public_dpak_pick_chunks(
                     }
                 )
         except Exception as exc:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:
+                db.invalidate()
             try:
                 failed_chunk = _sync_chunk(
                     db,
@@ -1846,7 +1856,10 @@ def sync_public_dpak_pick_chunks(
                 )
                 db.commit()
             except Exception:
-                db.rollback()
+                try:
+                    db.rollback()
+                except Exception:
+                    db.invalidate()
             raise
 
     _cleanup_public_dpak_sync_scope(
