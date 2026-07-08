@@ -379,6 +379,7 @@ def test_public_dpak_pick_source_ranges_prefers_local_archive(monkeypatch):
 
 
 def test_public_dpak_pick_filters_include_company():
-    filters = _pick_filters_for_view("dblog_pick_log", date(2025, 7, 1), date(2025, 7, 1), ["GG"])
+    filters = _pick_filters_for_view("dblog_pick_log", date(2025, 7, 1), date(2025, 7, 1), ["GG"], ["R"])
 
     assert {"id": "company", "operator": "EQ", "value": "GG"} in filters
+    assert {"id": "pick_zone", "operator": "EQ", "value": "R"} in filters

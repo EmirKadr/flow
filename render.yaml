@@ -55,6 +55,8 @@ services:
         value: MiniMax-M2.7
       - key: PUBLIC_DPAK_COMPANY_CODES
         value: MG
+      - key: PUBLIC_DPAK_PICK_ZONE_CODES
+        value: R
       - key: TRACKING_ALLOW_VALUE_SAMPLES
         value: "false"
       - key: GEMINI_API_KEY

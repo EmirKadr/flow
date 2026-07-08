@@ -789,6 +789,7 @@ def _replace_raw_picklog_for_chunk(
     chunk_start: date,
     chunk_end: date,
     rows: list[dict[str, Any]],
+    zone_codes: list[str] | None = None,
     progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> int:
     business = public_dpak_business_code(business_code)
@@ -802,7 +803,7 @@ def _replace_raw_picklog_for_chunk(
     ).delete(synchronize_session=False)
     db.flush()
     raw_rows = raw_picklog_rows(
-        rows,
+        _filter_pick_zone_rows(rows, zone_codes or []),
         business_code=business,
         source_view=source_view,
         chunk_start=chunk_start,
@@ -832,6 +833,7 @@ def _replace_raw_picklog_for_chunk_with_retries(
     chunk_start: date,
     chunk_end: date,
     rows: list[dict[str, Any]],
+    zone_codes: list[str] | None = None,
     progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> int:
     attempts = max(1, int(settings.PUBLIC_DPAK_DB_WRITE_RETRIES or 1))
@@ -844,6 +846,7 @@ def _replace_raw_picklog_for_chunk_with_retries(
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
                 rows=rows,
+                zone_codes=zone_codes,
                 progress=progress,
             )
             db.commit()
@@ -878,6 +881,7 @@ def _raw_picklog_chunk_count(
     chunk_start: date,
     chunk_end: date,
     company_codes: list[str] | None = None,
+    zone_codes: list[str] | None = None,
 ) -> int:
     query = db.query(func.count(PublicDpakRawPicklog.id)).filter(
         PublicDpakRawPicklog.business_code == public_dpak_business_code(business_code),
@@ -887,6 +891,8 @@ def _raw_picklog_chunk_count(
     )
     if company_codes:
         query = query.filter(func.upper(PublicDpakRawPicklog.company).in_([code.upper() for code in company_codes]))
+    if zone_codes:
+        query = query.filter(func.upper(PublicDpakRawPicklog.zone).in_([code.upper() for code in zone_codes]))
     return int(query.scalar() or 0)
 
 
@@ -895,6 +901,7 @@ def _replace_all_raw_picklog(
     *,
     business_code: str,
     pick_sources: list[tuple[str, str | None, list[dict[str, Any]]]],
+    zone_codes: list[str] | None = None,
     progress: Callable[[dict[str, Any] | str], None] | None = None,
 ) -> int:
     business = public_dpak_business_code(business_code)
@@ -905,7 +912,7 @@ def _replace_all_raw_picklog(
     total = 0
     for source_view, source_file, rows in pick_sources:
         raw_rows = raw_picklog_rows(
-            rows,
+            _filter_pick_zone_rows(rows, zone_codes or []),
             business_code=business,
             source_view=source_view,
             source_file=source_file,
@@ -1362,17 +1369,51 @@ def _public_dpak_company_codes() -> list[str]:
     ]
 
 
-def _pick_filters_for_view(view_id: str, start: date, end: date, company_codes: list[str]) -> list[dict[str, Any]]:
+def _public_dpak_pick_zone_codes() -> list[str]:
+    return [
+        str(part or "").strip().upper()
+        for part in settings.PUBLIC_DPAK_PICK_ZONE_CODES.split(",")
+        if str(part or "").strip()
+    ]
+
+
+def _row_matches_pick_zones(row: dict[str, Any], zone_codes: list[str]) -> bool:
+    if not zone_codes:
+        return True
+    return ((_text(_row_get(row, PICK_FIELDS["pick_zone"])) or "").upper()) in set(zone_codes)
+
+
+def _filter_pick_zone_rows(rows: list[dict[str, Any]], zone_codes: list[str]) -> list[dict[str, Any]]:
+    if not zone_codes:
+        return rows
+    return [row for row in rows if _row_matches_pick_zones(row, zone_codes)]
+
+
+def _pick_filters_for_view(
+    view_id: str,
+    start: date,
+    end: date,
+    company_codes: list[str],
+    zone_codes: list[str] | None = None,
+) -> list[dict[str, Any]]:
     filters = _date_filter_for_view(view_id, start, end)
-    if not company_codes:
-        return filters
     view = load_catalog().view(view_id)
-    if "company" not in view.column_by_id:
-        return filters
-    if len(company_codes) == 1:
-        filters.append({"id": "company", "operator": "EQ", "value": company_codes[0]})
-    else:
-        filters.append({"id": "company", "operator": "Terms", "value": company_codes})
+    if company_codes and "company" in view.column_by_id:
+        if len(company_codes) == 1:
+            filters.append({"id": "company", "operator": "EQ", "value": company_codes[0]})
+        else:
+            filters.append({"id": "company", "operator": "Terms", "value": company_codes})
+    zones = zone_codes or []
+    if zones and "pick_zone" in view.column_by_id:
+        if len(zones) == 1:
+            filters.append({"id": "pick_zone", "operator": "EQ", "value": zones[0]})
+        else:
+            filters.append({"id": "pick_zone", "operator": "Terms", "value": zones})
+    elif zones and "Zon" in view.column_by_id:
+        if len(zones) == 1:
+            filters.append({"id": "Zon", "operator": "EQ", "value": zones[0]})
+        else:
+            filters.append({"id": "Zon", "operator": "Terms", "value": zones})
     return filters
 
 
@@ -1395,6 +1436,7 @@ def _fetch_archive_duckdb_rows(
     start: date,
     end: date,
     company_codes: list[str],
+    zone_codes: list[str],
 ) -> list[dict[str, Any]] | None:
     path = _archive_duckdb_path()
     if path is None or view_id != settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW:
@@ -1435,6 +1477,14 @@ def _fetch_archive_duckdb_rows(
             placeholders = ", ".join("?" for _code in company_codes)
             where_parts.append(f"upper({_quote_duckdb_identifier('company')}) IN ({placeholders})")
             params.extend(company_codes)
+        if zone_codes and "pick_zone" in columns:
+            placeholders = ", ".join("?" for _code in zone_codes)
+            where_parts.append(f"upper({_quote_duckdb_identifier('pick_zone')}) IN ({placeholders})")
+            params.extend(zone_codes)
+        elif zone_codes and "Zon" in columns:
+            placeholders = ", ".join("?" for _code in zone_codes)
+            where_parts.append(f"upper({_quote_duckdb_identifier('Zon')}) IN ({placeholders})")
+            params.extend(zone_codes)
         query = (
             f"SELECT {select_sql} FROM {_quote_duckdb_identifier(view_id)} "
             f"WHERE {' AND '.join(where_parts)} ORDER BY _row_date"
@@ -1687,6 +1737,7 @@ def sync_public_dpak_pick_chunks(
     client: ExternalDataClient | None = None
     span = chunk_days or settings.PUBLIC_DPAK_CHUNK_DAYS
     company_codes = _public_dpak_company_codes()
+    zone_codes = _public_dpak_pick_zone_codes()
     source_ranges = _pick_source_ranges(start_day, end_day)
     planned_chunks = _source_chunks(start_day, end_day, span)
     views = list(dict.fromkeys(view_id for view_id, _range_start, _range_end in source_ranges))
@@ -1716,6 +1767,7 @@ def sync_public_dpak_pick_chunks(
                 "chunk_days": span,
                 "views": views,
                 "company_codes": company_codes,
+                "zone_codes": zone_codes,
                 "archive_duckdb": str(_archive_duckdb_path() or ""),
                 "source_ranges": [
                     {
@@ -1737,7 +1789,15 @@ def sync_public_dpak_pick_chunks(
             chunk_start=chunk_start,
             chunk_end=chunk_end,
         )
-        raw_chunk_rows = _raw_picklog_chunk_count(db, business, view_id, chunk_start, chunk_end, company_codes)
+        raw_chunk_rows = _raw_picklog_chunk_count(
+            db,
+            business,
+            view_id,
+            chunk_start,
+            chunk_end,
+            company_codes,
+            zone_codes,
+        )
         if chunk.status == "complete" and raw_chunk_rows > 0 and not force:
             chunks_skipped += 1
             if progress:
@@ -1779,14 +1839,14 @@ def sync_public_dpak_pick_chunks(
                     }
                 )
             row_source = "api"
-            api_rows = _fetch_archive_duckdb_rows(view_id, chunk_start, chunk_end, company_codes)
+            api_rows = _fetch_archive_duckdb_rows(view_id, chunk_start, chunk_end, company_codes, zone_codes)
             if api_rows is None:
                 if client is None:
                     client = _api_client()
                 api_rows = _fetch_api_rows_with_retries(
                     client,
                     view_id,
-                    filters=_pick_filters_for_view(view_id, chunk_start, chunk_end, company_codes),
+                    filters=_pick_filters_for_view(view_id, chunk_start, chunk_end, company_codes, zone_codes),
                     chunk_start=chunk_start,
                     chunk_end=chunk_end,
                     progress=progress,
@@ -1800,6 +1860,7 @@ def sync_public_dpak_pick_chunks(
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
                 rows=api_rows,
+                zone_codes=zone_codes,
                 progress=progress,
             )
             chunk = _sync_chunk(
@@ -1883,6 +1944,7 @@ def sync_public_dpak_pick_chunks(
             "chunk_days": span,
             "views": views,
             "company_codes": company_codes,
+            "zone_codes": zone_codes,
             "archive_duckdb": str(_archive_duckdb_path() or ""),
             "source_ranges": [
                 {
@@ -2316,6 +2378,7 @@ def import_from_csv_directory(db: Session, directory: Path, *, business_code: st
     business = public_dpak_business_code(business_code)
     alias_file, attribute_file = load_support_csv_files(directory)
     pick_sources = load_pick_csv_files(directory)
+    zone_codes = _public_dpak_pick_zone_codes()
     _clear_derived_public_dpak_rows(db, business)
     replace_raw_support_rows(
         db,
@@ -2323,7 +2386,7 @@ def import_from_csv_directory(db: Session, directory: Path, *, business_code: st
         alias_file=alias_file,
         attribute_file=attribute_file,
     )
-    _replace_all_raw_picklog(db, business_code=business, pick_sources=pick_sources)
+    _replace_all_raw_picklog(db, business_code=business, pick_sources=pick_sources, zone_codes=zone_codes)
     return _raw_dataset_result(
         db,
         business_code=business,
@@ -2332,6 +2395,7 @@ def import_from_csv_directory(db: Session, directory: Path, *, business_code: st
             "directory": str(directory),
             "item_alias": alias_file.source_file,
             "item_attribute": attribute_file.source_file,
+            "zone_codes": zone_codes,
             "picklog_sources": [
                 {"view": view_id, "file": source_file, "rows": len(rows)}
                 for view_id, source_file, rows in pick_sources
