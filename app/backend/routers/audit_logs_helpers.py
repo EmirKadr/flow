@@ -6,40 +6,25 @@ audit_logs.<namn> pa routermodulen.
 """
 from __future__ import annotations
 
-import logging
 import json
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
+from sqlalchemy import or_
 
-from .. import audit as audit_writer
 from ..config import settings
-from ..deps import get_current_user, get_db, require_super_user
-from ..models import AuditLog, User, UserInteractionEvent
-from ..observability import attach_trace_context, current_trace_id, normalize_trace_id
+from ..models import AuditLog, UserInteractionEvent
+from ..observability import attach_trace_context, current_trace_id, normalize_operation_id, normalize_trace_id
 from ..schemas import (
     AuditClientErrorIn,
     AuditClientEventIn,
-    AuditEntryOut,
     AuditErrorEventOut,
-    AuditErrorSummaryOut,
     AuditLocalRunIn,
     AuditSummaryBucket,
-    AuditSummaryOut,
-    InteractionChatRequest,
-    InteractionChatResponse,
-    InteractionCoverageOut,
-    InteractionEventBatchIn,
     InteractionEventOut,
-    InteractionSummaryOut,
 )
-from .assistant import _call_minimax
 
 
 ERROR_ACTION_PATTERNS = ("%failed%", "%error%", "%exception%")
@@ -512,6 +497,9 @@ def _client_error_payload(payload: AuditClientErrorIn) -> dict[str, Any]:
     trace_id = normalize_trace_id(payload.trace_id)
     if trace_id:
         result["trace_id"] = trace_id
+    operation_id = normalize_operation_id(payload.operation_id)
+    if operation_id:
+        result["operation_id"] = operation_id
     return result
 
 

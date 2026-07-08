@@ -84,7 +84,10 @@ def test_consent_gate_and_full_report_flow(local_server, chromium_browser):
         page.fill("#bug-report-note", "Browsertest: knappen dog")
         page.click("#bug-report-start")
         page.wait_for_selector("#bug-report-indicator", timeout=15000)
-        assert is_recording(page)
+        page.wait_for_function(
+            "() => Boolean(window.flowBugReport && window.flowBugReport.isRecording())",
+            timeout=15000,
+        )
         # Låt rrweb hinna med fullsnapshot + någon interaktion.
         page.click("body")
         page.wait_for_timeout(800)
@@ -147,7 +150,10 @@ def test_recording_continues_across_page_navigation(local_server, chromium_brows
         page.click('a[href="/personer.html"]')
         page.wait_for_url("**/personer.html", timeout=15000)
         page.wait_for_selector("#bug-report-indicator", timeout=15000)
-        assert is_recording(page)
+        page.wait_for_function(
+            "() => Boolean(window.flowBugReport && window.flowBugReport.isRecording())",
+            timeout=15000,
+        )
         page.wait_for_timeout(500)  # låt sida 2 få sin fullsnapshot
 
         page.click("#bug-report-stop")

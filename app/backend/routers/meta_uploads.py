@@ -2,31 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-import hashlib
 import logging
-import mimetypes
-import os
-from pathlib import Path
-import re
-import shutil
-import subprocess
-import tempfile
-from typing import Any
-from urllib.parse import quote
 from uuid import uuid4
 
-import threading
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
-from openpyxl import Workbook
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
 
-from ..audit import log as audit_log, log_and_commit as audit_log_and_commit
+from ..audit import log as audit_log
 from ..config import settings
 from ..deps import get_db, require_super_user
 from ..media_store import get_media_store
@@ -38,7 +26,7 @@ from ..meta_analysis_service import (
     run_meta_analysis_background,
 )
 from ..models import MetaMediaUpload, MetaShipmentObservation, User
-from ..observability import add_span_attributes, start_span
+from ..observability import add_span_attributes, emit_flow_event, start_span
 
 
 from .meta_uploads_helpers import (  # noqa: F401
@@ -112,8 +100,7 @@ async def upload_meta_media(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ) -> dict:
-    _enforce_upload_rate_limit(request)
-    store = get_media_store()
+    operation_started = time.perf_counter()
     max_files = int(settings.MAX_META_UPLOAD_FILES)
     attempted_count = len(files or [])
     batch_id = uuid4().hex
@@ -125,10 +112,24 @@ async def upload_meta_media(
     analysis_status: str | None = None
 
     try:
+        _enforce_upload_rate_limit(request)
+        store = get_media_store()
         add_span_attributes({
             "meta.attempted_count": attempted_count,
             "meta.max_files": max_files,
         })
+        emit_flow_event(
+            "flow.meta.upload",
+            feature="meta",
+            outcome="started",
+            event_alias="meta_upload",
+            logger_=logger,
+            attributes={
+                "attempted_count": attempted_count,
+                "max_files": max_files,
+            },
+            message=f"Meta-uppladdning startad med {attempted_count} filer.",
+        )
         if not files:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Inga filer skickades.")
         if len(files) > max_files:
@@ -245,9 +246,47 @@ async def upload_meta_media(
             media_types=[str(item.get("media_type") or "") for item in saved + skipped],
             analysis_status=analysis_status,
         )
+        emit_flow_event(
+            "flow.meta.upload",
+            feature="meta",
+            outcome="ok",
+            event_alias="meta_upload",
+            logger_=logger,
+            attributes={
+                "attempted_count": attempted_count,
+                "saved_count": len(saved),
+                "skipped_count": len(skipped),
+                "shipment_count": len(shipment_rows),
+                "uploaded_bytes": batch_total,
+                "analysis_status": analysis_status or "",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message=(
+                "Meta-uppladdning klar: "
+                f"{len(saved)} sparade, {len(skipped)} hoppade over, {len(shipment_rows)} sandningar."
+            ),
+        )
     except HTTPException as exc:
         status_code = int(exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR)
         add_span_attributes({"meta.status": "error", "meta.error_type": "HTTPException", "meta.status_code": status_code})
+        emit_flow_event(
+            "flow.meta.upload",
+            feature="meta",
+            outcome="blocked" if status_code < 500 else "failed",
+            level=logging.WARNING if status_code < 500 else logging.ERROR,
+            event_alias="meta_upload",
+            logger_=logger,
+            attributes={
+                "attempted_count": attempted_count,
+                "saved_count": len(saved),
+                "skipped_count": len(skipped),
+                "uploaded_bytes": batch_total,
+                "http_status_code": status_code,
+                "error.type": "HTTPException",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message=f"Meta-uppladdning stoppad med HTTP {status_code}.",
+        )
         _write_public_upload_failure_audit(
             db,
             status_code=status_code,
@@ -261,6 +300,24 @@ async def upload_meta_media(
         raise
     except IntegrityError as exc:
         add_span_attributes({"meta.status": "error", "meta.error_type": exc.__class__.__name__, "meta.status_code": status.HTTP_409_CONFLICT})
+        emit_flow_event(
+            "flow.meta.upload",
+            feature="meta",
+            outcome="blocked",
+            level=logging.WARNING,
+            event_alias="meta_upload",
+            logger_=logger,
+            attributes={
+                "attempted_count": attempted_count,
+                "saved_count": len(saved),
+                "skipped_count": len(skipped),
+                "uploaded_bytes": batch_total,
+                "http_status_code": status.HTTP_409_CONFLICT,
+                "error.type": exc.__class__.__name__,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message="Meta-uppladdning stoppad av dubbelt innehall.",
+        )
         _write_public_upload_failure_audit(
             db,
             status_code=status.HTTP_409_CONFLICT,
@@ -277,6 +334,25 @@ async def upload_meta_media(
         ) from exc
     except Exception as exc:
         add_span_attributes({"meta.status": "error", "meta.error_type": exc.__class__.__name__, "meta.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR})
+        emit_flow_event(
+            "flow.meta.upload",
+            feature="meta",
+            outcome="failed",
+            level=logging.ERROR,
+            event_alias="meta_upload",
+            logger_=logger,
+            attributes={
+                "attempted_count": attempted_count,
+                "saved_count": len(saved),
+                "skipped_count": len(skipped),
+                "uploaded_bytes": batch_total,
+                "http_status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "error.type": exc.__class__.__name__,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            exc_info=True,
+            message="Meta-uppladdning misslyckades.",
+        )
         _write_public_upload_failure_audit(
             db,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -382,14 +458,97 @@ def analyze_meta_media_upload(
     db: Session = Depends(get_db),
     _: User = Depends(require_super_user),
 ) -> dict:
+    operation_started = time.perf_counter()
     upload = db.get(MetaMediaUpload, upload_id)
     if upload is None:
+        emit_flow_event(
+            "flow.meta.analyze",
+            feature="meta",
+            outcome="blocked",
+            level=logging.WARNING,
+            event_alias="meta_analyze",
+            logger_=logger,
+            attributes={
+                "upload_id": upload_id,
+                "http_status_code": status.HTTP_404_NOT_FOUND,
+                "error.type": "HTTPException",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message="Meta-analys stoppad: uppladdningen hittades inte.",
+        )
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
     if upload.media_type != "video":
+        emit_flow_event(
+            "flow.meta.analyze",
+            feature="meta",
+            outcome="blocked",
+            level=logging.WARNING,
+            event_alias="meta_analyze",
+            logger_=logger,
+            attributes={
+                "upload_id": upload_id,
+                "http_status_code": status.HTTP_400_BAD_REQUEST,
+                "error.type": "HTTPException",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message="Meta-analys stoppad: endast videor kan analyseras.",
+        )
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Bara videor kan analyseras.")
-    with start_span("meta.upload.analyze", {"meta.upload_id": upload_id, "meta.media_type": upload.media_type}):
-        row = analyze_meta_upload(db, upload_id)
-        add_span_attributes({"meta.analysis_status": row.analysis_status or ""})
+    try:
+        with start_span("meta.upload.analyze", {"meta.upload_id": upload_id, "meta.media_type": upload.media_type}):
+            row = analyze_meta_upload(db, upload_id)
+            add_span_attributes({"meta.analysis_status": row.analysis_status or ""})
+    except HTTPException as exc:
+        status_code = int(exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR)
+        emit_flow_event(
+            "flow.meta.analyze",
+            feature="meta",
+            outcome="blocked" if status_code < 500 else "failed",
+            level=logging.WARNING if status_code < 500 else logging.ERROR,
+            event_alias="meta_analyze",
+            logger_=logger,
+            attributes={
+                "upload_id": upload_id,
+                "http_status_code": status_code,
+                "error.type": "HTTPException",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            message=f"Meta-analys stoppad med HTTP {status_code}.",
+        )
+        raise
+    except Exception as exc:
+        emit_flow_event(
+            "flow.meta.analyze",
+            feature="meta",
+            outcome="failed",
+            level=logging.ERROR,
+            event_alias="meta_analyze",
+            logger_=logger,
+            attributes={
+                "upload_id": upload_id,
+                "http_status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "error.type": exc.__class__.__name__,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            exc_info=True,
+            message="Meta-analys misslyckades.",
+        )
+        raise
+    outcome = "failed" if row.analysis_status == "analysis_failed" else "blocked" if row.analysis_status == "needs_configuration" else "ok"
+    emit_flow_event(
+        "flow.meta.analyze",
+        feature="meta",
+        outcome=outcome,
+        level=logging.ERROR if outcome == "failed" else logging.WARNING if outcome == "blocked" else logging.INFO,
+        event_alias="meta_analyze",
+        logger_=logger,
+        attributes={
+            "upload_id": upload_id,
+            "analysis_status": row.analysis_status or "",
+            "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+        },
+        message=f"Meta-analys klar med status {row.analysis_status or 'ok'}.",
+    )
     return {
         "item": _shipment_observation_out(row),
         "status": row.analysis_status,

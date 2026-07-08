@@ -135,7 +135,13 @@ def test_allocation_upload_failure_payload_omits_file_and_param_values():
     assert "A\\nB" not in text
 
 
-def test_allocation_endpoint_logs_failed_upload_parse():
+def test_allocation_endpoint_logs_failed_upload_parse(monkeypatch):
+    events = []
+
+    def capture_event(name, **kwargs):
+        events.append({"name": name, **kwargs})
+
+    monkeypatch.setattr(allocation, "emit_flow_event", capture_event)
     db = FakeAuditDb()
     user = SimpleNamespace(id=43, role="warehouse_clerk", roles=["warehouse_clerk"])
 
@@ -155,6 +161,12 @@ def test_allocation_endpoint_logs_failed_upload_parse():
         "flow_id": "split-values",
         "message": "multipart failed",
     }
+    event = next(row for row in events if row["name"] == "flow.allocation.run")
+    assert event["event_alias"] == "allocation_run"
+    assert event["outcome"] == "failed"
+    assert event["attributes"]["flow_id"] == "split-values"
+    assert event["attributes"]["phase"] == "parse_upload"
+    assert event["attributes"]["error.type"] == "OSError"
 
 
 def test_client_error_report_writes_sanitized_audit_event(audit_db_session):
@@ -182,6 +194,8 @@ def test_client_error_report_writes_sanitized_audit_event(audit_db_session):
             message="Kunde inte spara",
             detail={"message": "Serverfel", "token": "secret"},
             page_path="/personer.html?token=secret",
+            trace_id="1234567890abcdef1234567890abcdef",
+            operation_id="persons-save-123456",
         ),
         db=audit_db_session,
         user=user,
@@ -201,6 +215,8 @@ def test_client_error_report_writes_sanitized_audit_event(audit_db_session):
         "message": "Kunde inte spara",
         "detail": "Serverfel",
         "page_path": "/personer.html",
+        "trace_id": "1234567890abcdef1234567890abcdef",
+        "operation_id": "persons-save-123456",
     }
     assert "secret" not in json.dumps(entry.new_value, ensure_ascii=False)
 

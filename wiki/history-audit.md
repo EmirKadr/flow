@@ -1,7 +1,7 @@
 ﻿---
 title: Historik och audit
 status: aktiv
-updated: 2026-06-25
+updated: 2026-07-08
 tags: [historik, audit, ui]
 ---
 
@@ -46,6 +46,9 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - MCP-fragor loggas som `mcp_query/query_success` eller `mcp_query/query_failed` med status, hjarna/tool, modell, antal tool-anrop och teckenantal. Fragan, svaret, token, privat serveradress, provider-nycklar och request body sparas inte.
 - Coredata-handelser visas som `Karnfil` i Historik/Analys via `coredata_file`, sa permanenta karnfilsuppladdningar inte faller tillbaka till tekniskt entity-namn.
 - Runtime-OTel kompletterar audit med tekniska spans for `workflow_data.source`, `data_fetch.plan`, `data_fetch.external_fetch`, `data_fetch.export`, `meta.shipment_observations.export` och `meta.upload.analyze`. Span-attribut ska bara vara status, vy/kalla, radantal, feltyp och durationsignal; prompts, filnamn, sokvagar, URL:er och request bodies filtreras bort.
+- Seq far ocksa OTel-loggar nar `OTEL_LOGS_ENABLED=true`. API-anrop loggas som sanerade events med `flow_event=http_request`, `event.name=flow.http.request`, `http_method`, `http_route`, `http_status_code`, `duration_ms`, `endpoint_group`, `flow_trace_id` och `operation.id`. Querystring, request body, cookies och filnamn loggas inte; lyckade `/api/health` och vantetidsinsamling hoppas over for att undvika brus. I k8s ar `OTEL_SQLALCHEMY_ENABLED=false` sa standardsokningar inte fylls av `SELECT flow`; sla pa flaggan tillfalligt om en specifik DB-fraga ska felsokas i spans.
+- Frontendens API-wrapper satter `X-Flow-Operation-Id` pa anrop och backend svarar med samma header. Vid API-fel skriver dokumentloggen `Felsoknings-ID: <operation-id> / <trace-id>` nar bada finns. Samma operation-id skickas vidare till `client_error`, vantetidsmatningar, interaction-events och buggrapportens kontext, sa en anvandare kan kopiera ett ID fran UI och soka direkt i Seq eller Historik.
+- Hogvarde-floden har egna Seq-events utover ren HTTP: `flow.allocation.run` (`flow_event=allocation_run`), `flow.data_fetch.run` (`flow_event=data_fetch_run`), `flow.meta.upload` (`flow_event=meta_upload`) och `flow.meta.analyze` (`flow_event=meta_analyze`). De anvander `outcome=started|ok|blocked|failed`, duration, statuskod/feltyp och sanerade raknare som `flow_id`, vy, antal tabeller, antal sparade filer eller antal rader. `blocked` betyder normalt anvandar-/regelstopp (4xx), `failed` betyder server-/systemfel.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
 - Windows-lokala Bearbeta-/Produktivitet-korningar loggas som `desktop_local_run` via `/api/audit/local-run`. Payloaden innehaller feature, flode, status, feltyp, varaktighet, filslotar och rad-/resultatraknare, men aldrig lokal sokvag, localRef, filnamn eller filinnehall.
 - API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Om server/proxy skickar en HTML-felsida sanerar `api.js` detaljen till kort status, t.ex. `HTML-felsida fran servern: HTTP 502 (Bad Gateway)`, i stallet for att spara HTML. Det galler aven Bearbetas egna fetch-wrapper. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.
@@ -78,6 +81,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `POST /api/audit/interactions/chat` bygger en sanerad MiniMax-kontext av aggregeringar och raw events inom query-limit. Den far anvanda raw trackingevents men systemprompten forbjuder fragor om hemligheter, provider-detaljer, filnamn, filvagar och request bodies.
 - `POST /api/audit/interactions/chat/clear` rensar chattvyn.
 - `GET /api/healthcheck` visar Halsa-fliken med app-, databas- och bakgrundsjobbsstatus for Super User.
+- Seq/OTel skickas fran backend via `app/backend/observability.py`: traces till `OTEL_EXPORTER_OTLP_ENDPOINT` och loggar till `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` (eller automatiskt `/v1/logs` nar trace-endpointen slutar pa `/v1/traces`). Saker sokning i Seq: `service.name = 'flow-web'`, `operation.id = '<felsoknings-id fran UI>'`, `flow_event = 'http_request'`, `event.name = 'flow.allocation.run'`, `outcome = 'failed'`, `http_route = '/api/allokering/flows'`, `endpoint_group = 'allokering'`, `http_status_code >= 500` eller `flow_trace_id = '<id fran X-Flow-Trace-Id>'`.
 - `POST /api/healthcheck/wait-metrics` samlar tysta vantetidsmatningar fran klienten utan att skriva i dokumentloggen.
 - `GET /api/healthcheck/wait-metrics/summary` driver Vantetider-fliken och CLI-analys for var anvandare vantar mest. Historik skickar valt `business_id` hit, men `GET /api/healthcheck` for Halsa forblir global.
 - Frontendens `api.js` rapporterar 4xx/5xx och natverksfel fire-and-forget och exponerar `window.reportApiError` for sidmoduler med egna wrappers. Den hoppar over `/api/auth/me`, 401 och sjalva rapporteringsendpointen for att undvika brus och loopar. Icke-JSON/HTML-felsidor visas som kort HTTP-status och lagras inte som raw HTML.

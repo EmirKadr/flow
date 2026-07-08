@@ -53,7 +53,7 @@ from ..external_data_client import (
     fetch_all_rows,
 )
 from ..models import Business, User
-from ..observability import add_span_attributes, start_span
+from ..observability import add_span_attributes, emit_flow_event, start_span
 from .assistant import _call_minimax
 
 
@@ -641,6 +641,7 @@ async def run_data_fetch(
     current_user: User = Depends(require_view_access("dataFetch", "view")),
     db: Session = Depends(get_db),
 ) -> dict:
+    operation_started = time.perf_counter()
     add_span_attributes({
         "data_fetch.has_plan": bool(payload.plan),
         "data_fetch.has_input": bool(payload.prompt and payload.prompt.strip()),
@@ -656,6 +657,18 @@ async def run_data_fetch(
         "data_fetch.view": plan.get("view", ""),
         "data_fetch.status": plan.get("status", "ok"),
     })
+    emit_flow_event(
+        "flow.data_fetch.run",
+        feature="data_fetch",
+        outcome="started",
+        event_alias="data_fetch_run",
+        logger_=logger,
+        attributes={
+            "view": plan.get("view", ""),
+            "plan_status": plan.get("status", "ok"),
+            "has_prompt": bool(payload.prompt and payload.prompt.strip()),
+        },
+    )
     business_id = visible_business_id(db, current_user, payload.business_id)
     tenant = _business_tenant(db, business_id)
     add_span_attributes({
@@ -664,6 +677,18 @@ async def run_data_fetch(
     })
     if plan.get("status") == "needs_clarification":
         add_span_attributes({"data_fetch.result": "needs_clarification"})
+        emit_flow_event(
+            "flow.data_fetch.run",
+            feature="data_fetch",
+            outcome="blocked",
+            event_alias="data_fetch_run",
+            logger_=logger,
+            attributes={
+                "view": plan.get("view", ""),
+                "reason": "needs_clarification",
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+        )
         return {"plan": plan, "columns": [], "rows": [], "total_rows": 0, "session_id": None}
 
     segments = _apply_retention(plan)
@@ -678,6 +703,21 @@ async def run_data_fetch(
     except HTTPException as exc:
         add_span_attributes({"data_fetch.result": "error", "data_fetch.status_code": exc.status_code})
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        emit_flow_event(
+            "flow.data_fetch.run",
+            feature="data_fetch",
+            outcome="blocked" if exc.status_code < 500 else "failed",
+            level=logging.WARNING if exc.status_code < 500 else logging.ERROR,
+            event_alias="data_fetch_run",
+            logger_=logger,
+            attributes={
+                "view": plan.get("view", ""),
+                "error.code": detail.get("error_id") or error_id,
+                "error.type": "HTTPException",
+                "http_status_code": exc.status_code,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+        )
         _audit_data_fetch(
             db,
             current_user,
@@ -694,6 +734,22 @@ async def run_data_fetch(
     except Exception as exc:
         add_span_attributes({"data_fetch.result": "error", "data_fetch.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR})
         logger.exception("Data fetch failed unexpectedly error_id=%s view=%s", error_id, plan.get("view"))
+        emit_flow_event(
+            "flow.data_fetch.run",
+            feature="data_fetch",
+            outcome="failed",
+            level=logging.ERROR,
+            event_alias="data_fetch_run",
+            logger_=logger,
+            attributes={
+                "view": plan.get("view", ""),
+                "error.code": error_id,
+                "error.type": type(exc).__name__,
+                "http_status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            exc_info=True,
+        )
         _audit_data_fetch(
             db,
             current_user,
@@ -754,6 +810,23 @@ async def run_data_fetch(
         "data_fetch.truncated": len(rows) > len(projected_rows),
         "data_fetch.has_calculation": bool(calculation),
     })
+    emit_flow_event(
+        "flow.data_fetch.run",
+        feature="data_fetch",
+        outcome="ok",
+        event_alias="data_fetch_run",
+        logger_=logger,
+        attributes={
+            "view": plan.get("view", ""),
+            "business_id": business_id or 0,
+            "has_tenant": bool(tenant),
+            "total_rows": len(rows),
+            "shown_rows": len(projected_rows),
+            "truncated": len(rows) > len(projected_rows),
+            "has_calculation": bool(calculation),
+            "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+        },
+    )
     return {
         "plan": plan,
         "columns": columns,

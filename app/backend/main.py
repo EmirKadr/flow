@@ -16,7 +16,16 @@ from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
 from .database import SessionLocal, engine
 from .models import Business
-from .observability import begin_request_trace, configure_observability, current_trace_id, end_request_trace, start_span
+from .observability import (
+    add_span_attributes,
+    begin_request_trace,
+    configure_observability,
+    current_operation_id,
+    current_trace_id,
+    emit_flow_event,
+    end_request_trace,
+    start_span,
+)
 from .archive_cache_sync import start_archive_cache_scheduler
 from .productivity_sync import start_productivity_sync_scheduler
 from .routers import (
@@ -136,14 +145,89 @@ async def security_headers(request: Request, call_next):
 @app.middleware("http")
 async def trace_context_middleware(request: Request, call_next):
     token = begin_request_trace(request.headers)
+    started = time.perf_counter()
     try:
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            duration_ms = (time.perf_counter() - started) * 1000
+            _log_request_observability(request, 500, duration_ms, failed=True)
+            raise
+        duration_ms = (time.perf_counter() - started) * 1000
+        route = _request_route(request)
+        add_span_attributes(
+            {
+                "flow.http_route": route,
+                "flow.http_status_code": response.status_code,
+                "flow.http_duration_ms": round(duration_ms, 2),
+                "flow.endpoint_group": _endpoint_group(route),
+            }
+        )
         trace_id = current_trace_id()
         if trace_id:
             response.headers["X-Flow-Trace-Id"] = trace_id
+        operation_id = current_operation_id()
+        if operation_id:
+            response.headers["X-Flow-Operation-Id"] = operation_id
+        _log_request_observability(request, response.status_code, duration_ms, route=route)
         return response
     finally:
         end_request_trace(token)
+
+
+def _request_route(request: Request) -> str:
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if template:
+        return str(template)
+    return str(request.url.path)
+
+
+def _endpoint_group(route: str) -> str:
+    parts = [part for part in str(route or "").split("/") if part]
+    if len(parts) >= 2 and parts[0] == "api":
+        return parts[1]
+    return parts[0] if parts else "root"
+
+
+def _should_log_request(request: Request, status_code: int) -> bool:
+    if not settings.OTEL_REQUEST_LOG_ENABLED:
+        return False
+    path = request.url.path
+    if path == "/api/health" or path.startswith("/api/healthcheck/wait-metrics"):
+        return status_code >= 400
+    return path.startswith("/api/") or status_code >= 500
+
+
+def _log_request_observability(
+    request: Request,
+    status_code: int,
+    duration_ms: float,
+    *,
+    route: str | None = None,
+    failed: bool = False,
+) -> None:
+    if not _should_log_request(request, status_code):
+        return
+    route = route or _request_route(request)
+    level = logging.ERROR if failed or status_code >= 500 else logging.WARNING if status_code >= 400 else logging.INFO
+    emit_flow_event(
+        "flow.http.request",
+        feature=_endpoint_group(route),
+        outcome="failed" if failed or status_code >= 500 else "blocked" if status_code >= 400 else "ok",
+        level=level,
+        event_alias="http_request",
+        logger_=logger,
+        attributes={
+            "http_method": request.method,
+            "http_route": route,
+            "http_status_code": status_code,
+            "duration_ms": round(duration_ms, 2),
+            "endpoint_group": _endpoint_group(route),
+        },
+        exc_info=failed,
+        message=f"Flow API {request.method} {route} -> {status_code} in {duration_ms:.0f} ms",
+    )
 
 
 # Statiska filer: HTML revalideras alltid (billiga 304 via StaticFiles ETag);

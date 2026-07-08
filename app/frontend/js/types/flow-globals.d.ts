@@ -8,6 +8,8 @@ interface ApiError extends Error {
   status?: number;
   path?: string;
   body?: unknown;
+  trace_id?: string;
+  operation_id?: string;
   originalError?: unknown;
 }
 
@@ -26,6 +28,7 @@ interface ApiRequestOptions extends RequestInit {
   telemetryEventType?: string;
   telemetrySource?: string;
   traceparent?: string;
+  operationId?: string;
   filename?: string;
 }
 
@@ -49,6 +52,8 @@ interface Window {
   // Publika ytor som api.js exponerar för andra script och desktop-bryggan.
   api?: any;
   reportApiError?: (path: string, detail?: Record<string, unknown>) => void;
+  createFlowOperationId?: (prefix?: string) => string;
+  flowLastTraceContext?: { trace_id?: string; operation_id?: string; at?: number };
   // Sidspecifika prefetch-krokar (definieras av respektive domän-boot).
   preloadAllocationUploadsData?: () => void;
   // Historik-sidans testkrokar (analytics.js kör i IIFE och exponerar dessa).
@@ -62,7 +67,7 @@ interface Window {
   // Vybehörighetsmatrisen (common/role_access.js) — renderas i Inställningar.
   flowRoleAccess?: { renderRoleAccessPanel: (container: Element | null, options?: { canEdit?: boolean }) => Promise<void> };
   // Buggrapportering (common/bug_report.js, lazy-laddad) + vendrad rrweb.
-  flowBugReport?: { open: () => void; isRecording: () => boolean };
+  flowBugReport?: { __moduleLoaded?: boolean; open: () => void; isRecording: () => boolean };
   rrweb?: {
     record: (options: Record<string, unknown>) => (() => void) | undefined;
     Replayer: new (events: unknown[], options?: Record<string, unknown>) => {

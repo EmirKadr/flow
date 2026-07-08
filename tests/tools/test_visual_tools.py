@@ -14,7 +14,6 @@ from tools.frontend_sources import (
     read_overview_frontend,
     read_persons_frontend,
     read_productivity_overview_frontend,
-    read_sankey_inbound_frontend,
 )
 
 
@@ -214,6 +213,10 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function reportApiWaitMetric" in api
     assert "function reportApiError" in api
     assert "window.reportApiError = reportApiError;" in api
+    assert 'const OPERATION_HEADER = "X-Flow-Operation-Id";' in api
+    assert "function createFlowOperationId" in api
+    assert "window.createFlowOperationId = createFlowOperationId;" in api
+    assert "window.flowLastTraceContext" in api
     assert 'const CLIENT_EVENT_REPORT_PATH = "/api/audit/client-event";' in api
     assert "function reportClientEvent" in api
     assert "window.reportClientEvent = reportClientEvent;" in api
@@ -226,6 +229,11 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "logApiFailure" in api
     assert "apiResultSummary" in api
     assert "window.reportApiError?.(path" in allocation
+    assert '"X-Flow-Operation-Id": operationId' in allocation
+    assert "window.flowLastTraceContext" in allocation
+    assert "flow_trace_context: window.flowLastTraceContext || null" in (
+        ROOT / "app" / "frontend" / "js" / "common" / "bug_report.js"
+    ).read_text(encoding="utf-8")
     assert "appendAppLog(message" in common
     assert "APP_LOG_STORAGE_KEY" in common
     assert "APP_LOG_UNREAD_STORAGE_KEY" in common
@@ -2085,7 +2093,7 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "function downloadDirect" in api_js
     assert 'method: "HEAD"' in api_js
     assert 'credentials: "include"' in api_js
-    assert "withTraceHeaders({}, requestTraceParent)" in api_js
+    assert "withTraceHeaders({}, requestTraceParent, requestOperationId)" in api_js
     assert "Ladda ner" in js
     assert "Analysera" in js
     assert "shipment_number" in js
