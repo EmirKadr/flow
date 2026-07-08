@@ -196,11 +196,29 @@ function confirmDeleteShipment(item) {
     </div>
   `;
   document.body.appendChild(backdrop);
-  document.getElementById("meta-delete-cancel")?.addEventListener("click", () => backdrop.remove());
-  document.getElementById("meta-delete-confirm")?.addEventListener("click", () => {
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeydown);
     backdrop.remove();
+  };
+  const confirm = () => {
+    close();
     void deleteShipmentUpload(item);
-  });
+  };
+  function onKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      confirm();
+    }
+  }
+
+  document.getElementById("meta-delete-cancel")?.addEventListener("click", close);
+  document.getElementById("meta-delete-confirm")?.addEventListener("click", confirm);
+  document.addEventListener("keydown", onKeydown);
+  document.getElementById("meta-delete-confirm")?.focus();
 }
 
 async function deleteShipmentUpload(item) {

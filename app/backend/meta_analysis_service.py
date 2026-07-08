@@ -611,45 +611,6 @@ def normalize_meta_analysis(payload: dict) -> dict:
         ),
         "label_frame_time_seconds": None,
     }
-    return {
-        "order_number": _clean_text(
-            _field(
-                payload,
-                "order_number",
-                "order_numbers",
-                "ordernummer",
-                "order",
-                "avs_ref",
-                "avsandarreferens",
-                "avsändarreferens",
-            ),
-            80,
-        ),
-        "shipment_number": _clean_text(
-            _field(
-                payload,
-                "shipment_number",
-                "shipment_id",
-                "consignment_number",
-                "consignment_id",
-                "sandningsnummer",
-                "sändningsnummer",
-                "sandnings_id",
-                "sändnings_id",
-                "sandnings-id",
-                "sändnings-id",
-                "sandningsid",
-                "sändningsid",
-            ),
-            120,
-        ),
-        "username": _clean_text(_field(payload, "username", "user_name", "anvandarnamn", "användarnamn"), 120),
-        "customer_name": _clean_text(_field(payload, "customer_name", "customer", "kund"), 200),
-        "pallet_id": _clean_text(_field(payload, "pallet_id", "pallid", "pallet"), 120),
-        "deviations": normalize_deviations(_field(payload, "deviations", "avvikelser")),
-        "uncertainty_notes": _clean_text(_field(payload, "uncertainty_notes", "uncertainties", "osakerhet"), 2000),
-        "label_frame_time_seconds": _clean_text(_field(payload, "label_frame_time_seconds", "label_timestamp"), 40),
-    }
 
 
 def _row_field(row: dict[str, Any], *names: str) -> Any:
@@ -784,7 +745,13 @@ def extract_label_still_bytes(upload: MetaMediaUpload, timestamp_seconds: float)
             "2",
             str(output_path),
         ]
-        completed = subprocess.run(command, capture_output=True, timeout=30, check=False)
+        try:
+            completed = subprocess.run(command, capture_output=True, timeout=30, check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            # Etikett-stillbilden är valfri: ett ffmpeg-fel/timeout här får inte
+            # fälla hela analysen (samma princip som extract_audio_file).
+            logger.info("Could not extract meta label still with ffmpeg: %s", exc)
+            return None
         if completed.returncode != 0 or not output_path.exists():
             logger.info("Could not extract meta label still with ffmpeg: %s", completed.stderr[:500])
             return None
@@ -883,6 +850,22 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
             raise
         observation.analysis_status = "analysis_failed"
         observation.analysis_error = str(exc)
+        refresh_record_hash(observation)
+        db.commit()
+        db.refresh(observation)
+        return observation
+    except Exception as exc:  # noqa: BLE001
+        # Ett oväntat fel (t.ex. ffmpeg-timeout, DB-fel) får inte lämna raden
+        # låst i "analyzing" med en naken 500 — då disablas Analysera-knappen
+        # för alltid. Logga full traceback för rotorsak och markera raden som
+        # analysis_failed med felet synligt i UI:t så den kan köras om.
+        logger.exception("Meta-analys kraschade oväntat for upload %s", upload_id)
+        db.rollback()
+        observation = db.query(MetaShipmentObservation).filter_by(media_upload_id=upload_id).first()
+        if observation is None:
+            raise
+        observation.analysis_status = "analysis_failed"
+        observation.analysis_error = f"Oväntat fel vid analys: {type(exc).__name__}: {exc}"[:2000]
         refresh_record_hash(observation)
         db.commit()
         db.refresh(observation)

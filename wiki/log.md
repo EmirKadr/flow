@@ -2908,3 +2908,21 @@ benchmark). Grävde git-historiken (72 perf-commits) för de historiska.
 Länkar till prestanda-leveranslager.md och local-archive-cache.md i stället för
 att dubblera. Indexpost tillagd. Kontext-varning: dev-latens (~37ms/DB-fråga
 Azure) != prod (samma DC) — extrapolera inte.
+
+## [2026-07-08] fix | Meta: dialog ESC/ENTER + robust analys-felhantering (branch bug_fixar)
+
+Raderingsmodalen i `meta.html` kan nu stangas med `ESC` och bekraftas med
+`ENTER` (Radera-knappen fokuseras); ingen backdrop-klick-stangning enligt
+dialogregeln. Bug: `Analysera` kunde ge `Internal Server Error` (500) och lamna
+raden last i `Analyserar` for alltid (Analysera-knappen disablas nar
+`status === "analyzing"`). Rotorsak: `analyze_meta_upload` fangade bara
+`MetaAnalysisFailed`/`IntegrityError` — ett ovantat undantag (t.ex.
+`subprocess.TimeoutExpired`/`OSError` fran `extract_label_still_bytes`, som
+saknade try/except) studsade ut som 500 efter att "analyzing" redan committats.
+Fix: (1) `extract_label_still_bytes` fangar nu ffmpeg-fel/timeout och returnerar
+None (stillbilden ar valfri); (2) `analyze_meta_upload` har en bred
+`except Exception` som loggar full traceback (`logger.exception`), satter
+`analysis_failed` med felet synligt i UI:t och committar sa raden kan koras om.
+Nytt e2e-scenario `meta-analyze` + regressionstest
+`test_analyze_meta_upload_marks_unexpected_error_instead_of_leaking_500`.
+Sidor: `meta-upload.md`, `e2e-investigation.md`.
