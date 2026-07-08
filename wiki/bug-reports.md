@@ -1,7 +1,7 @@
 ---
 title: Buggrapporter
 status: experiment
-updated: 2026-07-07
+updated: 2026-07-08
 tags: [bugg, inspelning, rrweb, experiment]
 ---
 
@@ -57,6 +57,9 @@ Beslutsdatum för experimentet: **2026-08-07** — då avgör Emir: släpp breda
 - **Backend**: `routers/bug_reports.py`, tabell `bug_reports`
   (migration 0047). Blobben lagras som rå JSON-text (`events_json`) —
   medvetet inte JSON-kolumn: den ska aldrig frågas på.
+- **Rapport-id**: varje rapport har ett stabilt `bug_reports.id`. API:t
+  returnerar id:t vid inskick, listan visar `#<id>` direkt och detalj-/status-/
+  delete-endpoints använder `/api/bug-reports/{id}`.
 - **Skyddsräcken**: storlekstak `BUG_REPORTS_MAX_EVENTS_BYTES` (4 MB),
   rate limit `BUG_REPORTS_RATE_LIMIT_PER_HOUR` (3/användare/timme,
   DB-räknad — fungerar oavsett antal workers), retention
@@ -89,6 +92,16 @@ Agenter som börjar en arbetsinsats i repot kör
 (`.flow-cli-cookies.txt`), är best effort och hoppar mjukt över sig självt
 utan inloggning. Regeln står i `AGENTS.md` ("Buggrapport-påminnelse vid
 arbetsstart").
+
+## Branch- och commitregel for buggrapportfixar
+
+Nar en agent pushar en fix som utgar fran en buggrapport ska branchen heta
+`bug_report_<id>`, till exempel `bug_report_17`. Id:t ar `bug_reports.id` och
+syns som `#17` i Buggrapporter-vyn. Om fixen medvetet tar med mer an sjalva
+rapporterade buggen, till exempel en generell optimering som hittades under
+felsokningen, ska commit-meddelandet namnge buggrapporten och beskriva extra
+scope. Buggrapport #1-fixen 2026-07-08 fick undantag eftersom regeln skapades
+under pagaende arbete.
 
 ## Felsökningssvar för framtida chat
 

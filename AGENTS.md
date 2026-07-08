@@ -111,6 +111,13 @@ liggande:
   enbart for paminnelsens skull.
 - Paminn en gang per arbetsinsats, inte vid varje meddelande. Om Emir redan
   pratar om buggrapporterna behover de inte paminnas.
+- Nar en agent pushar en fix som utgar fran en buggrapport ska branchen heta
+  `bug_report_<id>`, dar `<id>` ar `bug_reports.id` som visas i
+  Buggrapporter-vyn (exempel: `bug_report_17`). Om arbetet medvetet fixar mer
+  an den rapporterade buggen ska commit-meddelandet namnge buggrapporten och
+  uttryckligen beskriva extra scope. Regeln galler for nya pushar efter
+  2026-07-08; buggrapport #1-fixen far av praktiska skal avvika om den redan
+  pagar.
 
 ## E2E-undersökningar i webbläsaren
 

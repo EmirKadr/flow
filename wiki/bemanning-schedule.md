@@ -1,7 +1,7 @@
 ---
 title: Bemanning
 status: aktiv
-updated: 2026-07-02
+updated: 2026-07-08
 tags: [bemanning, schema, ui, knappar]
 ---
 
@@ -80,6 +80,15 @@ Falt:
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
+- Drag-fyll och undo/redo for manga timmar batchlaser befintliga schemaceller
+  per datum innan mutation. Backend far inte gora en separat `SELECT` per
+  cell/timme i `/api/schedule/cells` eller `/api/schedule/hours/restore`;
+  `tests/services/test_query_count_budgets.py::test_schedule_bulk_cells_batches_current_hour_lookup`
+  skyddar regressionsfallet som gjorde drag-kopiering seg i development
+  2026-07-07. Buggrapport #1 hade ett `POST /api/schedule/cells` runt
+  16,96 s; med development-latens ~36-37 ms per DB-rundresa sparar batchningen
+  ungefar 1,0 s vid 30 mal, 3,6 s vid 100 mal och 7,2 s vid 200 mal pa
+  las-sidan innan minskad lock-/timeout-risk raknas.
 - Bemanning bygger cellernas aktivitetsval lazy. Vid forsta render innehaller varje cell bara tomval och eventuell explicit aktivitet eller explicit huvudaktivitet for schemalagd timme; `ensureActivitySelectOptionsLoaded` fyller hela aktiva aktivitetslistan nar anvandaren fokuserar eller oppnar cellen. Det minskar DOM-storleken kraftigt for stora dagar utan att andra spar-API:t.
 - RFID-stamplingar sparas separat fran schemaceller i `rfid_scan_events`. Bemanning hamtar dem med en kort bakgrundspoll och ritar markorer ovanpa timcellerna. `Ignorera` ar en sparad status, inte borttagning, sa markeringen ligger kvar for sparbarhet.
 - Nar en RFID-stampling appliceras skapar backend schemasegment fran scannad minut till timslut. Tidigare minuter i samma timme bevaras som befintlig aktivitet eller tomt implicit segment. Klienten ogiltigforklarar schema-cache och lagger en undo-snapshot efter lyckad applicering.

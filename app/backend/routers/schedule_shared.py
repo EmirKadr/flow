@@ -385,6 +385,43 @@ def _load_hour_segments(
     return list(db.execute(query).scalars().all())
 
 
+def _load_hour_segments_for_keys(
+    db: Session,
+    keys: set[tuple[int, int, int, int, int]],
+    *,
+    lock: bool = False,
+) -> dict[tuple[int, int, int, int, int], list[ScheduleCell]]:
+    """Batch-load schedule segments for (person, year, week, weekday, hour) keys."""
+    result: dict[tuple[int, int, int, int, int], list[ScheduleCell]] = {key: [] for key in keys}
+    if not keys:
+        return result
+
+    keys_by_date: dict[tuple[int, int, int], dict[str, set[int]]] = defaultdict(
+        lambda: {"person_ids": set(), "hours": set()}
+    )
+    for person_id, year, week, weekday, hour in keys:
+        group = keys_by_date[(year, week, weekday)]
+        group["person_ids"].add(person_id)
+        group["hours"].add(hour)
+
+    for (year, week, weekday), values in keys_by_date.items():
+        query = select(ScheduleCell).where(
+            ScheduleCell.year == year,
+            ScheduleCell.week == week,
+            ScheduleCell.weekday == weekday,
+            ScheduleCell.person_id.in_(values["person_ids"]),
+            ScheduleCell.hour.in_(values["hours"]),
+        )
+        if lock:
+            query = query.with_for_update()
+        for cell in db.execute(query).scalars().all():
+            key = (cell.person_id, cell.year, cell.week, cell.weekday, cell.hour)
+            if key in result:
+                result[key].append(cell)
+
+    return {key: sorted(cells, key=lambda cell: (cell.minute_start, cell.minute_end)) for key, cells in result.items()}
+
+
 def _segment_signature(cells: list[ScheduleCell]) -> list[tuple[int, int, int]]:
     return sorted((cell.minute_start, cell.minute_end, cell.version) for cell in cells)
 

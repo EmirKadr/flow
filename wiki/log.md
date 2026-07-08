@@ -7,6 +7,37 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-08] perf | Bemanning drag-fyll batchar schemaceller
+
+Buggrapport #1 pekade pa att drag-kopiering av en cell till flera var mycket
+langsammare i Flow development an tidigare pa stigamo.nu. Vantetidsdata visade
+`POST /api/schedule/cells` runt rapporttiden pa cirka 17 s. Backend batchlaser
+nu befintliga schemaceller per datum for `/api/schedule/cells` och
+`/api/schedule/hours/restore` i stallet for en separat lasning per mal-timme.
+Samma monster hittades i Oversikt: `/api/overview/days/bulk` batchlaser nu
+befintliga dagceller och bygger efter-snapshots fran minnet i stallet for att
+lasa om per dag. Intjaning i development-topologin: ungefar `(antal mal -
+antal datum) * 36-37 ms` sparad vagtid pa las-sidan, t.ex. cirka 1,0 s vid 30
+mal, 3,6 s vid 100 och 7,2 s vid 200, plus lagre lock-/timeout-risk. Audit-
+rader far dessutom verksamhet direkt fran personen sa audit inte gor extra
+user-lookup. Regressionsskydd:
+`test_schedule_bulk_cells_batches_current_hour_lookup` och
+`test_overview_bulk_days_batches_current_day_lookup` i
+`tests/services/test_query_count_budgets.py`. Dokumenterat i
+[bemanning-schedule.md](bemanning-schedule.md),
+[overview-page.md](overview-page.md) och
+[prestanda-optimeringar.md](prestanda-optimeringar.md).
+
+## [2026-07-08] process | Buggrapportfixar far branchregel och synligt ID
+
+Buggrapporter hade redan ett stabilt `bug_reports.id`; Buggrapporter-vyn visar
+nu `#<id>` direkt i listan. Agentregeln ar uppdaterad: nar en agent pushar en
+fix som utgar fran en buggrapport ska branchen heta `bug_report_<id>`, och om
+fixen medvetet innehaller mer an den rapporterade buggen ska commit-meddelandet
+namnge rapporten och beskriva extra scope. Buggrapport #1-fixen far avvika om
+den redan pagar eftersom regeln skapades under arbetet. Dokumenterat i
+`AGENTS.md` och [bug-reports.md](bug-reports.md).
+
 ## [2026-07-08] perf | Produktivitetsbygget ~6x + forbygg alla bolag varje pass
 
 `_canonical_header` memoiserades (`lru_cache` pa modulniva) - den kanoniserade

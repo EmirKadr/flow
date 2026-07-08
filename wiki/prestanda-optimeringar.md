@@ -79,6 +79,19 @@ returnerat ett litet resultat.
   (~antal_personer x 63 queries). Batchat till ~3 queries (2026-07-08).
   Staffing-kalkylatorn byggde schemasegmenten pa nytt per kalkylator - byggs nu
   en gang (2026-07-08).
+- **Exempel:** buggrapport #1 (2026-07-07) visade att drag-kopiering i
+  Bemanning blev seg i development. Vantetider runt rapporten visade
+  `POST /api/schedule/cells` pa **16,96 s** och senare 7-dagarsdata hade
+  max **60,0 s/504**. Rotorsaken i fixbar kod var inte radvolym utan att bulk-
+  mutationerna laste aktuell timme/dag i en separat DB-rundresa per mal.
+  `/api/schedule/cells`, `/api/schedule/hours/restore` och
+  `/api/overview/days/bulk` batchlaser nu befintliga schemaceller per datum och
+  bygger efter-snapshots fran minnet. Pa dev-topologin betyder det ungefar
+  `(antal mal - antal datum) * 36-37 ms` sparad vagtid bara pa las-sidan:
+  30 timmar/dagar sparar cirka **1,0 s**, 100 sparar **3,6 s**, 200 sparar
+  **7,2 s**, innan minskad lock-/flush- och timeout-risk raknas. Nar app och DB
+  flyttas narmare blir varje rundresa billigare, men batchningen tar bort den
+  multiplicerande kostnaden och ar beteendebevarande.
 - **INTE monstret om:** loopen redan ar en bulk-query som just eliminerar N+1.
 
 #### A3. Over-fetch: hamta kolumner/rader som inte anvands
@@ -281,6 +294,10 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
   (coverage -96 %), `defer` (coredata -38 %), audit-index (0048), blocking-in-
   async -> trad, N+1-batchning, omrakning-en-gang; 28-filers svep som bekraftade
   att coverage var den unika ladda-hela-tabellen-boven.
+- **2026-07-08:** Bemanning drag-fyll, undo/redo och Oversikt dagdrag
+  batchlaser aktuella schemaceller i stallet for en rundresa per mal. Guardrail:
+  fragebudgettest for `/api/schedule/cells` och SELECT-budget for
+  `/api/overview/days/bulk`.
 - **2026-07-08:** Produktivitetsbygget - `_canonical_header`-memoisering
   (B3, ~10 s -> ~1,7 s/bygge, ~6x; ett per-kolumnuppsattnings-motforsok mattes
   langsammare och forkastades). Schemalaggaren forbygger nu **idag for alla
@@ -298,5 +315,9 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
 - `../app/backend/sankey_inbound/build.py`, `build_outbound.py`, `trace.py` (B2/B3)
 - `../app/backend/routers/allocation.py`, `meta_uploads.py`, `data_fetch.py`, `assistant.py` (C1)
 - `../app/backend/routers/public.py`, `staffing_calculator_service.py` (A2)
+- `../app/backend/routers/schedule_shared.py`,
+  `../app/backend/routers/schedule_mutation_routes.py`,
+  `../app/backend/routers/overview.py`,
+  `../tests/services/test_query_count_budgets.py` (A2: schema/oversikt-bulk)
 - `../tools/api_benchmark.py`, `../tools/latency_budgets.json` (E)
 - `prestanda-leveranslager.md`, `local-archive-cache.md` (D, B2)

@@ -2122,6 +2122,18 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert ".meta-preview-frame video" not in styles
 
 
+def test_bug_reports_page_shows_stable_report_id():
+    frontend = ROOT / "app" / "frontend"
+    html = (frontend / "bug-rapporter.html").read_text(encoding="utf-8")
+    js = (frontend / "js" / "bug_reports_admin.js").read_text(encoding="utf-8")
+
+    assert "<th>ID</th>" in html
+    assert 'class="bug-report-id"' in js
+    assert "#${report.id}" in js
+    assert 'colspan="8"' in html
+    assert 'colspan="8"' in js
+
+
 def test_allocation_pages_are_wired_to_shared_tool_shell():
     frontend = ROOT / "app" / "frontend"
     allocation_pages = {
