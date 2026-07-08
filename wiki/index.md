@@ -18,6 +18,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [UI-karta och alla kontroller](ui-map.md) - snabbkarta over knappar, menyer och generella UI-funktioner.
 - [API-karta](api.md) - endpoints grupperade efter funktion.
 - [Test och release](testing-release.md) - hur en agent verifierar andringar.
+- [E2E-undersökningsverktyg](e2e-investigation.md) - `python -m tools.e2e` loggar in mot en körande miljö och kör scenarier (skärmbilder, konsol-/nätverksfelsfångst, DOM-inspektion) med agent-läsbar rapport.
 - [Frontend-typning och lint](frontend-typing.md) - JSDoc + tsc --checkJs och ESLint utan byggsteg; utrullningsregler och domangranser.
 - [Kallkodshantering och release (NoWaste)](nowaste-git-release.md) - branchmodell, Octopus-releaser (`release/*` bygger automatiskt) och deploy till development/production.
 - [Prestanda - leveranslagret](prestanda-leveranslager.md) - gzip, versionsstamplade statiska filer med immutable-cache, ETag/304 pa API-GET, service worker, latensbudget och workers-beslutet.
