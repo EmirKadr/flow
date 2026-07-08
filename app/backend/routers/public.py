@@ -29,7 +29,7 @@ from ..business_scope import DEFAULT_BUSINESS_CODE, get_business_by_input
 from ..config import settings
 from ..deps import get_db
 from ..models import Activity, Person, ScheduleCell
-from ..template_service import get_template_hours_for_date
+from ..template_service import get_template_hours_map_for_dates
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -173,23 +173,41 @@ def _calc_activity_hours(
     if activity_id is not None:
         persons_q = persons_q.where(Person.home_activity_id == activity_id)
 
-    for person in db.execute(persons_q).scalars().all():
+    # Batcha bort N+1: en mall-query för alla personer×datum och EN grupperad
+    # täckningsquery i stället för en query per person×veckodag resp.
+    # person×veckodag×timme (kunde bli tusentals rundturor per anrop).
+    persons = db.execute(persons_q).scalars().all()
+    person_ids = [person.id for person in persons]
+    date_by_weekday = {weekday: _date_from_iso(year, week, weekday) for weekday in weekdays}
+    templates_by_person_date = get_template_hours_map_for_dates(
+        db, person_ids, list(date_by_weekday.values())
+    )
+
+    covered_map: dict[tuple[int, int, int], int] = {}
+    if person_ids:
+        covered_rows = db.execute(
+            select(
+                ScheduleCell.person_id,
+                ScheduleCell.weekday,
+                ScheduleCell.hour,
+                func.coalesce(func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start), 0),
+            ).where(
+                ScheduleCell.year == year,
+                ScheduleCell.week == week,
+                ScheduleCell.weekday.in_(weekdays),
+                ScheduleCell.person_id.in_(person_ids),
+            ).group_by(ScheduleCell.person_id, ScheduleCell.weekday, ScheduleCell.hour)
+        ).all()
+        for pid, wd, hour, minutes in covered_rows:
+            covered_map[(int(pid), int(wd), int(hour))] = int(minutes or 0)
+
+    for person in persons:
         for weekday in weekdays:
-            template = get_template_hours_for_date(db, person.id, _date_from_iso(year, week, weekday))
+            template = templates_by_person_date.get((person.id, date_by_weekday[weekday]))
             if not template:
                 continue
             for hour in template:
-                covered = db.execute(
-                    select(
-                        func.coalesce(func.sum(ScheduleCell.minute_end - ScheduleCell.minute_start), 0)
-                    ).where(
-                        ScheduleCell.year == year,
-                        ScheduleCell.week == week,
-                        ScheduleCell.weekday == weekday,
-                        ScheduleCell.person_id == person.id,
-                        ScheduleCell.hour == hour,
-                    )
-                ).scalar() or 0
+                covered = covered_map.get((person.id, weekday, hour), 0)
                 gap = max(0, 60 - covered)
                 if gap > 0:
                     aid = person.home_activity_id

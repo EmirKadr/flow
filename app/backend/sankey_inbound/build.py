@@ -143,6 +143,10 @@ def build_sankey_inbound_payload(
     buffer_rows = source_rows.get("buffer") or []
     kpi_rows = source_rows.get("kpi") or []
     alias_rows = source_rows.get("item_alias") or []
+    # Beräkna en gång per payload-build i stället för i _build_outbound_sankey
+    # (build_outbound.py) som körs upp till 512+ gånger per cache-miss (en per
+    # vy). alias_rows = hela item_alias-tabellen (>50k rader/bolag).
+    package_ladders = build_package_ladders(alias_rows)
     warnings_out = list(warnings or [])
 
     row_companies = sorted({_row_company(row) for row in receive_rows + trans_rows + pick_rows + dispatch_rows if _row_company(row)})
@@ -584,6 +588,7 @@ def build_sankey_inbound_payload(
             view_period_start=view_period_start,
             view_period_end=view_period_end,
             include_trace_details=trace_detail,
+            package_ladders=package_ladders,
         )
 
         view_receive_entries = [

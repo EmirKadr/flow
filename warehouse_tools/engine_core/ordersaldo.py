@@ -384,6 +384,14 @@ def build_pafyllnadsprio_lastningsfonster_report(
     work.index = work.index.map(lambda value: str(value).strip())
     work = work[work.index != ""].sort_index()
 
+    # Förgruppera demand_by_window en gång i stället för att boolean-mask-filtera
+    # hela ramen på nytt för varje artikel (O(artiklar × fönsterrader) -> O(N)).
+    # sort=False: dict-uppslag bryr sig inte om nyckelordning, och radordningen
+    # inom varje grupp bevaras (viktigt för den kumulativa loopen nedan).
+    windows_by_article: Dict[str, pd.DataFrame] = dict(
+        tuple(demand_by_window.groupby("_article", sort=False))
+    )
+
     for article, row in work.iterrows():
         groups["ALLA"].append(article)
         reference_value = max_map.get(article, 0.0)
@@ -397,8 +405,10 @@ def build_pafyllnadsprio_lastningsfonster_report(
             log_lines.append(f"Artikel {article} saknar referensvärde och placerades i PRIO 5.")
             continue
 
-        article_windows = demand_by_window[demand_by_window["_article"] == article].copy()
-        if article_windows.empty:
+        # groupby skapar aldrig tomma grupper, så saknad artikel ger None (inte
+        # en tom DataFrame som boolean-masken gav) -> guarda mot båda.
+        article_windows = windows_by_article.get(article)
+        if article_windows is None or article_windows.empty:
             prio_counts["PRIO 5"][article] = max(prio_counts["PRIO 5"].get(article, 0), 1)
             log_lines.append(f"Artikel {article} saknar matchning mot lastningsfönster och placerades i PRIO 5.")
             continue

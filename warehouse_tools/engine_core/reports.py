@@ -610,8 +610,22 @@ def build_overview_check_result(
 
     order_to_customer = _build_order_to_customer_map(details_df, df, order_col, cust_col)
 
+    # Compute-then-filter: den dyra orders_list/customers/carriers-logiken nedan
+    # behövs bara för sändningar som faktiskt flaggas (>1 unik kund ELLER
+    # transportör). Förfiltrera vektoriserat så loopen kör bara för dessa i
+    # stället för varje sändningsgrupp. Tomma strängar -> NaN så nunique(dropna)
+    # räknar "antal unika icke-tomma värden" exakt som det explicita
+    # [v for v in ... if v]-filtret i loopen (annars räknas "" som eget värde
+    # och genererar falska avvikelserader).
+    _cust_nonempty = df[cust_col].replace("", np.nan)
+    _trans_nonempty = df[trans_col].replace("", np.nan)
+    _cust_n = _cust_nonempty.groupby(df[ship_col]).nunique()
+    _trans_n = _trans_nonempty.groupby(df[ship_col]).nunique()
+    _flagged = _cust_n.index[_cust_n > 1].union(_trans_n.index[_trans_n > 1])
+    _flagged_df = df[df[ship_col].isin(_flagged)]
+
     shipment_diff_rows: List[Dict[str, object]] = []
-    for ship, group in df.groupby(ship_col):
+    for ship, group in _flagged_df.groupby(ship_col):
         try:
             customers = sorted(set(group[cust_col].dropna().astype(str).str.strip()))
             carriers = sorted(set(group[trans_col].dropna().astype(str).str.strip()))
@@ -765,33 +779,34 @@ def build_dispatch_check_result(
 
     order_to_ship: Dict[str, str] = {}
     try:
-        for order_number, sub in ov_df.groupby(ov_order_col):
-            ships = [value for value in sub[ov_ship_col] if isinstance(value, str) and value.strip()]
-            if ships:
-                order_to_ship[str(order_number).strip()] = ships[0].strip()
+        # ov_order_col/ov_ship_col är redan astype(str).str.strip() ovan, så
+        # "tom sträng" är enda saknad-markören. Filtrera bort tomma sändningsnr
+        # och ta första per order — vektoriserat i stället för en Python-loop
+        # som materialiserar en subframe per ordergrupp. groupby.first() ger
+        # första icke-null (alla är icke-tomma strängar) i radordning = ships[0].
+        _ship_nonempty = ov_df[ov_df[ov_ship_col].str.len() > 0]
+        order_to_ship = _ship_nonempty.groupby(ov_order_col)[ov_ship_col].first().to_dict()
     except Exception:
-        pass
+        order_to_ship = {}
 
-    diff_rows: List[Dict[str, object]] = []
-    for _, row in dp_df.iterrows():
-        try:
-            order_number = str(row[dp_order_col]).strip()
-            dispatch_ship = str(row[dp_ship_col]).strip()
-            expected_ship = order_to_ship.get(order_number)
-            if expected_ship and expected_ship != dispatch_ship:
-                diff_rows.append(
-                    {
-                        "Ordernr": order_number,
-                        "Översikt sändningsnr": expected_ship,
-                        "Dispatch sändningsnr": dispatch_ship,
-                        "Plockpallsnr": str(row[plock_col]).strip(),
-                        "kundnamn": order_to_customer.get(order_number, ""),
-                    }
-                )
-        except Exception:
-            continue
-
-    diff_df = pd.DataFrame(diff_rows) if diff_rows else pd.DataFrame()
+    # Vektoriserat i stället för dp_df.iterrows() (en Series/rad, ~50-100x
+    # dyrare). Kolumnerna är redan astype(str).str.strip() ovan, så str().strip()
+    # per rad är no-op. order_to_ship-värden är alltid icke-tomma, så notna()
+    # motsvarar originalets truthy-koll `if expected_ship`.
+    expected_ship = dp_df[dp_order_col].map(order_to_ship)
+    mask = expected_ship.notna() & (expected_ship != dp_df[dp_ship_col])
+    if not mask.any():
+        diff_df = pd.DataFrame()
+    else:
+        diff_df = pd.DataFrame(
+            {
+                "Ordernr": dp_df.loc[mask, dp_order_col],
+                "Översikt sändningsnr": expected_ship[mask],
+                "Dispatch sändningsnr": dp_df.loc[mask, dp_ship_col],
+                "Plockpallsnr": dp_df.loc[mask, plock_col],
+                "kundnamn": dp_df.loc[mask, dp_order_col].map(order_to_customer).fillna(""),
+            }
+        ).reset_index(drop=True)
 
     log_lines: list[str] = []
     if not diff_df.empty:

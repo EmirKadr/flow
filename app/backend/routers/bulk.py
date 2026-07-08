@@ -268,7 +268,10 @@ def fill_from_left(
                     existing.loan_area_id = None
                     existing.version += 1
                     existing.updated_by = user.id
-                    db.flush()
+                    # Ingen db.flush() här: existing.id är redan känt och
+                    # session har autoflush=False, så inget läser den pending
+                    # UPDATE:en före db.commit(). En rundtur per uppdaterad cell
+                    # sparad (fill-from-left kan röra hundratals celler/klick).
                     audit_log(
                         db,
                         entity_type="schedule_cell",

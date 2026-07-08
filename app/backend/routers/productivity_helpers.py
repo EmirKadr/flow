@@ -335,7 +335,13 @@ def _build_productivity_report_for_date(
         if not sync_status.get("ready"):
             raise ProductivitySyncError("Produktivitetens API-snapshot saknas eller är inte komplett.")
     snapshot_date = report_date or date.fromisoformat(str(sync_status.get("date") or date.today().isoformat()))
-    current_sync = productivity_snapshot_status(snapshot_date)
+    if not ensure_snapshot and report_date is not None:
+        # I else-grenen ovan är sync_status redan productivity_snapshot_status(
+        # report_date), och snapshot_date == report_date här — läs inte om samma
+        # snapshot-JSON en gång till.
+        current_sync = sync_status
+    else:
+        current_sync = productivity_snapshot_status(snapshot_date)
     source_status = list(sync_status.get("sources") or [])
 
     # Las den forbyggda fulldetaljerade dagrapporten fran disk nar snapshot- och

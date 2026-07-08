@@ -291,10 +291,16 @@ def remaining_process_minutes_by_person(
     process_key: str,
     business_id: int | None,
     now: datetime | None = None,
+    schedule_by_person: dict | None = None,
 ) -> dict[int, int]:
     cutoff = remaining_cutoff_minute(selected_date, now=now)
     result: dict[int, int] = {}
-    schedule_by_person = build_schedule_segments(db, selected_date, business_id=business_id)
+    # build_schedule_segments beror bara på (selected_date, business_id). Låt
+    # anroparen bygga det en gång och skicka in när flera process_keys delar
+    # samma dag/verksamhet (staffing-kalkylatorloopen) i stället för 4-5 fulla
+    # queries per kalkylator.
+    if schedule_by_person is None:
+        schedule_by_person = build_schedule_segments(db, selected_date, business_id=business_id)
     for person_id, data in schedule_by_person.items():
         minutes = 0
         for segment in data.get("segments") or []:
@@ -816,6 +822,9 @@ def calculate_staffing_automatic(
     business_id = visible_business_id(db, user, None)
     rule_business_id = _staffing_rule_business_id(db, user, business_id)
     rows: list[dict[str, Any]] = []
+    # Bygg schemasegmenten en gång — identiska för alla kalkylatorer (samma dag
+    # och verksamhet); bara process_key varierar i loopen.
+    schedule_by_person = build_schedule_segments(db, selected, business_id=business_id)
 
     for calculator in normalized.get("calculators") or []:
         process_key = normalize_process(calculator["process"])
@@ -837,6 +846,7 @@ def calculate_staffing_automatic(
                 process_key=process_key,
                 business_id=business_id,
                 now=now,
+                schedule_by_person=schedule_by_person,
             )
             rates = historical_rows_per_hour_by_person(
                 db,
