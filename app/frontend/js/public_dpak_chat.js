@@ -75,6 +75,17 @@ function publicDpakVoiceSeconds(durationMs) {
   return Math.max(1, Math.round(Number(durationMs || 0) / 1000));
 }
 
+function publicDpakSetVoiceButtonLabel(button, label) {
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  const labelEl = button.querySelector(".public-dpak-voice-label");
+  if (labelEl) {
+    labelEl.textContent = label;
+  } else {
+    button.textContent = label;
+  }
+}
+
 function publicDpakSetVoiceControls() {
   const button = document.getElementById("publicDpakVoice");
   if (!button) return;
@@ -84,13 +95,13 @@ function publicDpakSetVoiceControls() {
   button.classList.toggle("has-pending", Boolean(voice.pending) && !voice.recording);
   button.setAttribute("aria-pressed", voice.recording ? "true" : "false");
   if (!voice.supported) {
-    button.textContent = "Ingen mikrofon";
+    publicDpakSetVoiceButtonLabel(button, "Mikrofon saknas");
   } else if (voice.recording) {
-    button.textContent = "Stoppa";
+    publicDpakSetVoiceButtonLabel(button, "Stoppa röstinspelning");
   } else if (voice.pending) {
-    button.textContent = "Ny röst";
+    publicDpakSetVoiceButtonLabel(button, "Spela in ny röst");
   } else {
-    button.textContent = "Spela in";
+    publicDpakSetVoiceButtonLabel(button, "Spela in röst");
   }
 }
 

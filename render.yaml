@@ -57,6 +57,20 @@ services:
         value: MG
       - key: PUBLIC_DPAK_PICK_ZONE_CODES
         value: R
+      - key: PUBLIC_DPAK_AGENT_API_KEY
+        sync: false
+      - key: PUBLIC_DPAK_AGENT_API_URL
+        sync: false
+      - key: PUBLIC_DPAK_AGENT_MODEL
+        sync: false
+      - key: PUBLIC_DPAK_AGENT_MAX_TOKENS
+        value: "3000"
+      - key: PUBLIC_DPAK_AGENT_TIMEOUT_SECONDS
+        value: "90"
+      - key: PUBLIC_DPAK_AGENT_TEMPERATURE
+        sync: false
+      - key: PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON
+        sync: false
       - key: TRACKING_ALLOW_VALUE_SAMPLES
         value: "false"
       - key: GEMINI_API_KEY

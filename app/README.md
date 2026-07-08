@@ -98,7 +98,7 @@ Den skriver `data/external_data_catalog.json`, som commitas så Render får kata
 
 Sidan `/dpak-fraga.html` är en fristående publik chatvy utan login och utan sidomeny. Den ska bara delas via direktlänk och kräver ingen token.
 
-Chatten använder serverns `MINIMAX_API_KEY`, så kunder behöver ingen egen nyckel och betalar inte för användningen. Publika chatten kör en server-side rådata-agent: MiniMax får samtalshistorik och kan använda verktyg för att lista underlagen, läsa exempelrader och köra säker read-only SQL mot exakt tre råtabeller i Postgres: `public_dpak_raw_picklog`, `public_dpak_raw_item_alias` och `public_dpak_raw_item_attribute`.
+Chatten använder serverns modellnyckel, så kunder behöver ingen egen nyckel och betalar inte för användningen. D-pak-agenten kan konfigureras separat från övriga appchattar med `PUBLIC_DPAK_AGENT_API_KEY`, `PUBLIC_DPAK_AGENT_API_URL` och `PUBLIC_DPAK_AGENT_MODEL`; om de saknas används `MINIMAX_*` som bakåtkompatibel fallback. Publika chatten kör en server-side rådata-agent: modellen får samtalshistorik och kan använda verktyg för att lista underlagen, läsa exempelrader och köra säker read-only SQL mot exakt tre råtabeller i Postgres: `public_dpak_raw_picklog`, `public_dpak_raw_item_alias` och `public_dpak_raw_item_attribute`.
 
 Agenten får inte hämta Nowaste/ASK-data när kunden frågar. Den svarar bara från redan importerad rådata och beräknar saker som D-pak sålda, brutna, zon, AUTOSTORE, leverantör och låda vid frågetillfället från de tre underlagen.
 

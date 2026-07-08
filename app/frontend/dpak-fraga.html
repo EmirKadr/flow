@@ -40,7 +40,25 @@
           <div id="publicDpakVoiceStatus" class="public-dpak-voice-status" aria-live="polite"></div>
         </div>
         <div class="public-dpak-actions">
-          <button id="publicDpakVoice" type="button" class="public-dpak-secondary public-dpak-voice" aria-pressed="false">Spela in</button>
+          <button
+            id="publicDpakVoice"
+            type="button"
+            class="public-dpak-secondary public-dpak-voice"
+            aria-label="Spela in röst"
+            title="Spela in röst"
+            aria-pressed="false"
+          >
+            <svg class="public-dpak-voice-icon public-dpak-voice-icon-mic" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z"></path>
+              <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+              <path d="M12 18v4"></path>
+              <path d="M8 22h8"></path>
+            </svg>
+            <svg class="public-dpak-voice-icon public-dpak-voice-icon-stop" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 8h8v8H8z"></path>
+            </svg>
+            <span class="public-dpak-voice-label">Spela in röst</span>
+          </button>
           <button id="publicDpakClear" type="button" class="public-dpak-secondary">Rensa</button>
           <button id="publicDpakSend" type="submit" class="public-dpak-primary">Skicka</button>
         </div>

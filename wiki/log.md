@@ -1120,3 +1120,7 @@ Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern dataka
 ## [2026-07-08] feature | Röstinspelning i publik D-pak-chatt
 
 `/dpak-fraga.html` har nu en `Spela in`-knapp som spelar in kort ljud, försöker fylla frågefältet med svensk tal-till-text och skickar en validerad `voice`-bilaga i `POST /api/public/dpak-chat/message`. Backend sparar inte råljud och skickar inte base64 vidare till MiniMax-agenten, men agenten får sanerad röstmetadata och eventuell texttolkning. Desktop-skalet ger QWebEngine tillstånd för mikrofonens ljudupptagning.
+
+## [2026-07-08] fix | D-pak-agenten får valbar modell och ikonknapp
+
+Publik D-pak-chatt visar nu röstinspelning som en mikrofonikon med tillgänglig etikett och stoppikon under inspelning. D-pak-agentens modellendpoint är separat konfigurerbar med generiska `PUBLIC_DPAK_AGENT_*`-variabler, så D-pak kan köras mot en annan OpenAI-kompatibel modell än övriga appchattar. Providerfel visas som tydlig 502-text i stället för ett anonymt `HTTPException`.

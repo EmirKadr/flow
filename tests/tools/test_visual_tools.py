@@ -1579,12 +1579,18 @@ def test_public_dpak_chat_page_is_standalone():
     assert "/js/api.js" not in html
     assert 'id="publicDpakVoice"' in html
     assert 'id="publicDpakVoiceStatus"' in html
+    assert 'aria-label="Spela in röst"' in html
+    assert "public-dpak-voice-icon-mic" in html
+    assert "public-dpak-voice-icon-stop" in html
     assert "/api/public/dpak-chat/status" in js
     assert "/api/public/dpak-chat/message" in js
     assert "navigator.mediaDevices?.getUserMedia" in js
     assert "new MediaRecorder" in js
     assert "voice: voicePayload" in js
+    assert "publicDpakSetVoiceButtonLabel" in js
+    assert 'button.textContent = "Spela in"' not in js
     assert ".public-dpak-voice.is-recording" in styles
+    assert ".public-dpak-voice-label" in styles
     assert "initPage" not in html
     assert "initPage" not in js
 

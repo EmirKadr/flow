@@ -319,10 +319,13 @@ def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
 def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
     monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "")
     calls = []
 
     def fake_model(payload):
         calls.append(json.loads(payload["messages"][1]["content"]))
+        assert payload["model"] == public_dpak.settings.MINIMAX_MODEL
         if len(calls) == 1:
             return json.dumps({"type": "tool", "tool": "list_files", "args": {}})
         return json.dumps(
@@ -334,7 +337,7 @@ def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
             ensure_ascii=False,
         )
 
-    monkeypatch.setattr(public_dpak, "_call_minimax", fake_model)
+    monkeypatch.setattr(public_dpak, "_call_public_dpak_agent_model", fake_model)
     session = _session()
     app = FastAPI()
     app.include_router(public_dpak.router)
@@ -360,6 +363,8 @@ def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
 def test_public_dpak_message_endpoint_accepts_voice_attachment(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
     monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "")
     calls = []
 
     def fake_model(payload):
@@ -375,7 +380,7 @@ def test_public_dpak_message_endpoint_accepts_voice_attachment(monkeypatch):
             ensure_ascii=False,
         )
 
-    monkeypatch.setattr(public_dpak, "_call_minimax", fake_model)
+    monkeypatch.setattr(public_dpak, "_call_public_dpak_agent_model", fake_model)
     session = _session()
     app = FastAPI()
     app.include_router(public_dpak.router)
@@ -434,6 +439,75 @@ def test_public_dpak_message_endpoint_rejects_non_audio_voice(monkeypatch):
         )
 
         assert response.status_code == 422
+    finally:
+        session.close()
+
+
+def test_public_dpak_message_endpoint_uses_configured_agent_model(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "agent-key")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "test-agent-model")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_TEMPERATURE", "")
+    calls = []
+
+    def fake_model(payload):
+        calls.append(json.loads(payload["messages"][1]["content"]))
+        assert payload["model"] == "test-agent-model"
+        return json.dumps(
+            {
+                "type": "final",
+                "answer": "Agentmodellen svarade.",
+                "table": [],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(public_dpak, "_call_public_dpak_agent_model", fake_model)
+    session = _session()
+    app = FastAPI()
+    app.include_router(public_dpak.router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[public_dpak.get_db] = override_db
+    try:
+        _seed(session)
+        response = TestClient(app).post(
+            "/api/public/dpak-chat/message",
+            json={"messages": [{"role": "user", "content": "vilket bolag är det?"}]},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["model"] == "test-agent-model"
+        assert payload["answer"] == "Agentmodellen svarade."
+        assert calls
+    finally:
+        session.close()
+
+
+def test_public_dpak_message_endpoint_reports_agent_config_errors(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "agent-key")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "test-agent-model")
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_TEMPERATURE", "inte-ett-tal")
+    session = _session()
+    app = FastAPI()
+    app.include_router(public_dpak.router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[public_dpak.get_db] = override_db
+    try:
+        _seed(session)
+        response = TestClient(app).post(
+            "/api/public/dpak-chat/message",
+            json={"messages": [{"role": "user", "content": "vilket bolag är det?"}]},
+        )
+        assert response.status_code == 502
+        assert "PUBLIC_DPAK_AGENT_TEMPERATURE" in response.json()["detail"]
+        assert "HTTPException" not in response.json()["detail"]
     finally:
         session.close()
 

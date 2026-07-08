@@ -6387,10 +6387,53 @@ body.public-dpak-modal-open {
   border-color: #cbd8df;
 }
 
+.public-dpak-voice {
+  position: relative;
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.public-dpak-voice-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.public-dpak-voice-icon-stop {
+  display: none;
+  fill: currentColor;
+  stroke: none;
+}
+
+.public-dpak-voice-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .public-dpak-voice.is-recording {
   color: #ffffff;
   background: #b84431;
   border-color: #b84431;
+}
+
+.public-dpak-voice.is-recording .public-dpak-voice-icon-mic {
+  display: none;
+}
+
+.public-dpak-voice.is-recording .public-dpak-voice-icon-stop {
+  display: block;
 }
 
 .public-dpak-voice.has-pending {
@@ -6495,6 +6538,11 @@ body.public-dpak-modal-open {
   .public-dpak-secondary {
     flex: 1 1 92px;
     padding: 0 10px;
+  }
+
+  .public-dpak-voice {
+    flex: 0 0 48px;
+    padding: 0;
   }
 
   .public-dpak-table-modal {

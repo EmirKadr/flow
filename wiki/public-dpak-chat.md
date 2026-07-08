@@ -1,7 +1,7 @@
 ---
 title: Publik D-pak-chatt
 status: aktiv
-updated: 2026-07-07
+updated: 2026-07-08
 tags: [publik, dpak, chat, postgres]
 ---
 
@@ -19,7 +19,19 @@ Kunden ska aldrig trigga en picklogg-hämtning. Frågan går mot färdiga Postgr
 - `public_dpak_sync_chunks` för återupptagningsbar chunk-status.
 - `public_dpak_datasets` för aktuell täckning och status.
 
-MiniMax används bara för att formulera svaret. Backend räknar först fram siffror och tabellrader deterministiskt, skickar dessa till MiniMax och instruerar modellen att inte ändra tal, datum, leverantörer eller artikelnummer. Om MiniMax saknar nyckel eller fallerar returneras det deterministiska svaret ändå.
+Frågan analyseras av D-pak-agenten via en OpenAI-kompatibel modellendpoint. Agenten får bara sanerad dialog, datasetstatus och resultat från sina egna verktygssteg. Den kan lista råfiler, läsa exempelrader, hämta beräkningsregler och köra validerade `SELECT`/`WITH`-frågor mot de tre råa D-pak-tabellerna. Den får inte skriva SQL utanför råtabellerna eller köra mutationer.
+
+Modellen är konfigurerbar för D-pak separat från övriga appchattar:
+
+- `PUBLIC_DPAK_AGENT_API_KEY` - modellnyckel för D-pak-agenten. Om den saknas används `MINIMAX_API_KEY` som bakåtkompatibel fallback.
+- `PUBLIC_DPAK_AGENT_API_URL` - OpenAI-kompatibel chat-completions endpoint. Om den saknas används `MINIMAX_API_URL`.
+- `PUBLIC_DPAK_AGENT_MODEL` - modellnamn. Om det saknas används `MINIMAX_MODEL`.
+- `PUBLIC_DPAK_AGENT_MAX_TOKENS` - svarslängd för agentens modellsteg.
+- `PUBLIC_DPAK_AGENT_TIMEOUT_SECONDS` - timeout för D-pak-agentens modellendpoint. Om den saknas används `MINIMAX_TIMEOUT_SECONDS`.
+- `PUBLIC_DPAK_AGENT_TEMPERATURE` - valfri temperatur. Tomt värde skickar ingen temperaturparameter.
+- `PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON` - valfritt JSON-objekt för provider-/modellparametrar som exempelvis JSON-läge eller thinking-läge. Värdet loggas inte och ska inte innehålla nycklar.
+
+Om modellendpointen nekar, timeouter eller returnerar felaktigt svar visas en begriplig 502-feltext från backend i chatten. Feltexten ska inte bara säga `HTTPException`.
 
 ## Lokal synk
 
@@ -54,7 +66,7 @@ Båda är publika och får inte använda `get_current_user`. Payloaden för medd
 
 ## Röstinspelning
 
-Sidan har knappen `Spela in` bredvid `Rensa` och `Skicka`. Webbläsaren spelar in kort ljud med `MediaRecorder` och försöker samtidigt tolka svenskt tal till text med `SpeechRecognition` när webbläsaren stödjer det. Texten fylls i frågefältet så användaren kan kontrollera och redigera innan frågan skickas.
+Sidan har en mikrofonikon bredvid `Rensa` och `Skicka`. Ikonen har tooltip/tillgänglig etikett och byter till stoppikon medan inspelning pågår. Webbläsaren spelar in kort ljud med `MediaRecorder` och försöker samtidigt tolka svenskt tal till text med `SpeechRecognition` när webbläsaren stödjer det. Texten fylls i frågefältet så användaren kan kontrollera och redigera innan frågan skickas.
 
 När användaren klickar `Skicka` skickas ljudet som `voice` i samma `POST /api/public/dpak-chat/message`-anrop:
 
@@ -63,4 +75,4 @@ När användaren klickar `Skicka` skickas ljudet som `voice` i samma `POST /api/
 - `duration_ms` är inspelningens längd.
 - `transcript` är webbläsarens texttolkning om den finns.
 
-Backend validerar röstbilagan men sparar den inte. Rå base64-ljud skickas inte vidare till MiniMax-agenten; agenten får bara den vanliga textfrågan samt sanerad röstmetadata och eventuell texttolkning. Om webbläsaren inte kan tolka talet behöver användaren skriva frågan i fältet innan skick.
+Backend validerar röstbilagan men sparar den inte. Rå base64-ljud skickas inte vidare till modellen; agenten får bara den vanliga textfrågan samt sanerad röstmetadata och eventuell texttolkning. Om webbläsaren inte kan tolka talet behöver användaren skriva frågan i fältet innan skick.

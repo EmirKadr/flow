@@ -445,6 +445,9 @@ def _build_agent_payload(
     tool_trace: list[dict[str, Any]],
     *,
     final_only: bool = False,
+    model_name: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     system_prompt = """
 Du är en svensk dataanalys-agent för en publik D-pak-chatt.
@@ -479,8 +482,8 @@ Regler:
 """.strip()
     if final_only:
         system_prompt += "\n\nDu får inte göra fler verktygsanrop nu. Svara med type=final baserat på tool_trace."
-    return {
-        "model": settings.MINIMAX_MODEL,
+    payload: dict[str, Any] = {
+        "model": model_name or settings.MINIMAX_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {
@@ -497,10 +500,11 @@ Regler:
                 ),
             },
         ],
-        "max_tokens": max(settings.MINIMAX_MAX_TOKENS, 1400),
-        "temperature": 0.0,
-        "reasoning_split": True,
+        "max_tokens": max(max_tokens or settings.MINIMAX_MAX_TOKENS, 1400),
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
+    return payload
 
 
 def run_public_dpak_agent(
@@ -509,6 +513,9 @@ def run_public_dpak_agent(
     messages: list[dict[str, str]],
     business_code: str | None = None,
     call_model: Callable[[dict[str, Any]], str],
+    model_name: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     business = public_dpak_business_code(business_code)
     db_status = dataset_status(db, business)
@@ -532,7 +539,15 @@ def run_public_dpak_agent(
         }
     ]
     for step in range(1, MAX_AGENT_STEPS + 1):
-        payload = _build_agent_payload(messages, business, db_status, tool_trace)
+        payload = _build_agent_payload(
+            messages,
+            business,
+            db_status,
+            tool_trace,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
         try:
             parsed = _extract_json(call_model(payload))
         except PublicDpakAgentError as exc:
@@ -546,7 +561,7 @@ def run_public_dpak_agent(
             return {
                 "answer": answer or "Jag hittade inget svar i råunderlaget.",
                 "table": table[:80],
-                "model": settings.MINIMAX_MODEL,
+                "model": model_name or settings.MINIMAX_MODEL,
                 "warning": None,
             }
         if action_type != "tool":
@@ -557,7 +572,16 @@ def run_public_dpak_agent(
         except Exception as exc:
             tool_trace.append({"step": step, "tool_call": parsed, "tool_error": str(exc)})
     try:
-        payload = _build_agent_payload(messages, business, db_status, tool_trace, final_only=True)
+        payload = _build_agent_payload(
+            messages,
+            business,
+            db_status,
+            tool_trace,
+            final_only=True,
+            model_name=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
         parsed = _extract_json(call_model(payload))
         if str(parsed.get("type") or "").strip().lower() == "final":
             answer = str(parsed.get("answer") or "").strip()
@@ -566,7 +590,7 @@ def run_public_dpak_agent(
             return {
                 "answer": answer or "Jag hittade inget svar i råunderlaget.",
                 "table": table[:80],
-                "model": settings.MINIMAX_MODEL,
+                "model": model_name or settings.MINIMAX_MODEL,
                 "warning": "Agenten använde hela verktygsbudgeten innan slutsvar.",
             }
     except Exception:
@@ -577,12 +601,12 @@ def run_public_dpak_agent(
             return {
                 "answer": "Jag fick fram följande resultat från råunderlaget, men hann inte formulera en full analys.",
                 "table": result["rows"][:80],
-                "model": settings.MINIMAX_MODEL,
+                "model": model_name or settings.MINIMAX_MODEL,
                 "warning": "Agenten nådde max antal verktygssteg.",
             }
     return {
         "answer": "Jag hann inte analysera klart. Försök ställa frågan lite mer konkret.",
         "table": [],
-        "model": settings.MINIMAX_MODEL,
+        "model": model_name or settings.MINIMAX_MODEL,
         "warning": "Agenten nådde max antal verktygssteg.",
     }
