@@ -237,7 +237,12 @@ function publicDpakInit() {
   document.getElementById("publicDpakForm")?.addEventListener("submit", publicDpakSubmit);
   document.getElementById("publicDpakClear")?.addEventListener("click", publicDpakClear);
   document.getElementById("publicDpakInput")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    const shortcut = event.ctrlKey || event.metaKey;
+    if (shortcut && ["z", "x", "c", "v"].includes(event.key.toLowerCase())) {
+      event.stopPropagation();
+      return;
+    }
+    if (event.key !== "Enter" || event.shiftKey || event.altKey || shortcut || event.isComposing) return;
     event.preventDefault();
     document.getElementById("publicDpakForm")?.requestSubmit();
   });
