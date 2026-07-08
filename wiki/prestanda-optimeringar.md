@@ -318,6 +318,7 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
 - `../app/backend/routers/schedule_shared.py`,
   `../app/backend/routers/schedule_mutation_routes.py`,
   `../app/backend/routers/overview.py`,
+  `../app/backend/routers/overview_cells.py`,
   `../tests/services/test_query_count_budgets.py` (A2: schema/oversikt-bulk)
 - `../tools/api_benchmark.py`, `../tools/latency_budgets.json` (E)
 - `prestanda-leveranslager.md`, `local-archive-cache.md` (D, B2)

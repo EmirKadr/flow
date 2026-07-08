@@ -72,6 +72,7 @@ Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser 
 - `../app/frontend/js/overview.js`
 - `../app/frontend/js/presence_print.js`
 - `../app/backend/routers/overview.py`
+- `../app/backend/routers/overview_cells.py`
 - `../app/backend/routers/schedule.py`
 - `../tests/services/test_query_count_budgets.py`
 - `../APP_MIGRATION_PLAN.md`
