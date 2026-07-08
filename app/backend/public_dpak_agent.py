@@ -283,7 +283,7 @@ def run_sql_tool(db: Session, business_code: str, sql: str, max_rows: int | None
     statement = validate_raw_sql(sql)
     row_limit = max(1, min(int(max_rows or MAX_SQL_ROWS), 200))
     if db.get_bind() is not None and db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SET LOCAL statement_timeout = '8s'"))
+        db.execute(text("SET LOCAL statement_timeout = '45s'"))
     wrapped = f"SELECT * FROM ({statement}) AS public_dpak_agent_query LIMIT :__limit"
     result = db.execute(text(wrapped), {"__limit": row_limit})
     rows = [dict(row) for row in result.mappings().all()]
@@ -316,6 +316,43 @@ def calculation_reference_tool() -> dict[str, Any]:
             "Originalraden finns i JSON-kolumnen data. I Postgres kan originalfält läsas med data ->> 'Bolag'.",
             "Filnamn/tabeller: public_dpak_raw_picklog, public_dpak_raw_item_alias, public_dpak_raw_item_attribute.",
             "Filtrera business_code = 'STIGAMO' när du skriver SQL.",
+            "För AUTOSTORE: använd p.location = 'AUTOSTORE' mot indexkolumnen location.",
+        ],
+        "sql_templates": [
+            {
+                "name": "dpack_broken_share",
+                "description": "Mall för D-pak sålda, hela/obrutna och brutna från rå picklog + item_alias. Lägg till filter, t.ex. p.location = 'AUTOSTORE' eller p.zone = 'R'.",
+                "sql": """
+WITH factors AS (
+  SELECT item_num, MIN(factor) AS factor
+  FROM public_dpak_raw_item_alias
+  WHERE business_code = 'STIGAMO'
+    AND factor > 1
+    AND COALESCE(UPPER(unit), '') <> 'PAL'
+  GROUP BY item_num
+), order_article AS (
+  SELECT
+    p.order_num,
+    p.item_num,
+    FLOOR(SUM(COALESCE(p.qty_suf, 0)) / NULLIF(MAX(f.factor), 0))::bigint AS dpack_sold,
+    SUM(FLOOR(COALESCE(p.qty_suf, 0) / NULLIF(f.factor, 0)))::bigint AS whole_picked
+  FROM public_dpak_raw_picklog p
+  JOIN factors f ON f.item_num = p.item_num
+  WHERE p.business_code = 'STIGAMO'
+  GROUP BY p.order_num, p.item_num
+), calc AS (
+  SELECT dpack_sold, whole_picked, GREATEST(dpack_sold - whole_picked, 0) AS broken
+  FROM order_article
+  WHERE dpack_sold > 0
+)
+SELECT
+  SUM(dpack_sold) AS dpack_sold,
+  SUM(whole_picked) AS whole_picked,
+  SUM(broken) AS broken,
+  ROUND((SUM(whole_picked)::numeric / NULLIF(SUM(dpack_sold), 0)) * 100, 2) AS whole_share_pct
+FROM calc
+""".strip(),
+            }
         ],
     }
 
@@ -341,16 +378,15 @@ def _extract_json(raw: str) -> dict[str, Any]:
     if text_value.startswith("```"):
         text_value = re.sub(r"^```(?:json)?\s*", "", text_value, flags=re.IGNORECASE)
         text_value = re.sub(r"\s*```$", "", text_value)
-    start = text_value.find("{")
-    if start == -1:
-        raise PublicDpakAgentError("MiniMax returnerade inte JSON.")
-    try:
-        parsed, _end = json.JSONDecoder().raw_decode(text_value[start:])
-    except json.JSONDecodeError as exc:
-        raise PublicDpakAgentError("MiniMax returnerade ogiltig JSON.") from exc
-    if not isinstance(parsed, dict):
-        raise PublicDpakAgentError("MiniMax JSON måste vara ett objekt.")
-    return parsed
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"{", text_value):
+        try:
+            parsed, _end = decoder.raw_decode(text_value[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise PublicDpakAgentError("MiniMax returnerade inte ett giltigt JSON-objekt.")
 
 
 def _build_agent_payload(
@@ -439,11 +475,20 @@ def run_public_dpak_agent(
             "step": 0,
             "tool_call": {"type": "tool", "tool": "list_files", "args": {}},
             "tool_result": list_files_tool(db, business),
+        },
+        {
+            "step": 0,
+            "tool_call": {"type": "tool", "tool": "calculation_reference", "args": {}},
+            "tool_result": calculation_reference_tool(),
         }
     ]
     for step in range(1, MAX_AGENT_STEPS + 1):
         payload = _build_agent_payload(messages, business, db_status, tool_trace)
-        parsed = _extract_json(call_model(payload))
+        try:
+            parsed = _extract_json(call_model(payload))
+        except PublicDpakAgentError as exc:
+            tool_trace.append({"step": step, "model_error": str(exc)})
+            continue
         action_type = str(parsed.get("type") or ("tool" if parsed.get("tool") else "final")).strip().lower()
         if action_type == "final":
             answer = str(parsed.get("answer") or "").strip()
