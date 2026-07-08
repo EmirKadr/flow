@@ -502,9 +502,11 @@ def bulk_update_cells(
 
     template_hours_map = get_template_hours_map_for_dates(db, person_ids, dates_by_ywd.values())
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
+    hour_segments_by_key = _load_hour_segments_for_keys(db, set(grouped_items), lock=True)
 
     try:
         for (person_id, year, week, weekday, hour), group_items in grouped_items.items():
+            item_business_id = persons_by_id[person_id].business_id
             group_items = sorted(group_items, key=lambda item: (item.minute_start, item.minute_end))
             seen_ranges: set[tuple[int, int]] = set()
             for item in group_items:
@@ -518,15 +520,7 @@ def bulk_update_cells(
 
             selected_date = dates_by_ywd[(year, week, weekday)]
             template_hours = template_hours_map.get((person_id, selected_date))
-            hour_segments = _load_hour_segments(
-                db,
-                year=year,
-                week=week,
-                weekday=weekday,
-                hour=hour,
-                person_id=person_id,
-                lock=True,
-            )
+            hour_segments = list(hour_segments_by_key.get((person_id, year, week, weekday, hour), []))
             item_by_range = {
                 (item.minute_start, item.minute_end): item
                 for item in group_items
@@ -594,6 +588,7 @@ def bulk_update_cells(
                         old_value=old_full,
                         new_value=_cell_audit_dict(full_segment),
                         user_id=user.id,
+                        business_id=item_business_id,
                     )
                     for segment in created_split_segments:
                         audit_log(
@@ -604,6 +599,7 @@ def bulk_update_cells(
                             old_value=None,
                             new_value=_cell_audit_dict(segment),
                             user_id=user.id,
+                            business_id=item_business_id,
                         )
                     hour_segments = sorted(
                         [full_segment, *created_split_segments],
@@ -661,6 +657,7 @@ def bulk_update_cells(
                             old_value=None,
                             new_value=_cell_audit_dict(cell),
                             user_id=user.id,
+                            business_id=item_business_id,
                         )
                     applied.extend(_serialize_segments(created))
                     continue
@@ -749,6 +746,7 @@ def bulk_update_cells(
                         old_value=None,
                         new_value=_cell_audit_dict(cell),
                         user_id=user.id,
+                        business_id=item_business_id,
                     )
                 for cell, old in updated_cells:
                     audit_log(
@@ -759,6 +757,7 @@ def bulk_update_cells(
                         old_value=old,
                         new_value=_cell_audit_dict(cell),
                         user_id=user.id,
+                        business_id=item_business_id,
                     )
 
             applied.extend(_serialize_segments(hour_segments))
@@ -851,17 +850,12 @@ def restore_hours(
 
     restored: list[dict] = []
     owner_lock_enabled = foreign_schedule_cell_lock_applies(db, user)
+    hour_segments_by_key = _load_hour_segments_for_keys(db, seen_hours, lock=True)
     try:
+        current_by_key: dict[tuple[int, int, int, int, int], list[ScheduleCell]] = {}
         for item in payload.hours:
-            current = _load_hour_segments(
-                db,
-                year=item.year,
-                week=item.week,
-                weekday=item.weekday,
-                hour=item.hour,
-                person_id=item.person_id,
-                lock=True,
-            )
+            key = (item.person_id, item.year, item.week, item.weekday, item.hour)
+            current = list(hour_segments_by_key.get(key, []))
             if _segment_signature(current) != _expected_signature(item.expected_segments):
                 db.rollback()
                 return JSONResponse(
@@ -880,7 +874,12 @@ def restore_hours(
                 )
 
             assert_can_modify_schedule_cells(current, user, owner_lock_enabled)
-            for cell in current:
+            current_by_key[key] = current
+
+        for item in payload.hours:
+            key = (item.person_id, item.year, item.week, item.weekday, item.hour)
+            item_business_id = persons_by_id[item.person_id].business_id
+            for cell in current_by_key.get(key, []):
                 audit_log(
                     db,
                     entity_type="schedule_cell",
@@ -889,11 +888,15 @@ def restore_hours(
                     old_value=_cell_audit_dict(cell),
                     new_value=None,
                     user_id=user.id,
+                    business_id=item_business_id,
                 )
                 db.delete(cell)
-            if current:
-                db.flush()
+        if any(current_by_key.values()):
+            db.flush()
 
+        created_by_key: dict[tuple[int, int, int, int, int], list[ScheduleCell]] = {}
+        for item in payload.hours:
+            key = (item.person_id, item.year, item.week, item.weekday, item.hour)
             created: list[ScheduleCell] = []
             for segment in sorted(item.segments, key=lambda s: (s.minute_start, s.minute_end)):
                 cell = ScheduleCell(
@@ -913,10 +916,14 @@ def restore_hours(
                 )
                 db.add(cell)
                 created.append(cell)
+            created_by_key[key] = created
 
-            if created:
-                db.flush()
-                for cell in created:
+        if any(created_by_key.values()):
+            db.flush()
+            for item in payload.hours:
+                key = (item.person_id, item.year, item.week, item.weekday, item.hour)
+                item_business_id = persons_by_id[item.person_id].business_id
+                for cell in created_by_key.get(key, []):
                     audit_log(
                         db,
                         entity_type="schedule_cell",
@@ -925,12 +932,15 @@ def restore_hours(
                         old_value=None,
                         new_value=_cell_audit_dict(cell),
                         user_id=user.id,
+                        business_id=item_business_id,
                     )
 
+        for item in payload.hours:
+            key = (item.person_id, item.year, item.week, item.weekday, item.hour)
             restored.append({
                 "person_id": item.person_id,
                 "hour": item.hour,
-                "segments": _serialize_segments(created),
+                "segments": _serialize_segments(created_by_key.get(key, [])),
             })
 
         db.commit()

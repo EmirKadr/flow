@@ -1,7 +1,7 @@
 ---
 title: Oversikt
 status: aktiv
-updated: 2026-06-08
+updated: 2026-07-08
 tags: [oversikt, ui, knappar]
 ---
 
@@ -43,6 +43,11 @@ Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser 
 - Heldagsandring anvander personens veckomall. Om personen saknar fast mall/timmis kan API stoppa andringen.
 - Vid blandad dag fragar klienten innan den skriver over med ett enda varde.
 - Drag skapar manga heldagsandringar och pushar undo-snapshot for de lyckade.
+- Drag over manga dagceller batchlaser befintliga schemaceller per datum innan
+  skrivning och bygger efter-snapshots fran de celler som redan finns i minnet.
+  Backend far inte gora en separat `SELECT` per dag i
+  `/api/overview/days/bulk`; `tests/services/test_query_count_budgets.py::test_overview_bulk_days_batches_current_day_lookup`
+  skyddar regressionsfallet.
 - Drag pa personnamn andrar inte bemanningsceller utan personernas sorteringsnummer i registret. Samma backendregel som Bemanning anvands: Bemanningsansvarig/admin sorterar eget omrade, medan Super User och demo sorterar alla synliga personer med `Personsortering=Redigera`.
 - `Narvarande` anvander schemadagen, inte den aggregerade oversiktscellen. Klickad/fokuserad dag blir printdag; om ingen dag ar fokuserad anvands sidans valda datum/period. Alla omraden grupperas per verksamhet.
 - Oversikt cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela veckan/manaden i verksamheten, filtrerar valt omrade lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ar separat for veckovy och manadsvy och ogiltigforklaras vid dagandring, drag och undo/redo.
@@ -67,5 +72,7 @@ Daghuvudena visar bade datum och ISO-vecka, till exempel `Vecka 21`, sa man ser 
 - `../app/frontend/js/overview.js`
 - `../app/frontend/js/presence_print.js`
 - `../app/backend/routers/overview.py`
+- `../app/backend/routers/overview_cells.py`
 - `../app/backend/routers/schedule.py`
+- `../tests/services/test_query_count_budgets.py`
 - `../APP_MIGRATION_PLAN.md`

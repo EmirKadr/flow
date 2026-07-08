@@ -16,6 +16,7 @@ from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..schemas import PersonOut
 from ..template_service import get_template_hours_map_for_dates
+from .overview_cells import load_bulk_day_cells_by_key, load_day_cells_by_hour, overview_day_key
 
 logger = logging.getLogger("overview")
 
@@ -269,28 +270,6 @@ def _day_hour_snapshots(
     ]
 
 
-def _load_day_cells_by_hour(
-    db: Session,
-    payload: OverviewDayRequest,
-    template_hours: set[int],
-) -> dict[int, list[ScheduleCell]]:
-    if not template_hours:
-        return {}
-    rows = db.execute(
-        select(ScheduleCell).where(
-            ScheduleCell.year == payload.year,
-            ScheduleCell.week == payload.week,
-            ScheduleCell.weekday == payload.weekday,
-            ScheduleCell.person_id == payload.person_id,
-            ScheduleCell.hour.in_(sorted(template_hours)),
-        )
-    ).scalars().all()
-    cells_by_hour: dict[int, list[ScheduleCell]] = defaultdict(list)
-    for cell in rows:
-        cells_by_hour[cell.hour].append(cell)
-    return cells_by_hour
-
-
 def _day_cell_payload(
     payload: OverviewDayRequest,
     template_hours: set[int] | None,
@@ -333,6 +312,7 @@ def _apply_day_impl(
     *,
     template_hours: set[int] | None,
     owner_lock_enabled: bool,
+    existing_by_hour: dict[int, list[ScheduleCell]] | None = None,
 ) -> dict:
     if template_hours is None:
         raise HTTPException(
@@ -346,18 +326,9 @@ def _apply_day_impl(
         cell = _day_cell_payload(payload, template_hours, written=0, deleted=0)
         return {"written": 0, "deleted": 0, "cell": cell, "before_hours": [], "after_hours": []}
 
-    existing = db.execute(
-        select(ScheduleCell).where(
-            ScheduleCell.year == payload.year,
-            ScheduleCell.week == payload.week,
-            ScheduleCell.weekday == payload.weekday,
-            ScheduleCell.person_id == payload.person_id,
-            ScheduleCell.hour.in_(sorted(template_hours)),
-        )
-    ).scalars().all()
-    existing_by_hour: dict[int, list[ScheduleCell]] = defaultdict(list)
-    for cell in existing:
-        existing_by_hour[cell.hour].append(cell)
+    if existing_by_hour is None:
+        existing_by_hour = load_day_cells_by_hour(db, payload, template_hours)
+    existing = [cell for cells in existing_by_hour.values() for cell in cells]
     assert_can_modify_schedule_cells(existing, user, owner_lock_enabled)
     before_hours = _day_hour_snapshots(
         payload=payload,
@@ -461,6 +432,7 @@ def _apply_day_impl(
                 user_id=user.id,
             )
             written += 1
+            existing_by_hour[hour] = [cell]
             continue
 
         if (
@@ -552,12 +524,13 @@ def _apply_day_impl(
             user_id=user.id,
         )
         written += 1
+        existing_by_hour[hour] = [cell]
 
     db.flush()
     after_hours = _day_hour_snapshots(
         payload=payload,
         template_hours=template_hours,
-        cells_by_hour=_load_day_cells_by_hour(db, payload, template_hours),
+        cells_by_hour=existing_by_hour,
     )
 
     return {
@@ -928,6 +901,13 @@ def set_days_bulk(
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="Person och aktivitet tillhör olika verksamheter")
 
     template_hours_map = get_template_hours_map_for_dates(db, person_ids, dates_by_ywd.values())
+    template_hours_by_key = {
+        overview_day_key(item): template_hours_map.get(
+            (item.person_id, dates_by_ywd[(item.year, item.week, item.weekday)])
+        )
+        for item in payload.days
+    }
+    day_cells_by_key = load_bulk_day_cells_by_key(db, payload.days, template_hours_by_key)
     applied: list[dict] = []
     errors: list[dict] = []
     total_written = 0
@@ -938,6 +918,7 @@ def set_days_bulk(
         for item in payload.days:
             selected_date = dates_by_ywd[(item.year, item.week, item.weekday)]
             template_hours = template_hours_map.get((item.person_id, selected_date))
+            day_key = overview_day_key(item)
             if payload.atomic:
                 result = _apply_day_impl(
                     item,
@@ -945,6 +926,7 @@ def set_days_bulk(
                     user,
                     template_hours=template_hours,
                     owner_lock_enabled=owner_lock_enabled,
+                    existing_by_hour=day_cells_by_key.get(day_key),
                 )
                 applied.append({
                     **result["cell"],
@@ -963,6 +945,7 @@ def set_days_bulk(
                         user,
                         template_hours=template_hours,
                         owner_lock_enabled=owner_lock_enabled,
+                        existing_by_hour=day_cells_by_key.get(day_key),
                     )
                 applied.append({
                     **result["cell"],

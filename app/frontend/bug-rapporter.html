@@ -18,6 +18,7 @@
     table.bug-reports-table th { font-weight: 600; }
     table.bug-reports-table tr { cursor: pointer; }
     table.bug-reports-table tr.active { background: var(--hover, #f2f6ff); }
+    .bug-report-id { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted, #666); }
     .bug-status-new { color: #b3261e; font-weight: 600; }
     .bug-status-seen { color: #b35900; font-weight: 600; }
     .bug-status-done { color: #1a7f37; font-weight: 600; }
@@ -44,10 +45,10 @@
     <table class="bug-reports-table">
       <thead>
         <tr>
-          <th>Skickad</th><th>Användare</th><th>Vy</th><th>Notis</th><th>Status</th><th>Storlek</th><th>Åtgärder</th>
+          <th>ID</th><th>Skickad</th><th>Användare</th><th>Vy</th><th>Notis</th><th>Status</th><th>Storlek</th><th>Åtgärder</th>
         </tr>
       </thead>
-      <tbody id="bugReportsBody"><tr><td colspan="7">Laddar …</td></tr></tbody>
+      <tbody id="bugReportsBody"><tr><td colspan="8">Laddar …</td></tr></tbody>
     </table>
 
     <section class="bug-report-detail" id="bugReportDetail" hidden>

@@ -369,6 +369,20 @@ def _build_productivity_report_for_date(
         cache_ready = False
 
     if report is None:
+        # Fallback: den forbyggda oversiktsrapporten fanns inte eller var
+        # inaktuell -> vi bygger on-demand nar anvandaren oppnar vyn. Loggas
+        # med distinkt tagg sa fallback-frekvensen kan foljas ur loggarna
+        # (hog frekvens = nattforbygget speglar inte verkligheten). Se
+        # wiki/productivity.md ("On-demand-fallback").
+        is_today = snapshot_date == datetime.now(LOCAL_TZ).date()
+        reason = "signature_error" if not cache_ready else "overview_cache_miss"
+        logger.info(
+            "productivity_overview_ondemand_build date=%s business_id=%s today=%s reason=%s",
+            snapshot_date.isoformat(),
+            business_id if business_id is not None else "-",
+            "1" if is_today else "0",
+            reason,
+        )
         files = productivity_snapshot_files(snapshot_date)
         report = _build_cached_person_productivity_report(
             db,

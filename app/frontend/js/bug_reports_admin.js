@@ -42,13 +42,14 @@
       const response = await window.api.get("/api/bug-reports");
       const reports = response?.reports || [];
       if (!reports.length) {
-        body.innerHTML = '<tr><td colspan="7">Inga buggrapporter ännu. När användare klickar på 🐞-knappen hamnar rapporterna här.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8">Inga buggrapporter ännu. När användare klickar på 🐞-knappen hamnar rapporterna här.</td></tr>';
         return;
       }
       body.innerHTML = reports
         .map(
           (report) => `
             <tr data-report-id="${report.id}">
+              <td class="bug-report-id">#${report.id}</td>
               <td>${formatStamp(report.created_at)}</td>
               <td>${escapeHtml(report.username || "okänd")}</td>
               <td>${escapeHtml(report.view_id || report.page_path || "")}</td>

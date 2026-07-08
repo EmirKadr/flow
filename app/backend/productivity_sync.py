@@ -73,6 +73,13 @@ from .productivity_sync_paths import (  # noqa: F401
 )
 
 
+from .productivity_prebuild import (  # noqa: E402  (efter tunga path-importer, undviker cirkel)
+    _PRODUCTIVITY_SYNC_INTERVAL_SECONDS,
+    _TODAY_WARM_STAGGER_MAX_SECONDS,
+    _active_business_codes,
+    warm_today_for_businesses,
+)
+
 logger = logging.getLogger(__name__)
 _SYNC_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
@@ -365,6 +372,7 @@ def prebuild_ready_productivity_days(
     now: datetime | None = None,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    business_codes: list[str] | None = None,
     db: Session | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
@@ -393,24 +401,26 @@ def prebuild_ready_productivity_days(
         if snapshot_date < today
         and productivity_snapshot_status(snapshot_date, reference_dir=reference_dir).get("ready")
     ]
+    codes = business_codes if business_codes is not None else [business_code or DEFAULT_BUSINESS_CODE]
     results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for snapshot_date in ready_dates:
         sync = productivity_snapshot_status(snapshot_date, reference_dir=reference_dir)
-        result = _warm_person_productivity_daily_cache(
-            db,
-            snapshot_date,
-            reference_dir=reference_dir,
-            business_code=business_code,
-            sync=sync,
-        )
-        if result is None:
-            continue
-        result = {"date": snapshot_date.isoformat(), **result}
-        if str(result.get("status") or "") == "error":
-            errors.append(result)
-        else:
-            results.append(result)
+        for code in codes:
+            result = _warm_person_productivity_daily_cache(
+                db,
+                snapshot_date,
+                reference_dir=reference_dir,
+                business_code=code,
+                sync=sync,
+            )
+            if result is None:
+                continue
+            entry = {"date": snapshot_date.isoformat(), "business_code": code, **result}
+            if str(entry.get("status") or "") == "error":
+                errors.append(entry)
+            else:
+                results.append(entry)
 
     payload = {
         "source": "person_productivity_prebuild",
@@ -942,11 +952,31 @@ def _scheduler_loop() -> None:
                 try:
                     prebuild_ready_productivity_days(
                         now=now,
-                        business_code=DEFAULT_BUSINESS_CODE,
+                        business_codes=_active_business_codes(db),
                         db=db,
                     )
                 finally:
                     db.close()
+            # Forbygg IDAG for alla aktiva bolag varje pass sa dagens produktivitet
+            # redan ar byggd nar personalen oppnar den (aldrig on-demand for idag).
+            # Staggrat (interval / antal bolag, tak _TODAY_WARM_STAGGER_MAX_SECONDS)
+            # sa bolagen inte belastar podden samtidigt. warm_today oppnar en egen
+            # kortlivad session per bolag och haller ingen anslutning over sovtiderna.
+            db = SessionLocal()
+            try:
+                businesses = _active_business_codes(db)
+            finally:
+                db.close()
+            stagger = min(
+                _PRODUCTIVITY_SYNC_INTERVAL_SECONDS / max(1, len(businesses)),
+                _TODAY_WARM_STAGGER_MAX_SECONDS,
+            )
+            warm_today_for_businesses(
+                now=now,
+                business_codes=businesses,
+                db=None,
+                stagger_seconds=stagger,
+            )
             next_run = next_productivity_sync_at(datetime.now(LOCAL_TZ))
             SNAPSHOT_STATUS["next_sync_at"] = next_run.isoformat(timespec="seconds")
             sleep_seconds = max(1.0, (next_run - datetime.now(LOCAL_TZ)).total_seconds())
