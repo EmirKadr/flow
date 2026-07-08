@@ -299,6 +299,8 @@ def _build_agent_payload(
     business_code: str,
     db_status: dict[str, Any],
     tool_trace: list[dict[str, Any]],
+    *,
+    final_only: bool = False,
 ) -> dict[str, Any]:
     system_prompt = """
 Du är en svensk dataanalys-agent för en publik D-pak-chatt.
@@ -331,6 +333,8 @@ Regler:
 - Om svaret är en tabell, lägg den i final.table som JSON-rader.
 - Hitta inte på data.
 """.strip()
+    if final_only:
+        system_prompt += "\n\nDu får inte göra fler verktygsanrop nu. Svara med type=final baserat på tool_trace."
     return {
         "model": settings.MINIMAX_MODEL,
         "messages": [
@@ -363,7 +367,6 @@ def run_public_dpak_agent(
     call_model: Callable[[dict[str, Any]], str],
 ) -> dict[str, Any]:
     business = public_dpak_business_code(business_code)
-    tool_trace: list[dict[str, Any]] = []
     db_status = dataset_status(db, business)
     if not db_status.get("ready"):
         return {
@@ -372,6 +375,13 @@ def run_public_dpak_agent(
             "model": "raw-dpak-agent",
             "warning": None,
         }
+    tool_trace: list[dict[str, Any]] = [
+        {
+            "step": 0,
+            "tool_call": {"type": "tool", "tool": "list_files", "args": {}},
+            "tool_result": list_files_tool(db, business),
+        }
+    ]
     for step in range(1, MAX_AGENT_STEPS + 1):
         payload = _build_agent_payload(messages, business, db_status, tool_trace)
         parsed = _extract_json(call_model(payload))
@@ -392,6 +402,29 @@ def run_public_dpak_agent(
             tool_trace.append({"step": step, "tool_call": parsed, "tool_result": result})
         except Exception as exc:
             tool_trace.append({"step": step, "tool_call": parsed, "tool_error": str(exc)})
+    try:
+        payload = _build_agent_payload(messages, business, db_status, tool_trace, final_only=True)
+        parsed = _extract_json(call_model(payload))
+        if str(parsed.get("type") or "").strip().lower() == "final":
+            answer = str(parsed.get("answer") or "").strip()
+            table = parsed.get("table") if isinstance(parsed.get("table"), list) else []
+            return {
+                "answer": answer or "Jag hittade inget svar i råunderlaget.",
+                "table": table[:80],
+                "model": settings.MINIMAX_MODEL,
+                "warning": "Agenten använde hela verktygsbudgeten innan slutsvar.",
+            }
+    except Exception:
+        pass
+    for trace in reversed(tool_trace):
+        result = trace.get("tool_result")
+        if isinstance(result, dict) and isinstance(result.get("rows"), list) and result["rows"]:
+            return {
+                "answer": "Jag fick fram följande resultat från råunderlaget, men hann inte formulera en full analys.",
+                "table": result["rows"][:80],
+                "model": settings.MINIMAX_MODEL,
+                "warning": "Agenten nådde max antal verktygssteg.",
+            }
     return {
         "answer": "Jag hann inte analysera klart. Försök ställa frågan lite mer konkret.",
         "table": [],
