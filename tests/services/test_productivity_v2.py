@@ -759,6 +759,121 @@ def test_prebuild_ready_productivity_days_skips_today_and_runs_once(monkeypatch,
     assert warm_calls == [date(2026, 6, 7), date(2026, 6, 8)]
 
 
+def test_warm_today_for_businesses_warms_each_active_business(monkeypatch):
+    calls = []
+
+    def fake_warm(_db, snapshot_date, *, reference_dir=None, business_code=None, sync=None):
+        calls.append((snapshot_date, business_code))
+        return {"status": "materialized", "rows": 1}
+
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+    monkeypatch.setattr(
+        productivity_sync, "productivity_snapshot_status",
+        lambda *a, **k: {"ready": True, "last_sync_at": "x"},
+    )
+
+    now = datetime(2026, 7, 8, 10, 0, tzinfo=productivity_sync.LOCAL_TZ)
+    result = productivity_sync.warm_today_for_businesses(
+        now=now, business_codes=["A", "B"], db=object(), stagger_seconds=0,
+    )
+
+    assert result["status"] == "ok"
+    assert result["date"] == "2026-07-08"
+    assert [code for _day, code in calls] == ["A", "B"]
+    assert all(day == date(2026, 7, 8) for day, _code in calls)
+    assert [b["business_code"] for b in result["businesses"]] == ["A", "B"]
+
+
+def test_warm_today_for_businesses_skips_when_snapshot_not_ready(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        productivity_sync, "_warm_person_productivity_daily_cache",
+        lambda *a, **k: calls.append(1),
+    )
+    monkeypatch.setattr(
+        productivity_sync, "productivity_snapshot_status",
+        lambda *a, **k: {"ready": False},
+    )
+
+    result = productivity_sync.warm_today_for_businesses(
+        now=datetime(2026, 7, 8, 10, 0, tzinfo=productivity_sync.LOCAL_TZ),
+        business_codes=["A", "B"], db=object(), stagger_seconds=0,
+    )
+
+    assert calls == []
+    assert [b["status"] for b in result["businesses"]] == ["snapshot_not_ready", "snapshot_not_ready"]
+
+
+def test_prebuild_ready_days_covers_all_active_businesses(monkeypatch, tmp_path):
+    warm_calls = []
+
+    def fake_warm(_db, snapshot_date, *, reference_dir=None, business_code=None, sync=None):
+        warm_calls.append((snapshot_date, business_code))
+        return {"status": "materialized", "rows": 1}
+
+    monkeypatch.setattr(productivity_sync, "_warm_person_productivity_daily_cache", fake_warm)
+    monkeypatch.setattr(productivity_sync, "_snapshot_dates", lambda *a, **k: [date(2026, 6, 7), date(2026, 6, 8)])
+    monkeypatch.setattr(
+        productivity_sync, "productivity_snapshot_status",
+        lambda *a, **k: {"ready": True, "last_sync_at": "x"},
+    )
+
+    result = productivity_sync.prebuild_ready_productivity_days(
+        now=datetime(2026, 6, 9, 1, 0, tzinfo=productivity_sync.LOCAL_TZ),
+        business_codes=["A", "B"],
+        reference_dir=tmp_path,
+        db=object(),
+    )
+
+    assert result["status"] == "ok"
+    assert result["dates"] == ["2026-06-07", "2026-06-08"]
+    assert set(warm_calls) == {
+        (date(2026, 6, 7), "A"), (date(2026, 6, 7), "B"),
+        (date(2026, 6, 8), "A"), (date(2026, 6, 8), "B"),
+    }
+
+
+def test_ondemand_fallback_logs_when_overview_cache_misses(monkeypatch, caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from app.backend.routers import productivity_helpers as ph
+    from app.backend.routers import productivity_finance_helpers as pfh
+
+    monkeypatch.setattr(ph, "productivity_api_source_map", lambda *a, **k: {})
+    monkeypatch.setattr(ph, "sources_available", lambda *a, **k: True)
+    monkeypatch.setattr(pfh, "_productivity_business_code", lambda *a, **k: "A")
+    monkeypatch.setattr(pfh, "_productivity_business_id", lambda *a, **k: 7)
+    monkeypatch.setattr(
+        ph, "productivity_snapshot_status",
+        lambda *a, **k: {"ready": True, "date": "2026-06-01", "last_sync_at": "x", "sources": []},
+    )
+    monkeypatch.setattr(ph, "productivity_snapshot_signature", lambda *a, **k: "sig")
+    monkeypatch.setattr(ph, "productivity_cache_schedule_signature", lambda *a, **k: "sch")
+    monkeypatch.setattr(ph, "read_overview_report_cache", lambda *a, **k: None)
+    monkeypatch.setattr(ph, "productivity_snapshot_files", lambda *a, **k: {})
+    monkeypatch.setattr(ph, "_build_cached_person_productivity_report", lambda *a, **k: {"ok": 1})
+    monkeypatch.setattr(ph, "write_overview_report_cache", lambda *a, **k: None)
+
+    # En tidigare router-test kan ha kort dictConfig(disable_existing_loggers=
+    # True) via configure_observability och inaktiverat modul-loggern; slå på den
+    # igen sa loggraden faktiskt emitteras (caplog aterstaller inte .disabled).
+    ph_logger = logging.getLogger("app.backend.routers.productivity_helpers")
+    ph_logger.disabled = False
+    ph_logger.setLevel(logging.INFO)
+
+    with caplog.at_level(logging.INFO, logger="app.backend.routers.productivity_helpers"):
+        report, _src = ph._build_productivity_report_for_date(
+            SimpleNamespace(), object(), SimpleNamespace(id=1),
+            date(2026, 6, 1), ensure_snapshot=False,
+        )
+
+    assert report["ok"] == 1
+    messages = [rec.getMessage() for rec in caplog.records]
+    assert any("productivity_overview_ondemand_build" in msg for msg in messages)
+    assert any("business_id=7" in msg and "reason=overview_cache_miss" in msg for msg in messages)
+
+
 def test_productivity_historical_backfill_fetches_one_older_day_per_run_day(monkeypatch, tmp_path):
     source_calls = []
 

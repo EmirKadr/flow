@@ -77,6 +77,38 @@ logger = logging.getLogger(__name__)
 _SYNC_LOCK = threading.Lock()
 _SCHEDULER_STARTED = False
 
+# Schemalaggaren toppar dagens snapshot var 30:e minut.
+_PRODUCTIVITY_SYNC_INTERVAL_SECONDS = 30 * 60
+# Tak for hur langt isar bolagens dagsbyggen sprids inom ett pass (staggering).
+# Utan tak skulle interval/n ge orimligt glesa byggen vid fa bolag; med bygget
+# nere pa ~1-2 s racker nagra sekunder for att undvika samtidig CPU-spik.
+_TODAY_WARM_STAGGER_MAX_SECONDS = 60.0
+
+
+def _active_business_codes(db: Session | None) -> list[str]:
+    """Aktiva bolags koder i visningsordning; fallback [DEFAULT_BUSINESS_CODE]."""
+    if db is None:
+        return [DEFAULT_BUSINESS_CODE]
+    try:
+        rows = (
+            db.query(Business.code)
+            .filter(Business.is_active)
+            .order_by(Business.sort_order, Business.id)
+            .all()
+        )
+    except Exception:
+        logger.warning("Kunde inte lista aktiva bolag for produktivitetsforbygge; anvander default.", exc_info=True)
+        return [DEFAULT_BUSINESS_CODE]
+    codes: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        code = str(row[0] or "").strip()
+        key = code.lower()
+        if code and key not in seen:
+            seen.add(key)
+            codes.append(code)
+    return codes or [DEFAULT_BUSINESS_CODE]
+
 
 def _next_backfill_dates(
     *,
@@ -360,11 +392,70 @@ def _warm_person_productivity_daily_cache(
         }
 
 
+def warm_today_for_businesses(
+    *,
+    now: datetime | None = None,
+    business_codes: list[str] | None = None,
+    reference_dir: Path | str | None = None,
+    db: Session | None = None,
+    stagger_seconds: float = 0.0,
+) -> dict[str, Any]:
+    """Forbygg IDAG:s produktivitetscache for varje aktivt bolag.
+
+    Kors varje 30-min-pass sa dagens produktivitet redan ar byggd nar
+    anvandaren oppnar den (inget on-demand-bygge for idag). Signaturvakten i
+    _warm_person_productivity_daily_cache bygger bara om nar dagens snapshot
+    faktiskt andrats sedan forra passet. `stagger_seconds` > 0 sprider bolagens
+    byggen over passet sa de inte alla belastar podden samtidigt. Nar db=None
+    oppnas en kortlivad session per bolag sa ingen DB-anslutning halls oppen
+    over stagger-sovtiderna.
+    """
+    current = (now or datetime.now(LOCAL_TZ)).astimezone(LOCAL_TZ)
+    day = current.date()
+    if business_codes is None:
+        probe = db if db is not None else SessionLocal()
+        try:
+            codes = _active_business_codes(probe)
+        finally:
+            if db is None:
+                probe.close()
+    else:
+        codes = list(business_codes)
+
+    results: list[dict[str, Any]] = []
+    for index, code in enumerate(codes):
+        if index and stagger_seconds > 0:
+            time.sleep(stagger_seconds)
+        session = db if db is not None else SessionLocal()
+        try:
+            status = productivity_snapshot_status(day, reference_dir=reference_dir)
+            if not status.get("ready"):
+                results.append({"business_code": code, "status": "snapshot_not_ready"})
+                continue
+            result = _warm_person_productivity_daily_cache(
+                session, day, reference_dir=reference_dir, business_code=code, sync=status,
+            )
+            entry: dict[str, Any] = {"business_code": code}
+            if result is not None:
+                entry.update(result)
+            results.append(entry)
+        finally:
+            if db is None:
+                session.close()
+    return {
+        "source": "today_warm",
+        "date": day.isoformat(),
+        "status": "ok",
+        "businesses": results,
+    }
+
+
 def prebuild_ready_productivity_days(
     *,
     now: datetime | None = None,
     reference_dir: Path | str | None = None,
     business_code: str | None = None,
+    business_codes: list[str] | None = None,
     db: Session | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
@@ -393,24 +484,26 @@ def prebuild_ready_productivity_days(
         if snapshot_date < today
         and productivity_snapshot_status(snapshot_date, reference_dir=reference_dir).get("ready")
     ]
+    codes = business_codes if business_codes is not None else [business_code or DEFAULT_BUSINESS_CODE]
     results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for snapshot_date in ready_dates:
         sync = productivity_snapshot_status(snapshot_date, reference_dir=reference_dir)
-        result = _warm_person_productivity_daily_cache(
-            db,
-            snapshot_date,
-            reference_dir=reference_dir,
-            business_code=business_code,
-            sync=sync,
-        )
-        if result is None:
-            continue
-        result = {"date": snapshot_date.isoformat(), **result}
-        if str(result.get("status") or "") == "error":
-            errors.append(result)
-        else:
-            results.append(result)
+        for code in codes:
+            result = _warm_person_productivity_daily_cache(
+                db,
+                snapshot_date,
+                reference_dir=reference_dir,
+                business_code=code,
+                sync=sync,
+            )
+            if result is None:
+                continue
+            entry = {"date": snapshot_date.isoformat(), "business_code": code, **result}
+            if str(entry.get("status") or "") == "error":
+                errors.append(entry)
+            else:
+                results.append(entry)
 
     payload = {
         "source": "person_productivity_prebuild",
@@ -942,11 +1035,31 @@ def _scheduler_loop() -> None:
                 try:
                     prebuild_ready_productivity_days(
                         now=now,
-                        business_code=DEFAULT_BUSINESS_CODE,
+                        business_codes=_active_business_codes(db),
                         db=db,
                     )
                 finally:
                     db.close()
+            # Forbygg IDAG for alla aktiva bolag varje pass sa dagens produktivitet
+            # redan ar byggd nar personalen oppnar den (aldrig on-demand for idag).
+            # Staggrat (interval / antal bolag, tak _TODAY_WARM_STAGGER_MAX_SECONDS)
+            # sa bolagen inte belastar podden samtidigt. warm_today oppnar en egen
+            # kortlivad session per bolag och haller ingen anslutning over sovtiderna.
+            db = SessionLocal()
+            try:
+                businesses = _active_business_codes(db)
+            finally:
+                db.close()
+            stagger = min(
+                _PRODUCTIVITY_SYNC_INTERVAL_SECONDS / max(1, len(businesses)),
+                _TODAY_WARM_STAGGER_MAX_SECONDS,
+            )
+            warm_today_for_businesses(
+                now=now,
+                business_codes=businesses,
+                db=None,
+                stagger_seconds=stagger,
+            )
             next_run = next_productivity_sync_at(datetime.now(LOCAL_TZ))
             SNAPSHOT_STATUS["next_sync_at"] = next_run.isoformat(timespec="seconds")
             sleep_seconds = max(1.0, (next_run - datetime.now(LOCAL_TZ)).total_seconds())
