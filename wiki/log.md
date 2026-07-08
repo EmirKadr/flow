@@ -7,6 +7,19 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-08] perf | Produktivitetsbygget ~6x + forbygg alla bolag varje pass
+
+`_canonical_header` memoiserades (`lru_cache` pa modulniva) - den kanoniserade
+om samma kolumnnamn per rad i `_row_text`, ~4M anrop/dagsbygge: **~10 s -> ~1,7 s
+per bygge**, 3 bolag ~30,5 s -> ~5,2 s. Ett per-kolumnuppsattnings-motforsok
+mattes langsammare och forkastades (mat, gissa inte). Med billiga byggen
+forbygger 30-min-schedulern nu **dagens** dag for **alla aktiva bolag** varje
+pass (`warm_today_for_businesses`, staggrat), sa personalen aldrig triggar
+on-demand-bygge kl 05; on-demand kvar som matbar fallback (loggtagg
+`productivity_overview_ondemand_build`). Dokumenterat i
+[prestanda-optimeringar.md](prestanda-optimeringar.md) (B3) och
+[productivity.md](productivity.md).
+
 ## [2026-07-08] fix | Buggrapport-inspelning tål dubbel modul-load
 
 `common/bug_report.js` har nu en idempotensspärr så lazy/eager-laddning av

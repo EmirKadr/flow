@@ -1,7 +1,7 @@
 ---
 title: Produktivitet
 status: aktiv
-updated: 2026-07-02
+updated: 2026-07-08
 tags: [produktivitet, kpi, ui, api-snapshot]
 ---
 
@@ -160,9 +160,31 @@ till `person_productivity_daily`. Det ar beraknad cache, inte masterdata pa
 personen. Bemanningens cell-hover-snitt och produktivitetskolumn laser denna
 cache och bygger om en dag nar snapshot- eller schemasignaturen andras.
 Nattjobbet prebygger historiska snapshotdagar efter backfill/snapshot-sync.
-Dagens datum ar undantaget: dagens snapshot far vara farskt, men dagens
-personcache byggs on-demand nar dagrapporten eller bemanningssammanfattningen
-begar den.
+Sedan 2026-07-08 forbygger 30-min-schedulern dessutom **dagens** dag for
+**alla aktiva bolag** varje pass (`warm_today_for_businesses`), staggrat med en
+kortlivad DB-session per bolag, sa dagens produktivitet redan ar byggd nar
+personalen oppnar vyn (t.ex. kl 05) - den byggs inte langre on-demand for idag.
+Signaturvakten gor oforandrade bolag/dagar till billiga no-ops: dagens snapshot
+andras var 30:e minut och byggs da om, aldre dagar hoppas over. Aven det
+nattliga prebygget (`prebuild_ready_productivity_days`) itererar nu alla aktiva
+bolag, inte bara standardbolaget.
+
+### On-demand-fallback
+
+On-demand-bygget finns kvar som skyddsnat: oppnar nagon en dag vars forbyggda
+`overview-report` saknas eller ar inaktuell - natten foll, precis efter en fresh
+deploy innan backfill natt bakat, ett nytt bolag, eller en schemaandring - byggs
+rapporten fran CSV vid oppning och cachas (self-heal). Varje sadan handelse
+loggas med en distinkt tagg sa fallback-frekvensen kan foljas ur loggarna:
+
+```
+productivity_overview_ondemand_build date=<datum> business_id=<id> today=<0|1> reason=<overview_cache_miss|signature_error>
+```
+
+Hog frekvens betyder att forbygget inte speglar verkligheten och bor undersokas
+(fallet nattjobbet foll, eller ett bolag som aldrig forbyggs). Se
+[Prestandaoptimeringar](prestanda-optimeringar.md) for byggets kostnad och
+memoiseringsvinsten.
 
 Snapshoten innehaller kallorna:
 

@@ -165,6 +165,21 @@ returnerat ett litet resultat.
   - Hamta data-katalogens matchning (regex-tung `_normalize`/`_tokens` pa
     statisk katalogtext) precomputas nu via `cached_property`:
     **26 ms -> 4 ms per plan.**
+  - Produktivitetsbygget: `_canonical_header` (unicode-NFKD + strip-combining +
+    regex) kanoniserade om samma handfull kolumnnamn i `_row_text` for **varje
+    rad** -> ~4M anrop per dagsbygge (CPU-bundet). `lru_cache(maxsize=8192)` pa
+    modulniva - coerce till `str` utanfor cachen sa nyckeln ar hashbar och
+    beteendet identiskt - kollapsar anropen till nagra hundra unika och **delar
+    cachen mellan bolag/byggen**: **~10 s -> ~1,7 s per bygge (~6x)**, 3 bolag i
+    serie **~30,5 s -> ~5,2 s** (2026-07-08). En 0-personers-tenant foll ocksa
+    9,8 s -> 1,4 s, vilket bevisade att kostnaden var den delade kanoniseringen,
+    inte per-person-arbete.
+  - **Motforsok som mattes langsammare och forkastades (mat, gissa inte):** att
+    cacha `(kanonisk, verklig header)` per kolumnuppsattning i `_row_text` med
+    `tuple(row.keys())` som nyckel. Tuple-bygget + hashningen per anrop (343k
+    ggr) kostade **mer** an den redan billiga per-header-cachen: 5,2 s -> 8,8 s
+    for 3 bolag. Reverterat. Lardom: nar hotspoten forst ar memoiserad ar nasta
+    lager ofta call-overhead, inte berakning - en till cache kan gora det varre.
 - **Beslaktat (cache-lager, 2026-07-03):** forbyggd `overview-report`-cache
   (gzip-JSON med snapshot+schema-signatur) sa ar/manad-vyn slipper rakna om fran
   CSV; `productivity_cache_warm` bygger dagrapporten en gang och matar bade
@@ -242,7 +257,7 @@ Kor dessa mot `app/backend` nar du vill svepa efter nya forekomster:
 | A5 saknat index | `order_by(...created_at` / `filter(...created_at` mot vaxande tabell utan `Index(...)` i modellen |
 | B1 pandas-loop | `iterrows\(\|itertuples\(\|apply\(.*axis=1\|groupby\(.*\)\.agg\(` med lambda/def |
 | B2 minnesladdning | hela arkiv/historik last per anrop utan cache |
-| B3 omrakning | dyr berakning i loop/per vy utan hoisting/cache |
+| B3 omrakning | dyr berakning i loop/per vy utan hoisting/cache; ren `str`-transform (unicode-normalize/regex/parse) anropad per rad utan `lru_cache` |
 | B4 compute-then-filter | dyrt per-rad-jobb dar resultatet bara anvands for en flaggad delmangd |
 | C1 blocking-in-async | `async def`-route med `subprocess`/`requests`/`urllib`/pandas/tung CPU utan `run_in_threadpool`/`to_thread` |
 
@@ -266,6 +281,13 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
   (coverage -96 %), `defer` (coredata -38 %), audit-index (0048), blocking-in-
   async -> trad, N+1-batchning, omrakning-en-gang; 28-filers svep som bekraftade
   att coverage var den unika ladda-hela-tabellen-boven.
+- **2026-07-08:** Produktivitetsbygget - `_canonical_header`-memoisering
+  (B3, ~10 s -> ~1,7 s/bygge, ~6x; ett per-kolumnuppsattnings-motforsok mattes
+  langsammare och forkastades). Schemalaggaren forbygger nu **idag for alla
+  aktiva bolag** varje 30-min-pass (staggrat, egen kortlivad session per bolag)
+  sa personalen aldrig triggar on-demand-bygge kl 05; on-demand kvar som matbar
+  fallback (loggtagg `productivity_overview_ondemand_build`). Se
+  [Produktivitet](productivity.md).
 
 ## Kallor
 

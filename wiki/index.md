@@ -45,7 +45,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
 - [Meta-uppladdning](meta-upload.md) - publik fristaende mobilvy for att ladda upp bilder och videor till senare LLM-analys.
 - [Buggrapporter](bug-reports.md) - (experiment, beslut 2026-08-07) Bugg-knappen i sidebar-footern: 30 s DOM-inspelning (rrweb) som behöriga spelar upp i vyn Buggrapporter.
-- [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp.
+- [Produktivitet](productivity.md) - global API-snapshot, periodtrad, personaktivitetssnitt och vanliga stopp; dagens dag forbyggs for alla aktiva bolag varje 30-min-pass (on-demand kvar som matbar fallback).
 - [Sankey - Inbound](sankey-inbound.md) - bolagsindelat Sankeydiagram som foljer inbound-intakt fran mottagna etiketter till plock/oppna floden.
 - [Lagerverktyg](warehouse-tools.md) - Uppladdningar, Bearbeta, Dela och allokeringsfloden.
 
