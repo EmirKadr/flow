@@ -75,6 +75,12 @@ finns sammanfattad i `wiki/nowaste-git-release.md`.
   flake-jakt kor dem 3x utan omkorningar och oppnar issue vid instabilitet.
   Aterkommande omkorningar ska rotorsakas, inte normaliseras - se
   `wiki/test-strategi.md`. CI ar skyddsnatet, inte forsta forsvarslinjen.
+- **Kor tester via `npm run test:fast`** (= `pytest -m "not browser"` - hoppar
+  over de lastkansliga browsertesterna). Kor ALDRIG `pytest` naket: det drar in
+  browsertesterna och blir langsammast/mest flake-benaget. Browser gate:as i CI;
+  kor lokalt vid behov med `npm run test:browser`. CI kor icke-browsersviten
+  parallellt (`-n auto`), men parallellt lokalt pa Windows-dev ar instabilt
+  (xdist-krascher) - darfor kor `test:fast` och pre-push seriellt.
 - **Benchmarka fore och efter vid stora/prestandapaverkande andringar**
   (query-/cache-/anslutnings-/arkitekturandringar): kor
   `python -m tools.api_benchmark --label fore-<andring> ...` mot miljon innan,
