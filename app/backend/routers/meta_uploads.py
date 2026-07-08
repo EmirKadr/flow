@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 import logging
@@ -156,7 +157,11 @@ async def upload_meta_media(
             stored_filename = _stored_filename(uploaded_at, index, filename, media_type)
             pending_hashes[content_hash] = stored_filename
             duration_seconds = (
-                _probe_video_duration_from_path(store.materialize_to_temp(stored.key))
+                # ffprobe (subprocess, 20s-tak) är den värsta blockeraren på
+                # event-loopen i denna async-route -> kör i tråd.
+                await asyncio.to_thread(
+                    _probe_video_duration_from_path, store.materialize_to_temp(stored.key)
+                )
                 if media_type == "video"
                 else None
             )

@@ -475,7 +475,16 @@ def interaction_coverage(
     _: User = Depends(require_super_user),
 ) -> InteractionCoverageOut:
     since = _period_start(period)
-    query = select(UserInteractionEvent).select_from(UserInteractionEvent)
+    # Aggregera i SQL i stället för att materialisera hela (obegränsade)
+    # user_interaction_events till Python. Grupperar på (view_id, control_id) via
+    # ix_user_interaction_events_view_control och räknar per par -> samma
+    # used/unused/used_unknown-utfall, litet resultat. De icke-tomma-filtren
+    # matchar originalets `if row.view_id and row.control_id` (truthy).
+    query = select(
+        UserInteractionEvent.view_id,
+        UserInteractionEvent.control_id,
+        func.count(),
+    ).select_from(UserInteractionEvent)
     query = _apply_interaction_filters(
         query,
         business_id=business_id,
@@ -489,19 +498,24 @@ def interaction_coverage(
         from_at=since,
         to_at=None,
     )
-    rows = list(db.execute(query).scalars())
-    used = {(row.view_id or "", row.control_id or "") for row in rows if row.view_id and row.control_id}
+    query = query.where(
+        UserInteractionEvent.view_id.is_not(None),
+        UserInteractionEvent.view_id != "",
+        UserInteractionEvent.control_id.is_not(None),
+        UserInteractionEvent.control_id != "",
+    ).group_by(UserInteractionEvent.view_id, UserInteractionEvent.control_id)
+    pair_counts = db.execute(query).all()
+    used = {(view_id, control_id) for view_id, control_id, _count in pair_counts}
     known = {(item["view_id"], item["control_id"]) for item in KNOWN_INTERACTION_CONTROLS}
     unused = [
         item
         for item in KNOWN_INTERACTION_CONTROLS
         if (item["view_id"], item["control_id"]) not in used
     ]
-    unknown_counter = Counter(
-        f"{row.view_id or '-'} / {row.control_id or '-'}"
-        for row in rows
-        if row.view_id and row.control_id and (row.view_id, row.control_id) not in known
-    )
+    unknown_counter: Counter = Counter()
+    for view_id, control_id, count in pair_counts:
+        if (view_id, control_id) not in known:
+            unknown_counter[f"{view_id} / {control_id}"] = count
     return InteractionCoverageOut(
         total_known_controls=len(KNOWN_INTERACTION_CONTROLS),
         used_controls=len(used & known),

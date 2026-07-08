@@ -296,6 +296,17 @@ class PersonProductivityDaily(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    __table_args__ = (
+        # audit_log skrivs på nästan varje request och läses ordnat på created_at
+        # (Historik-sidan + assistant-tools). Utan dessa index full-scannar +
+        # sorterar MSSQL hela den växande tabellen per admin-anrop. Samma mönster
+        # som systertabellerna user_wait_metrics/user_interaction_events.
+        # (entity_type, entity_id)-indexet finns sedan 0001_initial. Inget
+        # action-index: filtret använder ledande-wildcard ILIKE (osargbart).
+        Index("ix_audit_log_created_at", "created_at"),
+        Index("ix_audit_log_business_created", "business_id", "created_at"),
+        Index("ix_audit_log_user_created", "user_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
     business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id"))

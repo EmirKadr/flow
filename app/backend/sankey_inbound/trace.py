@@ -181,11 +181,14 @@ def filter_trace_rows(rows: list[dict[str, Any]], scope: str, id_value: str | No
     def _matches_view(row: dict[str, Any]) -> bool:
         if company_filter and (clean_productivity_finance_company_code(row.get("company")) or "") != company_filter:
             return False
-        row_date = _trace_date(row.get("received_date"))
-        if start and (row_date is None or row_date < start):
-            return False
-        if end and (row_date is None or row_date > end):
-            return False
+        # received_date lagras som ISO-sträng och parsas per rad. Beräkna bara
+        # när ett datumfilter faktiskt är satt (annars används row_date inte).
+        if start or end:
+            row_date = _trace_date(row.get("received_date"))
+            if start and (row_date is None or row_date < start):
+                return False
+            if end and (row_date is None or row_date > end):
+                return False
         if only_consumed is True and not bool(row.get("consumed")):
             return False
         return True

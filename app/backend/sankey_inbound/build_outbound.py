@@ -102,6 +102,7 @@ def _build_outbound_sankey(
     view_period_start: date,
     view_period_end: date,
     include_trace_details: bool = True,
+    package_ladders: dict | None = None,
 ) -> dict[str, Any]:
     target_companies = (
         {view_company_filter}
@@ -127,7 +128,10 @@ def _build_outbound_sankey(
         "outbound_loaded_pallets": 0.0,
     }
     company_summaries: dict[str, dict[str, Any]] = {}
-    package_ladders = build_package_ladders(alias_rows)
+    # Beräknas normalt en gång i build_sankey_inbound_payload och skickas in;
+    # fallback om funktionen anropas fristående.
+    if package_ladders is None:
+        package_ladders = build_package_ladders(alias_rows)
     default_package_ladder = [(PACKAGE_BASE_UNIT_LABEL, 1)]
 
     def _row_in_view(row: dict[str, Any], company: str) -> bool:

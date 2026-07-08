@@ -482,8 +482,10 @@ async def compute_calculation(
     if str(calculation.get("metric") or "") == "package_breakdown":
         with start_span("data_fetch.package_alias_fetch", {"data_fetch.view": PACKAGE_ALIAS_VIEW}):
             alias_rows = await run_in_threadpool(_fetch_package_alias_rows, plan, rows, error_id, tenant)
-        return execute_package_breakdown(rows, alias_rows, plan)
-    return execute_calculation(rows, plan)
+        # CPU-bunden O(N)-aggregering över upp till 50k rader — kör i tråd så
+        # den inte håller event-loopen.
+        return await run_in_threadpool(execute_package_breakdown, rows, alias_rows, plan)
+    return await run_in_threadpool(execute_calculation, rows, plan)
 
 
 def _safe_cell(value) -> str | int | float | bool | None:

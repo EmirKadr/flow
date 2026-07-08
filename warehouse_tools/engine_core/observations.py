@@ -130,15 +130,38 @@ def _recompute_artikel_max(observations: pd.DataFrame, ut_path: Path) -> int:
     df["pallid"] = df["pallid"].astype(str).str.strip()
     df = df.drop_duplicates(subset="pallid").reset_index(drop=True)
 
-    rader = []
-    for art, grupp in df.groupby("artikelnummer"):
-        max_val, pall_id = _max_utan_outlier(grupp)
-        rader.append({"artikelnummer": art, "max": max_val, "pallid": pall_id})
+    if df.empty:
+        pd.DataFrame(columns=["artikelnummer", "max", "pallid"]).to_csv(
+            ut_path, index=False, encoding="utf-8-sig"
+        )
+        return 0
 
-    pd.DataFrame(rader, columns=["artikelnummer", "max", "pallid"]).to_csv(
-        ut_path, index=False, encoding="utf-8-sig"
-    )
-    return len(rader)
+    # Vektoriserad motsvarighet till _max_utan_outlier per artikel: ta max efter
+    # att övre Tukey-outliers (antal > q3 + 1.5*IQR) tagits bort. Ersätter en
+    # for-loop som materialiserade en subframe + körde np.percentile/idxmax per
+    # grupp. quantile default interpolation = "linear" = np.percentile default.
+    # För grupper med <=2 rader ger fönstret ovre >= max, så masken släpper
+    # igenom allt -> samma som originalets fallback (rå idxmax). idxmax (INTE
+    # sort_values+drop_duplicates) bevarar tie-break: första förekomsten av max
+    # i indexordning, exakt som originalets sub["antal"].idxmax().
+    g = df.groupby("artikelnummer")["antal"]
+    q1 = df["artikelnummer"].map(g.quantile(0.25))
+    q3 = df["artikelnummer"].map(g.quantile(0.75))
+    ovre = (q3 + 1.5 * (q3 - q1)).to_numpy()
+    mask = df["antal"].to_numpy() <= ovre
+    filt = pd.Series(np.where(mask, df["antal"].to_numpy(), -np.inf), index=df.index)
+    idx = filt.groupby(df["artikelnummer"], sort=True).idxmax()
+    res = df.loc[idx.to_numpy()]
+
+    pd.DataFrame(
+        {
+            "artikelnummer": res["artikelnummer"].to_numpy(),
+            "max": res["antal"].astype(float).to_numpy(),
+            "pallid": res["pallid"].astype(str).to_numpy(),
+        },
+        columns=["artikelnummer", "max", "pallid"],
+    ).to_csv(ut_path, index=False, encoding="utf-8-sig")
+    return len(res)
 
 def _read_artikel_max(path: Path) -> pd.DataFrame:
     cols = ["artikelnummer", "max", "pallid"]
