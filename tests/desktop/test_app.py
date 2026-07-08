@@ -1,11 +1,13 @@
 from unittest.mock import patch
 
+from PyQt6.QtCore import QUrl
+from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtWidgets import QWidget
 
 from core.app_info import UPDATE_DISABLED_ENV
 from desktop.app import MainWindow, _app_icon, _app_icon_path
-from desktop.web_view import configure_printing
+from desktop.web_view import configure_feature_permissions, configure_printing
 from services.health_service import HealthInfo
 
 
@@ -106,6 +108,17 @@ class FakePrintDialog:
         return QDialog.DialogCode.Accepted
 
 
+class FakeFeaturePage:
+    featurePermissionRequested = FakeSignal()
+
+    def __init__(self):
+        self.permissions = []
+        self.featurePermissionRequested = FakeSignal()
+
+    def setFeaturePermission(self, origin, feature, policy):
+        self.permissions.append((origin.toString(), feature, policy))
+
+
 def test_startup_health_check_loads_server(qapp, monkeypatch):
     monkeypatch.setenv(UPDATE_DISABLED_ENV, "1")
     browser = FakeBrowser()
@@ -140,6 +153,22 @@ def test_web_view_print_signal_opens_print_dialog(qapp):
 
     assert view.printed == [printer]
     assert hasattr(view, "_flow_print_handler")
+
+
+def test_web_view_grants_microphone_permission_for_voice_recording():
+    page = FakeFeaturePage()
+
+    configure_feature_permissions(page)
+    page.featurePermissionRequested.emit(QUrl("http://127.0.0.1:8766/dpak-fraga.html"), QWebEnginePage.Feature.MediaAudioCapture)
+    page.featurePermissionRequested.emit(QUrl("https://example.com/dpak-fraga.html"), QWebEnginePage.Feature.MediaAudioCapture)
+
+    assert page.permissions == [
+        (
+            "http://127.0.0.1:8766/dpak-fraga.html",
+            QWebEnginePage.Feature.MediaAudioCapture,
+            QWebEnginePage.PermissionPolicy.PermissionGrantedByUser,
+        )
+    ]
 
 
 def test_desktop_window_icon_prefers_vector_asset(qapp):

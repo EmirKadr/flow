@@ -1572,12 +1572,19 @@ def test_public_dpak_chat_page_is_standalone():
     frontend = ROOT / "app" / "frontend"
     html = (frontend / "dpak-fraga.html").read_text(encoding="utf-8")
     js = (frontend / "js" / "public_dpak_chat.js").read_text(encoding="utf-8")
+    styles = (frontend / "css" / "styles.css").read_text(encoding="utf-8")
 
     assert '<body class="with-sidebar">' not in html
     assert "/js/common.js" not in html
     assert "/js/api.js" not in html
+    assert 'id="publicDpakVoice"' in html
+    assert 'id="publicDpakVoiceStatus"' in html
     assert "/api/public/dpak-chat/status" in js
     assert "/api/public/dpak-chat/message" in js
+    assert "navigator.mediaDevices?.getUserMedia" in js
+    assert "new MediaRecorder" in js
+    assert "voice: voicePayload" in js
+    assert ".public-dpak-voice.is-recording" in styles
     assert "initPage" not in html
     assert "initPage" not in js
 

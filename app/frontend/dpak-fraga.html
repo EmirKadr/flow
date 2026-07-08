@@ -30,13 +30,17 @@
       <div id="publicDpakMessages" class="public-dpak-messages" role="log" aria-live="polite"></div>
 
       <form id="publicDpakForm" class="public-dpak-form">
-        <textarea
-          id="publicDpakInput"
-          rows="3"
-          spellcheck="true"
-          placeholder="Ställ en fråga om D-pak, zon R, AUTOSTORE eller leverantörer..."
-        ></textarea>
+        <div class="public-dpak-input-stack">
+          <textarea
+            id="publicDpakInput"
+            rows="3"
+            spellcheck="true"
+            placeholder="Ställ en fråga om D-pak, zon R, AUTOSTORE eller leverantörer..."
+          ></textarea>
+          <div id="publicDpakVoiceStatus" class="public-dpak-voice-status" aria-live="polite"></div>
+        </div>
         <div class="public-dpak-actions">
+          <button id="publicDpakVoice" type="button" class="public-dpak-secondary public-dpak-voice" aria-pressed="false">Spela in</button>
           <button id="publicDpakClear" type="button" class="public-dpak-secondary">Rensa</button>
           <button id="publicDpakSend" type="submit" class="public-dpak-primary">Skicka</button>
         </div>
@@ -54,6 +58,6 @@
     </section>
   </div>
 
-  <script src="/js/public_dpak_chat.js?v=20260708-public-dpak-tables"></script>
+  <script src="/js/public_dpak_chat.js?v=20260708-public-dpak-voice"></script>
 </body>
 </html>

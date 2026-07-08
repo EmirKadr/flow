@@ -6312,6 +6312,12 @@ body.public-dpak-modal-open {
   border-top: 1px solid rgba(29, 39, 48, 0.12);
 }
 
+.public-dpak-input-stack {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
 .public-dpak-form textarea {
   width: 100%;
   min-height: 82px;
@@ -6333,6 +6339,26 @@ body.public-dpak-modal-open {
 .public-dpak-actions {
   display: flex;
   gap: 8px;
+}
+
+.public-dpak-voice-status {
+  min-height: 18px;
+  color: #5b6873;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.public-dpak-voice-status:empty {
+  display: none;
+}
+
+.public-dpak-voice-status.is-ready {
+  color: #1d6f4a;
+}
+
+.public-dpak-voice-status.is-error {
+  color: #a33d28;
 }
 
 .public-dpak-primary,
@@ -6359,6 +6385,18 @@ body.public-dpak-modal-open {
   color: #2b3a46;
   background: #ffffff;
   border-color: #cbd8df;
+}
+
+.public-dpak-voice.is-recording {
+  color: #ffffff;
+  background: #b84431;
+  border-color: #b84431;
+}
+
+.public-dpak-voice.has-pending {
+  color: #1d6f4a;
+  border-color: #82b79d;
+  background: #f0f8f4;
 }
 
 @media (max-width: 720px) {
@@ -6450,11 +6488,13 @@ body.public-dpak-modal-open {
 
   .public-dpak-actions {
     justify-content: stretch;
+    flex-wrap: wrap;
   }
 
   .public-dpak-primary,
   .public-dpak-secondary {
-    flex: 1 1 0;
+    flex: 1 1 92px;
+    padding: 0 10px;
   }
 
   .public-dpak-table-modal {

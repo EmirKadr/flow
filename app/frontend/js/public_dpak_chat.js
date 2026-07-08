@@ -2,8 +2,21 @@ const publicDpakState = {
   messages: [],
   busy: false,
   status: null,
+  voice: {
+    recording: false,
+    supported: Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder),
+    recognitionSupported: Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
+    recorder: null,
+    recognition: null,
+    stream: null,
+    chunks: [],
+    startedAt: 0,
+    transcript: "",
+    pending: null,
+  },
 };
 const publicDpakTables = new Map();
+const publicDpakMaxVoiceBytes = 3 * 1024 * 1024;
 
 const publicDpakParams = new URLSearchParams(window.location.search);
 const publicDpakToken = publicDpakParams.get("token") || "";
@@ -37,6 +50,278 @@ function publicDpakSaveMessages() {
   } catch (_error) {
     // Private browsing can block storage; the chat still works for the current page load.
   }
+}
+
+function publicDpakSetVoiceStatus(text, tone = "") {
+  const statusEl = document.getElementById("publicDpakVoiceStatus");
+  if (!statusEl) return;
+  statusEl.textContent = text || "";
+  statusEl.classList.toggle("is-error", tone === "error");
+  statusEl.classList.toggle("is-ready", tone === "ready");
+}
+
+function publicDpakPreferredAudioMime() {
+  if (!window.MediaRecorder?.isTypeSupported) return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function publicDpakVoiceSeconds(durationMs) {
+  return Math.max(1, Math.round(Number(durationMs || 0) / 1000));
+}
+
+function publicDpakSetVoiceControls() {
+  const button = document.getElementById("publicDpakVoice");
+  if (!button) return;
+  const voice = publicDpakState.voice;
+  button.disabled = publicDpakState.busy || !voice.supported;
+  button.classList.toggle("is-recording", voice.recording);
+  button.classList.toggle("has-pending", Boolean(voice.pending) && !voice.recording);
+  button.setAttribute("aria-pressed", voice.recording ? "true" : "false");
+  if (!voice.supported) {
+    button.textContent = "Ingen mikrofon";
+  } else if (voice.recording) {
+    button.textContent = "Stoppa";
+  } else if (voice.pending) {
+    button.textContent = "Ny röst";
+  } else {
+    button.textContent = "Spela in";
+  }
+}
+
+function publicDpakClearPendingVoice() {
+  publicDpakState.voice.pending = null;
+  publicDpakState.voice.transcript = "";
+  publicDpakSetVoiceStatus("");
+  publicDpakSetVoiceControls();
+}
+
+function publicDpakResetVoice() {
+  const voice = publicDpakState.voice;
+  if (voice.recorder && voice.recording) {
+    try {
+      voice.recorder.onstop = null;
+      voice.recorder.stop();
+    } catch (_error) {
+      // The recorder can already be stopped when the page loses focus.
+    }
+  }
+  publicDpakStopVoiceRecognition();
+  publicDpakStopVoiceStream();
+  voice.recorder = null;
+  voice.chunks = [];
+  voice.startedAt = 0;
+  voice.recording = false;
+  publicDpakClearPendingVoice();
+}
+
+function publicDpakStopVoiceStream() {
+  const voice = publicDpakState.voice;
+  if (voice.stream) {
+    voice.stream.getTracks().forEach((track) => track.stop());
+  }
+  voice.stream = null;
+}
+
+function publicDpakStopVoiceRecognition() {
+  const recognition = publicDpakState.voice.recognition;
+  publicDpakState.voice.recognition = null;
+  if (!recognition) return;
+  try {
+    recognition.onend = null;
+    recognition.stop();
+  } catch (_error) {
+    // Some browsers throw if recognition has already ended.
+  }
+}
+
+function publicDpakBlobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      resolve(value.includes(",") ? value.split(",").pop() : value);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Kunde inte läsa röstinspelningen."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function publicDpakStartVoiceRecognition() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) return null;
+
+  const recognition = new Recognition();
+  recognition.lang = "sv-SE";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let finalTranscript = "";
+  recognition.onresult = (event) => {
+    let interimTranscript = "";
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const text = event.results[index]?.[0]?.transcript || "";
+      if (event.results[index]?.isFinal) {
+        finalTranscript = `${finalTranscript} ${text}`.trim();
+      } else {
+        interimTranscript = `${interimTranscript} ${text}`.trim();
+      }
+    }
+    publicDpakState.voice.transcript = `${finalTranscript} ${interimTranscript}`.trim();
+    if (publicDpakState.voice.transcript) {
+      publicDpakSetVoiceStatus(`Lyssnar: ${publicDpakState.voice.transcript}`);
+    }
+  };
+  recognition.onerror = () => {
+    publicDpakSetVoiceStatus("Spelar in ljud. Skriv frågan om texttolkningen inte fylls i.", "error");
+  };
+  recognition.onend = () => {
+    publicDpakState.voice.recognition = null;
+  };
+
+  try {
+    recognition.start();
+    publicDpakState.voice.recognition = recognition;
+  } catch (_error) {
+    return null;
+  }
+  return recognition;
+}
+
+async function publicDpakFinalizeVoice(blob, durationMs) {
+  publicDpakStopVoiceStream();
+  publicDpakStopVoiceRecognition();
+  publicDpakState.voice.recorder = null;
+  publicDpakState.voice.recording = false;
+  publicDpakSetVoiceControls();
+
+  if (!blob.size) {
+    publicDpakState.voice.pending = null;
+    publicDpakSetVoiceStatus("Ingen röst fångades.", "error");
+    return;
+  }
+  if (blob.size > publicDpakMaxVoiceBytes) {
+    publicDpakState.voice.pending = null;
+    publicDpakSetVoiceStatus("Röstinspelningen är för stor. Försök med en kortare fråga.", "error");
+    return;
+  }
+
+  try {
+    const dataBase64 = await publicDpakBlobToBase64(blob);
+    const transcript = (publicDpakState.voice.transcript || "").trim();
+    publicDpakState.voice.pending = {
+      mime_type: blob.type || "audio/webm",
+      data_base64: dataBase64,
+      duration_ms: Math.max(0, Math.round(durationMs || 0)),
+      transcript: transcript || null,
+      byte_size: blob.size,
+    };
+    const input = document.getElementById("publicDpakInput");
+    if (transcript && input && !input.value.trim()) input.value = transcript;
+    const seconds = publicDpakVoiceSeconds(durationMs);
+    publicDpakSetVoiceStatus(
+      transcript
+        ? `Röst klar (${seconds} s). Texten kan redigeras innan du skickar.`
+        : `Röst klar (${seconds} s). Skriv frågan i fältet innan du skickar.`,
+      "ready"
+    );
+  } catch (error) {
+    publicDpakState.voice.pending = null;
+    publicDpakSetVoiceStatus(error.message || "Kunde inte läsa röstinspelningen.", "error");
+  } finally {
+    publicDpakSetVoiceControls();
+  }
+}
+
+async function publicDpakStartVoice() {
+  const voice = publicDpakState.voice;
+  if (publicDpakState.busy || voice.recording) return;
+  if (!voice.supported) {
+    publicDpakSetVoiceStatus("Webbläsaren stödjer inte röstinspelning här.", "error");
+    return;
+  }
+
+  publicDpakClearPendingVoice();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = publicDpakPreferredAudioMime();
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    voice.stream = stream;
+    voice.recorder = recorder;
+    voice.chunks = [];
+    voice.startedAt = Date.now();
+    voice.transcript = "";
+    voice.recording = true;
+    recorder.ondataavailable = (event) => {
+      if (event.data?.size) voice.chunks.push(event.data);
+    };
+    recorder.onerror = () => {
+      publicDpakSetVoiceStatus("Röstinspelningen avbröts.", "error");
+      publicDpakStopVoice();
+    };
+    recorder.onstop = () => {
+      const durationMs = Date.now() - voice.startedAt;
+      const type = recorder.mimeType || mimeType || "audio/webm";
+      const blob = new Blob(voice.chunks, { type });
+      void publicDpakFinalizeVoice(blob, durationMs);
+    };
+    recorder.start();
+    publicDpakStartVoiceRecognition();
+    publicDpakSetVoiceStatus(
+      voice.recognitionSupported
+        ? "Spelar in och tolkar svenska..."
+        : "Spelar in ljud. Skriv frågan i fältet innan du skickar.",
+      voice.recognitionSupported ? "" : "error"
+    );
+  } catch (_error) {
+    publicDpakStopVoiceStream();
+    voice.recorder = null;
+    voice.recording = false;
+    publicDpakSetVoiceStatus("Mikrofonen kunde inte startas.", "error");
+  } finally {
+    publicDpakSetVoiceControls();
+  }
+}
+
+function publicDpakStopVoice() {
+  const voice = publicDpakState.voice;
+  if (!voice.recording || !voice.recorder) return;
+  voice.recording = false;
+  publicDpakSetVoiceStatus("Bearbetar röstinspelningen...");
+  publicDpakSetVoiceControls();
+  publicDpakStopVoiceRecognition();
+  try {
+    voice.recorder.stop();
+  } catch (_error) {
+    publicDpakStopVoiceStream();
+    voice.recorder = null;
+    publicDpakSetVoiceStatus("Röstinspelningen kunde inte stoppas.", "error");
+    publicDpakSetVoiceControls();
+  }
+}
+
+function publicDpakToggleVoice() {
+  if (publicDpakState.voice.recording) {
+    publicDpakStopVoice();
+  } else {
+    void publicDpakStartVoice();
+  }
+}
+
+function publicDpakVoicePayload() {
+  const pending = publicDpakState.voice.pending;
+  if (!pending) return null;
+  return {
+    mime_type: pending.mime_type,
+    data_base64: pending.data_base64,
+    duration_ms: pending.duration_ms,
+    transcript: pending.transcript,
+  };
 }
 
 async function publicDpakFetch(path, options = {}) {
@@ -196,6 +481,7 @@ function publicDpakSetBusy(active) {
   const input = document.getElementById("publicDpakInput");
   if (send) send.disabled = publicDpakState.busy;
   if (input) input.disabled = publicDpakState.busy;
+  publicDpakSetVoiceControls();
 }
 
 async function publicDpakLoadStatus() {
@@ -219,9 +505,17 @@ async function publicDpakLoadStatus() {
 async function publicDpakSubmit(event) {
   event.preventDefault();
   if (publicDpakState.busy) return;
+  if (publicDpakState.voice.recording) {
+    publicDpakSetVoiceStatus("Stoppa inspelningen innan du skickar.", "error");
+    return;
+  }
   const input = document.getElementById("publicDpakInput");
-  const question = input?.value.trim() || "";
-  if (!question) return;
+  const voicePayload = publicDpakVoicePayload();
+  const question = input?.value.trim() || voicePayload?.transcript?.trim() || "";
+  if (!question) {
+    publicDpakSetVoiceStatus("Skriv frågan i fältet innan du skickar.", "error");
+    return;
+  }
   publicDpakState.messages.push({ role: "user", content: question });
   publicDpakState.messages.push({ role: "loading", content: "" });
   if (input) input.value = "";
@@ -235,8 +529,10 @@ async function publicDpakSubmit(event) {
         token: publicDpakToken || null,
         business_code: publicDpakBusiness || null,
         messages: publicDpakConversationPayload(),
+        voice: voicePayload,
       }),
     });
+    publicDpakClearPendingVoice();
     publicDpakState.messages = publicDpakState.messages.filter((message) => message.role !== "loading");
     publicDpakState.messages.push({
       role: "assistant",
@@ -269,6 +565,7 @@ async function publicDpakSubmit(event) {
 
 function publicDpakClear() {
   publicDpakState.messages = [];
+  publicDpakResetVoice();
   publicDpakSaveMessages();
   publicDpakRenderMessages();
   document.getElementById("publicDpakInput")?.focus();
@@ -278,7 +575,9 @@ function publicDpakInit() {
   publicDpakLoadMessages();
   publicDpakRenderMessages();
   publicDpakLoadStatus();
+  publicDpakSetVoiceControls();
   document.getElementById("publicDpakForm")?.addEventListener("submit", publicDpakSubmit);
+  document.getElementById("publicDpakVoice")?.addEventListener("click", publicDpakToggleVoice);
   document.getElementById("publicDpakClear")?.addEventListener("click", publicDpakClear);
   document.getElementById("publicDpakMessages")?.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) return;

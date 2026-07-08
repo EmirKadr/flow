@@ -14,7 +14,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWidgets import QDialog
 
-from core.app_info import APP_NAME
+from core.app_info import APP_NAME, DESKTOP_LOCAL_HOST
 from desktop.file_bridge import DesktopFileBridge
 from desktop.local_runtime import DesktopLocalRuntime
 
@@ -62,6 +62,21 @@ def configure_printing(
     view._flow_active_printer = None
 
 
+def configure_feature_permissions(page: QWebEnginePage) -> None:
+    def handle_feature_permission(origin, feature) -> None:
+        host = origin.host().lower()
+        local_hosts = {DESKTOP_LOCAL_HOST.lower(), "localhost", "127.0.0.1"}
+        if feature == QWebEnginePage.Feature.MediaAudioCapture and host in local_hosts:
+            page.setFeaturePermission(
+                origin,
+                feature,
+                QWebEnginePage.PermissionPolicy.PermissionGrantedByUser,
+            )
+
+    page.featurePermissionRequested.connect(handle_feature_permission)
+    page._flow_feature_permission_handler = handle_feature_permission
+
+
 def create_web_view(parent=None, *, desktop_runtime: DesktopLocalRuntime | None = None) -> QWebEngineView:
     view = QWebEngineView(parent)
 
@@ -82,6 +97,7 @@ def create_web_view(parent=None, *, desktop_runtime: DesktopLocalRuntime | None 
 
     page = QWebEnginePage(profile, view)
     view.setPage(page)
+    configure_feature_permissions(page)
     if desktop_runtime is not None:
         channel = QWebChannel(page)
         bridge = DesktopFileBridge(desktop_runtime, page)

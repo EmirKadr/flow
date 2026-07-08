@@ -50,4 +50,17 @@ Live- och arkivrader dedupliceras innan faktatabellerna byggs, så överlapp mel
 - `GET /api/public/dpak-chat/status`
 - `POST /api/public/dpak-chat/message`
 
-Båda är publika och får inte använda `get_current_user`. Payloaden för meddelande innehåller löpande dialoghistorik, valfri `business_code` och valfri `token`.
+Båda är publika och får inte använda `get_current_user`. Payloaden för meddelande innehåller löpande dialoghistorik, valfri `business_code`, valfri `token` och valfri `voice`.
+
+## Röstinspelning
+
+Sidan har knappen `Spela in` bredvid `Rensa` och `Skicka`. Webbläsaren spelar in kort ljud med `MediaRecorder` och försöker samtidigt tolka svenskt tal till text med `SpeechRecognition` när webbläsaren stödjer det. Texten fylls i frågefältet så användaren kan kontrollera och redigera innan frågan skickas.
+
+När användaren klickar `Skicka` skickas ljudet som `voice` i samma `POST /api/public/dpak-chat/message`-anrop:
+
+- `mime_type` måste vara `audio/*`.
+- `data_base64` är själva inspelningen och får vara högst 3 MB dekodat.
+- `duration_ms` är inspelningens längd.
+- `transcript` är webbläsarens texttolkning om den finns.
+
+Backend validerar röstbilagan men sparar den inte. Rå base64-ljud skickas inte vidare till MiniMax-agenten; agenten får bara den vanliga textfrågan samt sanerad röstmetadata och eventuell texttolkning. Om webbläsaren inte kan tolka talet behöver användaren skriva frågan i fältet innan skick.

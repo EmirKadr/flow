@@ -1116,3 +1116,7 @@ Sändningsanalysen i Meta-vyn visar nu kolumnen `Uppdaterad`, baserad på `meta_
 ## [2026-06-08] feature | API-first for Bearbeta och Produktivitet
 
 Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern datakalla vid knapptryck, utan MiniMax och utan radbegransning. Uppladdade filer och Windows `localRef` anvands som fallback nar API eller katalog inte kan nas. Wikin dokumenterar source-mapping, `/api/workflow-data/source`, Produktivitetens `api_first`-status, sanerad source-audit och nya fallbackfel.
+
+## [2026-07-08] feature | Röstinspelning i publik D-pak-chatt
+
+`/dpak-fraga.html` har nu en `Spela in`-knapp som spelar in kort ljud, försöker fylla frågefältet med svensk tal-till-text och skickar en validerad `voice`-bilaga i `POST /api/public/dpak-chat/message`. Backend sparar inte råljud och skickar inte base64 vidare till MiniMax-agenten, men agenten får sanerad röstmetadata och eventuell texttolkning. Desktop-skalet ger QWebEngine tillstånd för mikrofonens ljudupptagning.

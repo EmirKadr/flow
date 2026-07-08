@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date
 import json
 
@@ -352,6 +353,87 @@ def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
         payload = response.json()
         assert "bara MG" in payload["answer"]
         assert payload["table"] == [{"Bolag": "MG"}]
+    finally:
+        session.close()
+
+
+def test_public_dpak_message_endpoint_accepts_voice_attachment(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    calls = []
+
+    def fake_model(payload):
+        calls.append(json.loads(payload["messages"][1]["content"]))
+        if len(calls) == 1:
+            return json.dumps({"type": "tool", "tool": "list_files", "args": {}})
+        return json.dumps(
+            {
+                "type": "final",
+                "answer": "Röstfrågan tolkades.",
+                "table": [],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(public_dpak, "_call_minimax", fake_model)
+    session = _session()
+    app = FastAPI()
+    app.include_router(public_dpak.router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[public_dpak.get_db] = override_db
+    try:
+        _seed(session)
+        encoded_audio = base64.b64encode(b"fake-audio").decode("ascii")
+        response = TestClient(app).post(
+            "/api/public/dpak-chat/message",
+            json={
+                "messages": [{"role": "user", "content": "hur många d-pak sålde vi i juni"}],
+                "voice": {
+                    "mime_type": "audio/webm",
+                    "data_base64": encoded_audio,
+                    "duration_ms": 2100,
+                    "transcript": "hur många d-pak sålde vi i juni",
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        conversation = calls[0]["conversation"]
+        assert "Röstinspelning bifogades" in conversation[-1]["content"]
+        assert "audio/webm" in conversation[-1]["content"]
+        assert encoded_audio not in conversation[-1]["content"]
+    finally:
+        session.close()
+
+
+def test_public_dpak_message_endpoint_rejects_non_audio_voice(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    session = _session()
+    app = FastAPI()
+    app.include_router(public_dpak.router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[public_dpak.get_db] = override_db
+    try:
+        response = TestClient(app).post(
+            "/api/public/dpak-chat/message",
+            json={
+                "messages": [{"role": "user", "content": "test"}],
+                "voice": {
+                    "mime_type": "text/plain",
+                    "data_base64": base64.b64encode(b"not-audio").decode("ascii"),
+                    "duration_ms": 1000,
+                },
+            },
+        )
+
+        assert response.status_code == 422
     finally:
         session.close()
 
