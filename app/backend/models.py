@@ -312,6 +312,87 @@ class PublicDpakSyncChunk(Base):
     )
 
 
+class PublicDpakRawPicklog(Base):
+    __tablename__ = "public_dpak_raw_picklog"
+    __table_args__ = (
+        Index("ix_public_dpak_raw_pick_business_date", "business_code", "pick_date"),
+        Index("ix_public_dpak_raw_pick_business_company", "business_code", "company"),
+        Index("ix_public_dpak_raw_pick_business_zone", "business_code", "zone"),
+        Index("ix_public_dpak_raw_pick_business_order", "business_code", "order_num"),
+        Index("ix_public_dpak_raw_pick_business_item", "business_code", "item_num"),
+        Index("ix_public_dpak_raw_pick_business_location", "business_code", "location"),
+        Index("ix_public_dpak_raw_pick_business_box", "business_code", "pick_pall_num"),
+        Index("ix_public_dpak_raw_pick_business_source", "business_code", "source_view"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_view: Mapped[str | None] = mapped_column(String(80))
+    source_file: Mapped[str | None] = mapped_column(String(255))
+    source_rowid: Mapped[str | None] = mapped_column(String(120))
+    chunk_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    chunk_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    row_index: Mapped[int | None] = mapped_column(BigInteger)
+    pick_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_int: Mapped[int | None] = mapped_column(Integer)
+    company: Mapped[str | None] = mapped_column(String(30))
+    zone: Mapped[str | None] = mapped_column(String(20))
+    order_num: Mapped[str | None] = mapped_column(String(80))
+    customer_num: Mapped[str | None] = mapped_column(String(80))
+    customer_desc: Mapped[str | None] = mapped_column(String(255))
+    line_num: Mapped[str | None] = mapped_column(String(80))
+    item_num: Mapped[str | None] = mapped_column(String(80))
+    item_desc: Mapped[str | None] = mapped_column(String(255))
+    location: Mapped[str | None] = mapped_column(String(120))
+    pick_pall_num: Mapped[str | None] = mapped_column(String(120))
+    qty_pre: Mapped[float | None] = mapped_column(Float)
+    qty_suf: Mapped[float | None] = mapped_column(Float)
+    data: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PublicDpakRawItemAlias(Base):
+    __tablename__ = "public_dpak_raw_item_alias"
+    __table_args__ = (
+        Index("ix_public_dpak_raw_alias_business_item", "business_code", "item_num"),
+        Index("ix_public_dpak_raw_alias_business_company", "business_code", "company"),
+        Index("ix_public_dpak_raw_alias_business_unit", "business_code", "unit"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_file: Mapped[str | None] = mapped_column(String(255))
+    row_index: Mapped[int | None] = mapped_column(BigInteger)
+    item_num: Mapped[str | None] = mapped_column(String(80))
+    company: Mapped[str | None] = mapped_column(String(30))
+    alias: Mapped[str | None] = mapped_column(String(120))
+    unit: Mapped[str | None] = mapped_column(String(40))
+    factor: Mapped[float | None] = mapped_column(Float)
+    data: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PublicDpakRawItemAttribute(Base):
+    __tablename__ = "public_dpak_raw_item_attribute"
+    __table_args__ = (
+        Index("ix_public_dpak_raw_attr_business_item", "business_code", "item_num"),
+        Index("ix_public_dpak_raw_attr_business_company", "business_code", "company"),
+        Index("ix_public_dpak_raw_attr_business_name", "business_code", "name"),
+        Index("ix_public_dpak_raw_attr_business_value", "business_code", "value"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    business_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_file: Mapped[str | None] = mapped_column(String(255))
+    row_index: Mapped[int | None] = mapped_column(BigInteger)
+    item_num: Mapped[str | None] = mapped_column(String(80))
+    company: Mapped[str | None] = mapped_column(String(30))
+    name: Mapped[str | None] = mapped_column(String(255))
+    value: Mapped[str | None] = mapped_column(String(255))
+    data: Mapped[dict] = mapped_column(JsonField, nullable=False, default=dict)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class PublicDpakPickRow(Base):
     __tablename__ = "public_dpak_pick_rows"
     __table_args__ = (

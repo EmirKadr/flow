@@ -23,6 +23,9 @@ from .models import (
     PublicDpakOrderArticleFact,
     PublicDpakOrderSupplierBoxFact,
     PublicDpakPickRow,
+    PublicDpakRawItemAlias,
+    PublicDpakRawItemAttribute,
+    PublicDpakRawPicklog,
     PublicDpakSyncChunk,
 )
 
@@ -112,6 +115,12 @@ class DpakSyncResult:
     chunks_fetched: int
     chunks_skipped: int
     rows_imported: int
+
+
+@dataclass(frozen=True)
+class RawCsvRows:
+    source_file: str
+    rows: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -225,6 +234,17 @@ def load_support_csvs(directory: Path) -> tuple[list[dict[str, Any]], list[dict[
     return _read_csv_rows(alias_path), _read_csv_rows(attribute_path)
 
 
+def load_support_csv_files(directory: Path) -> tuple[RawCsvRows, RawCsvRows]:
+    alias_path = _latest_csv(directory, "item_alias")
+    attribute_path = _latest_csv(directory, "item_attribute")
+    if alias_path is None or attribute_path is None:
+        raise FileNotFoundError("Saknar item_alias-*.csv eller item_attribute-*.csv.")
+    return (
+        RawCsvRows(source_file=alias_path.name, rows=_read_csv_rows(alias_path)),
+        RawCsvRows(source_file=attribute_path.name, rows=_read_csv_rows(attribute_path)),
+    )
+
+
 def load_pick_csvs(directory: Path) -> list[tuple[str, list[dict[str, Any]]]]:
     sources: list[tuple[str, list[dict[str, Any]]]] = []
     for prefix, view_id in (
@@ -234,6 +254,20 @@ def load_pick_csvs(directory: Path) -> list[tuple[str, list[dict[str, Any]]]]:
         path = _latest_csv(directory, prefix)
         if path is not None:
             sources.append((view_id, _read_csv_rows(path)))
+    if not sources:
+        raise FileNotFoundError("Saknar v_ask_pick_log_full-*.csv eller dblog_pick_log-*.csv.")
+    return sources
+
+
+def load_pick_csv_files(directory: Path) -> list[tuple[str, str, list[dict[str, Any]]]]:
+    sources: list[tuple[str, str, list[dict[str, Any]]]] = []
+    for prefix, view_id in (
+        ("v_ask_pick_log_full", settings.PUBLIC_DPAK_LIVE_PICK_VIEW),
+        ("dblog_pick_log", settings.PUBLIC_DPAK_ARCHIVE_PICK_VIEW),
+    ):
+        path = _latest_csv(directory, prefix)
+        if path is not None:
+            sources.append((view_id, path.name, _read_csv_rows(path)))
     if not sources:
         raise FileNotFoundError("Saknar v_ask_pick_log_full-*.csv eller dblog_pick_log-*.csv.")
     return sources
@@ -304,6 +338,113 @@ def normalize_pick_rows(
             }
         )
     return normalized
+
+
+def _jsonable(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.isoformat()
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if hasattr(value, "item") and callable(value.item):
+        try:
+            return _jsonable(value.item())
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    return value
+
+
+def _raw_data(row: dict[str, Any]) -> dict[str, Any]:
+    return {str(key).strip(): _jsonable(value) for key, value in row.items() if str(key).strip()}
+
+
+def raw_picklog_rows(
+    rows: list[dict[str, Any]],
+    *,
+    business_code: str,
+    source_view: str | None,
+    source_file: str | None = None,
+    chunk_start: date | None = None,
+    chunk_end: date | None = None,
+) -> list[dict[str, Any]]:
+    raw_rows: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        date_int = _int_text(_row_get(row, PICK_FIELDS["date_int"]))
+        pick_date = _pick_date_from_int(date_int)
+        raw_rows.append(
+            {
+                "business_code": business_code,
+                "source_view": source_view,
+                "source_file": source_file,
+                "source_rowid": _text(_row_get(row, PICK_FIELDS["source_rowid"])),
+                "chunk_start": _dt(chunk_start) if chunk_start else None,
+                "chunk_end": _range_end_dt(chunk_end) if chunk_end else None,
+                "row_index": index,
+                "pick_date": _dt(pick_date),
+                "date_int": date_int,
+                "company": _text(_row_get(row, PICK_FIELDS["company"])),
+                "zone": (_text(_row_get(row, PICK_FIELDS["pick_zone"])) or "").upper() or None,
+                "order_num": _text(_row_get(row, PICK_FIELDS["order_num"])),
+                "customer_num": _text(_row_get(row, PICK_FIELDS["customer_num"])),
+                "customer_desc": _text(_row_get(row, PICK_FIELDS["customer_desc"])),
+                "line_num": _text(_row_get(row, PICK_FIELDS["line_num"])),
+                "item_num": _text(_row_get(row, PICK_FIELDS["item_num"])),
+                "item_desc": _text(_row_get(row, PICK_FIELDS["item_desc"])),
+                "location": _text(_row_get(row, PICK_FIELDS["location"])),
+                "pick_pall_num": _text(_row_get(row, PICK_FIELDS["pick_pall_num"])),
+                "qty_pre": _num(_row_get(row, PICK_FIELDS["qty_pre"])),
+                "qty_suf": _num(_row_get(row, PICK_FIELDS["qty_suf"])),
+                "data": _raw_data(row),
+            }
+        )
+    return raw_rows
+
+
+def raw_alias_rows(rows: list[dict[str, Any]], *, business_code: str, source_file: str | None) -> list[dict[str, Any]]:
+    return [
+        {
+            "business_code": business_code,
+            "source_file": source_file,
+            "row_index": index,
+            "item_num": _text(_row_get(row, ALIAS_FIELDS["item_num"])),
+            "company": _text(_row_get(row, ALIAS_FIELDS["company"])),
+            "alias": _text(_row_get(row, ("alias", "Alias"))),
+            "unit": _text(_row_get(row, ALIAS_FIELDS["unit"])),
+            "factor": _num(_row_get(row, ALIAS_FIELDS["factor"])),
+            "data": _raw_data(row),
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+
+
+def raw_attribute_rows(
+    rows: list[dict[str, Any]],
+    *,
+    business_code: str,
+    source_file: str | None,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "business_code": business_code,
+            "source_file": source_file,
+            "row_index": index,
+            "item_num": _text(_row_get(row, ATTRIBUTE_FIELDS["item_num"])),
+            "company": _text(_row_get(row, ("company", "Bolag"))),
+            "name": _text(_row_get(row, ATTRIBUTE_FIELDS["name"])),
+            "value": _text(_row_get(row, ATTRIBUTE_FIELDS["value"])),
+            "data": _raw_data(row),
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
 
 
 def _dedupe_pick_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -581,6 +722,260 @@ def _copy_insert_postgres(
     return True
 
 
+def replace_raw_support_rows(
+    db: Session,
+    *,
+    business_code: str,
+    alias_file: RawCsvRows,
+    attribute_file: RawCsvRows,
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> tuple[int, int]:
+    business = public_dpak_business_code(business_code)
+    alias_raw = raw_alias_rows(alias_file.rows, business_code=business, source_file=alias_file.source_file)
+    attribute_raw = raw_attribute_rows(
+        attribute_file.rows,
+        business_code=business,
+        source_file=attribute_file.source_file,
+    )
+    db.query(PublicDpakRawItemAlias).filter(PublicDpakRawItemAlias.business_code == business).delete(
+        synchronize_session=False
+    )
+    db.query(PublicDpakRawItemAttribute).filter(PublicDpakRawItemAttribute.business_code == business).delete(
+        synchronize_session=False
+    )
+    db.flush()
+    _bulk_insert(
+        db,
+        PublicDpakRawItemAlias,
+        alias_raw,
+        chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+        label="raw item_alias",
+        progress=progress,
+    )
+    _bulk_insert(
+        db,
+        PublicDpakRawItemAttribute,
+        attribute_raw,
+        chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+        label="raw item_attribute",
+        progress=progress,
+    )
+    return len(alias_raw), len(attribute_raw)
+
+
+def _clear_derived_public_dpak_rows(db: Session, business_code: str) -> None:
+    business = public_dpak_business_code(business_code)
+    db.query(PublicDpakPickRow).filter(PublicDpakPickRow.business_code == business).delete(synchronize_session=False)
+    db.query(PublicDpakOrderArticleFact).filter(PublicDpakOrderArticleFact.business_code == business).delete(
+        synchronize_session=False
+    )
+    db.query(PublicDpakOrderSupplierBoxFact).filter(
+        PublicDpakOrderSupplierBoxFact.business_code == business
+    ).delete(synchronize_session=False)
+
+
+def _replace_raw_picklog_for_chunk(
+    db: Session,
+    *,
+    business_code: str,
+    source_view: str,
+    chunk_start: date,
+    chunk_end: date,
+    rows: list[dict[str, Any]],
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> int:
+    business = public_dpak_business_code(business_code)
+    start_dt = _dt(chunk_start)
+    end_dt = _range_end_dt(chunk_end)
+    db.query(PublicDpakRawPicklog).filter(
+        PublicDpakRawPicklog.business_code == business,
+        PublicDpakRawPicklog.source_view == source_view,
+        PublicDpakRawPicklog.chunk_start == start_dt,
+        PublicDpakRawPicklog.chunk_end == end_dt,
+    ).delete(synchronize_session=False)
+    db.flush()
+    raw_rows = raw_picklog_rows(
+        rows,
+        business_code=business,
+        source_view=source_view,
+        chunk_start=chunk_start,
+        chunk_end=chunk_end,
+    )
+    raw_rows = [
+        row
+        for row in raw_rows
+        if (pick_day := _day(row.get("pick_date"))) is not None and chunk_start <= pick_day <= chunk_end
+    ]
+    _bulk_insert(
+        db,
+        PublicDpakRawPicklog,
+        raw_rows,
+        chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+        label="raw picklog",
+        progress=progress,
+    )
+    return len(raw_rows)
+
+
+def _replace_raw_picklog_for_chunk_with_retries(
+    db: Session,
+    *,
+    business_code: str,
+    source_view: str,
+    chunk_start: date,
+    chunk_end: date,
+    rows: list[dict[str, Any]],
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> int:
+    attempts = max(1, int(settings.PUBLIC_DPAK_DB_WRITE_RETRIES or 1))
+    for attempt in range(1, attempts + 1):
+        try:
+            inserted = _replace_raw_picklog_for_chunk(
+                db,
+                business_code=business_code,
+                source_view=source_view,
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+                rows=rows,
+                progress=progress,
+            )
+            db.commit()
+            return inserted
+        except OperationalError as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if attempt >= attempts:
+                raise
+            if progress:
+                progress(
+                    {
+                        "type": "db_retry",
+                        "attempt": attempt + 1,
+                        "attempts": attempts,
+                        "view": source_view,
+                        "start": chunk_start.isoformat(),
+                        "end": chunk_end.isoformat(),
+                        "error": str(exc).splitlines()[0][:200],
+                    }
+                )
+            time_module.sleep(min(30, 3 * attempt))
+    return 0
+
+
+def _raw_picklog_chunk_count(
+    db: Session,
+    business_code: str,
+    source_view: str,
+    chunk_start: date,
+    chunk_end: date,
+    company_codes: list[str] | None = None,
+) -> int:
+    query = db.query(func.count(PublicDpakRawPicklog.id)).filter(
+        PublicDpakRawPicklog.business_code == public_dpak_business_code(business_code),
+        PublicDpakRawPicklog.source_view == source_view,
+        PublicDpakRawPicklog.chunk_start == _dt(chunk_start),
+        PublicDpakRawPicklog.chunk_end == _range_end_dt(chunk_end),
+    )
+    if company_codes:
+        query = query.filter(func.upper(PublicDpakRawPicklog.company).in_([code.upper() for code in company_codes]))
+    return int(query.scalar() or 0)
+
+
+def _replace_all_raw_picklog(
+    db: Session,
+    *,
+    business_code: str,
+    pick_sources: list[tuple[str, str | None, list[dict[str, Any]]]],
+    progress: Callable[[dict[str, Any] | str], None] | None = None,
+) -> int:
+    business = public_dpak_business_code(business_code)
+    db.query(PublicDpakRawPicklog).filter(PublicDpakRawPicklog.business_code == business).delete(
+        synchronize_session=False
+    )
+    db.flush()
+    total = 0
+    for source_view, source_file, rows in pick_sources:
+        raw_rows = raw_picklog_rows(
+            rows,
+            business_code=business,
+            source_view=source_view,
+            source_file=source_file,
+        )
+        _bulk_insert(
+            db,
+            PublicDpakRawPicklog,
+            raw_rows,
+            chunk_size=settings.PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE,
+            label="raw picklog",
+            progress=progress,
+        )
+        total += len(raw_rows)
+    return total
+
+
+def _raw_dataset_result(
+    db: Session,
+    *,
+    business_code: str,
+    source_summary: dict[str, Any] | None = None,
+    status: str | None = None,
+) -> DpakBuildResult:
+    business = public_dpak_business_code(business_code)
+    pick_rows = int(
+        db.query(func.count(PublicDpakRawPicklog.id))
+        .filter(PublicDpakRawPicklog.business_code == business)
+        .scalar()
+        or 0
+    )
+    alias_rows = int(
+        db.query(func.count(PublicDpakRawItemAlias.id))
+        .filter(PublicDpakRawItemAlias.business_code == business)
+        .scalar()
+        or 0
+    )
+    attribute_rows = int(
+        db.query(func.count(PublicDpakRawItemAttribute.id))
+        .filter(PublicDpakRawItemAttribute.business_code == business)
+        .scalar()
+        or 0
+    )
+    coverage_start_dt, coverage_end_dt = (
+        db.query(func.min(PublicDpakRawPicklog.pick_date), func.max(PublicDpakRawPicklog.pick_date))
+        .filter(PublicDpakRawPicklog.business_code == business)
+        .one()
+    )
+    coverage_start = _day(coverage_start_dt)
+    coverage_end = _day(coverage_end_dt)
+    dataset = db.query(PublicDpakDataset).filter(PublicDpakDataset.business_code == business).one_or_none()
+    if dataset is None:
+        dataset = PublicDpakDataset(business_code=business)
+        db.add(dataset)
+    dataset.coverage_start = _dt(coverage_start)
+    dataset.coverage_end = _dt(coverage_end)
+    dataset.pick_rows = pick_rows
+    dataset.order_article_rows = 0
+    dataset.order_supplier_rows = 0
+    dataset.alias_rows = alias_rows
+    dataset.attribute_rows = attribute_rows
+    dataset.source_summary = source_summary or dataset.source_summary or {}
+    dataset.status = status or ("ready" if pick_rows and alias_rows and attribute_rows else "empty")
+    dataset.error_text = None
+    dataset.built_at = datetime.now(timezone.utc)
+    db.flush()
+    return DpakBuildResult(
+        business_code=business,
+        pick_rows=pick_rows,
+        order_article_rows=0,
+        order_supplier_rows=0,
+        alias_rows=alias_rows,
+        attribute_rows=attribute_rows,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+    )
+
+
 def replace_public_dpak_dataset(
     db: Session,
     *,
@@ -614,9 +1009,31 @@ def replace_public_dpak_dataset(
     db.query(PublicDpakOrderSupplierBoxFact).filter(
         PublicDpakOrderSupplierBoxFact.business_code == business
     ).delete(synchronize_session=False)
+    db.query(PublicDpakRawPicklog).filter(PublicDpakRawPicklog.business_code == business).delete(synchronize_session=False)
+    db.query(PublicDpakRawItemAlias).filter(PublicDpakRawItemAlias.business_code == business).delete(
+        synchronize_session=False
+    )
+    db.query(PublicDpakRawItemAttribute).filter(PublicDpakRawItemAttribute.business_code == business).delete(
+        synchronize_session=False
+    )
     db.query(PublicDpakDataset).filter(PublicDpakDataset.business_code == business).delete(synchronize_session=False)
     db.flush()
 
+    _bulk_insert(
+        db,
+        PublicDpakRawItemAlias,
+        raw_alias_rows(alias_rows, business_code=business, source_file="item_alias"),
+    )
+    _bulk_insert(
+        db,
+        PublicDpakRawItemAttribute,
+        raw_attribute_rows(attribute_rows, business_code=business, source_file="item_attribute"),
+    )
+    _replace_all_raw_picklog(
+        db,
+        business_code=business,
+        pick_sources=[(source_view, None, rows) for source_view, rows in pick_sources],
+    )
     _bulk_insert(db, PublicDpakPickRow, normalized_rows)
     _bulk_insert(db, PublicDpakOrderArticleFact, article_facts)
     _bulk_insert(db, PublicDpakOrderSupplierBoxFact, supplier_facts)
@@ -1087,6 +1504,19 @@ def _cleanup_public_dpak_sync_scope(
             PublicDpakPickRow.business_code == business_code,
             ~or_(*keep_filters),
         ).delete(synchronize_session=False)
+    raw_keep_filters = [
+        and_(
+            PublicDpakRawPicklog.source_view == view_id,
+            PublicDpakRawPicklog.pick_date >= _dt(range_start),
+            PublicDpakRawPicklog.pick_date <= _range_end_dt(range_end),
+        )
+        for view_id, range_start, range_end in source_ranges
+    ]
+    if raw_keep_filters:
+        db.query(PublicDpakRawPicklog).filter(
+            PublicDpakRawPicklog.business_code == business_code,
+            ~or_(*raw_keep_filters),
+        ).delete(synchronize_session=False)
     db.commit()
 
 
@@ -1246,9 +1676,8 @@ def sync_public_dpak_pick_chunks(
     if end_day < start_day:
         raise ValueError("Slutdatum maste vara samma som eller efter startdatum.")
 
-    alias_rows, attribute_rows = load_support_csvs(support_directory)
-    supplier_map = _supplier_by_item(attribute_rows)
-    client = _api_client()
+    alias_file, attribute_file = load_support_csv_files(support_directory)
+    client: ExternalDataClient | None = None
     span = chunk_days or settings.PUBLIC_DPAK_CHUNK_DAYS
     company_codes = _public_dpak_company_codes()
     source_ranges = _pick_source_ranges(start_day, end_day)
@@ -1260,6 +1689,14 @@ def sync_public_dpak_pick_chunks(
     rows_imported = 0
 
     _mark_public_dpak_dataset_status(db, business_code=business, status="syncing")
+    _clear_derived_public_dpak_rows(db, business)
+    replace_raw_support_rows(
+        db,
+        business_code=business,
+        alias_file=alias_file,
+        attribute_file=attribute_file,
+        progress=progress,
+    )
     db.commit()
 
     if progress:
@@ -1293,7 +1730,8 @@ def sync_public_dpak_pick_chunks(
             chunk_start=chunk_start,
             chunk_end=chunk_end,
         )
-        if chunk.status == "complete" and not force:
+        raw_chunk_rows = _raw_picklog_chunk_count(db, business, view_id, chunk_start, chunk_end, company_codes)
+        if chunk.status == "complete" and raw_chunk_rows > 0 and not force:
             chunks_skipped += 1
             if progress:
                 progress(
@@ -1304,7 +1742,7 @@ def sync_public_dpak_pick_chunks(
                         "view": view_id,
                         "start": chunk_start.isoformat(),
                         "end": chunk_end.isoformat(),
-                        "rows": int(chunk.row_count or 0),
+                        "rows": int(raw_chunk_rows or chunk.row_count or 0),
                         "rows_imported": rows_imported,
                         "chunks_fetched": chunks_fetched,
                         "chunks_skipped": chunks_skipped,
@@ -1336,6 +1774,8 @@ def sync_public_dpak_pick_chunks(
             row_source = "api"
             api_rows = _fetch_archive_duckdb_rows(view_id, chunk_start, chunk_end, company_codes)
             if api_rows is None:
+                if client is None:
+                    client = _api_client()
                 api_rows = _fetch_api_rows_with_retries(
                     client,
                     view_id,
@@ -1346,25 +1786,13 @@ def sync_public_dpak_pick_chunks(
                 )
             else:
                 row_source = "local_archive"
-            normalized_rows = normalize_pick_rows(
-                view_id,
-                api_rows,
-                business_code=business,
-                supplier_by_item=supplier_map,
-            )
-            normalized_rows = [
-                row
-                for row in normalized_rows
-                if (pick_day := _day(row.get("pick_date"))) is not None and chunk_start <= pick_day <= chunk_end
-            ]
-            normalized_rows = _dedupe_pick_rows(normalized_rows)
-            _replace_pick_rows_for_chunk_with_retries(
+            inserted_rows = _replace_raw_picklog_for_chunk_with_retries(
                 db,
                 business_code=business,
                 source_view=view_id,
                 chunk_start=chunk_start,
                 chunk_end=chunk_end,
-                rows=normalized_rows,
+                rows=api_rows,
                 progress=progress,
             )
             chunk = _sync_chunk(
@@ -1375,12 +1803,12 @@ def sync_public_dpak_pick_chunks(
                 chunk_end=chunk_end,
             )
             chunk.status = "complete"
-            chunk.row_count = len(normalized_rows)
+            chunk.row_count = inserted_rows
             chunk.completed_at = datetime.now(timezone.utc)
             chunk.error_text = None
             db.commit()
             chunks_fetched += 1
-            rows_imported += len(normalized_rows)
+            rows_imported += inserted_rows
             if progress:
                 progress(
                     {
@@ -1390,7 +1818,7 @@ def sync_public_dpak_pick_chunks(
                         "view": view_id,
                         "start": chunk_start.isoformat(),
                         "end": chunk_end.isoformat(),
-                        "rows": len(normalized_rows),
+                        "rows": inserted_rows,
                         "source": row_source,
                         "rows_imported": rows_imported,
                         "chunks_fetched": chunks_fetched,
@@ -1429,25 +1857,14 @@ def sync_public_dpak_pick_chunks(
         progress=progress,
     )
 
-    if progress:
-        progress(
-            {
-                "type": "rebuild_start",
-                "total_chunks": total_chunks,
-                "rows_imported": rows_imported,
-                "chunks_fetched": chunks_fetched,
-                "chunks_skipped": chunks_skipped,
-            }
-        )
-
-    build = rebuild_public_dpak_facts(
+    build = _raw_dataset_result(
         db,
         business_code=business,
-        alias_rows=alias_rows,
-        attribute_rows=attribute_rows,
         source_summary={
-            "mode": "api_pick_logs_csv_support",
+            "mode": "raw_api_picklog_csv_support",
             "support_directory": str(support_directory),
+            "item_alias": alias_file.source_file,
+            "item_attribute": attribute_file.source_file,
             "start": start_day.isoformat(),
             "end": end_day.isoformat(),
             "chunk_days": span,
@@ -1466,7 +1883,6 @@ def sync_public_dpak_pick_chunks(
             "chunks_skipped": chunks_skipped,
             "rows_imported": rows_imported,
         },
-        progress=progress,
     )
     db.commit()
     if progress:
@@ -1480,6 +1896,8 @@ def sync_public_dpak_pick_chunks(
                 "pick_rows": build.pick_rows,
                 "order_article_rows": build.order_article_rows,
                 "order_supplier_rows": build.order_supplier_rows,
+                "alias_rows": build.alias_rows,
+                "attribute_rows": build.attribute_rows,
             }
         )
     return DpakSyncResult(
@@ -1498,6 +1916,21 @@ def _dataset(db: Session, business_code: str) -> PublicDpakDataset | None:
 def dataset_status(db: Session, business_code: str | None = None) -> dict[str, Any]:
     business = public_dpak_business_code(business_code)
     dataset = _dataset(db, business)
+    raw_pick_rows = int(
+        db.query(func.count(PublicDpakRawPicklog.id)).filter(PublicDpakRawPicklog.business_code == business).scalar() or 0
+    )
+    raw_alias_rows = int(
+        db.query(func.count(PublicDpakRawItemAlias.id))
+        .filter(PublicDpakRawItemAlias.business_code == business)
+        .scalar()
+        or 0
+    )
+    raw_attribute_rows = int(
+        db.query(func.count(PublicDpakRawItemAttribute.id))
+        .filter(PublicDpakRawItemAttribute.business_code == business)
+        .scalar()
+        or 0
+    )
     chunk_counts = {
         str(status): int(count or 0)
         for status, count in (
@@ -1509,17 +1942,21 @@ def dataset_status(db: Session, business_code: str | None = None) -> dict[str, A
     }
     if dataset is None:
         return {"ready": False, "business_code": business, "status": "missing", "chunks": chunk_counts}
+    raw_ready = raw_pick_rows > 0 and raw_alias_rows > 0 and raw_attribute_rows > 0
+    status_value = dataset.status if raw_ready else "missing_raw"
     return {
-        "ready": dataset.status == "ready",
+        "ready": dataset.status == "ready" and raw_ready,
         "business_code": business,
-        "status": dataset.status,
+        "status": status_value,
         "coverage_start": _day(dataset.coverage_start).isoformat() if dataset.coverage_start else None,
         "coverage_end": _day(dataset.coverage_end).isoformat() if dataset.coverage_end else None,
         "target_start": (dataset.source_summary or {}).get("start") if isinstance(dataset.source_summary, dict) else None,
         "target_end": (dataset.source_summary or {}).get("end") if isinstance(dataset.source_summary, dict) else None,
-        "pick_rows": int(dataset.pick_rows or 0),
+        "pick_rows": raw_pick_rows,
         "order_article_rows": int(dataset.order_article_rows or 0),
         "order_supplier_rows": int(dataset.order_supplier_rows or 0),
+        "alias_rows": raw_alias_rows,
+        "attribute_rows": raw_attribute_rows,
         "built_at": dataset.built_at.isoformat(timespec="seconds") if dataset.built_at else None,
         "chunks": chunk_counts,
     }
@@ -1863,15 +2300,30 @@ def parse_settings_date(value: str, fallback: date) -> date:
 
 
 def import_from_csv_directory(db: Session, directory: Path, *, business_code: str | None = None) -> DpakBuildResult:
-    alias_rows, attribute_rows = load_support_csvs(directory)
-    pick_sources = load_pick_csvs(directory)
-    return replace_public_dpak_dataset(
+    business = public_dpak_business_code(business_code)
+    alias_file, attribute_file = load_support_csv_files(directory)
+    pick_sources = load_pick_csv_files(directory)
+    _clear_derived_public_dpak_rows(db, business)
+    replace_raw_support_rows(
         db,
-        business_code=public_dpak_business_code(business_code),
-        pick_sources=pick_sources,
-        alias_rows=alias_rows,
-        attribute_rows=attribute_rows,
-        source_summary={"mode": "csv_directory", "directory": str(directory)},
+        business_code=business,
+        alias_file=alias_file,
+        attribute_file=attribute_file,
+    )
+    _replace_all_raw_picklog(db, business_code=business, pick_sources=pick_sources)
+    return _raw_dataset_result(
+        db,
+        business_code=business,
+        source_summary={
+            "mode": "raw_csv_directory",
+            "directory": str(directory),
+            "item_alias": alias_file.source_file,
+            "item_attribute": attribute_file.source_file,
+            "picklog_sources": [
+                {"view": view_id, "file": source_file, "rows": len(rows)}
+                for view_id, source_file, rows in pick_sources
+            ],
+        },
     )
 
 

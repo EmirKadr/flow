@@ -165,15 +165,15 @@ class DpakProgressBar:
         if event_type == "rebuild_start":
             self.done = self.total
             self.rows = int(event.get("rows_imported") or self.rows)
-            self.current = "bygger faktatabeller i Postgres"
+            self.current = "fardigstaller raw D-pak-underlag i Postgres"
             self._render()
             self._newline()
             return
         if event_type == "rebuild_done":
             self.rows = int(event.get("pick_rows") or self.rows)
             self.current = (
-                f"faktatabeller klara: {_fmt_int(event.get('order_article_rows'))} order/artikel, "
-                f"{_fmt_int(event.get('order_supplier_rows'))} order/leverantor"
+                f"raw-underlag klart: {_fmt_int(event.get('pick_rows'))} picklog, "
+                f"{_fmt_int(event.get('alias_rows'))} alias, {_fmt_int(event.get('attribute_rows'))} attribut"
             )
             self._render(force_percent=100.0)
             self._newline()
@@ -214,9 +214,9 @@ def _print_status(status: dict) -> None:
     print(f"business: {status.get('business_code')}")
     print(f"status: {status.get('status')} ready={status.get('ready')}")
     print(f"coverage: {status.get('coverage_start') or '-'}..{status.get('coverage_end') or '-'}")
-    print(f"pick rows: {status.get('pick_rows') or 0}")
-    print(f"order/article facts: {status.get('order_article_rows') or 0}")
-    print(f"order/supplier box facts: {status.get('order_supplier_rows') or 0}")
+    print(f"raw picklog rows: {status.get('pick_rows') or 0}")
+    print(f"raw item alias rows: {status.get('alias_rows') or 0}")
+    print(f"raw item attribute rows: {status.get('attribute_rows') or 0}")
     chunks = status.get("chunks") or {}
     if chunks:
         print("chunks: " + ", ".join(f"{key}={value}" for key, value in sorted(chunks.items())))
@@ -225,9 +225,9 @@ def _print_status(status: dict) -> None:
 def _print_build(prefix: str, build) -> None:
     print(prefix)
     print(f"business: {build.business_code}")
-    print(f"pick rows: {build.pick_rows}")
-    print(f"order/article facts: {build.order_article_rows}")
-    print(f"order/supplier box facts: {build.order_supplier_rows}")
+    print(f"raw picklog rows: {build.pick_rows}")
+    print(f"raw item alias rows: {build.alias_rows}")
+    print(f"raw item attribute rows: {build.attribute_rows}")
     print(
         "coverage: "
         f"{build.coverage_start.isoformat() if build.coverage_start else '-'}.."

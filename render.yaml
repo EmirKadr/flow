@@ -53,6 +53,8 @@ services:
         sync: false
       - key: MINIMAX_MODEL
         value: MiniMax-M2.7
+      - key: PUBLIC_DPAK_COMPANY_CODES
+        value: MG
       - key: TRACKING_ALLOW_VALUE_SAMPLES
         value: "false"
       - key: GEMINI_API_KEY

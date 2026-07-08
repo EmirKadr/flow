@@ -98,7 +98,9 @@ Den skriver `data/external_data_catalog.json`, som commitas så Render får kata
 
 Sidan `/dpak-fraga.html` är en fristående publik chatvy utan login och utan sidomeny. Den ska bara delas via direktlänk och kräver ingen token.
 
-Chatten använder serverns `MINIMAX_API_KEY` för formulering, så kunder behöver ingen egen nyckel och betalar inte för användningen. Alla siffror räknas först deterministiskt i backend från Postgres-tabellerna; MiniMax får bara formulera svaret och får inte hitta på eller ändra tal.
+Chatten använder serverns `MINIMAX_API_KEY`, så kunder behöver ingen egen nyckel och betalar inte för användningen. Publika chatten kör en server-side rådata-agent: MiniMax får samtalshistorik och kan använda verktyg för att lista underlagen, läsa exempelrader och köra säker read-only SQL mot exakt tre råtabeller i Postgres: `public_dpak_raw_picklog`, `public_dpak_raw_item_alias` och `public_dpak_raw_item_attribute`.
+
+Agenten får inte hämta Nowaste/ASK-data när kunden frågar. Den svarar bara från redan importerad rådata och beräknar saker som D-pak sålda, brutna, zon, AUTOSTORE, leverantör och låda vid frågetillfället från de tre underlagen.
 
 Picklogg-API:t fungerar inte från driftservern, så den tunga laddningen körs lokalt från en dator som når API:t. Kommandot skriver till databasen i `DATABASE_URL`, till exempel Render Postgres extern URL om produktionen ska fyllas. Servern hämtar aldrig pickloggar vid start och aldrig när kunden frågar.
 
@@ -110,7 +112,7 @@ python -m backend.public_dpak_sync --from-api --start 2025-07-01 --end 2026-07-0
 python -m backend.public_dpak_sync status
 ```
 
-Synken visar en terminal-progressbar med chunkantal, rader, tid och ETA. Den delar perioden enligt ASK-retention: gamla datum hämtas från `dblog_pick_log`, färska datum från `v_ask_pick_log_full`. Sätt `PUBLIC_DPAK_ARCHIVE_DUCKDB` eller `--archive-duckdb` för att läsa arkivdelen från lokal DuckDB-cache, samma idé som Produktivitet/Sankey använder när dblog-API:t är långsamt eller trasigt. `PUBLIC_DPAK_COMPANY_CODES` styr bolagsfilter och är `GG` som standard. Varje chunk sparas i Postgres med status och bygger sedan faktatabeller för snabba frågor. Om körningen avbryts ligger färdiga chunks kvar och nästa körning fortsätter. Använd `--force` för att hämta om redan klara chunks. `item_alias` och `item_attribute` läses från supportmappen; `--support-dir` kan användas i stället för env-variabeln.
+Synken visar en terminal-progressbar med chunkantal, rader, tid och ETA. Den delar perioden enligt ASK-retention: gamla datum hämtas från `dblog_pick_log`, färska datum från `v_ask_pick_log_full`. Sätt `PUBLIC_DPAK_ARCHIVE_DUCKDB` eller `--archive-duckdb` för att läsa arkivdelen från lokal DuckDB-cache, samma idé som Produktivitet/Sankey använder när dblog-API:t är långsamt eller trasigt. `PUBLIC_DPAK_COMPANY_CODES` styr bolagsfilter och är `MG` som standard. Varje chunk sparas som rå `picklog` i Postgres med status, och färdiga chunks återanvänds om körningen avbryts. Använd `--force` för att hämta om redan klara chunks. `item_alias` och `item_attribute` läses från supportmappen; `--support-dir` kan användas i stället för env-variabeln.
 
 Om terminalen saknar Nowaste/ASK-variablerna kan `--env-file` peka på en lokal env-fil som innehåller `DATA_SOURCE_*`-värdena:
 

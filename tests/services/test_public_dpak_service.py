@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -15,6 +16,8 @@ from app.backend.public_dpak_service import (
     answer_public_dpak_question,
     replace_public_dpak_dataset,
 )
+from app.backend.models import PublicDpakRawItemAlias, PublicDpakRawItemAttribute, PublicDpakRawPicklog
+from app.backend.public_dpak_agent import PublicDpakAgentError, run_public_dpak_agent, run_sql_tool
 from app.backend.routers import public_dpak
 
 
@@ -122,6 +125,8 @@ def _seed(session):
             "pick_pall_num": "B3",
         }
     ]
+    for row in live_rows + archive_rows:
+        row["company"] = "MG"
     replace_public_dpak_dataset(
         session,
         business_code="STIGAMO",
@@ -189,6 +194,101 @@ def test_public_dpak_top_broken_articles_and_dates():
         session.close()
 
 
+def test_public_dpak_raw_import_preserves_three_raw_files():
+    session = _session()
+    try:
+        _seed(session)
+        assert session.query(PublicDpakRawPicklog).count() == 6
+        assert session.query(PublicDpakRawItemAlias).count() == 3
+        assert session.query(PublicDpakRawItemAttribute).count() == 3
+
+        row = session.query(PublicDpakRawPicklog).first()
+        assert row.company == "MG"
+        assert row.data["company"] == "MG"
+        assert row.data["item_num"] == "100"
+    finally:
+        session.close()
+
+
+def test_public_dpak_raw_sql_tool_allows_only_raw_selects():
+    session = _session()
+    try:
+        _seed(session)
+        result = run_sql_tool(
+            session,
+            "STIGAMO",
+            "select company, count(*) as rows from public_dpak_raw_picklog "
+            "where business_code = 'STIGAMO' group by company",
+        )
+        assert result["rows"] == [{"company": "MG", "rows": 6}]
+
+        try:
+            run_sql_tool(session, "STIGAMO", "select * from users")
+        except PublicDpakAgentError as exc:
+            assert "råa D-pak-tabellerna" in str(exc)
+        else:
+            raise AssertionError("users table should be blocked")
+
+        try:
+            run_sql_tool(session, "STIGAMO", "drop table public_dpak_raw_picklog")
+        except PublicDpakAgentError as exc:
+            assert "SELECT" in str(exc) or "otillåtna" in str(exc)
+        else:
+            raise AssertionError("DDL should be blocked")
+
+        try:
+            run_sql_tool(session, "STIGAMO", "select * from public_dpak_raw_picklog p, users u")
+        except PublicDpakAgentError as exc:
+            assert "kommaseparerade" in str(exc)
+        else:
+            raise AssertionError("comma table joins should be blocked")
+    finally:
+        session.close()
+
+
+def test_public_dpak_agent_uses_tools_over_raw_data():
+    session = _session()
+    calls = []
+
+    def fake_model(payload):
+        calls.append(json.loads(payload["messages"][1]["content"]))
+        if len(calls) == 1:
+            return json.dumps({"type": "tool", "tool": "list_files", "args": {}})
+        if len(calls) == 2:
+            return json.dumps(
+                {
+                    "type": "tool",
+                    "tool": "run_sql",
+                    "args": {
+                        "sql": "select company, count(*) as rows from public_dpak_raw_picklog "
+                        "where business_code = 'STIGAMO' group by company"
+                    },
+                }
+            )
+        return json.dumps(
+            {
+                "type": "final",
+                "answer": "Underlaget jag ser innehåller bara MG.",
+                "table": [{"Bolag": "MG", "Rader": 6}],
+            },
+            ensure_ascii=False,
+        )
+
+    try:
+        _seed(session)
+        result = run_public_dpak_agent(
+            session,
+            messages=[{"role": "user", "content": "vilket bolag, är alla GG eller MG?"}],
+            business_code="STIGAMO",
+            call_model=fake_model,
+        )
+        assert "bara MG" in result["answer"]
+        assert result["table"] == [{"Bolag": "MG", "Rader": 6}]
+        assert calls[1]["tool_trace"][0]["tool_result"]["files"][0]["companies"] == ["MG"]
+    finally:
+        session.close()
+
+
 def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
     session = _session()
@@ -203,6 +303,47 @@ def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
         response = TestClient(app).get("/api/public/dpak-chat/status")
         assert response.status_code == 200
         assert response.json()["status"] == "missing"
+    finally:
+        session.close()
+
+
+def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    calls = []
+
+    def fake_model(payload):
+        calls.append(json.loads(payload["messages"][1]["content"]))
+        if len(calls) == 1:
+            return json.dumps({"type": "tool", "tool": "list_files", "args": {}})
+        return json.dumps(
+            {
+                "type": "final",
+                "answer": "Underlaget jag ser innehåller bara MG.",
+                "table": [{"Bolag": "MG"}],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(public_dpak, "_call_minimax", fake_model)
+    session = _session()
+    app = FastAPI()
+    app.include_router(public_dpak.router)
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[public_dpak.get_db] = override_db
+    try:
+        _seed(session)
+        response = TestClient(app).post(
+            "/api/public/dpak-chat/message",
+            json={"messages": [{"role": "user", "content": "vilket bolag är det?"}]},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert "bara MG" in payload["answer"]
+        assert payload["table"] == [{"Bolag": "MG"}]
     finally:
         session.close()
 
