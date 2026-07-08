@@ -1,38 +1,21 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
 import logging
-from pathlib import Path
-import re
-import threading
 import time
-from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from pydantic import BaseModel, Field
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from .. import audit
 from .. import allocation_bridge as bridge
-from ..business_scope import (
-    DEFAULT_BUSINESS_CODE,
-    assert_user_can_access_business,
-    business_id_from_area_focus,
-    normalize_business_id_param,
-    normalize_business_code,
-    user_business_id,
-    visible_business_id,
-)
-from ..coredata_service import CoreDataError, find_coredata_file
 from ..deps import get_db, require_allocation_tools_user, require_any_view_access, require_view_access
-from ..models import AllocationUserFilterProfile, Area, Business, User
-from ..observability import add_span_attributes, start_span
-from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY, get_json_setting, get_role_view_access, set_json_setting
-from ..user_access import can_access_view, can_use_allocation_process, is_super_user
-from ..workflow_data import WorkflowDataError, allocation_api_source_map, resolve_sources, source_public_metadata
+from ..models import User
+from ..observability import add_span_attributes, emit_flow_event, start_span
+from ..settings_service import ALLOCATION_PROCESS_MATRIX_KEY
+from ..user_access import can_use_allocation_process
+from ..workflow_data import WorkflowDataError
 
 
 from . import allocation_helpers
@@ -401,6 +384,7 @@ async def run_flow(
     user: User = Depends(require_allocation_tools_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    operation_started = time.perf_counter()
     add_span_attributes({"allocation.flow_id": flow_id})
     allocation_helpers._assert_flow_allowed(flow_id, user, allocation_helpers._role_access_for_user(db, user))
     try:
@@ -413,7 +397,35 @@ async def run_flow(
                 "allocation.param_key_count": len([key for key in params if not str(key).startswith("__")]),
                 "allocation.area_focus": area_focus or "ALLT",
             })
+            emit_flow_event(
+                "flow.allocation.run",
+                feature="allocation",
+                outcome="started",
+                event_alias="allocation_run",
+                logger_=logger,
+                attributes={
+                    "flow_id": flow_id,
+                    "area_focus": area_focus or "ALLT",
+                    "file_key_count": len(files),
+                    "param_key_count": len([key for key in params if not str(key).startswith("__")]),
+                },
+            )
     except Exception as exc:
+        emit_flow_event(
+            "flow.allocation.run",
+            feature="allocation",
+            outcome="failed",
+            level=logging.ERROR,
+            event_alias="allocation_run",
+            logger_=logger,
+            attributes={
+                "flow_id": flow_id,
+                "phase": "parse_upload",
+                "error.type": type(exc).__name__,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            exc_info=True,
+        )
         allocation_helpers._audit_allocation_event(
             db,
             user,
@@ -542,9 +554,43 @@ async def run_flow(
                 source_status=source_status,
             ),
         )
+        emit_flow_event(
+            "flow.allocation.run",
+            feature="allocation",
+            outcome="ok",
+            event_alias="allocation_run",
+            logger_=logger,
+            attributes={
+                "flow_id": flow_id,
+                "area_focus": area_focus or "ALLT",
+                "business_scope": business_code or "",
+                "table_count": len(result.get("tables") or []),
+                "has_session": bool(result.get("session_id")),
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+        )
         return result
     except Exception as exc:
         error_fields = allocation_helpers._exception_audit_fields(exc)
+        status_code = error_fields["status_code"] or 500
+        emit_flow_event(
+            "flow.allocation.run",
+            feature="allocation",
+            outcome="blocked" if status_code < 500 else "failed",
+            level=logging.WARNING if status_code < 500 else logging.ERROR,
+            event_alias="allocation_run",
+            logger_=logger,
+            attributes={
+                "flow_id": flow_id,
+                "area_focus": area_focus or "ALLT",
+                "business_scope": business_code or "",
+                "error.type": error_fields["error_type"],
+                "error.code": error_fields["error_code"],
+                "http_status_code": status_code,
+                "duration_ms": round((time.perf_counter() - operation_started) * 1000, 2),
+            },
+            exc_info=status_code >= 500,
+        )
         allocation_helpers._audit_allocation_event(
             db,
             user,

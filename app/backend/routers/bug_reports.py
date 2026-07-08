@@ -25,6 +25,7 @@ from ..business_scope import visible_business_id
 from ..config import settings
 from ..deps import get_current_user, get_db, require_view_access
 from ..models import BugReport, User
+from ..observability import normalize_operation_id, normalize_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,22 @@ def _sanitized_context(raw: dict | None) -> dict | None:
     if len(text) > _CONTEXT_CHAR_LIMIT:
         return {"truncated": True, "note": "Kontexten var för stor och utelämnades."}
     return raw
+
+
+def _trace_context_from_bug_report(raw: dict | None) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    nested = raw.get("flow_trace_context")
+    if not isinstance(nested, dict):
+        return {}
+    result: dict[str, str] = {}
+    trace_id = normalize_trace_id(nested.get("trace_id"))
+    operation_id = normalize_operation_id(nested.get("operation_id"))
+    if trace_id:
+        result["trace_id"] = trace_id
+    if operation_id:
+        result["operation_id"] = operation_id
+    return result
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -109,6 +126,7 @@ def create_bug_report(
         events_bytes=events_bytes,
         context=_sanitized_context(payload.context),
     )
+    trace_context = _trace_context_from_bug_report(report.context)
     db.add(report)
     db.flush()
     audit_log(
@@ -123,6 +141,7 @@ def create_bug_report(
             "note_chars": len(report.note or ""),
             "events_bytes": events_bytes,
             "event_count": len(events),
+            **trace_context,
         },
         user_id=user.id,
         business_id=report.business_id,

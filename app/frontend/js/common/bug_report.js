@@ -13,6 +13,7 @@
 // Integritet: inspelningen visar bara det användaren själv såg i appen,
 // lösenordsfält maskas alltid, och ingen inspelning startar utan OK i popupen.
 (function () {
+  if (window.flowBugReport?.__moduleLoaded) return;
   const RECORD_SECONDS = 30;
   const VENDOR_SRC = "/js/vendor/rrweb.min.js";
   const SESSION_KEY = "flow-bug-report-session";
@@ -211,6 +212,7 @@
       context: {
         console_errors: state.consoleErrors,
         js_errors: state.jsErrors.slice(0, 20),
+        flow_trace_context: window.flowLastTraceContext || null,
         user_agent: String(navigator.userAgent || "").slice(0, 200),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
       },
@@ -304,6 +306,7 @@
   }
 
   window.flowBugReport = {
+    __moduleLoaded: true,
     open: openConsentModal,
     isRecording: () => Boolean(state.stop),
   };

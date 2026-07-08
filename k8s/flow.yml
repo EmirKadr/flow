@@ -150,10 +150,20 @@ spec:
               value: "flow-web"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "#{OPENTELEMETRY_URL}/v1/traces"
+            - name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+              value: "#{OPENTELEMETRY_URL}/v1/logs"
             - name: OTEL_EXPORTER_OTLP_HEADERS
               value: "X-Seq-ApiKey=#{OPENTELEMETRY_TOKEN}"
             - name: OTEL_TRACES_SAMPLE_RATE
               value: "0.5"
+            - name: OTEL_LOGS_ENABLED
+              value: "true"
+            - name: OTEL_LOG_LEVEL
+              value: "INFO"
+            - name: OTEL_REQUEST_LOG_ENABLED
+              value: "true"
+            - name: OTEL_SQLALCHEMY_ENABLED
+              value: "false"
           volumeMounts:
             - name: flow-data
               mountPath: /repo/data

@@ -1,11 +1,39 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-06
+updated: 2026-07-08
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-08] fix | Buggrapport-inspelning tål dubbel modul-load
+
+`common/bug_report.js` har nu en idempotensspärr så lazy/eager-laddning av
+buggrapportmodulen inte kan skriva över en redan aktiv `window.flowBugReport`
+efter sidbyte. Det skyddar inspelning som fortsätter mellan sidor och tar bort
+en fullsvit-race där indikatorn syntes men `isRecording()` hade blivit false.
+
+## [2026-07-08] observability | Seq far operation-id och domanhandelser
+
+Seq-handelserna har utokats med `operation.id` fran frontend till backend,
+response-headern `X-Flow-Operation-Id` och dokumentloggens
+`Felsoknings-ID`. Client-error, vantetider, interaction-events och
+buggrapporter bar samma sanerade korrelations-id. Hogvarde-floden loggar nu
+egna events for `allocation_run`, `data_fetch_run`, `meta_upload` och
+`meta_analyze` med `outcome=started|ok|blocked|failed`, duration, statuskod,
+feltyp och raknare utan filnamn, sokvagar, request bodies eller privata varden.
+Dokumenterat i `history-audit.md`.
+
+## [2026-07-08] observability | Flow blir lattare att folja i Seq
+
+Backendens OTel-konfiguration exporterar nu sanerade Python-loggar till Seq via
+`/v1/logs` nar `OTEL_LOGS_ENABLED=true`. API-anrop far egna sokbara events med
+`flow_event=http_request`, metod, route, status, duration, endpointgrupp och
+`flow_trace_id`; querystring/request body/cookies/filnamn loggas inte. K8s-mallen
+satter `OTEL_REQUEST_LOG_ENABLED=true`, `OTEL_LOG_LEVEL=INFO` och stanger av
+SQLAlchemy-autospans med `OTEL_SQLALCHEMY_ENABLED=false` sa `SELECT flow` inte
+dominerar Seq-vyn. Dokumenterat i `history-audit.md`.
 
 ## [2026-07-08] feature | Meta: byt status och radera rader i sandningsanalysen
 

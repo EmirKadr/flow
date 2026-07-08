@@ -81,21 +81,37 @@ def login(client, username):
     return client
 
 
-def create_report(client, note="Knappen dog", events=EVENTS):
+def create_report(client, note="Knappen dog", events=EVENTS, context=None):
     return client.post(
         "/api/bug-reports",
-        json={"events_json": events, "note": note, "view_id": "schedule", "page_path": "/index.html"},
+        json={
+            "events_json": events,
+            "note": note,
+            "view_id": "schedule",
+            "page_path": "/index.html",
+            "context": context,
+        },
     )
 
 
 def test_create_list_play_and_status_flow(client, db_session):
     login(client, "anna")
-    created = create_report(client)
+    created = create_report(
+        client,
+        context={
+            "flow_trace_context": {
+                "trace_id": "1234567890abcdef1234567890abcdef",
+                "operation_id": "bug-report-123456",
+            }
+        },
+    )
     assert created.status_code == 201, created.text
     report_id = created.json()["id"]
 
     audit_row = db_session.query(AuditLog).filter_by(entity_type="bug_report", action="create").one()
     assert audit_row.new_value["event_count"] == 2
+    assert audit_row.new_value["trace_id"] == "1234567890abcdef1234567890abcdef"
+    assert audit_row.new_value["operation_id"] == "bug-report-123456"
     assert "events_json" not in str(audit_row.new_value)
 
     # Vanlig användare utan bugReports-vy kan inte lista (superuser kan).

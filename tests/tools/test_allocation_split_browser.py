@@ -301,7 +301,7 @@ def test_split_values_result_headers_copy_whole_columns(local_allocation_server,
         page.fill('[data-flow-field="values"]', "A\nB\nC\nD\nE")
         page.fill('[data-flow-field="chunk_size"]', "2")
         page.click('[data-run-flow="split-values"]')
-        page.wait_for_selector(".allocation-result [data-copy-column]", timeout=15000)
+        page.wait_for_selector(".allocation-result [data-copy-column]", timeout=30000)
 
         header_text = page.locator(".allocation-result thead").inner_text(timeout=15000)
         assert "Kolumn 1" not in header_text

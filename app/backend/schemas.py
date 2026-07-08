@@ -629,7 +629,7 @@ class AuditClientErrorIn(BaseModel):
     detail: Any | None = None
     page_path: str | None = Field(default=None, max_length=300)
     trace_id: str | None = Field(default=None, max_length=32)
-
+    operation_id: str | None = Field(default=None, max_length=80)
 
 class AuditClientEventIn(BaseModel):
     event_type: str = Field(max_length=80)

@@ -2642,6 +2642,8 @@ export interface components {
              * @default GET
              */
             method: string;
+            /** Operation Id */
+            operation_id?: string | null;
             /** Page Path */
             page_path?: string | null;
             /** Path */
