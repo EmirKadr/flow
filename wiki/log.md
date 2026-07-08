@@ -7,6 +7,22 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-08] feature | Meta: byt status och radera rader i sandningsanalysen
+
+Super User kan nu i `meta.html` byta `analysis_status` per rad via en dropdown
+(alla sju statusar) och radera en rad helt. Radering oppnar en bekraftelsemodal
+och tar bort hela videon och alla spar: sandningsraden, videoblobben ur
+MediaStore (om ingen annan rad delar innehallshashen) och etikettreferenser.
+
+- Backend: nytt `PATCH /api/meta/shipment-observations/{observation_id}/status`
+  (`EDITABLE_SHIPMENT_STATUSES`, audit `update_status`). Delete-endpointen fanns
+  redan (`DELETE /api/meta/uploads/{upload_id}`) och gjorde redan full radering.
+- Frontend: status-dropdown + papperskorg-knapp i atgardskolumnen, delete-modal
+  enligt dialogregeln (`meta.js`, ny `.meta-status-select` i `styles.css`).
+- Desktop far andringen automatiskt (PyQt-WebEngine laddar samma frontend).
+- Test: `test_super_user_can_change_shipment_status_and_audit` (24 grona).
+- Dokumenterat i `wiki/meta-upload.md` (kontroll-tabell + endpoints).
+
 ## [2026-07-06] ingest | Apphjalpen far read-only-tools (function calling mot live-data)
 
 Ny sida `assistant-tools.md`; `app-chat.md` och `index.md` uppdaterade. Nytt

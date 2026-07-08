@@ -22,6 +22,19 @@ const SHIPMENT_STATUS_LABELS = {
   pending_analysis: "Väntar",
 };
 
+// Ordning i status-dropdownen: de vanliga mänskliga besluten först, sedan
+// system-/pipelinestatusar. Måste matcha EDITABLE_SHIPMENT_STATUSES i
+// app/backend/routers/meta_uploads.py.
+const SHIPMENT_STATUS_OPTIONS = [
+  "analyzed",
+  "manual_review",
+  "queued",
+  "pending_analysis",
+  "analyzing",
+  "analysis_failed",
+  "needs_configuration",
+];
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]
@@ -144,6 +157,72 @@ async function analyzeShipmentVideo(item, button = null) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+async function changeShipmentStatus(item, newStatus, select = null) {
+  if (!item?.id || !newStatus || newStatus === item.analysis_status) return;
+  const previous = item.analysis_status || "pending_analysis";
+  if (select) select.disabled = true;
+  try {
+    await api.patch(
+      `/api/meta/shipment-observations/${encodeURIComponent(item.id)}/status`,
+      { status: newStatus },
+      { logLabel: "Meta-status" }
+    );
+    showToast(`Status ändrad till ${statusLabel(newStatus)}.`, "success", 2500);
+    await loadMetaItems(false);
+  } catch (error) {
+    showToast(error.message || "Kunde inte ändra status.", "error", 7000);
+    if (select) select.value = previous;
+    if (select) select.disabled = false;
+  }
+}
+
+function confirmDeleteShipment(item) {
+  if (!item?.media_upload_id) return;
+  document.getElementById("meta-delete-backdrop")?.remove();
+  const videoTitle = item.video_filename || `Video ${item.media_upload_id}`;
+  const backdrop = document.createElement("div");
+  backdrop.id = "meta-delete-backdrop";
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="meta-delete-title">
+      <h3 id="meta-delete-title">Radera video permanent</h3>
+      <p>${escapeHtml(videoTitle)} och alla spår (sändningsrad, videofil och stillbild) tas bort permanent. Detta går inte att ångra.</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="meta-delete-cancel">Avbryt</button>
+        <button type="button" class="danger" id="meta-delete-confirm">Radera</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  document.getElementById("meta-delete-cancel")?.addEventListener("click", () => backdrop.remove());
+  document.getElementById("meta-delete-confirm")?.addEventListener("click", () => {
+    backdrop.remove();
+    void deleteShipmentUpload(item);
+  });
+}
+
+async function deleteShipmentUpload(item) {
+  if (!item?.media_upload_id) return;
+  try {
+    await api.del(`/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}`);
+    showToast("Videon och alla spår raderades.", "success", 2500);
+    await loadMetaItems(false);
+  } catch (error) {
+    showToast(error.message || "Kunde inte radera videon.", "error", 7000);
+  }
+}
+
+function statusSelect(item) {
+  const current = item.analysis_status || "pending_analysis";
+  const values = SHIPMENT_STATUS_OPTIONS.includes(current)
+    ? SHIPMENT_STATUS_OPTIONS
+    : [current, ...SHIPMENT_STATUS_OPTIONS];
+  const options = values
+    .map((value) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(statusLabel(value))}</option>`)
+    .join("");
+  return `<select class="meta-status-select" data-status-for="${escapeHtml(item.id)}" title="Byt status" aria-label="Byt status">${options}</select>`;
 }
 
 function renderSummary() {
@@ -312,9 +391,11 @@ function renderShipmentRows() {
         <td class="meta-admin-hash" title="${escapeHtml(hashTitle)}">${escapeHtml(shortHash(item.record_hash) || "-")}</td>
         <td>
           <div class="meta-admin-table-actions">
+            ${statusSelect(item)}
             ${iconButton({ dataset: { "download-shipment-video": item.id }, label: videoDownloadLabel, icon: "↓", disabled: !item.video_url })}
             ${iconButton({ dataset: { "download-shipment-label": item.id }, label: labelDownloadLabel, icon: "▧", disabled: !item.label_still_url })}
             ${iconButton({ className: "primary", dataset: { "analyze-upload": item.id }, label: "Analysera", icon: "AI", disabled: status === "analyzing" })}
+            ${iconButton({ className: "danger", dataset: { "delete-upload": item.id }, label: "Radera video permanent", icon: "🗑", disabled: !item.media_upload_id })}
           </div>
         </td>
       </tr>
@@ -337,6 +418,19 @@ function renderShipmentRows() {
     button.addEventListener("click", () => {
       const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.analyzeUpload));
       void analyzeShipmentVideo(item, button);
+    });
+  });
+  tbody.querySelectorAll("[data-delete-upload]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.deleteUpload));
+      confirmDeleteShipment(item);
+    });
+  });
+  tbody.querySelectorAll("[data-status-for]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const element = /** @type {HTMLSelectElement} */ (select);
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(element.dataset.statusFor));
+      void changeShipmentStatus(item, element.value, element);
     });
   });
 }

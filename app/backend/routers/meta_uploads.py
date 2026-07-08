@@ -21,6 +21,7 @@ import time
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
@@ -85,6 +86,24 @@ from .meta_uploads_helpers import (  # noqa: F401
 
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 logger = logging.getLogger(__name__)
+
+# Statusar en Super User får sätta manuellt på en sändningsrad. Speglar
+# SHIPMENT_STATUS_LABELS i app/frontend/js/meta.js — håll dem i synk.
+EDITABLE_SHIPMENT_STATUSES = frozenset(
+    {
+        "pending_analysis",
+        "needs_configuration",
+        "queued",
+        "analyzing",
+        "analyzed",
+        "manual_review",
+        "analysis_failed",
+    }
+)
+
+
+class ShipmentStatusUpdate(BaseModel):
+    status: str
 
 @router.post("/uploads", status_code=status.HTTP_201_CREATED)
 async def upload_meta_media(
@@ -375,6 +394,41 @@ def analyze_meta_media_upload(
         "item": _shipment_observation_out(row),
         "status": row.analysis_status,
         "message": row.analysis_error,
+    }
+
+
+@router.patch("/shipment-observations/{observation_id}/status")
+def update_meta_shipment_status(
+    observation_id: int,
+    payload: ShipmentStatusUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_user),
+) -> dict:
+    row = db.get(MetaShipmentObservation, observation_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Sändningsraden hittades inte.")
+    new_status = (payload.status or "").strip()
+    if new_status not in EDITABLE_SHIPMENT_STATUSES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ogiltig status.")
+    old_status = row.analysis_status
+    if new_status != old_status:
+        row.analysis_status = new_status
+        db.flush()
+        audit_log(
+            db,
+            entity_type="meta_shipment_observation",
+            entity_id=row.id,
+            action="update_status",
+            old_value={"analysis_status": old_status},
+            new_value={"analysis_status": new_status},
+            user_id=user.id,
+            business_id=None,
+        )
+        db.commit()
+        db.refresh(row)
+    return {
+        "item": _shipment_observation_out(row),
+        "status": row.analysis_status,
     }
 
 

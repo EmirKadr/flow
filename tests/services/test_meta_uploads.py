@@ -1013,6 +1013,76 @@ def test_super_user_can_delete_meta_uploads_and_audit_without_blob():
         engine.dispose()
 
 
+def test_super_user_can_change_shipment_status_and_audit():
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-status",
+        original_filename="etikettfilm.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="d" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"status-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    shipment = MetaShipmentObservation(
+        media_upload_id=row.id,
+        video_hash=row.content_hash,
+        record_hash="e" * 64,
+        pallet_id="PALL-9",
+        deviations=[],
+        analysis_status="manual_review",
+    )
+    session.add(shipment)
+    session.commit()
+    session.refresh(shipment)
+    observation_id = shipment.id
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/meta/shipment-observations/{observation_id}/status",
+            json={"status": "analyzed"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "analyzed"
+        assert response.json()["item"]["analysis_status"] == "analyzed"
+        session.expire_all()
+        assert session.get(MetaShipmentObservation, observation_id).analysis_status == "analyzed"
+        audit = session.query(AuditLog).filter_by(
+            entity_type="meta_shipment_observation", action="update_status"
+        ).one()
+        assert audit.entity_id == observation_id
+        assert audit.old_value["analysis_status"] == "manual_review"
+        assert audit.new_value["analysis_status"] == "analyzed"
+
+        rejected = client.patch(
+            f"/api/meta/shipment-observations/{observation_id}/status",
+            json={"status": "not-a-real-status"},
+        )
+        assert rejected.status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_non_super_user_cannot_list_meta_uploads(monkeypatch):
     monkeypatch.setattr(settings, "SUPER_USER_USERNAMES", "admin,emikad")
     engine, session = make_session()

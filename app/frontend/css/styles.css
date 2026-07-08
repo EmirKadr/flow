@@ -4554,6 +4554,23 @@ body.dragging-ov select { pointer-events: none; }
   white-space: nowrap;
 }
 
+.meta-status-select {
+  height: 34px;
+  max-width: 132px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.meta-status-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .meta-status-pill {
   display: inline-flex;
   align-items: center;
