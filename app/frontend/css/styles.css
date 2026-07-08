@@ -6051,13 +6051,13 @@ body.demo-mode .sidebar { box-shadow: inset 3px 0 0 0 #dc2626; }
 }
 
 .public-dpak-logos img:first-child {
-  height: 30px;
-  max-width: 118px;
+  height: 34px;
+  max-width: 44px;
 }
 
 .public-dpak-logos img:last-child {
-  height: 23px;
-  max-width: 190px;
+  height: 24px;
+  max-width: 240px;
 }
 
 .public-dpak-logos span {
@@ -6380,13 +6380,13 @@ body.public-dpak-modal-open {
   }
 
   .public-dpak-logos img:first-child {
-    height: 25px;
-    max-width: 98px;
+    height: 30px;
+    max-width: 38px;
   }
 
   .public-dpak-logos img:last-child {
-    height: 19px;
-    max-width: 160px;
+    height: 20px;
+    max-width: 200px;
   }
 
   .public-dpak-logos span {
