@@ -1,6 +1,6 @@
 """public dpak raw agent tables
 
-Revision ID: 0049_public_dpak_raw_agent_tables
+Revision ID: 0049_dpak_raw_agent
 Revises: 0048_public_dpak_chat
 Create Date: 2026-07-08
 """
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 
-revision: str = "0049_public_dpak_raw_agent_tables"
+revision: str = "0049_dpak_raw_agent"
 down_revision: Union[str, None] = "0048_public_dpak_chat"
 branch_labels: Union[str, tuple[str, ...], None] = None
 depends_on: Union[str, tuple[str, ...], None] = None
