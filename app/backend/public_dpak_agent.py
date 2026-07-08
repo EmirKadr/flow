@@ -283,11 +283,10 @@ def _extract_json(raw: str) -> dict[str, Any]:
         text_value = re.sub(r"^```(?:json)?\s*", "", text_value, flags=re.IGNORECASE)
         text_value = re.sub(r"\s*```$", "", text_value)
     start = text_value.find("{")
-    end = text_value.rfind("}")
-    if start == -1 or end == -1 or end < start:
+    if start == -1:
         raise PublicDpakAgentError("MiniMax returnerade inte JSON.")
     try:
-        parsed = json.loads(text_value[start : end + 1])
+        parsed, _end = json.JSONDecoder().raw_decode(text_value[start:])
     except json.JSONDecodeError as exc:
         raise PublicDpakAgentError("MiniMax returnerade ogiltig JSON.") from exc
     if not isinstance(parsed, dict):
@@ -324,6 +323,7 @@ När du är klar:
 {"type":"final","answer":"kort svenskt svar","table":[{"Kolumn":"värde"}]}
 
 Regler:
+- Returnera exakt ett JSON-objekt per svar. Gör bara ett verktygsanrop åt gången.
 - Använd bara tabellerna public_dpak_raw_picklog, public_dpak_raw_item_alias och public_dpak_raw_item_attribute.
 - Filtrera business_code när du skriver SQL.
 - Använd COUNT/GROUP BY för totalsiffror.
