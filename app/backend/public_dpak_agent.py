@@ -283,7 +283,7 @@ def run_sql_tool(db: Session, business_code: str, sql: str, max_rows: int | None
     statement = validate_raw_sql(sql)
     row_limit = max(1, min(int(max_rows or MAX_SQL_ROWS), 200))
     if db.get_bind() is not None and db.get_bind().dialect.name == "postgresql":
-        db.execute(text("SET LOCAL statement_timeout = '45s'"))
+        db.execute(text("SET LOCAL statement_timeout = '90s'"))
     wrapped = f"SELECT * FROM ({statement}) AS public_dpak_agent_query LIMIT :__limit"
     result = db.execute(text(wrapped), {"__limit": row_limit})
     rows = [dict(row) for row in result.mappings().all()]
@@ -351,6 +351,55 @@ SELECT
   SUM(broken) AS broken,
   ROUND((SUM(whole_picked)::numeric / NULLIF(SUM(dpack_sold), 0)) * 100, 2) AS whole_share_pct
 FROM calc
+""".strip(),
+            },
+            {
+                "name": "top_broken_articles_by_supplier",
+                "description": "Mall för artiklar från en leverantör som bryts oftast. Byt supplier-filtret, t.ex. '%bostik%'.",
+                "sql": """
+WITH factors AS (
+  SELECT item_num, MIN(factor) AS factor
+  FROM public_dpak_raw_item_alias
+  WHERE business_code = 'STIGAMO'
+    AND factor > 1
+    AND COALESCE(UPPER(unit), '') <> 'PAL'
+  GROUP BY item_num
+), suppliers AS (
+  SELECT item_num, MAX(value) AS supplier
+  FROM public_dpak_raw_item_attribute
+  WHERE business_code = 'STIGAMO'
+    AND name = 'LastSupplierName'
+    AND value ILIKE '%bostik%'
+  GROUP BY item_num
+), order_article AS (
+  SELECT
+    p.order_num,
+    p.item_num,
+    MAX(p.item_desc) AS item_desc,
+    MAX(s.supplier) AS supplier,
+    FLOOR(SUM(COALESCE(p.qty_suf, 0)) / NULLIF(MAX(f.factor), 0))::bigint AS dpack_sold,
+    SUM(FLOOR(COALESCE(p.qty_suf, 0) / NULLIF(f.factor, 0)))::bigint AS whole_picked
+  FROM public_dpak_raw_picklog p
+  JOIN factors f ON f.item_num = p.item_num
+  JOIN suppliers s ON s.item_num = p.item_num
+  WHERE p.business_code = 'STIGAMO'
+  GROUP BY p.order_num, p.item_num
+), calc AS (
+  SELECT *, GREATEST(dpack_sold - whole_picked, 0) AS broken
+  FROM order_article
+  WHERE dpack_sold > 0
+)
+SELECT
+  item_num,
+  MAX(item_desc) AS item_desc,
+  MAX(supplier) AS supplier,
+  SUM(broken) AS unnecessary_broken,
+  COUNT(*) FILTER (WHERE broken > 0) AS broken_order_articles
+FROM calc
+WHERE broken > 0
+GROUP BY item_num
+ORDER BY unnecessary_broken DESC, broken_order_articles DESC
+LIMIT 20
 """.strip(),
             }
         ],

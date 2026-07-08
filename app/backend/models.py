@@ -321,6 +321,14 @@ class PublicDpakRawPicklog(Base):
         Index("ix_public_dpak_raw_pick_business_order", "business_code", "order_num"),
         Index("ix_public_dpak_raw_pick_business_item", "business_code", "item_num"),
         Index("ix_public_dpak_raw_pick_business_location", "business_code", "location"),
+        Index("ix_public_dpak_raw_pick_business_item_order", "business_code", "item_num", "order_num"),
+        Index(
+            "ix_public_dpak_raw_pick_business_location_order_item",
+            "business_code",
+            "location",
+            "order_num",
+            "item_num",
+        ),
         Index("ix_public_dpak_raw_pick_business_box", "business_code", "pick_pall_num"),
         Index("ix_public_dpak_raw_pick_business_source", "business_code", "source_view"),
     )
