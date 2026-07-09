@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -356,12 +357,31 @@ def _extract_json_candidate(payload: Any) -> dict:
 
 
 def _gemini_base_url() -> str:
-    return settings.GEMINI_API_BASE_URL.strip().rstrip("/") or "https://generativelanguage.googleapis.com"
+    base = settings.GEMINI_API_BASE_URL.strip().rstrip("/")
+    # Osubstituerade deploy-platshållare ("#{GEMINI_API_BASE_URL}") och annat
+    # som inte är http(s) ska falla tillbaka på standard-URL:en, inte krascha.
+    if not base.lower().startswith(("https://", "http://")):
+        return "https://generativelanguage.googleapis.com"
+    return base
 
 
 def _gemini_url(path: str, query: dict[str, str] | None = None) -> str:
-    params = {"key": settings.GEMINI_API_KEY.strip(), **(query or {})}
-    return f"{_gemini_base_url()}{path}?{urllib.parse.urlencode(params)}"
+    url = f"{_gemini_base_url()}{path}"
+    return f"{url}?{urllib.parse.urlencode(query)}" if query else url
+
+
+def _gemini_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    # Nyckeln i header (som mcp/chat.py), aldrig i URL:en — URL:er hamnar i
+    # undantagstexter, spans och loggar.
+    return {"x-goog-api-key": settings.GEMINI_API_KEY.strip(), **(extra or {})}
+
+
+def _scrub_secrets(text: str) -> str:
+    """Maska API-nyckeln i text som sparas/visas (analysis_error, toasts)."""
+    key = settings.GEMINI_API_KEY.strip()
+    if key:
+        text = text.replace(key, "***")
+    return re.sub(r"(key=)[A-Za-z0-9_\-]+", r"\1***", text)
 
 
 def _request_json(request: urllib.request.Request, *, timeout: int) -> dict:
@@ -407,13 +427,13 @@ def _gemini_upload_video_file(upload: MetaMediaUpload) -> dict:
         _gemini_url("/upload/v1beta/files"),
         data=json.dumps(metadata, ensure_ascii=False).encode("utf-8"),
         method="POST",
-        headers={
+        headers=_gemini_headers({
             "Content-Type": "application/json",
             "X-Goog-Upload-Protocol": "resumable",
             "X-Goog-Upload-Command": "start",
             "X-Goog-Upload-Header-Content-Length": str(size),
             "X-Goog-Upload-Header-Content-Type": upload.content_type,
-        },
+        }),
     )
     with start_span("external.gemini.upload_start", {"external.provider": "gemini", "meta.media_size_bytes": size}):
         try:
@@ -460,13 +480,13 @@ def _gemini_upload_audio(upload: MetaMediaUpload) -> dict:
             _gemini_url("/upload/v1beta/files"),
             data=json.dumps(metadata, ensure_ascii=False).encode("utf-8"),
             method="POST",
-            headers={
+            headers=_gemini_headers({
                 "Content-Type": "application/json",
                 "X-Goog-Upload-Protocol": "resumable",
                 "X-Goog-Upload-Command": "start",
                 "X-Goog-Upload-Header-Content-Length": str(audio.size_bytes),
                 "X-Goog-Upload-Header-Content-Type": audio.content_type,
-            },
+            }),
         )
         with start_span("external.gemini.upload_start", {"external.provider": "gemini", "meta.media_size_bytes": audio.size_bytes}):
             try:
@@ -506,7 +526,7 @@ def _gemini_get_file(name: str) -> dict:
     if not safe_name:
         raise MetaAnalysisFailed("Gemini-fil saknade namn.")
     return _request_json(
-        urllib.request.Request(_gemini_url(f"/v1beta/{safe_name}"), method="GET"),
+        urllib.request.Request(_gemini_url(f"/v1beta/{safe_name}"), method="GET", headers=_gemini_headers()),
         timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS,
     )
 
@@ -555,7 +575,7 @@ def _gemini_generate_content(file_info: dict) -> dict:
         _gemini_url(f"/v1beta/models/{urllib.parse.quote(gemini_model_name(), safe='')}:generateContent"),
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         method="POST",
-        headers={"Content-Type": "application/json"},
+        headers=_gemini_headers({"Content-Type": "application/json"}),
     )
     return _request_json(request, timeout=settings.META_ANALYSIS_TIMEOUT_SECONDS)
 
@@ -849,7 +869,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
         if observation is None:
             raise
         observation.analysis_status = "analysis_failed"
-        observation.analysis_error = str(exc)
+        observation.analysis_error = _scrub_secrets(str(exc))
         refresh_record_hash(observation)
         db.commit()
         db.refresh(observation)
@@ -865,7 +885,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
         if observation is None:
             raise
         observation.analysis_status = "analysis_failed"
-        observation.analysis_error = f"Oväntat fel vid analys: {type(exc).__name__}: {exc}"[:2000]
+        observation.analysis_error = _scrub_secrets(f"Oväntat fel vid analys: {type(exc).__name__}: {exc}")[:2000]
         refresh_record_hash(observation)
         db.commit()
         db.refresh(observation)

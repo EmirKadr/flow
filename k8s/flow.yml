@@ -101,8 +101,12 @@ spec:
               value: "#{GEMINI_API_KEY}"
             - name: GEMINI_MODEL
               value: "gemini-2.5-pro"
+            # Ej hemlig och samma i alla miljöer — hårdkodad i stället för
+            # Octopus-variabel. En platshållare vars variabel saknas i Octopus
+            # lämnas ordagrant kvar i manifestet och blev 2026-07-09 ett
+            # "riktigt" settings-värde som kraschade varje meta-videoanalys.
             - name: GEMINI_API_BASE_URL
-              value: "#{GEMINI_API_BASE_URL}"
+              value: "https://generativelanguage.googleapis.com"
             - name: RFID_DEVICE_TOKEN
               value: "#{RFID_DEVICE_TOKEN}"
             - name: DATA_SOURCE_API_BASE_URL
@@ -182,6 +186,10 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
+            # Default (1s) är för snålt med CPU-limit 300m: en ffmpeg-körning
+            # (meta-analys/transkodning) CFS-stryper hela cgroupen och en
+            # tillfälligt långsam proba får annars kubelet att döda podden.
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /api/health
@@ -189,6 +197,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
             failureThreshold: 6
+            timeoutSeconds: 5
       volumes:
         - name: flow-data
           persistentVolumeClaim:

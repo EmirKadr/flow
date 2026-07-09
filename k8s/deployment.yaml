@@ -64,6 +64,8 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
+            # Tål korta CPU-toppar (t.ex. ffmpeg i meta-analysen) utan pod-kill.
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /api/health
@@ -71,6 +73,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
             failureThreshold: 6
+            timeoutSeconds: 5
       volumes:
         - name: flow-data
           persistentVolumeClaim:
