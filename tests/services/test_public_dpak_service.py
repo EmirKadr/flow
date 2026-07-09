@@ -318,9 +318,8 @@ def test_public_dpak_status_endpoint_does_not_require_login(monkeypatch):
 
 def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "DEEPSEEK_API_KEY", "")
     monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "")
     calls = []
 
     def fake_model(payload):
@@ -362,9 +361,8 @@ def test_public_dpak_message_endpoint_uses_raw_agent_without_token(monkeypatch):
 
 def test_public_dpak_message_endpoint_accepts_voice_attachment(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
+    monkeypatch.setattr(public_dpak.settings, "DEEPSEEK_API_KEY", "")
     monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "")
     calls = []
 
     def fake_model(payload):
@@ -443,20 +441,20 @@ def test_public_dpak_message_endpoint_rejects_non_audio_voice(monkeypatch):
         session.close()
 
 
-def test_public_dpak_message_endpoint_uses_configured_agent_model(monkeypatch):
+def test_public_dpak_message_endpoint_uses_deepseek_pro_when_configured(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "agent-key")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "test-agent-model")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_TEMPERATURE", "")
+    monkeypatch.setattr(public_dpak.settings, "DEEPSEEK_API_KEY", "deepseek-test-key")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
     calls = []
 
     def fake_model(payload):
         calls.append(json.loads(payload["messages"][1]["content"]))
-        assert payload["model"] == "test-agent-model"
+        assert payload["model"] == public_dpak.DEEPSEEK_DPAK_MODEL
+        assert payload["max_tokens"] == public_dpak.DEEPSEEK_DPAK_MAX_TOKENS
         return json.dumps(
             {
                 "type": "final",
-                "answer": "Agentmodellen svarade.",
+                "answer": "DeepSeek Pro svarade.",
                 "table": [],
             },
             ensure_ascii=False,
@@ -479,18 +477,58 @@ def test_public_dpak_message_endpoint_uses_configured_agent_model(monkeypatch):
         )
         assert response.status_code == 200
         payload = response.json()
-        assert payload["model"] == "test-agent-model"
-        assert payload["answer"] == "Agentmodellen svarade."
+        assert payload["model"] == public_dpak.DEEPSEEK_DPAK_MODEL
+        assert payload["answer"] == "DeepSeek Pro svarade."
         assert calls
     finally:
         session.close()
 
 
-def test_public_dpak_message_endpoint_reports_agent_config_errors(monkeypatch):
+def test_public_dpak_model_call_uses_deepseek_pro_payload(monkeypatch):
+    monkeypatch.setattr(public_dpak.settings, "DEEPSEEK_API_KEY", "deepseek-test-key")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "test-key")
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {"choices": [{"message": {"content": '{"type":"final","answer":"ok","table":[]}'}}]},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["authorization"] = request.get_header("Authorization")
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setattr(public_dpak.urllib.request, "urlopen", fake_urlopen)
+
+    answer = public_dpak._call_public_dpak_agent_model(
+        {"model": "ignored-model", "messages": [], "max_tokens": 1}
+    )
+
+    assert answer == '{"type":"final","answer":"ok","table":[]}'
+    assert captured["url"] == public_dpak.DEEPSEEK_DPAK_API_URL
+    assert captured["timeout"] == public_dpak.DEEPSEEK_DPAK_TIMEOUT_SECONDS
+    assert captured["authorization"] == "Bearer deepseek-test-key"
+    assert captured["payload"]["model"] == public_dpak.DEEPSEEK_DPAK_MODEL
+    assert captured["payload"]["max_tokens"] == 1
+    assert captured["payload"]["thinking"] == {"type": "enabled"}
+    assert captured["payload"]["reasoning_effort"] == "high"
+
+
+def test_public_dpak_message_endpoint_reports_missing_model_key(monkeypatch):
     monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_LINK_TOKEN", "")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_API_KEY", "agent-key")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_MODEL", "test-agent-model")
-    monkeypatch.setattr(public_dpak.settings, "PUBLIC_DPAK_AGENT_TEMPERATURE", "inte-ett-tal")
+    monkeypatch.setattr(public_dpak.settings, "DEEPSEEK_API_KEY", "")
+    monkeypatch.setattr(public_dpak.settings, "MINIMAX_API_KEY", "")
     session = _session()
     app = FastAPI()
     app.include_router(public_dpak.router)
@@ -505,8 +543,9 @@ def test_public_dpak_message_endpoint_reports_agent_config_errors(monkeypatch):
             "/api/public/dpak-chat/message",
             json={"messages": [{"role": "user", "content": "vilket bolag är det?"}]},
         )
-        assert response.status_code == 502
-        assert "PUBLIC_DPAK_AGENT_TEMPERATURE" in response.json()["detail"]
+        assert response.status_code == 503
+        assert "DEEPSEEK_API_KEY" in response.json()["detail"]
+        assert "MINIMAX_API_KEY" in response.json()["detail"]
         assert "HTTPException" not in response.json()["detail"]
     finally:
         session.close()

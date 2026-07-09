@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from dataclasses import dataclass
 import json
 import logging
 import re
@@ -25,10 +26,28 @@ logger = logging.getLogger(__name__)
 MAX_PUBLIC_DPAK_VOICE_BYTES = 3 * 1024 * 1024
 MAX_PUBLIC_DPAK_VOICE_BASE64_CHARS = 4 * 1024 * 1024 + 512
 THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+DEEPSEEK_DPAK_API_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_DPAK_MODEL = "deepseek-v4-pro"
+DEEPSEEK_DPAK_MAX_TOKENS = 3000
+DEEPSEEK_DPAK_TIMEOUT_SECONDS = 90
+DEEPSEEK_DPAK_EXTRA_BODY: dict[str, Any] = {
+    "thinking": {"type": "enabled"},
+    "reasoning_effort": "high",
+}
 
 
 class PublicDpakModelProviderError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class PublicDpakModelConfig:
+    api_key: str
+    api_url: str
+    model: str
+    max_tokens: int
+    timeout_seconds: int
+    extra_body: dict[str, Any]
 
 
 class PublicDpakMessage(BaseModel):
@@ -112,43 +131,29 @@ def _messages_payload_with_voice(payload: PublicDpakChatRequest) -> list[dict[st
     return messages
 
 
-def _public_dpak_agent_api_key() -> str:
-    return settings.PUBLIC_DPAK_AGENT_API_KEY.strip() or settings.MINIMAX_API_KEY.strip()
+def _public_dpak_model_config() -> PublicDpakModelConfig | None:
+    deepseek_key = settings.DEEPSEEK_API_KEY.strip()
+    if deepseek_key:
+        return PublicDpakModelConfig(
+            api_key=deepseek_key,
+            api_url=DEEPSEEK_DPAK_API_URL,
+            model=DEEPSEEK_DPAK_MODEL,
+            max_tokens=DEEPSEEK_DPAK_MAX_TOKENS,
+            timeout_seconds=DEEPSEEK_DPAK_TIMEOUT_SECONDS,
+            extra_body=dict(DEEPSEEK_DPAK_EXTRA_BODY),
+        )
 
-
-def _public_dpak_agent_api_url() -> str:
-    return settings.PUBLIC_DPAK_AGENT_API_URL.strip() or settings.MINIMAX_API_URL.strip()
-
-
-def _public_dpak_agent_model() -> str:
-    return settings.PUBLIC_DPAK_AGENT_MODEL.strip() or settings.MINIMAX_MODEL.strip()
-
-
-def _public_dpak_agent_timeout() -> int:
-    return int(settings.PUBLIC_DPAK_AGENT_TIMEOUT_SECONDS or settings.MINIMAX_TIMEOUT_SECONDS)
-
-
-def _public_dpak_agent_temperature() -> float | None:
-    raw = settings.PUBLIC_DPAK_AGENT_TEMPERATURE.strip()
-    if not raw:
-        return None
-    try:
-        return float(raw)
-    except ValueError:
-        raise PublicDpakModelProviderError("PUBLIC_DPAK_AGENT_TEMPERATURE måste vara ett tal.")
-
-
-def _public_dpak_agent_extra_body() -> dict[str, Any]:
-    raw = settings.PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON.strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise PublicDpakModelProviderError("PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON måste vara giltig JSON.") from exc
-    if not isinstance(parsed, dict):
-        raise PublicDpakModelProviderError("PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON måste vara ett JSON-objekt.")
-    return parsed
+    minimax_key = settings.MINIMAX_API_KEY.strip()
+    if minimax_key:
+        return PublicDpakModelConfig(
+            api_key=minimax_key,
+            api_url=settings.MINIMAX_API_URL,
+            model=settings.MINIMAX_MODEL,
+            max_tokens=max(settings.MINIMAX_MAX_TOKENS, 1400),
+            timeout_seconds=settings.MINIMAX_TIMEOUT_SECONDS,
+            extra_body={},
+        )
+    return None
 
 
 def _provider_error_detail(raw_body: str) -> str:
@@ -177,23 +182,23 @@ def _clean_provider_answer(answer: Any) -> str:
 
 
 def _call_public_dpak_agent_model(payload: dict[str, Any]) -> str:
-    api_key = _public_dpak_agent_api_key()
-    if not api_key:
+    model_config = _public_dpak_model_config()
+    if model_config is None:
         raise PublicDpakModelProviderError("D-pak-agenten saknar modellnyckel i servermiljön.")
-    request_payload = {**payload, "model": _public_dpak_agent_model()}
-    request_payload.update(_public_dpak_agent_extra_body())
+    request_payload = {**payload, "model": model_config.model}
+    request_payload.update(model_config.extra_body)
     body = json.dumps(request_payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
-        _public_dpak_agent_api_url(),
+        model_config.api_url,
         data=body,
         method="POST",
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {model_config.api_key}",
             "Content-Type": "application/json",
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=_public_dpak_agent_timeout()) as response:
+        with urllib.request.urlopen(request, timeout=model_config.timeout_seconds) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         raw_error = exc.read().decode("utf-8", errors="replace")
@@ -242,11 +247,11 @@ def public_dpak_message(
 
     business = public_dpak_business_code(payload.business_code)
     status_payload = dataset_status(db, business)
-    model_name = _public_dpak_agent_model()
-    if not _public_dpak_agent_api_key():
+    model_config = _public_dpak_model_config()
+    if model_config is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="D-pak-agenten saknar PUBLIC_DPAK_AGENT_API_KEY eller MINIMAX_API_KEY i servermiljön.",
+            detail="D-pak-agenten saknar DEEPSEEK_API_KEY eller MINIMAX_API_KEY i servermiljön.",
         )
     try:
         agent_result = run_public_dpak_agent(
@@ -254,9 +259,8 @@ def public_dpak_message(
             messages=_messages_payload_with_voice(payload),
             business_code=business,
             call_model=_call_public_dpak_agent_model,
-            model_name=model_name,
-            max_tokens=settings.PUBLIC_DPAK_AGENT_MAX_TOKENS,
-            temperature=_public_dpak_agent_temperature(),
+            model_name=model_config.model,
+            max_tokens=model_config.max_tokens,
         )
     except PublicDpakModelProviderError as exc:
         logger.warning("Public D-pak model provider failed.", exc_info=True)
@@ -274,7 +278,7 @@ def public_dpak_message(
     return PublicDpakChatResponse(
         answer=str(agent_result.get("answer") or ""),
         table=list(agent_result.get("table") or []),
-        model=str(agent_result.get("model") or model_name),
+        model=str(agent_result.get("model") or model_config.model),
         status=status_payload,
         warning=agent_result.get("warning"),
     )

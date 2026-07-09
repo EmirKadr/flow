@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     MINIMAX_MODEL: str = "MiniMax-M2.7"
     MINIMAX_MAX_TOKENS: int = 700
     MINIMAX_TIMEOUT_SECONDS: int = 30
+    DEEPSEEK_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-pro"
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
@@ -67,13 +68,6 @@ class Settings(BaseSettings):
     PUBLIC_DPAK_FACT_INSERT_BATCH_SIZE: int = 20000
     PUBLIC_DPAK_DB_WRITE_RETRIES: int = 3
     PUBLIC_DPAK_SUPPORT_DIR: str = ""
-    PUBLIC_DPAK_AGENT_API_KEY: str = ""
-    PUBLIC_DPAK_AGENT_API_URL: str = ""
-    PUBLIC_DPAK_AGENT_MODEL: str = ""
-    PUBLIC_DPAK_AGENT_MAX_TOKENS: int = 1400
-    PUBLIC_DPAK_AGENT_TIMEOUT_SECONDS: int = 0
-    PUBLIC_DPAK_AGENT_TEMPERATURE: str = ""
-    PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON: str = ""
     DEMO_USER_PASSWORD: str = "demo1234"
     DEMO_SESSION_MAX_AGE_HOURS: float = 6.0
     RENDER_API_KEY: str = ""

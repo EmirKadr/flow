@@ -1124,3 +1124,7 @@ Bearbeta och Produktivitet kan nu hamta valda underlag direkt fran extern dataka
 ## [2026-07-08] fix | D-pak-agenten får valbar modell och ikonknapp
 
 Publik D-pak-chatt visar nu röstinspelning som en mikrofonikon med tillgänglig etikett och stoppikon under inspelning. D-pak-agentens modellendpoint är separat konfigurerbar med generiska `PUBLIC_DPAK_AGENT_*`-variabler, så D-pak kan köras mot en annan OpenAI-kompatibel modell än övriga appchattar. Providerfel visas som tydlig 502-text i stället för ett anonymt `HTTPException`.
+
+## [2026-07-09] fix | D-pak-agenten kör DeepSeek Pro som standard
+
+D-pak-agentens driftkonfiguration är förenklad: om `DEEPSEEK_API_KEY` finns används DeepSeek Pro med D-pak-agentens fasta serverinställningar. Om DeepSeek-nyckeln saknas används fortsatt `MINIMAX_API_KEY`/`MINIMAX_*` som bakåtkompatibel fallback. Render kräver därmed bara en ny D-pak-modellnyckel i stället för de tidigare separata `PUBLIC_DPAK_AGENT_*`-variablerna.

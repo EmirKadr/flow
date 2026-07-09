@@ -1,7 +1,7 @@
 ---
 title: Publik D-pak-chatt
 status: aktiv
-updated: 2026-07-08
+updated: 2026-07-09
 tags: [publik, dpak, chat, postgres]
 ---
 
@@ -19,17 +19,12 @@ Kunden ska aldrig trigga en picklogg-hämtning. Frågan går mot färdiga Postgr
 - `public_dpak_sync_chunks` för återupptagningsbar chunk-status.
 - `public_dpak_datasets` för aktuell täckning och status.
 
-Frågan analyseras av D-pak-agenten via en OpenAI-kompatibel modellendpoint. Agenten får bara sanerad dialog, datasetstatus och resultat från sina egna verktygssteg. Den kan lista råfiler, läsa exempelrader, hämta beräkningsregler och köra validerade `SELECT`/`WITH`-frågor mot de tre råa D-pak-tabellerna. Den får inte skriva SQL utanför råtabellerna eller köra mutationer.
+Frågan analyseras av D-pak-agenten via DeepSeek Pro när `DEEPSEEK_API_KEY` är satt. Om DeepSeek-nyckeln saknas används `MINIMAX_API_KEY`/`MINIMAX_*` som bakåtkompatibel fallback. Agenten får bara sanerad dialog, datasetstatus och resultat från sina egna verktygssteg. Den kan lista råfiler, läsa exempelrader, hämta beräkningsregler och köra validerade `SELECT`/`WITH`-frågor mot de tre råa D-pak-tabellerna. Den får inte skriva SQL utanför råtabellerna eller köra mutationer.
 
-Modellen är konfigurerbar för D-pak separat från övriga appchattar:
+D-pak kräver normalt bara en egen modellvariabel i drift:
 
-- `PUBLIC_DPAK_AGENT_API_KEY` - modellnyckel för D-pak-agenten. Om den saknas används `MINIMAX_API_KEY` som bakåtkompatibel fallback.
-- `PUBLIC_DPAK_AGENT_API_URL` - OpenAI-kompatibel chat-completions endpoint. Om den saknas används `MINIMAX_API_URL`.
-- `PUBLIC_DPAK_AGENT_MODEL` - modellnamn. Om det saknas används `MINIMAX_MODEL`.
-- `PUBLIC_DPAK_AGENT_MAX_TOKENS` - svarslängd för agentens modellsteg.
-- `PUBLIC_DPAK_AGENT_TIMEOUT_SECONDS` - timeout för D-pak-agentens modellendpoint. Om den saknas används `MINIMAX_TIMEOUT_SECONDS`.
-- `PUBLIC_DPAK_AGENT_TEMPERATURE` - valfri temperatur. Tomt värde skickar ingen temperaturparameter.
-- `PUBLIC_DPAK_AGENT_EXTRA_BODY_JSON` - valfritt JSON-objekt för provider-/modellparametrar som exempelvis JSON-läge eller thinking-läge. Värdet loggas inte och ska inte innehålla nycklar.
+- `DEEPSEEK_API_KEY` - DeepSeek-nyckel för D-pak-agenten.
+- `MINIMAX_API_KEY`/`MINIMAX_*` - fallback om DeepSeek-nyckeln saknas.
 
 Om modellendpointen nekar, timeouter eller returnerar felaktigt svar visas en begriplig 502-feltext från backend i chatten. Feltexten ska inte bara säga `HTTPException`.
 
