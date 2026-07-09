@@ -1348,6 +1348,56 @@ def test_dispatch_lookup_miss_becomes_note_not_failure(monkeypatch):
         engine.dispose()
 
 
+def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
+    """Live-vyn haller bara ~14 dagar — aldre pallar ska hittas i arkivet
+    (dblog_dispatch_pallet_log) och fylla lookup-falten utan anteckning.
+    Numeriska pall-id skickas som tal sa EQ matchar den numeriska kolumnen."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {"pallet_id": "8473877", "deviations": ["Fel pa kartongerna"]},
+    )
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+
+    calls = []
+
+    def fetch_data(view, filters=None, identifiers=None):
+        calls.append((view, filters))
+        if view == "dblog_dispatch_pallet_log":
+            return [
+                {
+                    "pick_pall_num": 8473877,
+                    "order_num": "PR100485115",
+                    "shipment_id": "GG-404-260610-PR100485115-0",
+                    "user_id": "LOTS01",
+                    "custom_num": "10231",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda: SimpleNamespace(fetch_data=fetch_data))
+    engine, session = make_session()
+    row = _make_analyzed_upload(session, "f3" * 32)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert [view for view, _ in calls] == ["v_ask_dispatch_pallet", "dblog_dispatch_pallet_log"]
+        # Samma filter till bada vyerna, med numeriskt varde.
+        assert calls[0][1] == [{"id": "pick_pall_num", "value": 8473877, "operator": "EQ"}]
+        assert calls[1][1] == calls[0][1]
+        assert result.analysis_status == "analyzed"
+        assert result.order_number == "PR100485115"
+        assert result.shipment_number == "GG-404-260610-PR100485115-0"
+        assert result.username == "LOTS01"
+        assert result.customer_name == "10231"  # arkivet saknar custom_desc; kundnr anvands
+        assert result.uncertainty_notes is None
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_dispatch_lookup_unexpected_error_becomes_note_not_failure(monkeypatch):
     """Aven ett OVANTAT fel i ASK-uppslaget (inte bara kanda klientfel) ska
     bli en anteckning pa raden — analysen far aldrig kranga pa uppslaget."""

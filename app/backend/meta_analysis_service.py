@@ -630,6 +630,17 @@ def _append_uncertainty_note(existing: str | None, note: str | None) -> str | No
     return f"{cleaned_existing}; {cleaned_note}"[:2000]
 
 
+# Live-vyn (v_ask_dispatch_pallet) haller bara ~14 dagar; aldre pallar finns
+# enbart i arkivet (~800 dagar). Se wiki/ask-datalagring.md.
+DISPATCH_ARCHIVE_VIEW = "dblog_dispatch_pallet_log"
+
+
+def _pallet_filter_value(pallet: str) -> Any:
+    # pick_pall_num ar numerisk i ASK-vyerna — skicka siffror som tal sa
+    # EQ-filtret matchar oavsett hur API:t typjamfor.
+    return int(pallet) if pallet.isdigit() else pallet
+
+
 def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None]:
     """Bast-effort ASK-uppslag: far ALDRIG falla analysen — varje utfall utan
     traff blir en begriplig osakerhetsanteckning pa raden i stallet."""
@@ -638,12 +649,12 @@ def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None
         return {"note": "Inget pall-id att sla upp i Dispatchpallar."}
     if not workflow_api_configured():
         return {"note": "Extern datakalla ar inte konfigurerad, sa Dispatchpallar kunde inte slas upp."}
+    filters = [ExternalDataClient.eq("pick_pall_num", _pallet_filter_value(pallet))]
     try:
-        spec = source_spec("dispatch")
-        rows = _api_client().fetch_data(
-            spec.view,
-            filters=[ExternalDataClient.eq("pick_pall_num", pallet)],
-        )
+        client = _api_client()
+        rows = client.fetch_data(source_spec("dispatch").view, filters=filters)
+        if not rows:
+            rows = client.fetch_data(DISPATCH_ARCHIVE_VIEW, filters=filters)
     except Exception as exc:  # noqa: BLE001 — aven ovantade fel ska bli en anteckning, inte analysis_failed
         logger.warning("Could not enrich Meta analysis from Dispatchpallar for pallet %s: %s", pallet, exc)
         return {
@@ -651,7 +662,7 @@ def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None
         }
     if not rows:
         return {
-            "note": f"Dispatchpallar gav ingen traff for pall-id {pallet}.",
+            "note": f"Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id {pallet}.",
         }
 
     row = rows[0]
