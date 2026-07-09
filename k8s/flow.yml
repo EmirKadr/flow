@@ -127,6 +127,22 @@ spec:
               value: "1000"
             - name: DATA_SOURCE_RESPONSE_ROW_CAP
               value: "50000"
+            # Lokal arkiv-cache (DuckDB på flow-media-PVC:n). Ej hemliga och lika
+            # i alla miljöer → hårdkodade här i stället för Octopus-variabler.
+            # SEED_ON_START=1: podden self-seedar från noll (chunkat, se CHUNK_DAYS)
+            # så vi slipper kubectl cp. Kraschrisken finns BARA under första seeden;
+            # när täckningen är komplett är passet en billig no-op på varje omstart.
+            # Följ hämtningen i vyn Arkivstatus. När den visar full täckning KAN
+            # SEED_ON_START sättas till "0" (bälte-och-hängslen) — men =1 självläker
+            # om PVC:n någon gång återskapas, så det är okej att lämna kvar.
+            - name: ARCHIVE_CACHE_ENABLED
+              value: "1"
+            - name: ARCHIVE_CACHE_DIR
+              value: "/var/flow-media/archive_cache"
+            - name: ARCHIVE_CACHE_SEED_ON_START
+              value: "1"
+            - name: ARCHIVE_CACHE_CHUNK_DAYS
+              value: "7"
             - name: TRACKING_ALLOW_VALUE_SAMPLES
               value: "false"
             - name: ALLOCATION_OBSERVATIONS_STARTUP_SYNC
