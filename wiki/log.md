@@ -7,6 +7,13 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
+
+Beslut Emir: de historiska `label_image_*`-kolumnerna droppas forst nar
+retentionen (30 dagar) tomt alla referenser — efter 2026-08-10 ar det en ren
+no-data-migration. Omfattning och verifieringssteg dokumenterade som TODO
+hogst upp i `meta-upload.md`.
+
 ## [2026-07-09] ingest | Meta: stillbildsfunktionen borttagen + ASK-uppslag alltid till anteckning
 
 Beslut av Emir: etikettstillbilden anvandes inte och dess videoavkodning var

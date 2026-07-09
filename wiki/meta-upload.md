@@ -11,6 +11,18 @@ Audio-only-andringen 2026-06-04: Meta-analysen anvander bara rosten. Backend ext
 
 Stillbildsfunktionen ar borttagen 2026-07-09: analysen tar inte langre ut nagon etikettstillbild ur videon (videoavkodningen i podden var en OOM-risk och bilden anvandes inte). Kolumnen Etikett, stillbildsnedladdningen och `META_LABEL_STILL_TIME_SECONDS` ar borta; historiska `label_image_*`-kolumner ligger kvar i DB men fylls aldrig.
 
+**TODO (beslut Emir 2026-07-09): stadmigration efter 2026-08-10.** Da har
+retentionen (30 dagar) rensat alla rader som refererar en stillbild och
+droppen blir en ren no-data-operation. Omfattning: Alembic-migration som
+droppar FK:n och kolumnerna `label_image_upload_id`, `label_image_hash`,
+`label_frame_time_seconds` ur `meta_shipment_observations`; ta samtidigt bort
+label-stadlogiken i `delete_meta_media_upload`/`purge_expired_meta_media`,
+`label_image_hash`-faltet ur `calculate_record_hash`/`refresh_record_hash`
+(OBS: andrar record_hash-varden — bumpa versionstaggen i hash-payloaden) och
+relationskolumnerna i `models.py`. Verifiera fore migrationen att
+`SELECT COUNT(*) ... WHERE label_image_upload_id IS NOT NULL` ar 0 i bada
+miljoerna.
+
 Kort svar: `meta-upload.html` ar en fristaende publik mobilvy utan sidebar och utan inloggning. Den ar till for att snabbt ladda upp flera bilder och videor fran Android, iPhone eller desktop. Filerna sparas i databastabellen `meta_media_uploads` med tidsstamplat `stored_filename`, SHA-256-baserat `content_hash`, eventuell `duration_seconds` och status `pending_analysis` for senare Gemini-analys. Exakta dubbletter sparas inte igen. Super User ser en skyddad sidebarvy `meta.html` med sandningsanalys som enda medielista: ASK-berikade lookup-kolumner for ordernummer, sandningsnummer, anvandarnamn och kund, plus pall-id, avvikelser, status, video, langd, storlek och rad-id. Tabellen kan sokas, sorteras och exporteras till Excel. Den separata nedre kortgridden for uppladdade bilder och videor renderas inte langre.
 
 ## Anvandarflode
