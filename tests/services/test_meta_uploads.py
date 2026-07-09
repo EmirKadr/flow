@@ -1248,6 +1248,55 @@ def test_gemini_requests_put_api_key_in_header_not_url(monkeypatch):
     assert headers["Content-Type"] == "application/json"
 
 
+def test_ffmpeg_commands_cap_threads_to_protect_pod_memory(monkeypatch):
+    """ffmpeg default ar tradar for alla karnor; multitradad avkodning av
+    hogupplost h264 (Meta-glasogon: 1488x1984@120fps) tog ~254 MB och
+    grupp-OOM-dodade podden 2026-07-09. Analysens avkodningar ska kora
+    -threads 1 och playable-transkodningen -threads 2 (avkodare + x264)."""
+    captured: list[list[str]] = []
+
+    def fake_run(command, capture_output, timeout, check):
+        captured.append([str(part) for part in command])
+        Path(command[-1]).write_bytes(b"fake-output")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    upload = MetaMediaUpload(
+        batch_id="batch-threads",
+        original_filename="meta.mp4",
+        stored_filename="20260709_010203_000000Z_01.mp4",
+        content_type="video/mp4",
+        media_type="video",
+        size_bytes=11,
+        content_hash="a1" * 32,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"video-bytes", ".mp4"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+
+    monkeypatch.setattr(meta_analysis_service, "_resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(meta_analysis_service.subprocess, "run", fake_run)
+    with meta_analysis_service.extract_audio_file(upload) as audio:
+        assert audio.size_bytes > 0
+    assert meta_analysis_service.extract_label_still_bytes(upload, 1.0) == b"fake-output"
+
+    monkeypatch.setattr(meta_uploads_helpers, "_resolve_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fake_run)
+    playable = meta_uploads_helpers._transcode_video_to_playable(upload)
+    playable.unlink(missing_ok=True)
+
+    audio_cmd, still_cmd, transcode_cmd = captured
+    for cmd in (audio_cmd, still_cmd):
+        index = cmd.index("-threads")
+        assert cmd[index + 1] == "1"
+        assert index < cmd.index("-i"), "trådtaket ska sättas före -i (avkodaren)"
+    assert transcode_cmd.count("-threads") == 2
+    first = transcode_cmd.index("-threads")
+    second = transcode_cmd.index("-threads", first + 1)
+    assert transcode_cmd[first + 1] == "2" and transcode_cmd[second + 1] == "2"
+    assert first < transcode_cmd.index("-i") < transcode_cmd.index("libx264") < second
+
+
 def test_analyze_meta_upload_scrubs_api_key_from_analysis_error(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "super-hemlig-nyckel")
 

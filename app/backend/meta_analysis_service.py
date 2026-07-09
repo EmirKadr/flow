@@ -103,6 +103,7 @@ def extract_audio_file(upload: MetaMediaUpload) -> Iterator[AudioFile]:
         command = [
             ffmpeg,
             "-y",
+            "-threads", "1",  # ffmpeg default = alla karnor; trådtak haller subprocess-minnet lagt i podden
             "-i",
             str(input_path),
             "-vn",
@@ -371,8 +372,7 @@ def _gemini_url(path: str, query: dict[str, str] | None = None) -> str:
 
 
 def _gemini_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
-    # Nyckeln i header (som mcp/chat.py), aldrig i URL:en — URL:er hamnar i
-    # undantagstexter, spans och loggar.
+    # Nyckeln i header (som mcp/chat.py), aldrig i URL:en — URL:er hamnar i loggar/undantag.
     return {"x-goog-api-key": settings.GEMINI_API_KEY.strip(), **(extra or {})}
 
 
@@ -755,6 +755,7 @@ def extract_label_still_bytes(upload: MetaMediaUpload, timestamp_seconds: float)
         command = [
             ffmpeg,
             "-y",
+            "-threads", "1",  # multitradad 1488x1984-h264-avkodning tog ~254 MB och grupp-OOM-dodade podden 2026-07-09; 1 trad ~60 MB
             "-ss",
             f"{timestamp_seconds:.3f}",
             "-i",

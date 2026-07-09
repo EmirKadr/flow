@@ -7,6 +7,18 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-09] ingest | Meta-analys del 2: ffmpeg-tradar grupp-OOM-dodade podden
+
+Efter deploy av platshallar-fixen kraschade podden IGEN vid Analysera (502,
+inget i Seq). Seq-tracen visade att Gemini-analysen nu LYCKAS (upload + 10 s
+generateContent) och att doden intraffade direkt efter Dispatchpallar-
+uppslaget — dvs. i etikettstillbilds-steget. Lokal matning pa samma video
+(1488x1984@120fps h264): ffmpeg-avkodning med default-tradar toppar ~254 MB,
+med `-threads 1` ~60 MB. Cgroup v2 grupp-OOM-dodar hela containern, inte bara
+ffmpeg. Fix: tradtak pa alla tre ffmpeg-anropen (ljud 1, stillbild 1,
+playable-transkodning 2) + kontraktstest som lasar flaggorna. Uppdaterade
+felsokningsraden i `meta-upload.md` med bekraftad orsak.
+
 ## [2026-07-09] ingest | Meta-analys: Octopus-platshallare kraschade Gemini-anropet
 
 Analysera video pa /meta gav `analysis_failed` (och en poddomstart/503 i samband

@@ -562,6 +562,11 @@ def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
         command = [
             ffmpeg,
             "-y",
+            # ffmpeg default = tradar for alla karnor; hogupplost h264 (t.ex.
+            # 1488x1984@120fps fran Meta-glasogon) kan da ta flera hundra MB och
+            # grupp-OOM-doda podden (hande 2026-07-09 vid stillbildsextraktion).
+            # Taket fore -i galler avkodaren, taket efter galler x264-enkodaren.
+            "-threads", "2",
             "-i",
             str(source_path),
             "-map",
@@ -574,6 +579,7 @@ def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
             "veryfast",
             "-crf",
             "24",
+            "-threads", "2",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
