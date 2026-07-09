@@ -1,5 +1,7 @@
 import os
+import re
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,8 +41,22 @@ def _load_env_files_into_environ(paths: tuple[str, ...]) -> None:
 _load_env_files_into_environ(ENV_FILES)
 
 
+# Octopus ersätter #{VAR} i deploy-manifestet bara när variabeln finns definierad
+# i projektet; okända platshållare lämnas ordagrant kvar och blir annars "riktiga"
+# settings-värden (hände 2026-07-09: GEMINI_API_BASE_URL="#{GEMINI_API_BASE_URL}"
+# fick varje meta-videoanalys att kasta ValueError).
+_UNSUBSTITUTED_PLACEHOLDER = re.compile(r"#\{[^{}]*\}")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _blank_unsubstituted_placeholders(cls, value: object) -> object:
+        if isinstance(value, str) and _UNSUBSTITUTED_PLACEHOLDER.fullmatch(value.strip()):
+            return ""
+        return value
 
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/flow"
     SECRET_KEY: str = "dev-only-change-me"

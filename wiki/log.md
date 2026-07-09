@@ -1,11 +1,22 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-08
+updated: 2026-07-09
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-09] ingest | Meta-analys: Octopus-platshallare kraschade Gemini-anropet
+
+Analysera video pa /meta gav `analysis_failed` (och en poddomstart/503 i samband
+med forsta forsoket). Rotorsak: Octopus-variabeln `GEMINI_API_BASE_URL` saknades
+i Octopus-projektet, sa manifest-platshallaren `#{GEMINI_API_BASE_URL}` blev
+ordagrant settings-varde -> `ValueError: unknown url type` som dessutom lackte
+API-nyckeln (`?key=...`) i `analysis_error`. Fix i tre lager (Settings blankar
+`#{VAR}`-varden, base-URL-fallback, nyckel i `x-goog-api-key`-header + sanering)
+plus hardkodad standard-URL i `k8s/flow.yml` och probe-`timeoutSeconds: 5`.
+Uppdaterade `meta-upload.md` (teknik + tva felsokningsrader).
 
 ## [2026-07-08] perf | Bemanning drag-fyll batchar schemaceller
 

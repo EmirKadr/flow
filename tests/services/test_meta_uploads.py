@@ -1205,3 +1205,83 @@ def test_non_super_user_cannot_list_meta_uploads(monkeypatch):
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_settings_blank_unsubstituted_octopus_placeholders():
+    """Octopus lämnar okända #{VAR}-platshållare ordagrant kvar i manifestet.
+    Ett sådant värde ska behandlas som osatt (hände 2026-07-09: varje
+    meta-videoanalys kraschade med ValueError på GEMINI_API_BASE_URL)."""
+    cfg = Settings(
+        _env_file=None,
+        GEMINI_API_BASE_URL="#{GEMINI_API_BASE_URL}",
+        GEMINI_API_KEY="#{GEMINI_API_KEY}",
+        MINIMAX_API_KEY=" #{MINIMAX_API_KEY} ",
+    )
+    assert cfg.GEMINI_API_BASE_URL == ""
+    assert cfg.GEMINI_API_KEY == ""
+    assert cfg.MINIMAX_API_KEY == ""
+    # Riktiga värden passerar orörda.
+    kept = Settings(_env_file=None, GEMINI_API_BASE_URL="https://proxy.example.com", GEMINI_API_KEY="riktig-nyckel")
+    assert kept.GEMINI_API_BASE_URL == "https://proxy.example.com"
+    assert kept.GEMINI_API_KEY == "riktig-nyckel"
+
+
+def test_gemini_base_url_falls_back_on_non_http_values(monkeypatch):
+    default = "https://generativelanguage.googleapis.com"
+    monkeypatch.setattr(settings, "GEMINI_API_BASE_URL", "#{GEMINI_API_BASE_URL}")
+    assert meta_analysis_service._gemini_base_url() == default
+    monkeypatch.setattr(settings, "GEMINI_API_BASE_URL", "")
+    assert meta_analysis_service._gemini_base_url() == default
+    monkeypatch.setattr(settings, "GEMINI_API_BASE_URL", "https://proxy.example.com/")
+    assert meta_analysis_service._gemini_base_url() == "https://proxy.example.com"
+
+
+def test_gemini_requests_put_api_key_in_header_not_url(monkeypatch):
+    """Nyckeln får aldrig ligga i URL:en — URL:er hamnar i undantagstexter,
+    spans och loggar (2026-07-09 läckte ?key=... via ValueError i analysis_error)."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "super-hemlig-nyckel")
+    url = meta_analysis_service._gemini_url("/upload/v1beta/files")
+    assert "super-hemlig-nyckel" not in url
+    assert "key=" not in url
+    headers = meta_analysis_service._gemini_headers({"Content-Type": "application/json"})
+    assert headers["x-goog-api-key"] == "super-hemlig-nyckel"
+    assert headers["Content-Type"] == "application/json"
+
+
+def test_analyze_meta_upload_scrubs_api_key_from_analysis_error(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "super-hemlig-nyckel")
+
+    def _boom(upload):
+        raise ValueError(
+            "unknown url type: '#{GEMINI_API_BASE_URL}/upload/v1beta/files?key=super-hemlig-nyckel'"
+        )
+
+    monkeypatch.setattr(meta_analysis_service, "_call_meta_analysis_provider", _boom)
+    engine, session = make_session()
+    row = MetaMediaUpload(
+        batch_id="batch-scrub",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="f" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"scrub-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "analysis_failed"
+        error_text = result.analysis_error or ""
+        assert "super-hemlig-nyckel" not in error_text
+        assert "ValueError" in error_text
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()

@@ -15,6 +15,7 @@ graciöst över om en fil/nyckel saknas, men assertar allt som faktiskt finns.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,35 @@ K8S_DIR = ROOT / "k8s"
 
 CONFIGMAP = K8S_DIR / "configmap.yaml"
 DEPLOYMENT = K8S_DIR / "deployment.yaml"
+FLOW_MANIFEST = K8S_DIR / "flow.yml"
 PVC = K8S_DIR / "pvc.yaml"
+
+# Octopus ersätter #{VAR} bara om variabeln finns definierad i Octopus-projektet
+# Flow; okända platshållare lämnas ordagrant kvar i manifestet och blir "riktiga"
+# miljövärden i podden. 2026-07-09 saknades GEMINI_API_BASE_URL i Octopus och
+# varje meta-videoanalys kraschade med ValueError på platshållartexten. Nya
+# platshållare i flow.yml kräver därför ett medvetet beslut: skapa variabeln i
+# Octopus FÖRST, lägg sedan till namnet här.
+OCTOPUS_PROJECT_VARIABLES = {
+    "DATABASE_URL",
+    "SECRET_KEY",
+    "SUPER_USER_USERNAMES",
+    "EXCEL_API_TOKEN",
+    "MINIMAX_API_KEY",
+    "GEMINI_API_KEY",
+    "RFID_DEVICE_TOKEN",
+    "DATA_SOURCE_API_BASE_URL",
+    "DATA_SOURCE_API_KEY",
+    "DATA_SOURCE_API_CLIENT",
+    "DATA_SOURCE_API_KEY_HEADER",
+    "DATA_SOURCE_API_CLIENT_HEADER",
+    "DATA_SOURCE_VIEW_DATA_PATH_TEMPLATE",
+    "OPENTELEMETRY_URL",
+    "OPENTELEMETRY_TOKEN",
+    "JOB_CPU",
+    "JOB_MEMORY",
+    "JOB_MEMORY_MAX",
+}
 
 MEDIA_VOLUME = "flow-media"
 DATA_VOLUME = "flow-data"
@@ -210,4 +239,28 @@ def test_strategy_is_recreate(deployment):
         pytest.skip("deployment saknar spec.strategy.type")
     assert strategy["type"] == "Recreate", (
         f"strategy.type={strategy['type']!r}, väntade 'Recreate'"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# (c) Octopus-platshållare i flow.yml                                          #
+# --------------------------------------------------------------------------- #
+def test_flow_manifest_placeholders_are_declared_octopus_variables():
+    """Varje #{VAR}-platshållare i k8s/flow.yml måste finnas i allowlisten
+    OCTOPUS_PROJECT_VARIABLES (= variabler som är skapade i Octopus-projektet).
+    En platshållare utan Octopus-variabel deployas ordagrant som miljövärde —
+    det var rotorsaken till att meta-videoanalysen kraschade 2026-07-09."""
+    if not FLOW_MANIFEST.exists():
+        pytest.skip("saknar k8s/flow.yml")
+    text = FLOW_MANIFEST.read_text(encoding="utf-8")
+    # Endast env-liknande VERSALNAMN — Octopus-uttryck som #{if ...},
+    # #{/if} och #{Octopus.Release...} är substitutioner Octopus alltid kan.
+    found = set(re.findall(r"#\{([A-Z][A-Z0-9_]*)\}", text))
+    assert found, "hittade inga #{VAR}-platshållare — har manifestformatet ändrats?"
+    unknown = sorted(found - OCTOPUS_PROJECT_VARIABLES)
+    assert not unknown, (
+        f"Platshållare utan deklarerad Octopus-variabel: {unknown}. "
+        "Skapa variabeln i Octopus-projektet Flow först och lägg sedan till "
+        "namnet i OCTOPUS_PROJECT_VARIABLES, eller hårdkoda värdet om det "
+        "inte är hemligt."
     )
