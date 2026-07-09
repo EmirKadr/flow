@@ -141,8 +141,14 @@ spec:
               value: "/var/flow-media/archive_cache"
             - name: ARCHIVE_CACHE_SEED_ON_START
               value: "1"
+            # Snäll seed mot den sköra publika arkiv-gatewayen (dblog_*-vyerna
+            # 502:ade under 5 parallella workers 2026-07-09). 1 worker = sekventiellt,
+            # ingen request-burst; 15-dagarschunkar (50k-radtaket splittar ändå
+            # täta perioder). Höj workers igen först när gatewayen visat sig tåla det.
+            - name: ARCHIVE_CACHE_SEED_WORKERS
+              value: "1"
             - name: ARCHIVE_CACHE_CHUNK_DAYS
-              value: "7"
+              value: "15"
             - name: TRACKING_ALLOW_VALUE_SAMPLES
               value: "false"
             - name: ALLOCATION_OBSERVATIONS_STARTUP_SYNC
