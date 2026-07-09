@@ -7,6 +7,37 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
+
+Beslut Emir: de historiska `label_image_*`-kolumnerna droppas forst nar
+retentionen (30 dagar) tomt alla referenser — efter 2026-08-10 ar det en ren
+no-data-migration. Omfattning och verifieringssteg dokumenterade som TODO
+hogst upp i `meta-upload.md`.
+
+## [2026-07-09] ingest | Meta: stillbildsfunktionen borttagen + ASK-uppslag alltid till anteckning
+
+Beslut av Emir: etikettstillbilden anvandes inte och dess videoavkodning var
+OOM-boven — funktionen ar helt borttagen (backend-generering, Etikett-kolumn,
+stillbildsnedladdning, `META_LABEL_STILL_TIME_SECONDS`, export-kolumn).
+Analysens ffmpeg ror nu bara ljudsparet. Historiska `label_image_*`-kolumner
+ligger kvar i DB men fylls aldrig; radering/retention stadar dem fortfarande.
+Dispatchpallar-uppslaget ar harddat: ingen traff, API-fel, ovantat fel eller
+okonfigurerad datakalla blir alltid en osakerhetsanteckning med pall-id
+(status Kontrollera) — aldrig analysis_failed. Uppdaterade meta-upload.md,
+ui-map.md och data-model.md.
+
+## [2026-07-09] ingest | Meta-analys del 2: ffmpeg-tradar grupp-OOM-dodade podden
+
+Efter deploy av platshallar-fixen kraschade podden IGEN vid Analysera (502,
+inget i Seq). Seq-tracen visade att Gemini-analysen nu LYCKAS (upload + 10 s
+generateContent) och att doden intraffade direkt efter Dispatchpallar-
+uppslaget — dvs. i etikettstillbilds-steget. Lokal matning pa samma video
+(1488x1984@120fps h264): ffmpeg-avkodning med default-tradar toppar ~254 MB,
+med `-threads 1` ~60 MB. Cgroup v2 grupp-OOM-dodar hela containern, inte bara
+ffmpeg. Fix: tradtak pa alla tre ffmpeg-anropen (ljud 1, stillbild 1,
+playable-transkodning 2) + kontraktstest som lasar flaggorna. Uppdaterade
+felsokningsraden i `meta-upload.md` med bekraftad orsak.
+
 ## [2026-07-09] ingest | Meta-analys: Octopus-platshallare kraschade Gemini-anropet
 
 Analysera video pa /meta gav `analysis_failed` (och en poddomstart/503 i samband
@@ -3009,3 +3040,13 @@ None (stillbilden ar valfri); (2) `analyze_meta_upload` har en bred
 Nytt e2e-scenario `meta-analyze` + regressionstest
 `test_analyze_meta_upload_marks_unexpected_error_instead_of_leaking_500`.
 Sidor: `meta-upload.md`, `e2e-investigation.md`.
+
+## [2026-07-09] ingest | Multi-agent-arbetsmodell (plan)
+
+Ny sida `multi-agent-arbetsmodell.md`: beslutad men ej genomförd plan för
+parallellt agentarbete. Underlag: 9-agenters rekognosering + panel
+(fork 3/10, worktree 8/10, klon 7/10). Beslut: flytt ur OneDrive +
+en worktree per agent; forks förkastade (EmirKadr/flow är prod-infra för
+desktop-updatern). Fyra faser: flytt, provisioneringsskript, AGENTS.md-regler,
+strukturella spärrar (branch protection på main, wiki/log.md merge=union).
+Index uppdaterat.

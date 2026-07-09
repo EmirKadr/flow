@@ -103,6 +103,7 @@ def extract_audio_file(upload: MetaMediaUpload) -> Iterator[AudioFile]:
         command = [
             ffmpeg,
             "-y",
+            "-threads", "1",  # ffmpeg default = alla karnor; trådtak haller subprocess-minnet lagt i podden
             "-i",
             str(input_path),
             "-vn",
@@ -127,34 +128,6 @@ def extract_audio_file(upload: MetaMediaUpload) -> Iterator[AudioFile]:
         if size <= 0:
             raise MetaAnalysisFailed("Videon saknar ljud att analysera.")
         yield AudioFile(path=output_path, size_bytes=size, display_name=_audio_filename(upload))
-
-META_ANALYSIS_LEGACY_VIDEO_INSTRUCTIONS = """
-Analysera videon som en lotsvard har spelat in med Meta-glasogon.
-
-Du ska anvanda bade videobilden och ljudet:
-- Las etiketten i videon for ordernummer, sandningsnummer, anvandarnamn, kund och pall-id.
-- Det kan finnas tva olika referensetiketter pa pallen: transportetikett och innehallsforteckning.
-- Transportetiketten har ofta mottagaren hogt upp efter "Till:". Det ar customer_name.
-  I informationsblocket till vanster finns "Sandnings-ID" eller "Sändnings-ID".
-  shipment_number/sandningsnummer ska vara exakt vardet pa raden efter/vid detta falt,
-  ofta ett langt varde med bokstaver, bindestreck och siffror. Blanda inte ihop det
-  med streckkoder, avsandarreferens, godsmärke, rutt-rubriken hogst upp eller mottagarens namn.
-  "Avs. ref." ar ofta order_number. "Godsmärks"/"Godsmärke" kan vara pallet_id.
-  "Användare" ar username.
-- Innehallsforteckningen kan ha customer_name som stor rubrik, "Box ID" hogt upp till hoger
-  och en lista med "Ordernummer". Box ID kan vara pallet_id. Anvand ordernummer-listan for
-  order_number om den syns tydligare an transportetiketten. Om flera ordernummer syns,
-  returnera dem kommaseparerade. Blanda inte ihop "Customer Reference" med "Ordernummer".
-- Om en etikett ar suddig men den andra ar tydlig ska du anvanda den tydligaste kallan.
-- Lyssna pa vad lotsvarden sager om avvikelser pa sandningen.
-- Om ett falt ar osakert ska du jamfora etikettbilden, andra videoframes och ljudet.
-- Gissa inte. Lamna falt tomma eller skriv osakerhetsanteckning nar underlaget inte racker.
-- Om etiketten syns tydligt, returnera ungefarlig tid i sekunder for basta label-frame.
-
-Returnera ett JSON-objekt med dessa falt:
-order_number, shipment_number, username, customer_name, pallet_id, deviations, uncertainty_notes,
-label_frame_time_seconds, confidence.
-""".strip()
 
 
 META_ANALYSIS_INSTRUCTIONS = """
@@ -371,8 +344,7 @@ def _gemini_url(path: str, query: dict[str, str] | None = None) -> str:
 
 
 def _gemini_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
-    # Nyckeln i header (som mcp/chat.py), aldrig i URL:en — URL:er hamnar i
-    # undantagstexter, spans och loggar.
+    # Nyckeln i header (som mcp/chat.py), aldrig i URL:en — URL:er hamnar i loggar/undantag.
     return {"x-goog-api-key": settings.GEMINI_API_KEY.strip(), **(extra or {})}
 
 
@@ -629,7 +601,6 @@ def normalize_meta_analysis(payload: dict) -> dict:
             _field(payload, "uncertainty_notes", "uncertainties", "osakerhet", "notes"),
             2000,
         ),
-        "label_frame_time_seconds": None,
     }
 
 
@@ -660,19 +631,23 @@ def _append_uncertainty_note(existing: str | None, note: str | None) -> str | No
 
 
 def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None]:
+    """Bast-effort ASK-uppslag: far ALDRIG falla analysen — varje utfall utan
+    traff blir en begriplig osakerhetsanteckning pa raden i stallet."""
     pallet = str(pallet_id or "").strip()
-    if not pallet or not workflow_api_configured():
-        return {}
+    if not pallet:
+        return {"note": "Inget pall-id att sla upp i Dispatchpallar."}
+    if not workflow_api_configured():
+        return {"note": "Extern datakalla ar inte konfigurerad, sa Dispatchpallar kunde inte slas upp."}
     try:
         spec = source_spec("dispatch")
         rows = _api_client().fetch_data(
             spec.view,
             filters=[ExternalDataClient.eq("pick_pall_num", pallet)],
         )
-    except (ExternalDataClientError, WorkflowDataError) as exc:
+    except Exception as exc:  # noqa: BLE001 — aven ovantade fel ska bli en anteckning, inte analysis_failed
         logger.warning("Could not enrich Meta analysis from Dispatchpallar for pallet %s: %s", pallet, exc)
         return {
-            "note": "Dispatchpallar kunde inte hamtas fran ASK for pall-id.",
+            "note": f"Dispatchpallar kunde inte hamtas fran ASK for pall-id {pallet} ({type(exc).__name__}).",
         }
     if not rows:
         return {
@@ -709,106 +684,12 @@ def _apply_dispatch_lookup(observation: MetaShipmentObservation, fields: dict) -
         )
 
 
-def _status_for_analysis(fields: dict, label_image_upload_id: int | None) -> str:
+def _status_for_analysis(fields: dict) -> str:
     if fields.get("uncertainty_notes"):
         return "manual_review"
     if not fields.get("pallet_id") or not fields.get("deviations"):
         return "manual_review"
     return "analyzed"
-
-
-def _timestamp_seconds(value: str | None) -> float | None:
-    if not value:
-        return None
-    try:
-        parsed = float(str(value).replace(",", ".").strip())
-    except ValueError:
-        return None
-    return parsed if parsed >= 0 else None
-
-
-def _configured_label_still_seconds() -> float | None:
-    try:
-        parsed = float(settings.META_LABEL_STILL_TIME_SECONDS)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed >= 0 else None
-
-
-def _format_timestamp_seconds(value: float | None) -> str | None:
-    if value is None:
-        return None
-    return f"{value:.3f}".rstrip("0").rstrip(".")
-
-
-def _label_still_filename(upload: MetaMediaUpload, image_hash: str) -> str:
-    stem = Path(upload.stored_filename or upload.original_filename or "meta-video").stem[:180]
-    return f"{stem}_etikett_{image_hash[:10]}.jpg"[:255]
-
-
-def extract_label_still_bytes(upload: MetaMediaUpload, timestamp_seconds: float) -> bytes | None:
-    ffmpeg = _resolve_ffmpeg()
-    if not ffmpeg:
-        return None
-    with _media_file(upload) as input_path, tempfile.TemporaryDirectory() as temp_dir:
-        output_path = Path(temp_dir) / "label.jpg"
-        command = [
-            ffmpeg,
-            "-y",
-            "-ss",
-            f"{timestamp_seconds:.3f}",
-            "-i",
-            str(input_path),
-            "-frames:v",
-            "1",
-            "-q:v",
-            "2",
-            str(output_path),
-        ]
-        try:
-            completed = subprocess.run(command, capture_output=True, timeout=30, check=False)
-        except (OSError, subprocess.SubprocessError) as exc:
-            # Etikett-stillbilden är valfri: ett ffmpeg-fel/timeout här får inte
-            # fälla hela analysen (samma princip som extract_audio_file).
-            logger.info("Could not extract meta label still with ffmpeg: %s", exc)
-            return None
-        if completed.returncode != 0 or not output_path.exists():
-            logger.info("Could not extract meta label still with ffmpeg: %s", completed.stderr[:500])
-            return None
-        return output_path.read_bytes()
-
-
-def create_label_still_upload(db: Session, source_upload: MetaMediaUpload, image_bytes: bytes) -> MetaMediaUpload:
-    image_hash = hashlib.sha256(image_bytes).hexdigest()
-    existing = db.query(MetaMediaUpload).filter(MetaMediaUpload.content_hash == image_hash).first()
-    if existing is not None:
-        return existing
-    store = get_media_store()
-    writer = store.create_writer(suffix=".jpg")
-    try:
-        writer.write(image_bytes)
-        stored = writer.commit()
-    except BaseException:
-        writer.abort()
-        raise
-    now = datetime.now(timezone.utc)
-    row = MetaMediaUpload(
-        batch_id=source_upload.batch_id,
-        original_filename=_label_still_filename(source_upload, image_hash),
-        stored_filename=_label_still_filename(source_upload, image_hash),
-        content_type="image/jpeg",
-        media_type="image",
-        size_bytes=len(image_bytes),
-        content_hash=image_hash,
-        storage_backend=store.backend,
-        storage_key=stored.key,
-        status="label_still",
-        source="meta_label_still",
-        created_at=now,
-    )
-    db.add(row)
-    db.flush()
-    return row
 
 
 def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
@@ -842,21 +723,10 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
         observation.pallet_id = fields["pallet_id"]
         observation.deviations = fields["deviations"]
         observation.uncertainty_notes = fields["uncertainty_notes"]
-        observation.label_frame_time_seconds = _format_timestamp_seconds(_configured_label_still_seconds())
         observation.llm_raw_response = raw_response
         _apply_dispatch_lookup(observation, fields)
-
-        label_upload = None
-        seconds = _timestamp_seconds(observation.label_frame_time_seconds)
-        if seconds is not None:
-            still_bytes = extract_label_still_bytes(upload, seconds)
-            if still_bytes:
-                label_upload = create_label_still_upload(db, upload, still_bytes)
-                observation.label_image_upload_id = label_upload.id
-                observation.label_image_hash = label_upload.content_hash
         observation.analysis_status = _status_for_analysis(
             {**fields, "uncertainty_notes": observation.uncertainty_notes},
-            observation.label_image_upload_id,
         )
         observation.analysis_error = None
         refresh_record_hash(observation)
