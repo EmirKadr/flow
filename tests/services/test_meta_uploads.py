@@ -107,7 +107,7 @@ def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
     assert fields["pallet_id"] == "PALL-1"
     assert fields["deviations"] == ["Dåligt byggd pall"]
     assert fields["uncertainty_notes"] == "Kontrollera kundnamn"
-    assert fields["label_frame_time_seconds"] is None
+    assert "label_frame_time_seconds" not in fields
     assert re.fullmatch(
         r"[0-9a-f]{64}",
         meta_analysis_service.calculate_record_hash(
@@ -177,19 +177,15 @@ def test_meta_record_hash_ignores_future_lookup_fields():
 def test_meta_analysis_status_requires_only_pallet_id_and_deviations():
     assert meta_analysis_service._status_for_analysis(
         {"pallet_id": "BOX-001", "deviations": ["Pall lutar"], "uncertainty_notes": None},
-        None,
     ) == "analyzed"
     assert meta_analysis_service._status_for_analysis(
         {"pallet_id": None, "deviations": ["Pall lutar"], "uncertainty_notes": None},
-        None,
     ) == "manual_review"
     assert meta_analysis_service._status_for_analysis(
         {"pallet_id": "BOX-001", "deviations": [], "uncertainty_notes": None},
-        None,
     ) == "manual_review"
     assert meta_analysis_service._status_for_analysis(
         {"pallet_id": "BOX-001", "deviations": ["Pall lutar"], "uncertainty_notes": "Flera pall-id hors."},
-        None,
     ) == "manual_review"
 
 
@@ -202,7 +198,6 @@ def test_meta_ffmpeg_resolver_uses_imageio_fallback(monkeypatch):
 
 def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
-    monkeypatch.setattr(settings, "META_LABEL_STILL_TIME_SECONDS", 1.0)
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -215,7 +210,6 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
             "deviations": ["Pall lutar"],
         },
     )
-    monkeypatch.setattr(meta_analysis_service, "extract_label_still_bytes", lambda upload, seconds: None)
     monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: False)
     engine, session = make_session()
     row = MetaMediaUpload(
@@ -237,7 +231,10 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
     try:
         result = meta_analysis_service.analyze_meta_upload(session, row.id)
 
-        assert result.analysis_status == "analyzed"
+        # Utan konfigurerad extern datakalla ska uppslaget bli en begriplig
+        # anteckning (inte tysta tomma falt) och raden hamna i Kontrollera.
+        assert result.analysis_status == "manual_review"
+        assert "inte konfigurerad" in (result.uncertainty_notes or "")
         assert result.order_number is None
         assert result.shipment_number is None
         assert result.username is None
@@ -245,7 +242,7 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
         assert result.pallet_id == "BOX-001"
         assert result.deviations == ["Pall lutar"]
         assert result.label_image_upload_id is None
-        assert result.label_frame_time_seconds == "1"
+        assert result.label_frame_time_seconds is None
     finally:
         session.close()
         Base.metadata.drop_all(engine)
@@ -254,7 +251,6 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
 
 def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
-    monkeypatch.setattr(settings, "META_LABEL_STILL_TIME_SECONDS", 1.0)
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -263,7 +259,6 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
             "deviations": ["Pall lutar"],
         },
     )
-    monkeypatch.setattr(meta_analysis_service, "extract_label_still_bytes", lambda upload, seconds: None)
     monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
 
     class FakeDispatchClient:
@@ -1054,7 +1049,7 @@ def test_super_user_can_export_meta_shipment_observations_excel():
         assert values[9] == "20260531_120102_123456Z_01.mov"
         assert values[10] == "1:15"
         assert values[11] == "11 B"
-        assert values[13] == "c" * 64
+        assert values[12] == "c" * 64
         workbook.close()
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -1251,7 +1246,7 @@ def test_gemini_requests_put_api_key_in_header_not_url(monkeypatch):
 def test_ffmpeg_commands_cap_threads_to_protect_pod_memory(monkeypatch):
     """ffmpeg default ar tradar for alla karnor; multitradad avkodning av
     hogupplost h264 (Meta-glasogon: 1488x1984@120fps) tog ~254 MB och
-    grupp-OOM-dodade podden 2026-07-09. Analysens avkodningar ska kora
+    grupp-OOM-dodade podden 2026-07-09. Ljudextraktionen ska kora
     -threads 1 och playable-transkodningen -threads 2 (avkodare + x264)."""
     captured: list[list[str]] = []
 
@@ -1278,23 +1273,109 @@ def test_ffmpeg_commands_cap_threads_to_protect_pod_memory(monkeypatch):
     monkeypatch.setattr(meta_analysis_service.subprocess, "run", fake_run)
     with meta_analysis_service.extract_audio_file(upload) as audio:
         assert audio.size_bytes > 0
-    assert meta_analysis_service.extract_label_still_bytes(upload, 1.0) == b"fake-output"
 
     monkeypatch.setattr(meta_uploads_helpers, "_resolve_ffmpeg", lambda: "ffmpeg")
     monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fake_run)
     playable = meta_uploads_helpers._transcode_video_to_playable(upload)
     playable.unlink(missing_ok=True)
 
-    audio_cmd, still_cmd, transcode_cmd = captured
-    for cmd in (audio_cmd, still_cmd):
-        index = cmd.index("-threads")
-        assert cmd[index + 1] == "1"
-        assert index < cmd.index("-i"), "trådtaket ska sättas före -i (avkodaren)"
+    audio_cmd, transcode_cmd = captured
+    index = audio_cmd.index("-threads")
+    assert audio_cmd[index + 1] == "1"
+    assert index < audio_cmd.index("-i"), "trådtaket ska sättas före -i (avkodaren)"
     assert transcode_cmd.count("-threads") == 2
     first = transcode_cmd.index("-threads")
     second = transcode_cmd.index("-threads", first + 1)
     assert transcode_cmd[first + 1] == "2" and transcode_cmd[second + 1] == "2"
     assert first < transcode_cmd.index("-i") < transcode_cmd.index("libx264") < second
+
+
+def test_analysis_no_longer_creates_label_stills():
+    """Stillbildsfunktionen ar borttagen (beslut 2026-07-09): analysen far
+    aldrig ateruppliva videoavkodning i podden. Skyddar mot regression via
+    ateranvanda hjalpfunktioner."""
+    assert not hasattr(meta_analysis_service, "extract_label_still_bytes")
+    assert not hasattr(meta_analysis_service, "create_label_still_upload")
+    assert not hasattr(Settings(_env_file=None), "META_LABEL_STILL_TIME_SECONDS")
+
+
+def _make_analyzed_upload(session, content_hash: str) -> MetaMediaUpload:
+    row = MetaMediaUpload(
+        batch_id="batch-lookup",
+        original_filename="voice.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash=content_hash,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"lookup-video" + content_hash.encode(), ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def test_dispatch_lookup_miss_becomes_note_not_failure(monkeypatch):
+    """Ingen traff i Dispatchpallar ska ge en tydlig anteckning med pall-id
+    och status Kontrollera — inte ett fel."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {"pallet_id": "BOX-SAKNAS", "deviations": ["Pall lutar"]},
+    )
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_api_client",
+        lambda: SimpleNamespace(fetch_data=lambda view, filters=None, identifiers=None: []),
+    )
+    engine, session = make_session()
+    row = _make_analyzed_upload(session, "d1" * 32)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "manual_review"
+        assert "ingen traff for pall-id BOX-SAKNAS" in (result.uncertainty_notes or "")
+        assert result.analysis_error is None
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_dispatch_lookup_unexpected_error_becomes_note_not_failure(monkeypatch):
+    """Aven ett OVANTAT fel i ASK-uppslaget (inte bara kanda klientfel) ska
+    bli en anteckning pa raden — analysen far aldrig kranga pa uppslaget."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {"pallet_id": "BOX-001", "deviations": ["Pall lutar"]},
+    )
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+
+    def _boom():
+        raise RuntimeError("ovantat uppslagsfel")
+
+    monkeypatch.setattr(meta_analysis_service, "_api_client", _boom)
+    engine, session = make_session()
+    row = _make_analyzed_upload(session, "e2" * 32)
+    try:
+        result = meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert result.analysis_status == "manual_review"
+        assert "kunde inte hamtas" in (result.uncertainty_notes or "")
+        assert "BOX-001" in (result.uncertainty_notes or "")
+        assert result.analysis_error is None
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_analyze_meta_upload_scrubs_api_key_from_analysis_error(monkeypatch):

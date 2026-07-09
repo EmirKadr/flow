@@ -351,14 +351,11 @@ def _media_upload_audit_snapshot(row: MetaMediaUpload) -> dict:
 
 def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
     video_id = row.media_upload_id
-    label_id = row.label_image_upload_id
     video = row.media_upload
     return {
         "id": row.id,
         "media_upload_id": video_id,
-        "label_image_upload_id": label_id,
         "video_hash": row.video_hash,
-        "label_image_hash": row.label_image_hash,
         "record_hash": row.record_hash,
         "order_number": row.order_number,
         "shipment_number": row.shipment_number,
@@ -367,7 +364,6 @@ def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
         "pallet_id": row.pallet_id,
         "deviations": row.deviations or [],
         "uncertainty_notes": row.uncertainty_notes,
-        "label_frame_time_seconds": row.label_frame_time_seconds,
         "analysis_status": row.analysis_status,
         "analysis_error": row.analysis_error,
         "llm_model": row.llm_model,
@@ -378,7 +374,6 @@ def _shipment_observation_out(row: MetaShipmentObservation) -> dict:
         "video_size_bytes": video.size_bytes if video else None,
         "video_size_label": _format_size(video.size_bytes) if video else None,
         "video_url": f"/api/meta/uploads/{video_id}/content" if video_id else None,
-        "label_still_url": f"/api/meta/uploads/{label_id}/content" if label_id else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -397,7 +392,6 @@ META_SHIPMENT_EXPORT_HEADERS = [
     "Video",
     "Längd",
     "Storlek",
-    "Etikett",
     "Rad-ID",
 ]
 
@@ -430,7 +424,6 @@ def _shipment_export_row(row: MetaShipmentObservation) -> list[Any]:
         (video.stored_filename or video.original_filename) if video else "",
         _format_duration(video.duration_seconds) if video else "",
         _format_size(video.size_bytes) if video else "",
-        "Finns" if row.label_image_upload_id else "",
         row.record_hash,
     ]
 

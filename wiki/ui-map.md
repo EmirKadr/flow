@@ -57,7 +57,7 @@ Sidebaren ar fast i vansterkanten och byter inte position nar sidans innehall sk
 | Bearbeta | `bearbeta.html` | Valj filer, flodesknappar, info, resultat, Excel/CSV | [Lagerverktyg](warehouse-tools.md) |
 | Installningar | `installningar.html` | Ytgenereringens ytkarta, Bearbeta-matris, zoom/pan, lediga U-platser, spara global kartlayout, Bemanning-flik for historiktimmar till hover-snitt/automatisk kalkyl och val av aktiviteter med historiskt snitt, Vybehorigheter-flik (rollmatrisen, flyttad fran Anvandare 2026-07-07) | [Lagerverktyg](warehouse-tools.md), [Bemanning](bemanning-schedule.md), [Anvandare och installningar](users-settings.md) |
 | Dela | `dela.html` | Textfil/textarea, antal per kolumn, Dela varden | [Lagerverktyg](warehouse-tools.md) |
-| Meta | `meta.html` | Sok, Uppdatera, export, Sandningsanalys med ordernummer, sandningsnummer, Video-ID/langd/storlek, Analysera och nedladdning av video/stillbild | [Meta-uppladdning](meta-upload.md) |
+| Meta | `meta.html` | Sok, Uppdatera, export, Sandningsanalys med ordernummer, sandningsnummer, Video-ID/langd/storlek, Analysera och nedladdning av video | [Meta-uppladdning](meta-upload.md) |
 | Meta-uppladdning | `meta-upload.html` | Valj flera bilder/videor, visa vald videolangd nar metadata finns, automatisk uppladdning | [Meta-uppladdning](meta-upload.md) |
 
 ## Generella UI-regler
