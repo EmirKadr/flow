@@ -127,6 +127,16 @@ spec:
               value: "1000"
             - name: DATA_SOURCE_RESPONSE_ROW_CAP
               value: "50000"
+            # Lokal arkiv-cache (DuckDB på flow-media-PVC:n). Ej hemliga och lika
+            # i alla miljöer → hårdkodade här i stället för Octopus-variabler.
+            # SEED_ON_START=0: cachen seedas lokalt via CLI och kopieras in på
+            # PVC:n; podden ska inte dra prod-arkivet själv (OOM-risk).
+            - name: ARCHIVE_CACHE_ENABLED
+              value: "1"
+            - name: ARCHIVE_CACHE_DIR
+              value: "/var/flow-media/archive_cache"
+            - name: ARCHIVE_CACHE_SEED_ON_START
+              value: "0"
             - name: TRACKING_ALLOW_VALUE_SAMPLES
               value: "false"
             - name: ALLOCATION_OBSERVATIONS_STARTUP_SYNC
