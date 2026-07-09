@@ -90,7 +90,7 @@ function appendQuery(url, params = {}) {
 }
 
 function shipmentMediaFilename(item, fallback = "meta-fil") {
-  const hash = String(item?.video_hash || item?.label_image_hash || "").slice(0, 10);
+  const hash = String(item?.video_hash || "").slice(0, 10);
   return hash ? `${fallback}-${hash}` : fallback;
 }
 
@@ -124,15 +124,13 @@ function enqueueMetaDownload(task, button = null) {
   runNextMetaDownload();
 }
 
-async function downloadShipmentMedia(item, kind, button = null) {
-  const baseUrl = kind === "label" ? item?.label_still_url : item?.video_url;
-  const url = baseUrl
-    ? appendQuery(baseUrl, { download: "1", variant: kind === "video" ? "playable" : "" })
+async function downloadShipmentMedia(item, button = null) {
+  const url = item?.video_url
+    ? appendQuery(item.video_url, { download: "1", variant: "playable" })
     : null;
   if (!url) return;
-  const fallback = kind === "label" ? "etikett.jpg" : "meta-video";
   enqueueMetaDownload(
-    () => api.download(url, shipmentMediaFilename(item, fallback)),
+    () => api.download(url, shipmentMediaFilename(item, "meta-video")),
     button
   );
 }
@@ -188,7 +186,7 @@ function confirmDeleteShipment(item) {
   backdrop.innerHTML = `
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="meta-delete-title">
       <h3 id="meta-delete-title">Radera video permanent</h3>
-      <p>${escapeHtml(videoTitle)} och alla spår (sändningsrad, videofil och stillbild) tas bort permanent. Detta går inte att ångra.</p>
+      <p>${escapeHtml(videoTitle)} och alla spår (sändningsrad och videofil) tas bort permanent. Detta går inte att ångra.</p>
       <div class="modal-actions">
         <button type="button" class="secondary" id="meta-delete-cancel">Avbryt</button>
         <button type="button" class="danger" id="meta-delete-confirm">Radera</button>
@@ -292,7 +290,6 @@ function shipmentSearchText(item) {
 function sortValue(item, key) {
   if (key === "deviations") return Array.isArray(item.deviations) ? item.deviations.join(", ") : "";
   if (key === "analysis_status") return statusLabel(item.analysis_status);
-  if (key === "label_status") return item.label_still_url ? "Finns" : "";
   if (key === "updated_at") {
     const parsed = Date.parse(item.updated_at || item.created_at || "");
     return Number.isNaN(parsed) ? 0 : parsed;
@@ -365,11 +362,11 @@ function renderShipmentRows() {
     ? `${visibleItems.length} av ${shipmentItems.length} sändningsrader`
     : `${shipmentItems.length} sändningsrader`;
   if (!shipmentItems.length) {
-    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
     return;
   }
   if (!visibleItems.length) {
-    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
     return;
   }
 
@@ -383,7 +380,6 @@ function renderShipmentRows() {
     const videoHash = shortHash(item.video_hash);
     const videoSize = item.video_size_label || formatBytes(item.video_size_bytes);
     const videoDownloadLabel = `Ladda ner ${videoTitle || "video"}`;
-    const labelDownloadLabel = `Ladda ner stillbild för ${videoTitle || "video"}`;
     const timestamp = formatTimestamp(item.updated_at || item.created_at);
     const timestampTitle = `Skapad: ${formatTimestamp(item.created_at)}\nUppdaterad: ${formatTimestamp(item.updated_at)}`;
     return `
@@ -405,13 +401,11 @@ function renderShipmentRows() {
         </td>
         <td data-duration-for="${escapeHtml(item.media_upload_id || "")}">${escapeHtml(formatDuration(item.video_duration_seconds))}</td>
         <td>${escapeHtml(videoSize)}</td>
-        <td>${item.label_still_url ? "Finns" : "-"}</td>
         <td class="meta-admin-hash" title="${escapeHtml(hashTitle)}">${escapeHtml(shortHash(item.record_hash) || "-")}</td>
         <td>
           <div class="meta-admin-table-actions">
             ${statusSelect(item)}
             ${iconButton({ dataset: { "download-shipment-video": item.id }, label: videoDownloadLabel, icon: "↓", disabled: !item.video_url })}
-            ${iconButton({ dataset: { "download-shipment-label": item.id }, label: labelDownloadLabel, icon: "▧", disabled: !item.label_still_url })}
             ${iconButton({ className: "primary", dataset: { "analyze-upload": item.id }, label: "Analysera", icon: "AI", disabled: status === "analyzing" })}
             ${iconButton({ className: "danger", dataset: { "delete-upload": item.id }, label: "Radera video permanent", icon: "🗑", disabled: !item.media_upload_id })}
           </div>
@@ -423,13 +417,7 @@ function renderShipmentRows() {
   tbody.querySelectorAll("[data-download-shipment-video]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentVideo));
-      void downloadShipmentMedia(item, "video", button);
-    });
-  });
-  tbody.querySelectorAll("[data-download-shipment-label]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentLabel));
-      void downloadShipmentMedia(item, "label", button);
+      void downloadShipmentMedia(item, button);
     });
   });
   tbody.querySelectorAll("[data-analyze-upload]").forEach((button) => {

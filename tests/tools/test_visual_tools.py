@@ -2059,7 +2059,8 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert 'data-sort-key="shipment_number"' in html
     assert 'data-sort-key="updated_at"' in html
     assert 'data-sort-key="video_size_bytes"' in html
-    assert 'data-sort-key="label_status"' in html
+    # Stillbildsfunktionen ar borttagen (2026-07-09): ingen Etikett-kolumn.
+    assert 'data-sort-key="label_status"' not in html
     assert "Längd" in html
     assert "Storlek" in html
     assert "Uppdaterad" in html
@@ -2087,9 +2088,9 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "{ direct: true }" not in js
     assert "META_DOWNLOAD_CONCURRENCY = 1" in js
     assert "function enqueueMetaDownload" in js
-    assert 'downloadShipmentMedia(item, "video", button)' in js
-    assert 'downloadShipmentMedia(item, "label", button)' in js
-    assert "variant: kind === \"video\" ? \"playable\" : \"\"" in js
+    assert "downloadShipmentMedia(item, button)" in js
+    assert "download-shipment-label" not in js
+    assert 'variant: "playable"' in js
     assert "function downloadDirect" in api_js
     assert 'method: "HEAD"' in api_js
     assert 'credentials: "include"' in api_js
@@ -2097,7 +2098,7 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "Ladda ner" in js
     assert "Analysera" in js
     assert "shipment_number" in js
-    assert 'key === "label_status"' in js
+    assert "label_status" not in js
     assert "formatTimestamp(item.updated_at || item.created_at)" in js
     assert "meta-admin-timestamp" in js
     assert "formatDuration" in js
