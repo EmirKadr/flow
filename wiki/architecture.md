@@ -93,20 +93,31 @@ kontraktstest skyddar Dockerfile-CMD mot `--workers`.
 
 ## Deployment och lokal drift
 
+Tre miljonivaer:
+
+| Niva | Var | Status |
+| --- | --- | --- |
+| **Lokal** | Utvecklarens dator, SQLite | Alltid tillganglig, se skript nedan |
+| **Development** | k8s namespace `flow`, `dev-common`, `flow-development.nowastelogistics.com`, MSSQL | Live sedan 2026-07 |
+| **Production** | k8s `prod-common`, planerad URL `flow.nowastelogistics.com` | **Finns annu inte** — bekraftat av Emir 2026-07-10. Manifestet `k8s/flow.yml` ar forberett for den men ingen prod-deploy har gjorts |
+
 - Officiell drift sedan 2026-07 ar foretagets Kubernetes (nowasteserver):
   manifest i `k8s/` (namespace `flow`, 1 replika, PVC:er for data/media),
-  deploy via Octopus-projektet **Flow**, databas MSSQL. Development-miljon ar
-  `flow-development.nowastelogistics.com`. Release- och branchmodellen
-  beskrivs i [nowaste-git-release.md](nowaste-git-release.md).
+  deploy via Octopus-projektet **Flow**, databas MSSQL. Release- och
+  branchmodellen beskrivs i [nowaste-git-release.md](nowaste-git-release.md).
 - **Miljotopologi och DB-latens (viktigt for prestandabedomning):**
   development-miljons k8s-kluster kor i **Proacts datacenter** medan SQL
   Servern (tst-effect40) ligger i **Azure northeurope** → ~37 ms natverkslatens
-  per databasfraga. I **produktionsmiljon ligger bada i samma datacenter**
-  (bekraftat av Mikael Hallin 2026-07-04), sa latensskatten finns inte dar.
-  Konsekvens: development ar 3–8× langsammare an prod pa fragetunga endpoints
-  (uppmatt 2026-07-04: `/api/schedule` 177 ms pa Render vs 1 007 ms i dev-k8s) —
-  extrapolera aldrig prestanda fran development till prod. Fragetunga vyer
-  (20+ sekventiella DB-fragor per klick) bor anda batchas pa sikt.
+  per databasfraga. Jamforelsen "produktionsmiljon ligger i samma datacenter"
+  (bekraftat av Mikael Hallin 2026-07-04) syftade pa den **gamla, nu avvecklade
+  Render-driften** — inte den framtida k8s-produktionen, som annu inte finns
+  och darfor inte har uppmatt topologi. Benchmarken nedan jamfor darfor Render
+  (gammal prod) mot dev-k8s, inte ny prod mot dev.
+  Konsekvens: development var 3–8× langsammare an gamla Render-prod pa
+  fragetunga endpoints (uppmatt 2026-07-04: `/api/schedule` 177 ms pa Render
+  vs 1 007 ms i dev-k8s) — extrapolera aldrig den siffran till den framtida
+  k8s-produktionen utan ny matning nar den finns. Fragetunga vyer (20+
+  sekventiella DB-fragor per klick) bor anda batchas pa sikt.
   Benchmarka med `tools.api_benchmark` (se [testing-release.md](testing-release.md)).
 - **Octopus-projektvariabler blir inte automatiskt env i podden** — deploy-
   processen maste mappa in dem (Mickes doman). Symptom nar mappning saknas:
