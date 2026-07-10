@@ -3,6 +3,7 @@ import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import pytest
 from fastapi.routing import APIRoute
 
 from app.backend.main import app
@@ -32,6 +33,20 @@ class CliTestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/allokering/pool":
             self._json({"pool": [{"key": "orders", "label": "Detalj Kundorder"}]})
             return
+        if self.path == "/api/meta/shipment-observations?status=queued&limit=200":
+            self._json(
+                {
+                    "count": 2,
+                    "items": [
+                        {"id": 11, "media_upload_id": 101, "analysis_status": "queued"},
+                        {"id": 12, "media_upload_id": 102, "analysis_status": "queued"},
+                    ],
+                }
+            )
+            return
+        if self.path == "/api/meta/shipment-observations?status=empty&limit=200":
+            self._json({"count": 0, "items": []})
+            return
         if self.path == "/api/allokering/download/abc/result":
             body = b"Kolumn 1,Kolumn 2\nA,C\nB,\n"
             self.send_response(200)
@@ -49,6 +64,12 @@ class CliTestHandler(BaseHTTPRequestHandler):
             self.rfile.read(length)
         if self.path == "/api/allokering/detect":
             self._json({"file_type": "orders"})
+            return
+        if self.path == "/api/meta/uploads/101/analyze":
+            self._json({"item": {"id": 11}, "status": "analyzed", "message": None})
+            return
+        if self.path == "/api/meta/uploads/102/analyze":
+            self._json({"detail": "LLM saknas"}, status=400)
             return
         if self.path == "/api/allokering/flow/split-values":
             self._json(
@@ -195,6 +216,75 @@ def test_cli_allocation_aliases_can_run_and_download_results(tmp_path, capsys):
     assert '"session_id": "abc"' in output
     assert '"downloads"' in output
     assert (tmp_path / "out" / "result.csv").read_text(encoding="utf-8") == "Kolumn 1,Kolumn 2\nA,C\nB,\n"
+
+
+def test_cli_auth_login_falls_back_to_e2e_env_vars(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(flow_cli, "load_env_files", lambda *args, **kwargs: None)
+    monkeypatch.setenv("FLOW_E2E_USERNAME", "admin")
+    monkeypatch.setenv("FLOW_E2E_PASSWORD", "admin123")
+    base_url, server = visual_smoke.start_local_server(tmp_path)
+    cookie_jar = tmp_path / "cli-cookies.txt"
+    try:
+        result = flow_cli.main(["--base-url", base_url, "--cookie-jar", str(cookie_jar), "auth", "login"])
+    finally:
+        server.close()
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert '"username": "admin"' in output
+
+
+def test_cli_auth_login_without_credentials_raises_helpful_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(flow_cli, "load_env_files", lambda *args, **kwargs: None)
+    monkeypatch.delenv("FLOW_E2E_USERNAME", raising=False)
+    monkeypatch.delenv("FLOW_E2E_PASSWORD", raising=False)
+
+    with pytest.raises(SystemExit, match="Saknar anvandarnamn"):
+        flow_cli.main(
+            ["--base-url", "http://127.0.0.1:1", "--cookie-jar", str(tmp_path / "cookies.txt"), "auth", "login"]
+        )
+
+
+def test_cli_meta_process_queue_analyzes_each_row_and_reports_errors(tmp_path, capsys):
+    server, thread = start_cli_test_server()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        common = ["--base-url", base_url, "--cookie-jar", str(tmp_path / "cookies.txt")]
+        result = flow_cli.main([*common, "meta", "process-queue", "--json"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+
+    assert result == 1  # en av tva rader gav fel
+    assert payload["count"] == 2
+    assert payload["results"][0] == {
+        "observation_id": 11,
+        "media_upload_id": 101,
+        "old_status": "queued",
+        "new_status": "analyzed",
+        "message": None,
+    }
+    assert payload["results"][1]["error"] == "HTTP 400"
+
+
+def test_cli_meta_process_queue_reports_empty_queue(tmp_path, capsys):
+    server, thread = start_cli_test_server()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        common = ["--base-url", base_url, "--cookie-jar", str(tmp_path / "cookies.txt")]
+        result = flow_cli.main([*common, "meta", "process-queue", "--status", "empty"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "Inga sändningsrader med status=empty." in output
 
 
 def test_cli_db_lookup_finds_hidden_people_users_and_activities(tmp_path, capsys):

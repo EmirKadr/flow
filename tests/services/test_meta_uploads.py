@@ -278,7 +278,7 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
             ]
 
     fake_client = FakeDispatchClient()
-    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda: fake_client)
+    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda tenant=None: fake_client)
     engine, session = make_session()
     row = MetaMediaUpload(
         batch_id="batch",
@@ -1332,7 +1332,7 @@ def test_dispatch_lookup_miss_becomes_note_not_failure(monkeypatch):
     monkeypatch.setattr(
         meta_analysis_service,
         "_api_client",
-        lambda: SimpleNamespace(fetch_data=lambda view, filters=None, identifiers=None: []),
+        lambda tenant=None: SimpleNamespace(fetch_data=lambda view, filters=None, identifiers=None: []),
     )
     engine, session = make_session()
     row = _make_analyzed_upload(session, "d1" * 32)
@@ -1342,6 +1342,39 @@ def test_dispatch_lookup_miss_becomes_note_not_failure(monkeypatch):
         assert result.analysis_status == "manual_review"
         assert "ingen traff for pall-id BOX-SAKNAS" in (result.uncertainty_notes or "")
         assert result.analysis_error is None
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_dispatch_lookup_passes_configured_tenant_fallback(monkeypatch):
+    """Meta-uppladdningar har ingen business_id att slå upp tenant från (publik,
+    inloggningsfri), sa ASK-uppslaget maste falla tillbaka pa den konfigurerade
+    META_ANALYSIS_DATA_SOURCE_TENANT — annars blir bas-URL:en olost "{tenant}"
+    pa miljoer dar DATA_SOURCE_API_BASE_URL ar en multi-tenant-mall."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "META_ANALYSIS_DATA_SOURCE_TENANT", "frey")
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_call_meta_analysis_provider",
+        lambda upload: {"pallet_id": "BOX-001", "deviations": ["Pall lutar"]},
+    )
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+
+    seen_tenants = []
+
+    def _api_client(tenant=None):
+        seen_tenants.append(tenant)
+        return SimpleNamespace(fetch_data=lambda view, filters=None, identifiers=None: [])
+
+    monkeypatch.setattr(meta_analysis_service, "_api_client", _api_client)
+    engine, session = make_session()
+    row = _make_analyzed_upload(session, "a1" * 32)
+    try:
+        meta_analysis_service.analyze_meta_upload(session, row.id)
+
+        assert seen_tenants == ["frey"]
     finally:
         session.close()
         Base.metadata.drop_all(engine)
@@ -1376,7 +1409,7 @@ def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
             ]
         return []
 
-    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda: SimpleNamespace(fetch_data=fetch_data))
+    monkeypatch.setattr(meta_analysis_service, "_api_client", lambda tenant=None: SimpleNamespace(fetch_data=fetch_data))
     engine, session = make_session()
     row = _make_analyzed_upload(session, "f3" * 32)
     try:
@@ -1409,7 +1442,7 @@ def test_dispatch_lookup_unexpected_error_becomes_note_not_failure(monkeypatch):
     )
     monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
 
-    def _boom():
+    def _boom(tenant=None):
         raise RuntimeError("ovantat uppslagsfel")
 
     monkeypatch.setattr(meta_analysis_service, "_api_client", _boom)
