@@ -4,10 +4,14 @@ Det här dokumentet beskriver hur appen `flow` paketeras som en Docker-image
 och vad som krävs för att köra den i ett Kubernetes-kluster. Riktar sig till
 den som sätter upp deploymenten på företagets sida.
 
-Produktionen kör sedan 2026-07 i företagets Kubernetes (namespace `flow`,
-manifest i `k8s/`) med en **MSSQL/Azure SQL**-databas, och deployas via
-Octopus-projektet Flow (se `wiki/nowaste-git-release.md`). Databasdrivern
-är ODBC Driver 18 och ingår i imagen.
+**Miljöstatus (2026-07-10):** manifesten nedan täcker tre nivåer — lokal
+(utvecklarens dator), development och production. Development kör i
+företagets Kubernetes sedan 2026-07 (namespace `flow`, manifest i `k8s/`)
+med en **MSSQL/Azure SQL**-databas, deployas via Octopus-projektet Flow (se
+`wiki/nowaste-git-release.md`). **Production finns ännu inte** — samma
+manifest är förberett för den men ingen prod-deploy har gjorts än. Se
+miljötabellen i `wiki/architecture.md`. Databasdrivern är ODBC Driver 18 och
+ingår i imagen.
 
 ---
 

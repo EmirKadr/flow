@@ -1,11 +1,25 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-09
+updated: 2026-07-10
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-10] lint | Miljönivåer förtydligade: lokal/development/production, prod finns ännu inte
+
+Emir flaggade att repot var otydligt/motsägelsefullt om att det finns tre
+miljönivåer (lokal, development, production) och att production ännu inte
+existerar. Innan ändringen läste `k8s/README.md` och `wiki/architecture.md`
+som att production redan var en konfigurerad, deployad Octopus-target
+(`prod-common`, `flow.nowastelogistics.com`), och architecture.md:s
+prestandajämförelse ("produktionsmiljon ligger i samma datacenter") syftade
+faktiskt på den gamla, avvecklade Render-driften — inte den framtida
+k8s-produktionen — vilket var lätt att läsa fel. Lade till en miljötabell i
+`architecture.md`, förtydligade `k8s/README.md` och `DEPLOY.md` med att
+production är förberedd men inte deployad, och en rad i
+`nowaste-git-release.md`. Ingen kodändring.
 
 ## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
 

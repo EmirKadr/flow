@@ -36,8 +36,10 @@ databas, resurser m.m.).
 
 `flow.yml` är avsedd för Octopus och använder Octopus-variabler för namespace,
 image digest och hemliga runtime-värden. Den skapar varken Namespace eller Secret:
-Development deployas till `dev-common`, Production till `prod-common`, och ingressen
-blir `flow-development.nowastelogistics.com` respektive `flow.nowastelogistics.com`.
+Development deployas till `dev-common` (`flow-development.nowastelogistics.com`,
+live sedan 2026-07), Production är förberedd mot `prod-common`
+(`flow.nowastelogistics.com`) men **finns ännu inte** — ingen prod-deploy har
+gjorts (2026-07-10). Se miljötabellen i [../wiki/architecture.md](../wiki/architecture.md).
 
 ## Deploy
 
