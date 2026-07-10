@@ -111,6 +111,12 @@ let diagConfig = null;
 let diagBuilt = false;
 const diagResults = { 1: new Map(), 2: new Map(), 3: new Map() };
 const diagRunning = { 1: false, 2: false, 3: false };
+// Kör-kontroll per URL-flik: pausa/återuppta och avbryt ett pågående test.
+const diagControl = { 1: { paused: false, stopped: false }, 2: { paused: false, stopped: false }, 3: { paused: false, stopped: false } };
+
+function diagSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function diagSafeId(value) {
   return String(value).replace(/[^A-Za-z0-9_-]/g, "_");
@@ -156,6 +162,8 @@ function diagPanelHtml(url) {
     <div class="diag-var">Variabel: <b>${archiveEsc(url.env_name)}</b><br>${varLine}</div>
     <div class="diag-actions">
       <button type="button" class="diag-btn diag-run" ${url.configured ? "" : "disabled"}>▶ Kör test</button>
+      <button type="button" class="diag-btn diag-pause" disabled>⏸ Pausa</button>
+      <button type="button" class="diag-btn diag-stop" disabled>⏹ Avbryt</button>
       <button type="button" class="diag-btn diag-download" disabled>⬇ Ladda ner rapport (HTML)</button>
       <span class="diag-progress"></span>
     </div>
@@ -200,6 +208,8 @@ function diagBuildUI(cfg) {
     panel.innerHTML = diagPanelHtml(url);
     panelsBox.appendChild(panel);
     panel.querySelector(".diag-run").addEventListener("click", () => diagRun(url.index));
+    panel.querySelector(".diag-pause").addEventListener("click", () => diagTogglePause(url.index));
+    panel.querySelector(".diag-stop").addEventListener("click", () => diagStop(url.index));
     panel.querySelector(".diag-download").addEventListener("click", () => diagDownload(url.index));
   });
   diagBuilt = true;
@@ -271,6 +281,22 @@ async function diagPool(items, limit, worker) {
   await Promise.all(runners);
 }
 
+function diagTogglePause(urlIndex) {
+  if (!diagRunning[urlIndex]) return;
+  const ctrl = diagControl[urlIndex];
+  ctrl.paused = !ctrl.paused;
+  const panel = document.querySelector(`.diag-panel[data-url="${urlIndex}"]`);
+  const pauseBtn = /** @type {HTMLButtonElement} */ (panel.querySelector(".diag-pause"));
+  pauseBtn.textContent = ctrl.paused ? "▶ Återuppta" : "⏸ Pausa";
+}
+
+function diagStop(urlIndex) {
+  if (!diagRunning[urlIndex]) return;
+  const ctrl = diagControl[urlIndex];
+  ctrl.stopped = true;
+  ctrl.paused = false; // släpp ev. pausade arbetare så de kan avsluta
+}
+
 async function diagRun(urlIndex) {
   if (diagRunning[urlIndex]) return;
   const cfg = diagConfig;
@@ -278,12 +304,20 @@ async function diagRun(urlIndex) {
   const panel = document.querySelector(`.diag-panel[data-url="${urlIndex}"]`);
   const progress = panel.querySelector(".diag-progress");
   const runBtn = /** @type {HTMLButtonElement} */ (panel.querySelector(".diag-run"));
+  const pauseBtn = /** @type {HTMLButtonElement} */ (panel.querySelector(".diag-pause"));
+  const stopBtn = /** @type {HTMLButtonElement} */ (panel.querySelector(".diag-stop"));
   const dlBtn = /** @type {HTMLButtonElement} */ (panel.querySelector(".diag-download"));
   if (!tenants.length) { progress.textContent = "Välj minst en tenant."; return; }
 
+  const ctrl = diagControl[urlIndex];
+  ctrl.paused = false;
+  ctrl.stopped = false;
   diagRunning[urlIndex] = true;
   runBtn.disabled = true;
   dlBtn.disabled = true;
+  pauseBtn.disabled = false;
+  pauseBtn.textContent = "⏸ Pausa";
+  stopBtn.disabled = false;
   diagResults[urlIndex] = new Map();
   diagRenderSkeleton(panel, cfg.views, tenants, urlIndex);
 
@@ -293,6 +327,11 @@ async function diagRun(urlIndex) {
   progress.textContent = `0/${jobs.length} klara …`;
 
   await diagPool(jobs, DIAG_CONCURRENCY, async (job) => {
+    while (ctrl.paused && !ctrl.stopped) {
+      progress.textContent = `Pausad vid ${done}/${jobs.length} …`;
+      await diagSleep(200);
+    }
+    if (ctrl.stopped) return;
     let res;
     try {
       res = await api.get(
@@ -308,12 +347,18 @@ async function diagRun(urlIndex) {
     const cell = document.getElementById(diagCellId(urlIndex, job.view, job.tenant));
     if (cell) diagFillCell(cell, res);
     done++;
-    progress.textContent = `${done}/${jobs.length} klara …`;
+    if (!ctrl.paused) progress.textContent = `${done}/${jobs.length} klara …`;
   });
 
-  progress.textContent = `Klart: ${done}/${jobs.length} anrop mot ${cfg.urls.find((u) => u.index === urlIndex)?.env_name}.`;
+  const envName = cfg.urls.find((u) => u.index === urlIndex)?.env_name;
+  progress.textContent = ctrl.stopped
+    ? `Avbrutet vid ${done}/${jobs.length} anrop mot ${envName}.`
+    : `Klart: ${done}/${jobs.length} anrop mot ${envName}.`;
   diagRenderSummary(panel, cfg.views, tenants, urlIndex);
-  dlBtn.disabled = false;
+  pauseBtn.disabled = true;
+  pauseBtn.textContent = "⏸ Pausa";
+  stopBtn.disabled = true;
+  dlBtn.disabled = diagResults[urlIndex].size === 0;
   runBtn.disabled = false;
   diagRunning[urlIndex] = false;
 }
