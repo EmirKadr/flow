@@ -23,6 +23,54 @@
     .archive-sync-log { font-size: 12px; max-height: 260px; overflow-y: auto; }
     .archive-sync-log div { padding: 3px 0; border-bottom: 1px dotted var(--border, #eee); }
     .archive-refresh { font-size: 12px; color: var(--muted, #777); }
+
+    /* ASK-vy-diagnostik (mätverktyg) */
+    .diag-open-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+      border: 1px solid var(--border, #ccc); background: var(--card, #fff); color: var(--text, #1c2330);
+      font-size: 13px; font-weight: 600; cursor: pointer; }
+    .diag-open-btn:hover { background: var(--hover, #f0f2f5); }
+    .diag-overlay { position: fixed; inset: 0; background: rgba(15, 20, 30, .55); display: none;
+      align-items: center; justify-content: center; z-index: 1000; }
+    .diag-overlay.open { display: flex; }
+    .diag-modal { background: var(--card, #fff); color: var(--text, #1c2330); border-radius: 12px;
+      width: min(1500px, 96vw); height: min(92vh, 900px); display: flex; flex-direction: column;
+      box-shadow: 0 12px 40px rgba(0,0,0,.35); overflow: hidden; }
+    .diag-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px;
+      border-bottom: 1px solid var(--border, #e2e6ec); }
+    .diag-head h2 { margin: 0; font-size: 16px; }
+    .diag-close { border: none; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted, #777); }
+    .diag-controls { padding: 12px 20px; border-bottom: 1px solid var(--border, #e2e6ec); }
+    .diag-tenants { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin-top: 6px; }
+    .diag-tenants label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+    .diag-tabs { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--border, #e2e6ec); }
+    .diag-tab { padding: 7px 14px; border: 1px solid var(--border, #ccc); border-bottom: none;
+      border-radius: 8px 8px 0 0; background: var(--bg, #f6f7f9); cursor: pointer; font-size: 12px; font-weight: 600; }
+    .diag-tab.active { background: var(--card, #fff); }
+    .diag-tab.unset { color: var(--muted, #999); }
+    .diag-panels { flex: 1; overflow: auto; padding: 14px 20px 24px; }
+    .diag-panel { display: none; }
+    .diag-panel.active { display: block; }
+    .diag-var { font-family: Consolas, monospace; font-size: 12px; background: var(--bg, #eef1f5);
+      border: 1px solid var(--border, #dce2ea); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px;
+      word-break: break-all; }
+    .diag-var b { color: var(--text, #1c2330); }
+    .diag-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 12px; flex-wrap: wrap; }
+    .diag-btn { padding: 7px 13px; border-radius: 7px; border: 1px solid var(--border, #ccc);
+      background: var(--card, #fff); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .diag-btn:disabled { opacity: .5; cursor: default; }
+    .diag-progress { font-size: 12px; color: var(--muted, #777); }
+    .diag-matrix { border-collapse: collapse; font-size: 11px; width: 100%; }
+    .diag-matrix th, .diag-matrix td { border: 1px solid var(--border, #dce2ea); padding: 4px 7px;
+      text-align: center; white-space: nowrap; }
+    .diag-matrix td.dv { text-align: left; font-family: Consolas, monospace; }
+    .diag-matrix td.dk { text-align: left; color: var(--muted, #777); }
+    .diag-c-ok   { background: #e9f6f0; color: #1a7f5c; }
+    .diag-c-err  { background: #fbeeec; color: #c0392b; font-weight: 600; }
+    .diag-c-warn { background: #fbf4e4; color: #8a6d1f; }
+    .diag-c-gray { background: #eef1f5; color: #8792a2; }
+    .diag-c-pend { color: #8792a2; }
+    .diag-sum { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; font-size: 11px; }
+    .diag-sum .chip { border: 1px solid var(--border, #dce2ea); border-radius: 7px; padding: 3px 8px; }
   </style>
 </head>
 <body class="with-sidebar">
@@ -35,6 +83,16 @@
       som är hämtade, vad som är förbyggt och när senaste synkarna kördes.
       <span class="archive-refresh" id="archiveRefreshInfo"></span>
     </p>
+
+    <div class="archive-card">
+      <h3>ASK-vy-diagnostik (mätverktyg)</h3>
+      <div class="archive-meta">
+        Live-test av alla arkiv- och live-vyer × valda tenants mot upp till tre bas-URL:er
+        (publik gateway vs interna kluster-adresser). Visar HTTP-status, radantal och svarstid
+        per anrop – för att peka ut om det är en URL, en vy eller en tenant som hänger/felar.
+      </div>
+      <button type="button" class="diag-open-btn" id="diagOpenBtn">🔬 Öppna mätverktyg</button>
+    </div>
 
     <div class="archive-card">
       <h3>Arkiv-cache (DuckDB)</h3>
@@ -64,6 +122,21 @@
     </div>
   </main>
 
+  <div class="diag-overlay" id="diagOverlay" role="dialog" aria-modal="true" aria-labelledby="diagTitle">
+    <div class="diag-modal">
+      <div class="diag-head">
+        <h2 id="diagTitle">ASK-vy-diagnostik</h2>
+        <button type="button" class="diag-close" id="diagCloseBtn" aria-label="Stäng">×</button>
+      </div>
+      <div class="diag-controls">
+        <div class="archive-meta" id="diagMeta">Laddar konfiguration …</div>
+        <div class="diag-tenants" id="diagTenants"></div>
+      </div>
+      <div class="diag-tabs" id="diagTabs"></div>
+      <div class="diag-panels" id="diagPanels"></div>
+    </div>
+  </div>
+
   <script src="/js/api.js"></script>
   <script src="/js/common/foundation.js?v=20260616-speed-common"></script>
   <script src="/js/common/theme.js?v=20260616-speed-common"></script>
@@ -79,6 +152,6 @@
   <script src="/js/common/table_sort.js?v=20260616-speed-common"></script>
   <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
   <script src="/js/common.js?v=20260616-speed-common"></script>
-  <script src="/js/arkiv_status.js?v=20260704-archive-status"></script>
+  <script src="/js/arkiv_status.js?v=20260710-diag2"></script>
 </body>
 </html>

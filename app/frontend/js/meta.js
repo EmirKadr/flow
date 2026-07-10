@@ -270,6 +270,7 @@ function normalizedText(value) {
 
 function shipmentSearchText(item) {
   return normalizedText([
+    item.id,
     item.order_number,
     item.shipment_number,
     item.username,
@@ -288,6 +289,10 @@ function shipmentSearchText(item) {
 }
 
 function sortValue(item, key) {
+  if (key === "id") {
+    const value = Number(item.id);
+    return Number.isFinite(value) ? value : -1;
+  }
   if (key === "deviations") return Array.isArray(item.deviations) ? item.deviations.join(", ") : "";
   if (key === "analysis_status") return statusLabel(item.analysis_status);
   if (key === "updated_at") {
@@ -362,11 +367,11 @@ function renderShipmentRows() {
     ? `${visibleItems.length} av ${shipmentItems.length} sändningsrader`
     : `${shipmentItems.length} sändningsrader`;
   if (!shipmentItems.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga sändningsanalyser ännu.</td></tr>';
     return;
   }
   if (!visibleItems.length) {
-    tbody.innerHTML = '<tr><td colspan="13" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="meta-admin-empty-cell">Inga rader matchar sökningen.</td></tr>';
     return;
   }
 
@@ -382,8 +387,10 @@ function renderShipmentRows() {
     const videoDownloadLabel = `Ladda ner ${videoTitle || "video"}`;
     const timestamp = formatTimestamp(item.updated_at || item.created_at);
     const timestampTitle = `Skapad: ${formatTimestamp(item.created_at)}\nUppdaterad: ${formatTimestamp(item.updated_at)}`;
+    const analysisId = item.id == null ? "-" : `#${item.id}`;
     return `
       <tr>
+        <td class="meta-admin-observation-id">${escapeHtml(analysisId)}</td>
         <td>${escapeHtml(item.order_number || "")}</td>
         <td>${escapeHtml(item.shipment_number || "")}</td>
         <td>${escapeHtml(item.username || "")}</td>

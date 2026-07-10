@@ -17,6 +17,7 @@ import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
+from .config import settings
 from .observability import add_span_attributes, start_span
 
 
@@ -113,6 +114,11 @@ class ExternalDataClient:
         filters: Optional[Sequence[Mapping[str, Any]]] = None,
         identifiers: Optional[Union[Sequence[Mapping[str, Any]], Mapping[str, Any]]] = None,
     ) -> list[dict[str, Any]]:
+        if not settings.data_source_api_fetch_enabled:
+            raise ExternalDataClientError(
+                "Externa API-hämtningar är avstängda i den här miljön "
+                "(DATA_SOURCE_API_FETCH_ENABLED)."
+            )
         with start_span(
             "external.data_source.fetch",
             {

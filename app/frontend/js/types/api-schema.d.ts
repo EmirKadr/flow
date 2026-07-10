@@ -1557,6 +1557,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/query-data/archive-cache/diagnostics/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnostics Config
+         * @description Allt frontend behöver för mätverktyget: URL-flikar, tenants och vy-omfång.
+         */
+        get: operations["diagnostics_config_api_query_data_archive_cache_diagnostics_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/query-data/archive-cache/diagnostics/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnostics Probe
+         * @description Ett litet extrakt (1 dag) för en vy × tenant × bas-URL. Klassar utfallet.
+         *
+         *     Gör POST:en direkt via klientens session så exakt HTTP-status, timeout och
+         *     anslutningsfel kan skiljas åt (klientens fetch_data slår ihop dem till ett
+         *     generiskt fel). Ett anrop per cell → frontend streamar och ser var det hänger.
+         */
+        get: operations["diagnostics_probe_api_query_data_archive_cache_diagnostics_probe_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/query-data/archive-cache/status": {
         parameters: {
             query?: never;
@@ -7999,6 +8043,64 @@ export interface operations {
                 };
                 content: {
                     "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnostics_config_api_query_data_archive_cache_diagnostics_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    diagnostics_probe_api_query_data_archive_cache_diagnostics_probe_get: {
+        parameters: {
+            query: {
+                url: number;
+                tenant: string;
+                view: string;
+                timeout?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

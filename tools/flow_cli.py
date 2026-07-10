@@ -2,6 +2,7 @@
 
 Examples:
   python -m tools.flow_cli --base-url http://127.0.0.1:8000 auth login --username admin --password admin123
+  python -m tools.flow_cli --base-url http://127.0.0.1:8000 auth login  # FLOW_E2E_USERNAME/FLOW_E2E_PASSWORD
   python -m tools.flow_cli routes --format markdown
   python -m tools.flow_cli call schedule.get --query year=2026 --query week=21 --query weekday=1
   python -m tools.flow_cli api GET /api/health
@@ -24,6 +25,7 @@ import requests
 from sqlalchemy import create_engine, text
 
 from core.app_info import SERVER_BASE_URL
+from tools.e2e.env import load_env_files
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -262,6 +264,7 @@ def _request(
     form: dict[str, str] | None = None,
     files: Any = None,
     raw_file: str | None = None,
+    timeout: tuple[int, int] = (8, 180),
 ) -> requests.Response:
     url = base_url.rstrip("/") + path
     data = None
@@ -276,7 +279,7 @@ def _request(
         json=json_body,
         data=data,
         files=files or None,
-        timeout=(8, 180),
+        timeout=timeout,
     )
 
 
@@ -655,15 +658,87 @@ def _run_allocation_open_excel(args: argparse.Namespace) -> int:
     return _print_response(response, args.output)
 
 
+def _run_meta_process_queue(args: argparse.Namespace) -> int:
+    session = _session(args.cookie_jar)
+    list_response = _request(
+        session=session,
+        base_url=args.base_url,
+        method="GET",
+        path="/api/meta/shipment-observations",
+        query={"status": args.status, "limit": str(args.limit)},
+    )
+    _save_session(session)
+    if not list_response.ok:
+        return _print_response(list_response)
+    items = _json_response(list_response).get("items", [])
+    if not items:
+        if args.json:
+            print(json.dumps({"count": 0, "results": []}, indent=2, ensure_ascii=False))
+        else:
+            print(f"Inga sändningsrader med status={args.status}.")
+        return 0
+
+    exit_code = 0
+    results: list[dict[str, Any]] = []
+    for item in items:
+        observation_id = item.get("id")
+        upload_id = item.get("media_upload_id")
+        if not upload_id:
+            continue
+        analyze_response = _request(
+            session=session,
+            base_url=args.base_url,
+            method="POST",
+            path=f"/api/meta/uploads/{upload_id}/analyze",
+            timeout=(8, args.timeout),
+        )
+        _save_session(session)
+        if analyze_response.ok:
+            analyzed = _json_response(analyze_response)
+            result = {
+                "observation_id": observation_id,
+                "media_upload_id": upload_id,
+                "old_status": args.status,
+                "new_status": analyzed.get("status"),
+                "message": analyzed.get("message"),
+            }
+            if not args.json:
+                print(f"observation {observation_id} (upload {upload_id}): {args.status} -> {result['new_status']}")
+        else:
+            exit_code = 1
+            result = {
+                "observation_id": observation_id,
+                "media_upload_id": upload_id,
+                "old_status": args.status,
+                "error": f"HTTP {analyze_response.status_code}",
+                "detail": analyze_response.text[:500],
+            }
+            if not args.json:
+                print(f"observation {observation_id} (upload {upload_id}): FEL HTTP {analyze_response.status_code}")
+        results.append(result)
+
+    if args.json:
+        print(json.dumps({"count": len(results), "results": results}, indent=2, ensure_ascii=False))
+    return exit_code
+
+
 def _run_auth(args: argparse.Namespace) -> int:
     session = _session(args.cookie_jar)
     if args.auth_command == "login":
+        load_env_files()
+        username = args.username or os.environ.get("FLOW_E2E_USERNAME", "").strip()
+        password = args.password if args.password is not None else os.environ.get("FLOW_E2E_PASSWORD", "")
+        if not username or not password:
+            raise SystemExit(
+                "Saknar anvandarnamn/losenord. Ange --username/--password eller satt "
+                "FLOW_E2E_USERNAME/FLOW_E2E_PASSWORD i .env eller app/.env (samma variabler som e2e-verktyget)."
+            )
         response = _request(
             session=session,
             base_url=args.base_url,
             method="POST",
             path="/api/auth/login",
-            json_body={"username": args.username, "password": args.password},
+            json_body={"username": username, "password": password},
         )
     elif args.auth_command == "logout":
         response = _request(session=session, base_url=args.base_url, method="POST", path="/api/auth/logout")
@@ -789,11 +864,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     allocation_excel.add_argument("--output", help="Skriv JSON-svar till fil.")
     allocation_excel.set_defaults(func=_run_allocation_open_excel)
 
+    meta = sub.add_parser("meta", help="Meta-videoanalys-verktyg.")
+    meta_sub = meta.add_subparsers(dest="meta_command", required=True)
+
+    meta_process_queue = meta_sub.add_parser(
+        "process-queue",
+        help="Kor /analyze for sandningsrader med given status, en i taget (samma flode som Analysera-knappen).",
+    )
+    meta_process_queue.add_argument("--status", default="queued", help="Sandningsstatus att plocka (default: queued).")
+    meta_process_queue.add_argument("--limit", type=int, default=200, help="Max antal rader att hamta per korning.")
+    meta_process_queue.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Las-timeout i sekunder per analys-anrop (default: 600).",
+    )
+    meta_process_queue.add_argument("--json", action="store_true", help="Skriv resultatet som JSON istallet for rader.")
+    meta_process_queue.set_defaults(func=_run_meta_process_queue)
+
     auth = sub.add_parser("auth", help="Inloggning och session.")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
     login = auth_sub.add_parser("login")
-    login.add_argument("--username", required=True)
-    login.add_argument("--password", required=True)
+    login.add_argument(
+        "--username",
+        help="Standard: FLOW_E2E_USERNAME fran miljo eller .env/app/.env (samma variabler som e2e-verktyget).",
+    )
+    login.add_argument(
+        "--password",
+        help="Standard: FLOW_E2E_PASSWORD fran miljo eller .env/app/.env (samma variabler som e2e-verktyget).",
+    )
     login.set_defaults(func=_run_auth)
     logout = auth_sub.add_parser("logout")
     logout.set_defaults(func=_run_auth)

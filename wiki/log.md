@@ -1,11 +1,93 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-09
+updated: 2026-07-10
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-10] polish | Meta visar Analys-ID for matchning mot CLI
+
+Sandningsanalysen i Meta-vyn visar nu observationens numeriska databas-id i
+en sorterbar kolumn `Analys-ID`, formaterad som exempelvis `#78`. Sokfaltet
+matchar aven ID:t, sa utskriften `observation 78` fran
+`flow_cli meta process-queue` kan kopplas direkt till raden `Analys-ID #78`.
+Den tidigare kolumnrubriken `Rad-ID` heter nu `Radhash` for att tydliggora att
+dess forkortade `record_hash` ar ett annat varde. Excel-exporten ar oforandrad.
+
+## [2026-07-10] lint | Miljönivåer förtydligade: lokal/development/production, prod finns ännu inte
+
+Emir flaggade att repot var otydligt/motsägelsefullt om att det finns tre
+miljönivåer (lokal, development, production) och att production ännu inte
+existerar. Innan ändringen läste `k8s/README.md` och `wiki/architecture.md`
+som att production redan var en konfigurerad, deployad Octopus-target
+(`prod-common`, `flow.nowastelogistics.com`), och architecture.md:s
+prestandajämförelse ("produktionsmiljon ligger i samma datacenter") syftade
+faktiskt på den gamla, avvecklade Render-driften — inte den framtida
+k8s-produktionen — vilket var lätt att läsa fel. Lade till en miljötabell i
+`architecture.md`, förtydligade `k8s/README.md` och `DEPLOY.md` med att
+production är förberedd men inte deployad, och en rad i
+`nowaste-git-release.md`. Ingen kodändring.
+
+## [2026-07-10] ingest | Meta: Dispatchpallar-uppslag fick aldrig tenant, fixat med tenant-fallback
+
+Emir korde `meta process-queue` mot flow-development och fick tva rader med
+ratt pall-id/avvikelser men tom Ordernummer/Sandningsnummer/Anvandare/Kund och
+status `Kontrollera`. Grundorsak: `lookup_dispatch_pallet_fields()` i
+`meta_analysis_service.py` anropade `_api_client()` utan tenant. Nar
+`DATA_SOURCE_API_BASE_URL` ar en multi-tenant-mall (`.../noeffectui-{tenant}...`,
+sant pa flow-development) blev anropet ett bokstavligt vardnamn med `{tenant}`
+kvar i strangen — alltid DNS-fel, alltid `ExternalDataClientError`, for alla
+pall-id. Meta-uppladdningar ar publika/inloggningsfria och saknar
+`business_id`, sa det finns ingen inloggad anvandare att harleda tenant fran
+(sa som t.ex. Hamta data gor via `Business.tenant`).
+
+Fix: ny installning `META_ANALYSIS_DATA_SOURCE_TENANT` (default `frey`, den
+enda verksamheten som anvander Meta just nu), skickas in i
+`_api_client(tenant=...)`. Hardkodat i `k8s/flow.yml` (inte en hemlighet, ingen
+Octopus-platshallare). Om fler verksamheter borjar anvanda Meta racker inte en
+global tenant langre. Detaljer i `meta-upload.md`.
+
+## [2026-07-10] ingest | Meta: fjarrtriggad analys via flow_cli.py meta process-queue
+
+Emir ville kunna kora sandningsanalysen fran sin egen dator utan att klicka
+`Analysera` rad for rad i UI:t. `tools/meta_analysis_worker.py` kravde direkt
+DB-atkomst sa den passar inte fran en extern dator; losningen blev istallet
+ett nytt subkommando i `tools/flow_cli.py` (`meta process-queue`) som
+ateranvander CLI:ts befintliga inloggning/cookie-jar, hamtar sandningsrader
+per status och anropar den redan befintliga `/api/meta/uploads/{id}/analyze`
+for varje — samma serverflode som `Analysera`-knappen, ingen ny backend-kod.
+Knappen finns kvar oforandrad. `auth login` faller dessutom tillbaka pa
+`FLOW_E2E_USERNAME`/`FLOW_E2E_PASSWORD` (samma env-konvention som
+`tools/e2e/env.py`) om `--username`/`--password` inte anges. Detaljer i
+`meta-upload.md`.
+
+## [2026-07-10] ingest | ASK-vy-diagnostik: varje ASK-länk är bunden till ett eget nät
+
+Nya ASK-vy-diagnostiken i `arkiv-status.html` kördes mot tre olika ASK-bas-URL:er
+(satta via `DATA_SOURCE_API_BASE_URL`/`2`/`3`) från samma klient (Emirs dator) och
+gav helt olika mönster: den publika gatewayen (`noeffectui-{tenant}...`) 0/32 OK
+på alla tenants (`nås ej`/TIMEOUT), development-klustret
+(`noeffectapi-development-{tenant}...svc.cluster.local`) 22–28/32 OK,
+prod-klustret (`noeffectapi-{tenant}...svc.cluster.local`) 0/32 OK med mycket
+snabba `nås ej`-svar. Slutsats: varje länk är bara nåbar från sin egen
+nätverksplacering (företagsnät / development-pod / prod-pod) — inte ett
+generellt API- eller providerfel. Viktigt: lärdomen är knuten till **länkarna**,
+inte till vilken variabel-slot (`_BASE_URL`/`_2`/`_3`) som råkar peka på dem —
+de variablerna pekas om över tid. Dokumenterat i `ask-datalagring.md` med tabell
+per länk + hur man skiljer "fel nät" (konsekvent nås-ej över alla vyer) från
+"riktigt providerfel" (HTTP-kod med rimlig svarstid på enstaka vyer).
+
+## [2026-07-09] lint | ASK-vystatus: hårdkodat `created` gav 36/40 falska 500
+
+Statustest över 40 vyer × 13 tenants såg först ut att visa 36/40 trasiga (HTTP
+500). Rotorsak: testscriptet hårdkodade `created` som filterkolumn, men bara 3
+vyer har den. Med rätt kolumn per vy (`_preferred_date_column`) och skilda
+arkiv/live-fönster föll felen till en handfull genuina providerfel (`Invalid
+column 'ORDER_TYPE'` m.fl., intermittenta) + `v_ask_kpi_target` 403 + Mestergruppen
+404. Regeln "läs filterkolumn ur katalogen, hårdkoda aldrig `created`" tillagd i
+`ask-datalagring.md`.
 
 ## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
 
