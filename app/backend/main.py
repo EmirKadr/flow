@@ -40,6 +40,7 @@ from .routers import (
     businesses,
     coredata,
     data_fetch,
+    data_fetch_diagnostics,
     healthcheck,
     meta_uploads,
     mcp,
@@ -492,6 +493,7 @@ app.include_router(schedule.router)
 app.include_router(bulk.router)
 app.include_router(coredata.router)
 app.include_router(data_fetch.router)
+app.include_router(data_fetch_diagnostics.router)
 app.include_router(healthcheck.router)
 app.include_router(meta_uploads.router)
 app.include_router(mcp.router)

@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     BUG_REPORTS_MAX_EVENTS_BYTES: int = 4 * 1024 * 1024
     BUG_REPORTS_RATE_LIMIT_PER_HOUR: int = 3
     DATA_SOURCE_API_BASE_URL: str = ""
+    # Alternativa bas-URL:er för ASK-gatewayen. Används enbart av
+    # diagnostikverktyget i Arkivstatus (superuser) för att jämföra samma
+    # vyer/tenants mot t.ex. publik URL vs interna kluster-adresser. Tom => fliken markeras "ej satt".
+    DATA_SOURCE_API_BASE_URL2: str = ""
+    DATA_SOURCE_API_BASE_URL3: str = ""
     DATA_SOURCE_API_KEY: str = ""
     DATA_SOURCE_API_CLIENT: str = ""
     DATA_SOURCE_API_KEY_HEADER: str = ""

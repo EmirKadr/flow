@@ -111,6 +111,11 @@ spec:
               value: "#{RFID_DEVICE_TOKEN}"
             - name: DATA_SOURCE_API_BASE_URL
               value: "#{DATA_SOURCE_API_BASE_URL}"
+            # Alternativa bas-URL:er för ASK-diagnostiken (Arkivstatus, superuser).
+            - name: DATA_SOURCE_API_BASE_URL2
+              value: "#{DATA_SOURCE_API_BASE_URL2}"
+            - name: DATA_SOURCE_API_BASE_URL3
+              value: "#{DATA_SOURCE_API_BASE_URL3}"
             - name: DATA_SOURCE_API_KEY
               value: "#{DATA_SOURCE_API_KEY}"
             - name: DATA_SOURCE_API_CLIENT
