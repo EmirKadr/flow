@@ -93,6 +93,62 @@ EDITABLE_SHIPMENT_STATUSES = frozenset(
 class ShipmentStatusUpdate(BaseModel):
     status: str
 
+
+class ShipmentDispatchLookupUpdate(BaseModel):
+    matched: bool = False
+    order_number: str | None = None
+    shipment_number: str | None = None
+    username: str | None = None
+    customer_name: str | None = None
+    note: str | None = None
+    source: str | None = None
+
+
+DISPATCH_LOOKUP_NOTE_PREFIXES = (
+    "Dispatchpallar kunde inte hamtas fran ASK",
+    "Dispatchpallar (inklusive arkivet) gav ingen traff",
+)
+
+
+def _clean_dispatch_lookup_text(value: object, max_length: int) -> str | None:
+    text = str(value or "").strip()
+    return text[:max_length] if text else None
+
+
+def _split_uncertainty_notes(notes: str | None) -> list[str]:
+    return [part.strip() for part in str(notes or "").split(";") if part.strip()]
+
+
+def _remove_dispatch_lookup_notes(notes: str | None) -> str | None:
+    kept = [
+        part
+        for part in _split_uncertainty_notes(notes)
+        if not any(part.startswith(prefix) for prefix in DISPATCH_LOOKUP_NOTE_PREFIXES)
+    ]
+    return "; ".join(kept)[:2000] or None
+
+
+def _append_dispatch_lookup_note(existing: str | None, note: str | None) -> str | None:
+    cleaned_note = _clean_dispatch_lookup_text(note, 2000)
+    if not cleaned_note:
+        return existing
+    parts = _split_uncertainty_notes(existing)
+    if cleaned_note not in parts:
+        parts.append(cleaned_note)
+    return "; ".join(parts)[:2000] or None
+
+
+def _shipment_dispatch_lookup_audit_snapshot(row: MetaShipmentObservation) -> dict:
+    return {
+        "analysis_status": row.analysis_status,
+        "order_number": row.order_number,
+        "shipment_number": row.shipment_number,
+        "username": row.username,
+        "customer_name": row.customer_name,
+        "pallet_id": row.pallet_id,
+        "has_uncertainty_notes": bool(row.uncertainty_notes),
+    }
+
 @router.post("/uploads", status_code=status.HTTP_201_CREATED)
 async def upload_meta_media(
     request: Request,
@@ -588,6 +644,66 @@ def update_meta_shipment_status(
     return {
         "item": _shipment_observation_out(row),
         "status": row.analysis_status,
+    }
+
+
+@router.patch("/shipment-observations/{observation_id}/dispatch-lookup")
+def update_meta_shipment_dispatch_lookup(
+    observation_id: int,
+    payload: ShipmentDispatchLookupUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_user),
+) -> dict:
+    row = db.get(MetaShipmentObservation, observation_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="SÃ¤ndningsraden hittades inte.")
+
+    before = _shipment_dispatch_lookup_audit_snapshot(row)
+    matched = bool(payload.matched)
+    if matched:
+        updates = {
+            "order_number": _clean_dispatch_lookup_text(payload.order_number, 80),
+            "shipment_number": _clean_dispatch_lookup_text(payload.shipment_number, 120),
+            "username": _clean_dispatch_lookup_text(payload.username, 120),
+            "customer_name": _clean_dispatch_lookup_text(payload.customer_name, 200),
+        }
+        for key, value in updates.items():
+            if value:
+                setattr(row, key, value)
+        row.uncertainty_notes = _remove_dispatch_lookup_notes(row.uncertainty_notes)
+        if row.analysis_status == "manual_review" and not row.uncertainty_notes:
+            row.analysis_status = "analyzed"
+    else:
+        row.uncertainty_notes = _append_dispatch_lookup_note(
+            _remove_dispatch_lookup_notes(row.uncertainty_notes),
+            payload.note,
+        )
+        if row.uncertainty_notes and row.analysis_status == "analyzed":
+            row.analysis_status = "manual_review"
+
+    refresh_record_hash(row)
+    db.flush()
+    after = _shipment_dispatch_lookup_audit_snapshot(row)
+    audit_log(
+        db,
+        entity_type="meta_shipment_observation",
+        entity_id=row.id,
+        action="local_dispatch_lookup",
+        old_value=before,
+        new_value={
+            **after,
+            "matched": matched,
+            "source": _clean_dispatch_lookup_text(payload.source, 80) or "local_cli",
+        },
+        user_id=user.id,
+        business_id=None,
+    )
+    db.commit()
+    db.refresh(row)
+    return {
+        "item": _shipment_observation_out(row),
+        "status": row.analysis_status,
+        "matched": matched,
     }
 
 

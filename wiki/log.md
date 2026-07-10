@@ -7,6 +7,18 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-10] ingest | Meta: lokal ASK-berikning via flow_cli
+
+Development-miljon kan ha `DATA_SOURCE_API_FETCH_ENABLED=false`, vilket gor att
+server-side Meta-analys hittar pall-id men inte far hamta ASK Dispatchpallar.
+`tools.flow_cli meta process-queue` har darfor fatt flaggan
+`--local-dispatch-lookup`: CLI:n hamtar `v_ask_dispatch_pallet`/arkivet fran
+den lokala datorns `DATA_SOURCE_*`-konfiguration och skriver tillbaka enbart
+sanerade lookup-falt via nya Super User-endpointen
+`PATCH /api/meta/shipment-observations/{observation_id}/dispatch-lookup`.
+Endpointen audit-loggar `meta_shipment_observation/local_dispatch_lookup` och
+tar bort bara ASK-uppslagsanteckningen nar lokal traff finns.
+
 ## [2026-07-10] polish | Meta visar Analys-ID for matchning mot CLI
 
 Sandningsanalysen i Meta-vyn visar nu observationens numeriska databas-id i
