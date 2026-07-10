@@ -172,6 +172,8 @@ spec:
               value: "30"
             - name: META_ANALYSIS_SPACING_SECONDS
               value: "15"
+            - name: META_ANALYSIS_DATA_SOURCE_TENANT
+              value: "frey"
             # HTTPS is required in production because session cookies are Secure.
             - name: OTEL_ENABLED
               value: "true"

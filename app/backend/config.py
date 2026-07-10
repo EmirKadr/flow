@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     META_ANALYSIS_MAX_CONCURRENCY: int = 1
     META_ANALYSIS_START_DELAY_SECONDS: float = 30.0
     META_ANALYSIS_SPACING_SECONDS: float = 15.0
+    # Meta-uppladdningar ar publika/inloggningsfria och har ingen business_id att
+    # slå upp tenant fran, sa Dispatchpallar-uppslaget kan inte tenant-scopa sig
+    # sjalvt. Frey ar den enda verksamheten som anvander Meta idag.
+    META_ANALYSIS_DATA_SOURCE_TENANT: str = "frey"
     # Media-lagring (videor/bilder) — strömmas alltid, hålls aldrig i sin helhet i RAM.
     MEDIA_STORE_BACKEND: str = "filesystem"
     MEDIA_STORE_ROOT: str = ""  # tom => <tempdir>/flow_media_store; i prod: monterad disk
