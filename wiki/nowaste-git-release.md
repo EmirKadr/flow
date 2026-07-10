@@ -29,8 +29,10 @@ Två hårda regler för agenter (beslut 2026-07-03, se `AGENTS.md`):
 - Ändring som redan ligger i `main`/`master`: merga `main` till `release/*`-branchen → release byggs.
 
 Releasen dyker sedan upp i Octopus-projektets dashboard (Projects → Övrigt →
-Flow) och deployas därifrån till **development** respektive **production**.
-Releasenamnen följer `år.vecka.sekvens`, t.ex. `2026.26.1-rc00046`.
+Flow) och deployas därifrån till **development** (live) och, senare,
+**production** (finns ännu inte — se miljötabellen i
+[architecture.md](architecture.md)). Releasenamnen följer `år.vecka.sekvens`,
+t.ex. `2026.26.1-rc00046`.
 
 ### Fallgrop: buntad push hoppar över imagebygget (lärt 2026-07-06)
 

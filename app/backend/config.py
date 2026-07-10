@@ -148,6 +148,15 @@ class Settings(BaseSettings):
     DATA_SOURCE_RESPONSE_ROW_CAP: int = 50000
     DATA_SOURCE_CATALOG_PATH: str = ""
     DATA_SOURCE_CATALOG_JSON: str = ""
+    # Kill-switch för ALLA externa ASK-hämtningar (arkiv-cache-seed, live-vyer,
+    # diagnostikproben i Arkivstatus, Sankey/Produktivitet/Hämta data) — se
+    # ExternalDataClient.fetch_data. Sträng, inte bool: en osubstituerad
+    # #{DATA_SOURCE_API_FETCH_ENABLED}-platshållare blankas till "" av
+    # _blank_unsubstituted_placeholders ovan, och data_source_api_fetch_enabled
+    # tolkar tomt som "på" (fail-open = dagens beteende) om Octopus-variabeln
+    # saknas. En bool-fält hade kraschat på den osubstituerade texten istället
+    # (samma landmine som GEMINI_API_BASE_URL 2026-07-09).
+    DATA_SOURCE_API_FETCH_ENABLED: str = "true"
     # Lokal arkiv-cache (DuckDB). Speglar dblog_*-arkivvyer per tenant så lokala
     # körningar av Sankey/Produktivitet/Hämta data läser historik lokalt istället
     # för via API. Endast för lokal utveckling; default av. Se wiki/local-archive-cache.md.
@@ -186,6 +195,11 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
+
+    @property
+    def data_source_api_fetch_enabled(self) -> bool:
+        raw = str(self.DATA_SOURCE_API_FETCH_ENABLED or "").strip().lower()
+        return raw not in ("0", "false", "off", "no")
 
     @property
     def super_user_usernames(self) -> set[str]:

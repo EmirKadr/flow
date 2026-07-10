@@ -132,6 +132,15 @@ spec:
               value: "1000"
             - name: DATA_SOURCE_RESPONSE_ROW_CAP
               value: "50000"
+            # Kill-switch för ALLA externa ASK-hämtningar (arkiv-cache-seed, live-vyer,
+            # diagnostikproben i Arkivstatus, Sankey/Produktivitet/Hämta data). Egen
+            # Octopus-variabel så den kan skilja sig per miljö (t.ex. false, scopat
+            # till Development, om den fragila publika gatewayen eller CPU-limiten
+            # 300m gör dev-podden instabil). Krävs INTE i Octopus för att vara säker:
+            # saknas variabeln blankas platshållaren (se config.py) och tolkas som
+            # "på" — samma beteende som idag.
+            - name: DATA_SOURCE_API_FETCH_ENABLED
+              value: "#{DATA_SOURCE_API_FETCH_ENABLED}"
             # Lokal arkiv-cache (DuckDB på flow-media-PVC:n). Ej hemliga och lika
             # i alla miljöer → hårdkodade här i stället för Octopus-variabler.
             # SEED_ON_START=1: podden self-seedar från noll (chunkat, se CHUNK_DAYS)
