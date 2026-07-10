@@ -1,8 +1,8 @@
 ---
 title: ASK datalagring (rensning och arkivering)
 status: aktiv
-updated: 2026-06-15
-tags: [ask, datalagring, historik, rensning, arkivering, vyer]
+updated: 2026-07-10
+tags: [ask, datalagring, historik, rensning, arkivering, vyer, natverk, diagnostik]
 ---
 
 # ASK datalagring (rensning och arkivering)
@@ -145,6 +145,73 @@ innehållet är `<table .../>`-element). Den är indelad i tre block via komment
 Varje rad: `server`, `database`, `schema`, `name` (tabell), `days` (ålder innan
 åtgärd), `archive` (true/false), och valfritt `timeColumn`/`noTimeColumn`.
 
+## Regel: läs filterkolumn ur katalogen — hårdkoda aldrig `created`
+
+Lärdom från ett statustest 2026-07-09 där 36 av 40 vyer felaktigt såg ut att
+returnera HTTP 500. Rotorsaken var **inte** providern utan testscriptet: det
+hårdkodade `created` som datumfilter för alla vyer. Endast **3 vyer** har en
+`created`-kolumn (`dispatch_pallet_log`, `dblog_dispatch_pallet_log`,
+`v_ask_order_log`); resten filtrerades på en kolumn som inte finns → SQL-fel på
+servern → 500. Just de 3 `created`-vyerna var gröna — vilket i efterhand var
+själva beviset.
+
+Regler för alla agenter/verktyg som anropar externa vyer:
+
+- **Välj datumkolumn per vy ur katalogen**, aldrig hårdkodat. Använd
+  produktionens funktion `app.backend.data_fetch.core._preferred_date_column`
+  (special-fall `dispatch_pallet_log`/`dblog_dispatch_pallet_log` → `created`,
+  annars prioritetsordningen `time_stamp_int, date, timestamp, order_date, …`).
+  De flesta vyer använder `timestamp`.
+- **Skilj tidsfönster på arkiv och live.** `dblog_*` läser arkivet
+  (`log_wmanfrey`, ~800 d) → äldre datum; `v_ask_*`/övrigt läser operativa DB:n
+  (retention 3–90 d) → färskt datum. Samma datum för båda ger tomma/felaktiga
+  svar för live.
+- **Katalogen beskriver kontraktet, inte providerns vy-hälsa.** Katalogen listar
+  t.ex. `rowid`/`order_type` som giltiga kolumner. Om providerns vy-SQL refererar
+  en kolumn som saknas i bastabellen (`Invalid column 'ORDER_TYPE'`) syns det
+  **bara i ett live-anrop** — aldrig i katalogen. Sådana 500 är intermittenta och
+  ska rapporteras till ASK/provider-sidan, inte felsökas som vårt fel.
+
+Snabb sanity-check innan man drar slutsatser om "API:t är nere": nå två vyer med
+rätt kolumn — om någon svarar 200 är nätet/åtkomsten frisk och resten är
+kontrakt-/behörighets-/providerfel per vy.
+
+## Regel: de tre `DATA_SOURCE_API_BASE_URL`-variablerna nås bara från specifika nät
+
+Lärdom från ett diagnostiktest 2026-07-10 (`arkiv-status.html`, ASK-vy-diagnostik)
+där samma 32 vyer × 13 tenants kördes mot alla tre bas-URL:er från samma klient
+(Emirs dator) och gav helt olika resultatmönster. Slutsats: **var och en av de
+tre URL:erna är bara nåbar från en specifik nätverksplacering** — inte ett
+generellt API-fel, inte trasig ASK-provider:
+
+| Variabel | URL-mönster | Nåbar från | Symptom vid test utanför sitt nät |
+| --- | --- | --- | --- |
+| `DATA_SOURCE_API_BASE_URL` | `https://noeffectui-{tenant}.nowastelogistics.com` | Företagsnätverket (publik gateway) | 0/32 OK på alla tenants: `nås ej`/`TIMEOUT` efter ~30 s, enstaka 502/503. |
+| `DATA_SOURCE_API_BASE_URL2` | `http://noeffectapi-development-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **development**-server i klustret | Fungerar bra (t.ex. frey 28/32 OK). Kvarvarande fel är riktiga vy-/schemafel (HTTP 500, snabbt svar) hos providern, inte nätverksfel. |
+| `DATA_SOURCE_API_BASE_URL3` | `http://noeffectapi-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **prod**-server i klustret | 0/32 OK på alla tenants: `nås ej` med mycket korta svarstider (<300 ms) — anslutningen avvisas direkt, ingen timeout. |
+
+Hur man skiljer "fel nätverksplacering" från "riktigt providerfel" i en
+diagnostikrapport:
+
+- **Konsekvent `nås ej`/`TIMEOUT` över alla vyer och tenants** på en URL, medan
+  en annan URL samtidigt ger blandade OK/500 → nätverksplacering, inte API-fel.
+  Testklienten stod helt enkelt på fel nät för den URL:en.
+- **Snabba `nås ej`-svar (under ~300 ms)** = anslutningen avvisas direkt
+  (fel nät/DNS/brandvägg). **`TIMEOUT` efter full timeout-tid (~30 s)** = kan
+  nå ett hopp men inget svar kommer — kan också vara fel nät, men med en
+  mellanserver som inte svarar.
+- **HTTP-koder (500/502/503) med rimlig svarstid** betyder anropet nådde
+  providern — det är ett providersidans fel (vy-SQL, tenant-specifikt schema),
+  inte ett nätverks- eller konfigurationsfel hos oss.
+- Enskild tenant med `nås ej` medan resten av samma URL ger OK (t.ex.
+  `mestergruppen` mot URL2) pekar på att den tenanten saknas/är feldeployad i
+  just det nätet, inte ett generellt URL-problem.
+
+Praktisk konsekvens: kör alltid diagnostiken **från den nätverksplacering som
+matchar den URL man vill testa** (företagsnät för URL1, en development-pod för
+URL2, en prod-pod för URL3). Att köra alla tre från samma plats ger falska
+"API är nere"-slutsatser för två av tre URL:er.
+
 ## Felsökningssvar för framtida chat
 
 Fråga: Varför hittar jag ingen plockdata äldre än ~40 dagar i en `v_ask_pick_log_full`-fråga?
@@ -158,6 +225,9 @@ Svar: Operativt så långt som tabellens `days` (t.ex. PICK_LOG 40, TRANS_LOG 60
 
 Fråga: Var ser jag exakt vilken tabell som har vilken retention?
 Svar: I [`../referens/vyer-kolumner/ask_rensning_och_arkivering.xml`](../referens/vyer-kolumner/ask_rensning_och_arkivering.xml). `days` + `archive` per tabell.
+
+Fråga: ASK-vy-diagnostiken visar "nås ej" på alla vyer för en URL men OK för en annan — är API:t nere?
+Svar: Troligen inte. De tre `DATA_SOURCE_API_BASE_URL`-variablerna nås bara från olika nät (företagsnät/development-pod/prod-pod). Kör om testet från rätt nätverksplacering för den URL:en innan du drar slutsatsen att providern är nere. Se avsnittet ovan om de tre bas-URL:erna.
 
 ## Källor
 
