@@ -4456,7 +4456,7 @@ body.dragging-ov select { pointer-events: none; }
 
 .meta-admin-table {
   width: 100%;
-  min-width: 1580px;
+  min-width: 1680px;
   border-collapse: collapse;
 }
 
@@ -4505,6 +4505,18 @@ body.dragging-ov select { pointer-events: none; }
 
 .meta-admin-empty-cell {
   color: var(--text-muted);
+}
+
+.meta-admin-observation-id {
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px !important;
+}
+
+.meta-admin-table td.meta-admin-observation-id {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 800;
 }
 
 .meta-admin-note {

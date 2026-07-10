@@ -7,6 +7,15 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-10] polish | Meta visar Analys-ID for matchning mot CLI
+
+Sandningsanalysen i Meta-vyn visar nu observationens numeriska databas-id i
+en sorterbar kolumn `Analys-ID`, formaterad som exempelvis `#78`. Sokfaltet
+matchar aven ID:t, sa utskriften `observation 78` fran
+`flow_cli meta process-queue` kan kopplas direkt till raden `Analys-ID #78`.
+Den tidigare kolumnrubriken `Rad-ID` heter nu `Radhash` for att tydliggora att
+dess forkortade `record_hash` ar ett annat varde. Excel-exporten ar oforandrad.
+
 ## [2026-07-10] lint | Miljönivåer förtydligade: lokal/development/production, prod finns ännu inte
 
 Emir flaggade att repot var otydligt/motsägelsefullt om att det finns tre

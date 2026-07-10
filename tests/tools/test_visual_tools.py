@@ -2064,7 +2064,8 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "Längd" in html
     assert "Storlek" in html
     assert "Uppdaterad" in html
-    assert "Rad-ID" in html
+    assert "Analys-ID" in html
+    assert "Radhash" in html
     assert 'id="metaShipmentRows"' in html
     assert 'id="metaGrid"' not in html
     assert 'id="metaMediaType"' not in html
@@ -2121,6 +2122,27 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert ".meta-icon-button.is-download-running" in styles
     assert ".meta-status-pill" in styles
     assert ".meta-preview-frame video" not in styles
+
+
+def test_meta_view_exposes_numeric_observation_id_contract():
+    frontend = ROOT / "app" / "frontend"
+    html = (frontend / "meta.html").read_text(encoding="utf-8")
+    js = (frontend / "js" / "meta.js").read_text(encoding="utf-8")
+
+    assert 'data-sort-key="id">Analys-ID</button>' in html
+    assert 'class="meta-admin-observation-id"' in html
+
+    search_body = js.split("function shipmentSearchText", 1)[1].split("function sortValue", 1)[0]
+    assert "item.id" in search_body
+
+    sort_body = js.split("function sortValue", 1)[1].split("function compareShipmentItems", 1)[0]
+    assert 'key === "id"' in sort_body
+    assert "Number(item.id)" in sort_body
+
+    rows_body = js.split("function renderShipmentRows", 1)[1].split("function renderMetaItems", 1)[0]
+    assert 'item.id == null ? "-" : `#${item.id}`' in rows_body
+    assert 'class="meta-admin-observation-id"' in rows_body
+    assert 'colspan="14"' in rows_body
 
 
 def test_bug_reports_page_shows_stable_report_id():
