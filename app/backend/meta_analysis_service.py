@@ -651,7 +651,7 @@ def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None
         return {"note": "Extern datakalla ar inte konfigurerad, sa Dispatchpallar kunde inte slas upp."}
     filters = [ExternalDataClient.eq("pick_pall_num", _pallet_filter_value(pallet))]
     try:
-        client = _api_client()
+        client = _api_client(tenant=settings.META_ANALYSIS_DATA_SOURCE_TENANT or None)
         rows = client.fetch_data(source_spec("dispatch").view, filters=filters)
         if not rows:
             rows = client.fetch_data(DISPATCH_ARCHIVE_VIEW, filters=filters)

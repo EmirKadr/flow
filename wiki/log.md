@@ -1,11 +1,44 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-09
+updated: 2026-07-10
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-10] ingest | Meta: Dispatchpallar-uppslag fick aldrig tenant, fixat med tenant-fallback
+
+Emir korde `meta process-queue` mot flow-development och fick tva rader med
+ratt pall-id/avvikelser men tom Ordernummer/Sandningsnummer/Anvandare/Kund och
+status `Kontrollera`. Grundorsak: `lookup_dispatch_pallet_fields()` i
+`meta_analysis_service.py` anropade `_api_client()` utan tenant. Nar
+`DATA_SOURCE_API_BASE_URL` ar en multi-tenant-mall (`.../noeffectui-{tenant}...`,
+sant pa flow-development) blev anropet ett bokstavligt vardnamn med `{tenant}`
+kvar i strangen — alltid DNS-fel, alltid `ExternalDataClientError`, for alla
+pall-id. Meta-uppladdningar ar publika/inloggningsfria och saknar
+`business_id`, sa det finns ingen inloggad anvandare att harleda tenant fran
+(sa som t.ex. Hamta data gor via `Business.tenant`).
+
+Fix: ny installning `META_ANALYSIS_DATA_SOURCE_TENANT` (default `frey`, den
+enda verksamheten som anvander Meta just nu), skickas in i
+`_api_client(tenant=...)`. Hardkodat i `k8s/flow.yml` (inte en hemlighet, ingen
+Octopus-platshallare). Om fler verksamheter borjar anvanda Meta racker inte en
+global tenant langre. Detaljer i `meta-upload.md`.
+
+## [2026-07-10] ingest | Meta: fjarrtriggad analys via flow_cli.py meta process-queue
+
+Emir ville kunna kora sandningsanalysen fran sin egen dator utan att klicka
+`Analysera` rad for rad i UI:t. `tools/meta_analysis_worker.py` kravde direkt
+DB-atkomst sa den passar inte fran en extern dator; losningen blev istallet
+ett nytt subkommando i `tools/flow_cli.py` (`meta process-queue`) som
+ateranvander CLI:ts befintliga inloggning/cookie-jar, hamtar sandningsrader
+per status och anropar den redan befintliga `/api/meta/uploads/{id}/analyze`
+for varje — samma serverflode som `Analysera`-knappen, ingen ny backend-kod.
+Knappen finns kvar oforandrad. `auth login` faller dessutom tillbaka pa
+`FLOW_E2E_USERNAME`/`FLOW_E2E_PASSWORD` (samma env-konvention som
+`tools/e2e/env.py`) om `--username`/`--password` inte anges. Detaljer i
+`meta-upload.md`.
 
 ## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
 
