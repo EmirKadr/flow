@@ -7,16 +7,20 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
-## [2026-07-10] ingest | ASK-vy-diagnostik: de tre bas-URL:erna är bundna till olika nät
+## [2026-07-10] ingest | ASK-vy-diagnostik: varje ASK-länk är bunden till ett eget nät
 
-Nya ASK-vy-diagnostiken i `arkiv-status.html` kördes mot alla tre
-`DATA_SOURCE_API_BASE_URL`/`2`/`3` från samma klient (Emirs dator) och gav helt
-olika mönster: URL1 (publik gateway) 0/32 OK på alla tenants (`nås ej`/TIMEOUT),
-URL2 (development-kluster) 22–28/32 OK, URL3 (prod-kluster) 0/32 OK med
-mycket snabba `nås ej`-svar. Slutsats: var och en av URL:erna är bara nåbar
-från sin egen nätverksplacering (företagsnät / development-pod / prod-pod) —
-inte ett generellt API- eller providerfel. Dokumenterat i `ask-datalagring.md`
-med tabell + hur man skiljer "fel nät" (konsekvent nås-ej över alla vyer) från
+Nya ASK-vy-diagnostiken i `arkiv-status.html` kördes mot tre olika ASK-bas-URL:er
+(satta via `DATA_SOURCE_API_BASE_URL`/`2`/`3`) från samma klient (Emirs dator) och
+gav helt olika mönster: den publika gatewayen (`noeffectui-{tenant}...`) 0/32 OK
+på alla tenants (`nås ej`/TIMEOUT), development-klustret
+(`noeffectapi-development-{tenant}...svc.cluster.local`) 22–28/32 OK,
+prod-klustret (`noeffectapi-{tenant}...svc.cluster.local`) 0/32 OK med mycket
+snabba `nås ej`-svar. Slutsats: varje länk är bara nåbar från sin egen
+nätverksplacering (företagsnät / development-pod / prod-pod) — inte ett
+generellt API- eller providerfel. Viktigt: lärdomen är knuten till **länkarna**,
+inte till vilken variabel-slot (`_BASE_URL`/`_2`/`_3`) som råkar peka på dem —
+de variablerna pekas om över tid. Dokumenterat i `ask-datalagring.md` med tabell
+per länk + hur man skiljer "fel nät" (konsekvent nås-ej över alla vyer) från
 "riktigt providerfel" (HTTP-kod med rimlig svarstid på enstaka vyer).
 
 ## [2026-07-09] lint | ASK-vystatus: hårdkodat `created` gav 36/40 falska 500

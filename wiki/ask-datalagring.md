@@ -176,26 +176,31 @@ Snabb sanity-check innan man drar slutsatser om "API:t är nere": nå två vyer 
 rätt kolumn — om någon svarar 200 är nätet/åtkomsten frisk och resten är
 kontrakt-/behörighets-/providerfel per vy.
 
-## Regel: de tre `DATA_SOURCE_API_BASE_URL`-variablerna nås bara från specifika nät
+## Regel: varje ASK-URL-mönster är bara nåbart från en specifik nätverksplacering
 
 Lärdom från ett diagnostiktest 2026-07-10 (`arkiv-status.html`, ASK-vy-diagnostik)
-där samma 32 vyer × 13 tenants kördes mot alla tre bas-URL:er från samma klient
-(Emirs dator) och gav helt olika resultatmönster. Slutsats: **var och en av de
-tre URL:erna är bara nåbar från en specifik nätverksplacering** — inte ett
-generellt API-fel, inte trasig ASK-provider:
+där samma 32 vyer × 13 tenants kördes mot tre olika bas-URL:er från samma klient
+(Emirs dator) och gav helt olika resultatmönster. Slutsats: **var och en av
+URL-länkarna nedan är bara nåbar från en specifik nätverksplacering** — inte ett
+generellt API-fel, inte trasig ASK-provider.
 
-| Variabel | URL-mönster | Nåbar från | Symptom vid test utanför sitt nät |
-| --- | --- | --- | --- |
-| `DATA_SOURCE_API_BASE_URL` | `https://noeffectui-{tenant}.nowastelogistics.com` | Företagsnätverket (publik gateway) | 0/32 OK på alla tenants: `nås ej`/`TIMEOUT` efter ~30 s, enstaka 502/503. |
-| `DATA_SOURCE_API_BASE_URL2` | `http://noeffectapi-development-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **development**-server i klustret | Fungerar bra (t.ex. frey 28/32 OK). Kvarvarande fel är riktiga vy-/schemafel (HTTP 500, snabbt svar) hos providern, inte nätverksfel. |
-| `DATA_SOURCE_API_BASE_URL3` | `http://noeffectapi-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **prod**-server i klustret | 0/32 OK på alla tenants: `nås ej` med mycket korta svarstider (<300 ms) — anslutningen avvisas direkt, ingen timeout. |
+**Viktigt:** denna tabell är knuten till **URL-mönstren (länkarna) själva**, inte
+till vilken `DATA_SOURCE_API_BASE_URL`/`_2`/`_3`-variabel som råkar peka på dem
+just nu i Octopus. De variablerna byter innehåll över tid (Emir pekar om dem)
+— slå alltid upp efter länken, inte efter variabelnamnet.
+
+| URL-länk (mönster) | Nåbar från | Symptom vid test utanför sitt nät |
+| --- | --- | --- |
+| `https://noeffectui-{tenant}.nowastelogistics.com` | Företagsnätverket (publik gateway) | 0/32 OK på alla tenants: `nås ej`/`TIMEOUT` efter ~30 s, enstaka 502/503. |
+| `http://noeffectapi-development-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **development**-server i klustret | Fungerar bra (t.ex. frey 28/32 OK). Kvarvarande fel är riktiga vy-/schemafel (HTTP 500, snabbt svar) hos providern, inte nätverksfel. |
+| `http://noeffectapi-{tenant}.dev-{tenant}.svc.cluster.local/api` | En **prod**-server i klustret | 0/32 OK på alla tenants: `nås ej` med mycket korta svarstider (<300 ms) — anslutningen avvisas direkt, ingen timeout. |
 
 Hur man skiljer "fel nätverksplacering" från "riktigt providerfel" i en
 diagnostikrapport:
 
-- **Konsekvent `nås ej`/`TIMEOUT` över alla vyer och tenants** på en URL, medan
-  en annan URL samtidigt ger blandade OK/500 → nätverksplacering, inte API-fel.
-  Testklienten stod helt enkelt på fel nät för den URL:en.
+- **Konsekvent `nås ej`/`TIMEOUT` över alla vyer och tenants** på en länk, medan
+  en annan länk samtidigt ger blandade OK/500 → nätverksplacering, inte API-fel.
+  Testklienten stod helt enkelt på fel nät för den länken.
 - **Snabba `nås ej`-svar (under ~300 ms)** = anslutningen avvisas direkt
   (fel nät/DNS/brandvägg). **`TIMEOUT` efter full timeout-tid (~30 s)** = kan
   nå ett hopp men inget svar kommer — kan också vara fel nät, men med en
@@ -203,14 +208,16 @@ diagnostikrapport:
 - **HTTP-koder (500/502/503) med rimlig svarstid** betyder anropet nådde
   providern — det är ett providersidans fel (vy-SQL, tenant-specifikt schema),
   inte ett nätverks- eller konfigurationsfel hos oss.
-- Enskild tenant med `nås ej` medan resten av samma URL ger OK (t.ex.
-  `mestergruppen` mot URL2) pekar på att den tenanten saknas/är feldeployad i
-  just det nätet, inte ett generellt URL-problem.
+- Enskild tenant med `nås ej` medan resten av samma länk ger OK (t.ex.
+  `mestergruppen` mot development-länken) pekar på att den tenanten
+  saknas/är feldeployad i just det nätet, inte ett generellt länk-problem.
 
 Praktisk konsekvens: kör alltid diagnostiken **från den nätverksplacering som
-matchar den URL man vill testa** (företagsnät för URL1, en development-pod för
-URL2, en prod-pod för URL3). Att köra alla tre från samma plats ger falska
-"API är nere"-slutsatser för två av tre URL:er.
+matchar länken man vill testa** (företagsnät för den publika gatewayen,
+en development-pod för development-länken, en prod-pod för prod-länken).
+Att köra alla tre från samma plats ger falska "API är nere"-slutsatser för
+länkar som inte hör hemma i det nätet — oavsett vilken `DATA_SOURCE_API_BASE_URL`-
+variabel de för tillfället ligger bakom.
 
 ## Felsökningssvar för framtida chat
 
@@ -226,8 +233,8 @@ Svar: Operativt så långt som tabellens `days` (t.ex. PICK_LOG 40, TRANS_LOG 60
 Fråga: Var ser jag exakt vilken tabell som har vilken retention?
 Svar: I [`../referens/vyer-kolumner/ask_rensning_och_arkivering.xml`](../referens/vyer-kolumner/ask_rensning_och_arkivering.xml). `days` + `archive` per tabell.
 
-Fråga: ASK-vy-diagnostiken visar "nås ej" på alla vyer för en URL men OK för en annan — är API:t nere?
-Svar: Troligen inte. De tre `DATA_SOURCE_API_BASE_URL`-variablerna nås bara från olika nät (företagsnät/development-pod/prod-pod). Kör om testet från rätt nätverksplacering för den URL:en innan du drar slutsatsen att providern är nere. Se avsnittet ovan om de tre bas-URL:erna.
+Fråga: ASK-vy-diagnostiken visar "nås ej" på alla vyer för en länk men OK för en annan — är API:t nere?
+Svar: Troligen inte. Varje ASK-URL-länk (publik gateway, development-kluster, prod-kluster) nås bara från sitt eget nät, oavsett vilken `DATA_SOURCE_API_BASE_URL`-variabel som just nu pekar på den. Kör om testet från rätt nätverksplacering för den länken innan du drar slutsatsen att providern är nere. Se avsnittet ovan om de tre ASK-länkarna.
 
 ## Källor
 
