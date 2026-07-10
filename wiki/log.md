@@ -1,11 +1,37 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-09
+updated: 2026-07-10
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-10] ingest | ASK-vy-diagnostik: varje ASK-länk är bunden till ett eget nät
+
+Nya ASK-vy-diagnostiken i `arkiv-status.html` kördes mot tre olika ASK-bas-URL:er
+(satta via `DATA_SOURCE_API_BASE_URL`/`2`/`3`) från samma klient (Emirs dator) och
+gav helt olika mönster: den publika gatewayen (`noeffectui-{tenant}...`) 0/32 OK
+på alla tenants (`nås ej`/TIMEOUT), development-klustret
+(`noeffectapi-development-{tenant}...svc.cluster.local`) 22–28/32 OK,
+prod-klustret (`noeffectapi-{tenant}...svc.cluster.local`) 0/32 OK med mycket
+snabba `nås ej`-svar. Slutsats: varje länk är bara nåbar från sin egen
+nätverksplacering (företagsnät / development-pod / prod-pod) — inte ett
+generellt API- eller providerfel. Viktigt: lärdomen är knuten till **länkarna**,
+inte till vilken variabel-slot (`_BASE_URL`/`_2`/`_3`) som råkar peka på dem —
+de variablerna pekas om över tid. Dokumenterat i `ask-datalagring.md` med tabell
+per länk + hur man skiljer "fel nät" (konsekvent nås-ej över alla vyer) från
+"riktigt providerfel" (HTTP-kod med rimlig svarstid på enstaka vyer).
+
+## [2026-07-09] lint | ASK-vystatus: hårdkodat `created` gav 36/40 falska 500
+
+Statustest över 40 vyer × 13 tenants såg först ut att visa 36/40 trasiga (HTTP
+500). Rotorsak: testscriptet hårdkodade `created` som filterkolumn, men bara 3
+vyer har den. Med rätt kolumn per vy (`_preferred_date_column`) och skilda
+arkiv/live-fönster föll felen till en handfull genuina providerfel (`Invalid
+column 'ORDER_TYPE'` m.fl., intermittenta) + `v_ask_kpi_target` 403 + Mestergruppen
+404. Regeln "läs filterkolumn ur katalogen, hårdkoda aldrig `created`" tillagd i
+`ask-datalagring.md`.
 
 ## [2026-07-09] ingest | Meta: stadmigration for label-kolumnerna planerad till efter 2026-08-10
 
