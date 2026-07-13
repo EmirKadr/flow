@@ -7,6 +7,14 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-13] ingest | IoT-rela for GPS-trackers
+
+Ny fristaende modul `/api/iot-relay/*` (router, `IotRelayEvent`-modell,
+migration 0051, `IOT_RELAY_TOKEN`): brevlada dar ESP32 GPS-trackers pa truckar
+POSTar positioner och det separata IoT-Dashboard-projektet pollar hem dem via
+id-cursor. Ny sida [iot-relay.md](iot-relay.md), rader i API_ROUTES.md och
+tools/flow_cli.py, tester i tests/services/test_iot_relay.py.
+
 ## [2026-06-09] fix | Windows-login via desktop-proxy
 
 Windows-appens lokala API-proxy skickar nu `Accept-Encoding: identity` till

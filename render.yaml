@@ -49,6 +49,8 @@ services:
         value: "30"
       - key: EXCEL_API_TOKEN
         generateValue: true
+      - key: IOT_RELAY_TOKEN
+        generateValue: true
       - key: MINIMAX_API_KEY
         sync: false
       - key: MINIMAX_MODEL

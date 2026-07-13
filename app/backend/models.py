@@ -581,3 +581,27 @@ class AppSetting(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class IotRelayEvent(Base):
+    """Brevlada for IoT-enheter (GPS-trackers/sensorer) - se routers/iot_relay.py.
+
+    Medvetet helt fristaende modul: inga FK:er till bemanningsdomanen.
+    ESP32-enheter POSTar hit; den lokalt korda IoT-Dashboard-backenden
+    pollar hem posterna via GET /api/iot-relay/events. Gamla rader stadas
+    automatiskt av routern (retention 48 h).
+    """
+
+    __tablename__ = "iot_relay_events"
+    __table_args__ = (
+        Index("ix_iot_relay_events_device_id", "device_id"),
+        Index("ix_iot_relay_events_received_at", "received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)  # "gps" | "reading"
+    payload: Mapped[dict] = mapped_column(JsonField, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

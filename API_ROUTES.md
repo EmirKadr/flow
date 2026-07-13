@@ -184,6 +184,9 @@ aktivitetstimmar.
 | `public.persons_week` | `GET` | `/api/public/persons/week` | Publika FTE för vecka |
 | `public.summary` | `GET` | `/api/public/summary` | Publik CSV-summering för dag |
 | `public.summary_week` | `GET` | `/api/public/summary/week` | Publik CSV-summering för vecka |
+| `iot_relay.gps` | `POST` | `/api/iot-relay/gps` | Ta emot GPS-position från IoT-enhet (token via `X-IoT-Device-Token` eller `?token=`) |
+| `iot_relay.reading` | `POST` | `/api/iot-relay/reading` | Ta emot sensoravläsning från IoT-enhet (token) |
+| `iot_relay.events` | `GET` | `/api/iot-relay/events` | Hämta buffrade IoT-händelser, id-stigande cursor (pollas av IoT-Dashboard; kontrakt i det repots docs/API.md) |
 | `meta.uploads` | `POST` | `/api/meta/uploads` | Publik meta-uppladdning av bilder och videor; backendfel auditloggas sanerat som `meta_media_upload/upload_failed` |
 | `meta.list_uploads` | `GET` | `/api/meta/uploads` | Super User-lista över meta-uppladdningar |
 | `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | Sändningsanalys för Meta-videor |

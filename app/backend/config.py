@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     SUPER_USER_USERNAMES: str = "emikad,mikhal"
     EXCEL_API_TOKEN: str = ""
+    IOT_RELAY_TOKEN: str = ""
     PRODUCTIVITY_REFERENCE_DIR: str = ""
     PRODUCTIVITY_DATA_DIR: str = ""
     MINIMAX_API_KEY: str = ""

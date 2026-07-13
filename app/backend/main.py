@@ -25,6 +25,7 @@ from .routers import (
     coredata,
     data_fetch,
     healthcheck,
+    iot_relay,
     meta_uploads,
     overview,
     person_schedules,
@@ -206,6 +207,7 @@ app.include_router(bulk.router)
 app.include_router(coredata.router)
 app.include_router(data_fetch.router)
 app.include_router(healthcheck.router)
+app.include_router(iot_relay.router)
 app.include_router(meta_uploads.router)
 app.include_router(overview.router)
 app.include_router(productivity.router)
