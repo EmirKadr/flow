@@ -605,3 +605,23 @@ class IotRelayEvent(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class IotRelayCommand(Base):
+    """Kommando-brevlada at andra hallet: dashboarden lagger kommandon
+    (t.ex. "wifi-locate"), truckdatorns brygga pollar hem dem per deviceId.
+    Samma fristaende modul som IotRelayEvent - se routers/iot_relay.py.
+    """
+
+    __tablename__ = "iot_relay_commands"
+    __table_args__ = (
+        Index("ix_iot_relay_commands_device_id", "device_id"),
+        Index("ix_iot_relay_commands_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntId, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    command: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

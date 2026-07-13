@@ -165,6 +165,8 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("iot_relay.gps", "POST", "/api/iot-relay/gps", "Ta emot GPS-position från IoT-enhet (token)"),
     ApiRoute("iot_relay.reading", "POST", "/api/iot-relay/reading", "Ta emot sensoravläsning från IoT-enhet (token)"),
     ApiRoute("iot_relay.events", "GET", "/api/iot-relay/events", "Hämta buffrade IoT-händelser (pollas av IoT-Dashboard)"),
+    ApiRoute("iot_relay.command", "POST", "/api/iot-relay/command", "Lägg kommando till truckens brygga (t.ex. wifi-locate)"),
+    ApiRoute("iot_relay.commands", "GET", "/api/iot-relay/commands", "Hämta väntande kommandon per deviceId (pollas av bryggan)"),
     ApiRoute("meta.uploads", "POST", "/api/meta/uploads", "Publik meta-uppladdning av bilder och videor"),
     ApiRoute("meta.list_uploads", "GET", "/api/meta/uploads", "Super User-lista över meta-uppladdningar"),
     ApiRoute("meta.shipment_observations", "GET", "/api/meta/shipment-observations", "Sändningsanalys för Meta-videor"),

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..deps import get_db
-from ..models import IotRelayEvent
+from ..models import IotRelayCommand, IotRelayEvent
 
 router = APIRouter(prefix="/api/iot-relay", tags=["iot-relay"])
 
@@ -33,6 +33,8 @@ DEFAULT_LIMIT = 500
 MAX_LIMIT = 1000
 TAIL_LIMIT = 200  # utan ?since=: de senaste posterna (cursor-bootstrap)
 MAX_PAYLOAD_BYTES = 16_384  # riktiga enhetspayloads är <300 byte — stoppa skräpfyllning
+ALLOWED_COMMANDS = {"wifi-locate"}  # utöka medvetet, aldrig fritt
+COMMAND_TAIL_LIMIT = 10
 
 
 def _verify_token(token: str | None) -> None:
@@ -68,6 +70,7 @@ def _maybe_cleanup(db: Session) -> None:
         return
     cutoff = datetime.now(timezone.utc) - timedelta(hours=RETENTION_HOURS)
     db.execute(delete(IotRelayEvent).where(IotRelayEvent.received_at < cutoff))
+    db.execute(delete(IotRelayCommand).where(IotRelayCommand.created_at < cutoff))
 
 
 def _require_float(body: dict, field: str) -> None:
@@ -153,3 +156,79 @@ def relay_events(
         for event in db.execute(query).scalars().all()
     ]
     return {"entries": entries, "latest": latest}
+
+
+@router.post("/command", dependencies=[Depends(_verify_post_token)])
+def relay_command(body: dict = Body(...), db: Session = Depends(get_db)) -> dict:
+    """Lägg ett kommando i brevlådan (dashboarden → truckens brygga)."""
+    device_id = str(body.get("deviceId") or "").strip()
+    if not device_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="deviceId kravs")
+    command = str(body.get("command") or "").strip()
+    if command not in ALLOWED_COMMANDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"command maste vara en av: {', '.join(sorted(ALLOWED_COMMANDS))}",
+        )
+    entry = IotRelayCommand(device_id=device_id[:80], command=command)
+    db.add(entry)
+    _maybe_cleanup(db)
+    db.commit()
+    db.refresh(entry)
+    return {"ok": True, "id": entry.id}
+
+
+@router.get("/commands")
+def relay_commands(
+    token: str = Query(...),
+    deviceId: str = Query(...),
+    since: int | None = Query(None, ge=0),
+    limit: int = Query(COMMAND_TAIL_LIMIT, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Bryggan pollar sina kommandon per deviceId — samma id-cursor-semantik
+    som /events. Bryggan bör ignorera kommandon äldre än ~10 min."""
+    _verify_token(token)
+    latest = (
+        db.execute(
+            select(func.max(IotRelayCommand.id)).where(
+                IotRelayCommand.device_id == deviceId
+            )
+        ).scalar()
+        or 0
+    )
+
+    if since is None:
+        tail_ids = (
+            select(IotRelayCommand.id)
+            .where(IotRelayCommand.device_id == deviceId)
+            .order_by(IotRelayCommand.id.desc())
+            .limit(min(limit, COMMAND_TAIL_LIMIT))
+            .subquery()
+        )
+        query = (
+            select(IotRelayCommand)
+            .where(IotRelayCommand.id.in_(select(tail_ids.c.id)))
+            .order_by(IotRelayCommand.id)
+        )
+    else:
+        query = (
+            select(IotRelayCommand)
+            .where(
+                IotRelayCommand.device_id == deviceId,
+                IotRelayCommand.id > since,
+            )
+            .order_by(IotRelayCommand.id)
+            .limit(limit)
+        )
+
+    commands = [
+        {
+            "id": cmd.id,
+            "deviceId": cmd.device_id,
+            "command": cmd.command,
+            "createdAt": _iso_utc(cmd.created_at),
+        }
+        for cmd in db.execute(query).scalars().all()
+    ]
+    return {"commands": commands, "latest": latest}

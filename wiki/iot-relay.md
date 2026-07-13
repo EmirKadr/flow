@@ -18,9 +18,12 @@ tunnlar.
 
 - `app/backend/routers/iot_relay.py` — hela modulen: POST `/api/iot-relay/gps`,
   POST `/api/iot-relay/reading`, GET `/api/iot-relay/events` (id-stigande
-  cursor, tail-lage utan `since`).
-- `IotRelayEvent` i `models.py` + migration `0051_iot_relay_events` — en tabell,
-  inga FK:er till bemanningsdomanen. Stadas automatiskt efter 48 h
+  cursor, tail-lage utan `since`) samt kommandobrevladan at andra hallet:
+  POST `/api/iot-relay/command` (allowlist: `wifi-locate`) och
+  GET `/api/iot-relay/commands?deviceId=` som truckdatorernas bryggor pollar.
+- `IotRelayEvent` + `IotRelayCommand` i `models.py`, migrationer
+  `0051_iot_relay_events` och `0052_iot_relay_commands` — inga FK:er till
+  bemanningsdomanen. Bada stadas automatiskt efter 48 h
   (sannolikhetsstyrt vid insert).
 - Auth: `IOT_RELAY_TOKEN` (env, `generateValue` i render.yaml) — obligatorisk,
   503 om okonfigurerad, 401 vid fel. POST tar token via header

@@ -7,6 +7,15 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-13] ingest | Kommandobrevlada i IoT-relaet
+
+`IotRelayCommand` (migration 0052) + POST `/api/iot-relay/command` och
+GET `/api/iot-relay/commands`: IoT-Dashboard skickar `wifi-locate` som
+truckdatorns brygga pollar hem och besvarar med en WiFi-position
+(Windows platstjanst) nar GPS ar tyst inomhus. Uppdaterade
+[iot-relay.md](iot-relay.md), API_ROUTES.md, tools/flow_cli.py och
+tests/services/test_iot_relay.py.
+
 ## [2026-07-13] ingest | IoT-rela for GPS-trackers
 
 Ny fristaende modul `/api/iot-relay/*` (router, `IotRelayEvent`-modell,

@@ -15,7 +15,7 @@ from app.backend.config import settings
 from app.backend.database import Base
 from app.backend.deps import get_db
 from app.backend.main import app
-from app.backend.models import IotRelayEvent
+from app.backend.models import IotRelayCommand, IotRelayEvent
 from app.backend.routers import iot_relay
 
 TOKEN = "test-relay-token"
@@ -145,16 +145,17 @@ def test_events_tail_since_and_limit(harness):
 def test_old_rows_are_cleaned_up_on_insert(harness, monkeypatch):
     client, session_factory = harness
 
+    old = datetime.now(timezone.utc) - timedelta(hours=iot_relay.RETENTION_HOURS + 1)
     with session_factory() as db:
         db.add(
             IotRelayEvent(
                 device_id="GAMMAL",
                 kind="gps",
                 payload={"deviceId": "GAMMAL", "lat": 1, "lon": 2},
-                received_at=datetime.now(timezone.utc)
-                - timedelta(hours=iot_relay.RETENTION_HOURS + 1),
+                received_at=old,
             )
         )
+        db.add(IotRelayCommand(device_id="GAMMAL", command="wifi-locate", created_at=old))
         db.commit()
 
     # tvinga städningen att köra (annars sannolikhetsstyrd)
@@ -163,4 +164,60 @@ def test_old_rows_are_cleaned_up_on_insert(harness, monkeypatch):
 
     with session_factory() as db:
         device_ids = set(db.execute(select(IotRelayEvent.device_id)).scalars())
+        command_count = len(list(db.execute(select(IotRelayCommand.id)).scalars()))
     assert device_ids == {"ESP32-GPS-01"}
+    assert command_count == 0
+
+
+def test_command_roundtrip(harness):
+    client, _ = harness
+    response = client.post(
+        "/api/iot-relay/command",
+        json={"deviceId": "ESP32-GPS-01", "command": "wifi-locate"},
+        headers={"X-IoT-Device-Token": TOKEN},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "id": 1}
+
+    # tail-läge för rätt enhet
+    mine = client.get(
+        f"/api/iot-relay/commands?token={TOKEN}&deviceId=ESP32-GPS-01"
+    ).json()
+    assert mine["latest"] == 1
+    assert [c["command"] for c in mine["commands"]] == ["wifi-locate"]
+    assert mine["commands"][0]["createdAt"].endswith("Z")
+
+    # annan enhet ser ingenting
+    other = client.get(
+        f"/api/iot-relay/commands?token={TOKEN}&deviceId=ANNAN"
+    ).json()
+    assert other["commands"] == []
+    assert other["latest"] == 0
+
+    # cursor: inget nytt efter id 1
+    caught_up = client.get(
+        f"/api/iot-relay/commands?token={TOKEN}&deviceId=ESP32-GPS-01&since=1"
+    ).json()
+    assert caught_up["commands"] == []
+    assert caught_up["latest"] == 1
+
+
+def test_command_validation(harness):
+    client, _ = harness
+    headers = {"X-IoT-Device-Token": TOKEN}
+    no_device = client.post(
+        "/api/iot-relay/command", json={"command": "wifi-locate"}, headers=headers
+    )
+    assert no_device.status_code == 400
+    unknown = client.post(
+        "/api/iot-relay/command",
+        json={"deviceId": "X", "command": "rm-rf"},
+        headers=headers,
+    )
+    assert unknown.status_code == 400
+    bad_token = client.post(
+        "/api/iot-relay/command",
+        json={"deviceId": "X", "command": "wifi-locate"},
+        headers={"X-IoT-Device-Token": "fel"},
+    )
+    assert bad_token.status_code == 401

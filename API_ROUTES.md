@@ -187,6 +187,8 @@ aktivitetstimmar.
 | `iot_relay.gps` | `POST` | `/api/iot-relay/gps` | Ta emot GPS-position från IoT-enhet (token via `X-IoT-Device-Token` eller `?token=`) |
 | `iot_relay.reading` | `POST` | `/api/iot-relay/reading` | Ta emot sensoravläsning från IoT-enhet (token) |
 | `iot_relay.events` | `GET` | `/api/iot-relay/events` | Hämta buffrade IoT-händelser, id-stigande cursor (pollas av IoT-Dashboard; kontrakt i det repots docs/API.md) |
+| `iot_relay.command` | `POST` | `/api/iot-relay/command` | Lägg kommando till truckens brygga (allowlist: `wifi-locate`; token) |
+| `iot_relay.commands` | `GET` | `/api/iot-relay/commands` | Hämta väntande kommandon per deviceId, id-stigande cursor (pollas av bryggan; token) |
 | `meta.uploads` | `POST` | `/api/meta/uploads` | Publik meta-uppladdning av bilder och videor; backendfel auditloggas sanerat som `meta_media_upload/upload_failed` |
 | `meta.list_uploads` | `GET` | `/api/meta/uploads` | Super User-lista över meta-uppladdningar |
 | `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | Sändningsanalys för Meta-videor |
