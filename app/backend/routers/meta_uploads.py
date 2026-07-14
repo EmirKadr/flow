@@ -34,8 +34,6 @@ from .meta_uploads_helpers import (  # noqa: F401
     PUBLIC_UPLOAD_FAILURE_DETAIL,
     _RATE_LOCK,
     _RATE_HITS,
-    META_PLAYABLE_TRANSCODE_LIMIT,
-    _PLAYABLE_TRANSCODE_SEMAPHORE,
     _enforce_upload_rate_limit,
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
@@ -63,9 +61,6 @@ from .meta_uploads_helpers import (  # noqa: F401
     _content_disposition,
     _duplicate_item,
     _cleanup_path,
-    _transcode_video_to_playable,
-    _transcode_video_to_playable_queued,
-    _playable_video_response,
     _media_headers,
     _media_response,
     _meta_media_head_response,
@@ -778,6 +773,6 @@ def get_meta_media_content(
     row = db.get(MetaMediaUpload, upload_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
-    if variant == "playable" and row.media_type == "video":
-        return _playable_video_response(row, as_attachment=download)
-    return _media_response(row, request, as_attachment=download)
+    # variant=playable är ett bakåtkompatibelt alias till original. Ingen
+    # request-driven videotranskodning får köras i den enda serverpodden.
+    return _media_response(row, request, variant=variant, as_attachment=download)
