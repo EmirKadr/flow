@@ -129,3 +129,68 @@ def test_meta_shows_and_sorts_numeric_observation_id(local_server, chromium_brow
         assert visible_ids() == ["#2"]
     finally:
         context.close()
+
+
+def test_meta_download_streams_original_without_playable_transcode(local_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE", accept_downloads=True)
+    page = context.new_page()
+    original_bytes = b"original-video-browser-fixture"
+    try:
+        page.goto(f"{local_server}/login.html", wait_until="load")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+
+        upload_response = context.request.post(
+            f"{local_server}/api/meta/uploads",
+            multipart={
+                "files": {
+                    "name": "browser-fixture.mp4",
+                    "mimeType": "video/mp4",
+                    "buffer": original_bytes,
+                }
+            },
+        )
+        assert upload_response.status == 201
+        upload_id = upload_response.json()["saved"][0]["id"]
+        shipment = _shipment(10, "2026-07-10T10:00:00Z")
+        shipment.update({
+            "media_upload_id": upload_id,
+            "video_filename": "browser-fixture.mp4",
+            "video_original_filename": "browser-fixture.mp4",
+            "video_url": f"/api/meta/uploads/{upload_id}/content",
+        })
+
+        page.route(
+            "**/api/meta/uploads?*",
+            lambda route: _fulfill_json(route, {"items": []}),
+        )
+        page.route(
+            "**/api/meta/shipment-observations?*",
+            lambda route: _fulfill_json(
+                route,
+                {"items": [shipment]},
+            ),
+        )
+        page.goto(f"{local_server}/meta.html", wait_until="load")
+        page.wait_for_selector('[data-download-shipment-video="10"]', timeout=15000)
+
+        with page.expect_response(
+            lambda response: response.request.method == "HEAD"
+            and f"/api/meta/uploads/{upload_id}/content" in response.url,
+            timeout=15000,
+        ) as head_info:
+            with page.expect_download(timeout=15000) as download_info:
+                page.click('[data-download-shipment-video="10"]')
+
+        download = download_info.value
+        assert head_info.value.status == 200
+        assert download.suggested_filename.endswith(".mp4")
+        assert download.path().read_bytes() == original_bytes
+        request_urls = [head_info.value.url, download.url]
+        assert all("download=1" in url for url in request_urls)
+        assert all("variant=original" in url for url in request_urls)
+        assert all("variant=playable" not in url for url in request_urls)
+    finally:
+        context.close()
