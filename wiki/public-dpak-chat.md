@@ -1,13 +1,17 @@
 ---
 title: Publik D-pak-chatt
 status: aktiv
-updated: 2026-07-09
+updated: 2026-07-14
 tags: [publik, dpak, chat, postgres]
 ---
 
 # Publik D-pak-chatt
 
 `/dpak-fraga.html` är en fristående chatvy för kundfrågor om D-pak, zon R, AUTOSTORE, leverantörer och lådor. Sidan kräver inte inloggning och läggs inte i sidomenyn; den nås bara via direktlänk. Om `PUBLIC_DPAK_LINK_TOKEN` är satt måste både status- och meddelandeendpointen få samma token.
+
+## Användarflöde
+
+Den tomma chatten uppmanar användaren att fråga om D-pak och leverantörspridning. Skrivna frågor skickas utan språkvalidering och agenten svarar på svenska. Rösttolkningen är däremot inställd på svenska (`sv-SE`).
 
 ## Svarstid och datalager
 

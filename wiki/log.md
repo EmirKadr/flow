@@ -1145,3 +1145,7 @@ Publik D-pak-chatt visar nu röstinspelning som en mikrofonikon med tillgänglig
 ## [2026-07-09] fix | D-pak-agenten kör DeepSeek Pro som standard
 
 D-pak-agentens driftkonfiguration är förenklad: om `DEEPSEEK_API_KEY` finns används DeepSeek Pro med D-pak-agentens fasta serverinställningar. Om DeepSeek-nyckeln saknas används fortsatt `MINIMAX_API_KEY`/`MINIMAX_*` som bakåtkompatibel fallback. Render kräver därmed bara en ny D-pak-modellnyckel i stället för de tidigare separata `PUBLIC_DPAK_AGENT_*`-variablerna.
+
+## [2026-07-14] fix | D-pak-chatten visar inget språkkrav
+
+Den tomma publika D-pak-chatten uppmanar nu användaren att fråga om D-pak och leverantörspridning i stället för att kräva svenska. Skrivna frågor språkvalideras inte; svensk inställning gäller fortsatt för rösttolkningen och agentens svar.

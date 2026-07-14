@@ -10,6 +10,7 @@ from pathlib import Path
 from tools import interactive_e2e
 from tools import desktop_app_probe
 from tools import visual_smoke
+from tools.terminology_contracts import terminology_rule
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1584,6 +1585,9 @@ def test_public_dpak_chat_page_is_standalone():
     assert "public-dpak-voice-icon-stop" in html
     assert "/api/public/dpak-chat/status" in js
     assert "/api/public/dpak-chat/message" in js
+    prompt_rule = terminology_rule("public_dpak_empty_prompt")
+    assert all(term in js for term in prompt_rule.canonical_terms)
+    assert all(term not in js for term in prompt_rule.forbidden_terms)
     assert "navigator.mediaDevices?.getUserMedia" in js
     assert "new MediaRecorder" in js
     assert "voice: voicePayload" in js

@@ -94,7 +94,22 @@ TERMINOLOGY_RULES: tuple[TerminologyRule, ...] = (
             "tools/terminology_contracts.py",
         ),
     ),
+    TerminologyRule(
+        key="public_dpak_empty_prompt",
+        canonical_terms=("Fråga om D-pak och leverantörspridning.",),
+        forbidden_terms=("Fråga på svenska.",),
+        compatibility_paths=(
+            "tools/terminology_contracts.py",
+        ),
+    ),
 )
+
+
+def terminology_rule(key: str) -> TerminologyRule:
+    for rule in TERMINOLOGY_RULES:
+        if rule.key == key:
+            return rule
+    raise KeyError(f"Unknown terminology rule: {key}")
 
 
 def forbidden_terms() -> tuple[str, ...]:

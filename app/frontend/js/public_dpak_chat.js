@@ -466,7 +466,7 @@ function publicDpakRenderMessages() {
   if (!publicDpakState.messages.length) {
     list.innerHTML = `
       <div class="public-dpak-empty">
-        <strong>Fråga på svenska.</strong>
+        <strong>Fråga om D-pak och leverantörspridning.</strong>
         <span>Exempel: hur många D-pak sålde vi i juni?</span>
       </div>
     `;
