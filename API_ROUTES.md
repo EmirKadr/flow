@@ -273,5 +273,5 @@ filtervariant via API/SSE i stÃ¤llet fÃ¶r att fÃ¶rbygga alla lokala vyer.
 | `meta.analyze` | `POST` | `/api/meta/uploads/{upload_id}/analyze` | Analysera Meta-video |
 | `meta.shipment_status` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/status` | Uppdatera status for Meta-rad |
 | `meta.shipment_dispatch_lookup` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/dispatch-lookup` | Skriv tillbaka lokalt ASK-uppslag for Meta-rad |
-| `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Visa eller spela upp meta-uppladdning |
+| `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Stromma originaluppladdning; legacy `variant=playable` aliasas resurssakert till original utan videotranskodning |
 | `meta.delete` | `DELETE` | `/api/meta/uploads/{upload_id}` | Radera meta-uppladdning |

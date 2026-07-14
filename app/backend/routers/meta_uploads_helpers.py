@@ -24,11 +24,10 @@ import threading
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
-from starlette.background import BackgroundTask
 
 from ..audit import log as audit_log, log_and_commit as audit_log_and_commit
 from ..config import settings
@@ -57,8 +56,6 @@ PUBLIC_UPLOAD_FAILURE_DETAIL = (
 # Enkel per-IP rate-limit (fast fönster) för den publika uppladdningsendpointen.
 _RATE_LOCK = threading.Lock()
 _RATE_HITS: dict[str, list[float]] = {}
-META_PLAYABLE_TRANSCODE_LIMIT = 1
-_PLAYABLE_TRANSCODE_SEMAPHORE = threading.BoundedSemaphore(META_PLAYABLE_TRANSCODE_LIMIT)
 
 
 def _enforce_upload_rate_limit(request: Request) -> None:
@@ -534,87 +531,7 @@ def _cleanup_path(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
     except OSError:
-        logger.info("Could not remove temporary playable meta video %s", path)
-
-
-def _transcode_video_to_playable(row: MetaMediaUpload) -> Path:
-    ffmpeg = _resolve_ffmpeg()
-    if not ffmpeg:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ffmpeg saknas for spelbar video.")
-    if not row.storage_key:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mediafilen saknar lagringsreferens.")
-    source_path = get_media_store().materialize_to_temp(row.storage_key)
-    fd, output_name = tempfile.mkstemp(prefix="flow_meta_playable_", suffix=".mp4")
-    try:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        output_path = Path(output_name)
-        output_path.unlink(missing_ok=True)
-        command = [
-            ffmpeg,
-            "-y",
-            # ffmpeg default = tradar for alla karnor; hogupplost h264 (t.ex.
-            # 1488x1984@120fps fran Meta-glasogon) kan da ta flera hundra MB och
-            # grupp-OOM-doda podden (hande 2026-07-09 vid stillbildsextraktion).
-            # Taket fore -i galler avkodaren, taket efter galler x264-enkodaren.
-            "-threads", "2",
-            "-i",
-            str(source_path),
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a?",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "24",
-            "-threads", "2",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-movflags",
-            "+faststart",
-            str(output_path),
-        ]
-        completed = subprocess.run(command, capture_output=True, timeout=240, check=False)
-        if completed.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 0:
-            _cleanup_path(output_path)
-            detail = (completed.stderr or b"").decode("utf-8", errors="replace")[:500]
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Kunde inte skapa spelbar video. {detail}".strip(),
-            )
-        return output_path
-    except BaseException:
-        try:
-            Path(output_name).unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
-
-
-def _transcode_video_to_playable_queued(row: MetaMediaUpload) -> Path:
-    with _PLAYABLE_TRANSCODE_SEMAPHORE:
-        return _transcode_video_to_playable(row)
-
-
-def _playable_video_response(row: MetaMediaUpload, *, as_attachment: bool = False) -> Response:
-    output_path = _transcode_video_to_playable_queued(row)
-    filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
-    return FileResponse(
-        output_path,
-        media_type="video/mp4",
-        filename=_clean_filename(filename),
-        content_disposition_type="attachment" if as_attachment else "inline",
-        background=BackgroundTask(_cleanup_path, output_path),
-    )
+        logger.info("Could not remove temporary Meta file %s", path)
 
 
 def _media_headers(row: MetaMediaUpload, *, as_attachment: bool = False) -> tuple[str, dict[str, str], int]:
@@ -636,8 +553,19 @@ def _media_headers(row: MetaMediaUpload, *, as_attachment: bool = False) -> tupl
     return content_type, base_headers, stat.size
 
 
-def _media_response(row: MetaMediaUpload, request: Request, *, as_attachment: bool = False) -> Response:
+def _media_response(
+    row: MetaMediaUpload,
+    request: Request,
+    *,
+    variant: str | None = None,
+    as_attachment: bool = False,
+) -> Response:
     content_type, base_headers, total = _media_headers(row, as_attachment=as_attachment)
+    if variant == "playable":
+        # Bakåtkompatibilitet för redan öppna flikar: playable var tidigare en
+        # synkron x264-transkodning som kunde OOM-döda hela podden. Aliaset får
+        # aldrig starta ffmpeg utan strömmar samma original som variant=original.
+        base_headers["X-Flow-Media-Variant"] = "original"
 
     # All media strÃ¶mmas frÃ¥n MediaStore â€” hela filen hamnar aldrig i RAM.
     store = get_media_store()
@@ -668,18 +596,9 @@ def _media_response(row: MetaMediaUpload, request: Request, *, as_attachment: bo
 
 
 def _meta_media_head_response(row: MetaMediaUpload, *, variant: str | None, as_attachment: bool = False) -> Response:
-    if variant == "playable" and row.media_type == "video":
-        if not _resolve_ffmpeg():
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ffmpeg saknas for spelbar video.")
-        filename = row.stored_filename or row.original_filename or f"meta-video-{row.id}.mp4"
-        return Response(
-            media_type="video/mp4",
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": _content_disposition(filename, attachment=as_attachment),
-            },
-        )
     content_type, headers, _total = _media_headers(row, as_attachment=as_attachment)
+    if variant == "playable":
+        headers["X-Flow-Media-Variant"] = "original"
     return Response(media_type=content_type, headers=headers)
 
 

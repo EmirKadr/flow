@@ -836,7 +836,7 @@ def test_public_meta_upload_normalizes_audio_mp4_content_type_for_video_filename
         engine.dispose()
 
 
-def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeypatch):
+def test_meta_video_content_playable_variant_streams_original_without_ffmpeg(monkeypatch):
     engine, session = make_session()
     row = MetaMediaUpload(
         batch_id="batch-playable",
@@ -855,22 +855,10 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
     session.commit()
     session.refresh(row)
 
-    def fake_run(command, capture_output, timeout, check):
-        Path(command[-1]).write_bytes(b"playable-video")
-        return SimpleNamespace(returncode=0, stderr=b"")
+    def fail_if_ffmpeg_runs(*args, **kwargs):
+        pytest.fail("variant=playable får aldrig starta ffmpeg i requestprocessen")
 
-    monkeypatch.setattr(meta_uploads_helpers, "_resolve_ffmpeg", lambda: "ffmpeg")
-    monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fake_run)
-    queue_events = []
-
-    class FakeSemaphore:
-        def __enter__(self):
-            queue_events.append("enter")
-
-        def __exit__(self, exc_type, exc, tb):
-            queue_events.append("exit")
-
-    monkeypatch.setattr(meta_uploads_helpers, "_PLAYABLE_TRANSCODE_SEMAPHORE", FakeSemaphore())
+    monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fail_if_ffmpeg_runs)
 
     def override_get_db():
         yield session
@@ -882,13 +870,23 @@ def test_meta_video_content_playable_variant_transcodes_to_h264_download(monkeyp
     app.dependency_overrides[get_current_user] = super_user
     try:
         client = TestClient(app)
-        content = client.get(f"/api/meta/uploads/{row.id}/content?variant=playable")
+        head = client.head(f"/api/meta/uploads/{row.id}/content?download=1&variant=playable")
+        partial = client.get(
+            f"/api/meta/uploads/{row.id}/content?download=1&variant=playable",
+            headers={"Range": "bytes=0-5"},
+        )
+        content = client.get(f"/api/meta/uploads/{row.id}/content?download=1&variant=playable")
 
+        assert head.status_code == 200
+        assert partial.status_code == 206
+        assert partial.content == b"source"
         assert content.status_code == 200
-        assert content.content == b"playable-video"
+        assert content.content == b"source-video"
         assert content.headers["content-type"].startswith("video/mp4")
         assert "20260531_120102_123456Z_01.mp4" in content.headers["content-disposition"]
-        assert queue_events == ["enter", "exit"]
+        assert head.headers["x-flow-media-variant"] == "original"
+        assert partial.headers["x-flow-media-variant"] == "original"
+        assert content.headers["x-flow-media-variant"] == "original"
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -1461,11 +1459,11 @@ def test_gemini_requests_put_api_key_in_header_not_url(monkeypatch):
     assert headers["Content-Type"] == "application/json"
 
 
-def test_ffmpeg_commands_cap_threads_to_protect_pod_memory(monkeypatch):
+def test_ffmpeg_audio_command_caps_threads_and_download_has_no_transcoder(monkeypatch):
     """ffmpeg default ar tradar for alla karnor; multitradad avkodning av
     hogupplost h264 (Meta-glasogon: 1488x1984@120fps) tog ~254 MB och
     grupp-OOM-dodade podden 2026-07-09. Ljudextraktionen ska kora
-    -threads 1 och playable-transkodningen -threads 2 (avkodare + x264)."""
+    -threads 1 och request-driven videotranscodes far inte finnas."""
     captured: list[list[str]] = []
 
     def fake_run(command, capture_output, timeout, check):
@@ -1492,20 +1490,13 @@ def test_ffmpeg_commands_cap_threads_to_protect_pod_memory(monkeypatch):
     with meta_analysis_service.extract_audio_file(upload) as audio:
         assert audio.size_bytes > 0
 
-    monkeypatch.setattr(meta_uploads_helpers, "_resolve_ffmpeg", lambda: "ffmpeg")
-    monkeypatch.setattr(meta_uploads_helpers.subprocess, "run", fake_run)
-    playable = meta_uploads_helpers._transcode_video_to_playable(upload)
-    playable.unlink(missing_ok=True)
-
-    audio_cmd, transcode_cmd = captured
+    [audio_cmd] = captured
     index = audio_cmd.index("-threads")
     assert audio_cmd[index + 1] == "1"
     assert index < audio_cmd.index("-i"), "trådtaket ska sättas före -i (avkodaren)"
-    assert transcode_cmd.count("-threads") == 2
-    first = transcode_cmd.index("-threads")
-    second = transcode_cmd.index("-threads", first + 1)
-    assert transcode_cmd[first + 1] == "2" and transcode_cmd[second + 1] == "2"
-    assert first < transcode_cmd.index("-i") < transcode_cmd.index("libx264") < second
+    assert not hasattr(meta_uploads_helpers, "_transcode_video_to_playable")
+    helper_source = Path(meta_uploads_helpers.__file__).read_text(encoding="utf-8")
+    assert "libx264" not in helper_source
 
 
 def test_analysis_no_longer_creates_label_stills():
