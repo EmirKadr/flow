@@ -2088,12 +2088,14 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
     assert "appendQuery" in js
     assert 'download: "1"' in js
-    assert "{ direct: true }" not in js
+    assert "{ direct: true }" in js
     assert "META_DOWNLOAD_CONCURRENCY = 1" in js
     assert "function enqueueMetaDownload" in js
     assert "downloadShipmentMedia(item, button)" in js
     assert "download-shipment-label" not in js
-    assert 'variant: "playable"' in js
+    assert 'variant: "original"' in js
+    assert 'variant: "playable"' not in js
+    assert '{ log: false }' in js
     assert "function downloadDirect" in api_js
     assert 'method: "HEAD"' in api_js
     assert 'credentials: "include"' in api_js

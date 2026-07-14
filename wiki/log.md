@@ -1,11 +1,22 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-10
+updated: 2026-07-14
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-14] fix | Meta-nedladdning strommar original utan poddtung ffmpeg
+
+Meta-vyns nedladdningsknapp anvande tidigare alltid `variant=playable`, vilket
+transkoderade hela videon synkront innan forsta svarsbyten. Vid reproduktion
+gav klicket samtidigt 502/503 pa flera orelaterade API:er. Originalet laddades
+ner pa 2,2 sekunder, medan exakt playable-kommandot pa samma 10-sekunders
+1080p60-video toppade cirka 301 MB i ffmpeg; Flow-processen hade samtidigt
+toppat cirka 259 MB. Knappen anvander nu `variant=original` och browserns
+direkta strommande nedladdning. Ett Playwright-test verifierar HEAD + GET mot
+original-URL:en och att `variant=playable` aldrig anropas fran knappen.
 
 ## [2026-07-10] ingest | Meta: lokal ASK-berikning via flow_cli
 
