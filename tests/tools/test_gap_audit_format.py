@@ -255,6 +255,21 @@ def test_object_summary_allocation_flow(audit_page):
     ) == "Lagerverktyg"
 
 
+def test_object_summary_meta_shipment_observation(audit_page):
+    assert _summary(
+        audit_page,
+        {
+            "entity_type": "meta_shipment_observation",
+            "entity_id": 85,
+            "new_value": {"shipment_number": "MG-JKP-260709-1715430-0", "pallet_id": "8473877"},
+        },
+    ) == "MG-JKP-260709-1715430-0"
+    assert _summary(
+        audit_page,
+        {"entity_type": "meta_shipment_observation", "entity_id": 85, "new_value": {}},
+    ) == "Meta-sändningsrad #85"
+
+
 def test_object_summary_rfid_scan_event(audit_page):
     full = _summary(
         audit_page,
@@ -349,6 +364,28 @@ def test_detail_summary_allocation_flow(audit_page):
         audit_page,
         {"entity_type": "allocation_flow", "entity_id": 1, "new_value": {}},
     ) == "Lagerverktyg"
+
+
+def test_detail_summary_meta_shipment_observation(audit_page):
+    detail = _detail(
+        audit_page,
+        {
+            "entity_type": "meta_shipment_observation",
+            "entity_id": 85,
+            "new_value": {
+                "analysis_status": "analyzed",
+                "matched": True,
+                "order_number": "384150",
+                "shipment_number": "MG-JKP-260709-1715430-0",
+                "username": "DJAM04",
+                "customer_name": "Eliassons Jarn",
+            },
+        },
+    )
+    assert detail == (
+        "Status: analyzed | ASK: träff | Order: 384150 | "
+        "Sändning: MG-JKP-260709-1715430-0 | Användare: DJAM04 | Kund: Eliassons Jarn"
+    )
 
 
 def test_detail_summary_rfid_scan_event(audit_page):

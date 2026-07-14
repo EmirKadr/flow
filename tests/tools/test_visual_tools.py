@@ -190,11 +190,13 @@ def test_history_view_has_error_dashboard_and_client_error_logging():
     assert "function renderHealthReport" in analytics
     assert 'coredata_file: "Kärnfil"' in analytics
     assert 'meta_media_upload: "Meta-uppladdning"' in analytics
+    assert 'meta_shipment_observation: "Meta-sändningsrad"' in analytics
     assert 'rfid_scan_event: "RFID-stämpel"' in analytics
     assert 'mcp_query: "MCP-fråga"' in analytics
     assert 'workflow_source: "Workflow-underlag"' in analytics
     assert 'entry.entity_type === "coredata_file"' in analytics
     assert 'entry.entity_type === "meta_media_upload"' in analytics
+    assert 'entry.entity_type === "meta_shipment_observation"' in analytics
     assert 'entry.entity_type === "rfid_scan_event"' in analytics
     assert 'entry.entity_type === "mcp_query"' in analytics
     assert 'entry.entity_type === "workflow_source"' in analytics
@@ -2086,12 +2088,14 @@ def test_super_user_meta_view_lists_shipment_analysis_without_media_grid():
     assert "/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/analyze" in js
     assert "appendQuery" in js
     assert 'download: "1"' in js
-    assert "{ direct: true }" not in js
+    assert "{ direct: true }" in js
     assert "META_DOWNLOAD_CONCURRENCY = 1" in js
     assert "function enqueueMetaDownload" in js
     assert "downloadShipmentMedia(item, button)" in js
     assert "download-shipment-label" not in js
-    assert 'variant: "playable"' in js
+    assert 'variant: "original"' in js
+    assert 'variant: "playable"' not in js
+    assert '{ log: false }' in js
     assert "function downloadDirect" in api_js
     assert 'method: "HEAD"' in api_js
     assert 'credentials: "include"' in api_js

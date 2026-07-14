@@ -12,6 +12,8 @@ from tools import visual_smoke
 
 
 class CliTestHandler(BaseHTTPRequestHandler):
+    patch_requests = []
+
     def log_message(self, _format, *_args):  # noqa: A002
         return
 
@@ -38,8 +40,18 @@ class CliTestHandler(BaseHTTPRequestHandler):
                 {
                     "count": 2,
                     "items": [
-                        {"id": 11, "media_upload_id": 101, "analysis_status": "queued"},
+                        {"id": 11, "media_upload_id": 101, "analysis_status": "queued", "pallet_id": "8473877"},
                         {"id": 12, "media_upload_id": 102, "analysis_status": "queued"},
+                    ],
+                }
+            )
+            return
+        if self.path == "/api/meta/shipment-observations?status=local&limit=200":
+            self._json(
+                {
+                    "count": 1,
+                    "items": [
+                        {"id": 11, "media_upload_id": 101, "analysis_status": "local", "pallet_id": "8473877"},
                     ],
                 }
             )
@@ -66,7 +78,7 @@ class CliTestHandler(BaseHTTPRequestHandler):
             self._json({"file_type": "orders"})
             return
         if self.path == "/api/meta/uploads/101/analyze":
-            self._json({"item": {"id": 11}, "status": "analyzed", "message": None})
+            self._json({"item": {"id": 11, "pallet_id": "8473877"}, "status": "analyzed", "message": None})
             return
         if self.path == "/api/meta/uploads/102/analyze":
             self._json({"detail": "LLM saknas"}, status=400)
@@ -85,6 +97,28 @@ class CliTestHandler(BaseHTTPRequestHandler):
                         }
                     ],
                     "log": [],
+                }
+            )
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_PATCH(self):  # noqa: N802
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        payload = json.loads(raw.decode("utf-8"))
+        self.__class__.patch_requests.append((self.path, payload))
+        if self.path == "/api/meta/shipment-observations/11/dispatch-lookup":
+            self._json(
+                {
+                    "matched": payload.get("matched"),
+                    "status": "analyzed",
+                    "item": {
+                        "id": 11,
+                        "analysis_status": "analyzed",
+                        "order_number": payload.get("order_number"),
+                        "shipment_number": payload.get("shipment_number"),
+                    },
                 }
             )
             return
@@ -269,6 +303,55 @@ def test_cli_meta_process_queue_analyzes_each_row_and_reports_errors(tmp_path, c
         "message": None,
     }
     assert payload["results"][1]["error"] == "HTTP 400"
+
+
+def test_cli_meta_process_queue_can_apply_local_dispatch_lookup(tmp_path, capsys, monkeypatch):
+    CliTestHandler.patch_requests = []
+    monkeypatch.setattr(
+        flow_cli,
+        "_local_dispatch_lookup",
+        lambda pallet_id, args: {
+            "matched": True,
+            "order_number": "384150",
+            "shipment_number": "MG-JKP-260709-1715430-0",
+            "username": "DJAM04",
+            "customer_name": "Eliassons Jarn",
+            "source": "local_cli",
+            "note": None,
+        },
+    )
+    server, thread = start_cli_test_server()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        common = ["--base-url", base_url, "--cookie-jar", str(tmp_path / "cookies.txt")]
+        result = flow_cli.main(
+            [*common, "meta", "process-queue", "--status", "local", "--local-dispatch-lookup", "--json"]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+
+    assert result == 0
+    assert payload["results"][0]["dispatch_lookup"] == "matched"
+    assert payload["results"][0]["dispatch_lookup_status"] == "analyzed"
+    assert CliTestHandler.patch_requests == [
+        (
+            "/api/meta/shipment-observations/11/dispatch-lookup",
+            {
+                "matched": True,
+                "order_number": "384150",
+                "shipment_number": "MG-JKP-260709-1715430-0",
+                "username": "DJAM04",
+                "customer_name": "Eliassons Jarn",
+                "note": None,
+                "source": "local_cli",
+            },
+        )
+    ]
 
 
 def test_cli_meta_process_queue_reports_empty_queue(tmp_path, capsys):

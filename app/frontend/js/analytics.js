@@ -28,6 +28,7 @@ const ENTITY_LABELS = {
   coredata_file: "Kärnfil",
   data_fetch: "Hämta data",
   meta_media_upload: "Meta-uppladdning",
+  meta_shipment_observation: "Meta-sändningsrad",
   productivity_file: "Produktivitetsfil",
   allocation_flow: "Lagerverktyg",
   rfid_scan_event: "RFID-stämpel",
@@ -165,6 +166,9 @@ function objectSummary(entry) {
   if (entry.entity_type === "meta_media_upload") {
     return snapshot.batch_id || snapshot.path || "Meta-uppladdning";
   }
+  if (entry.entity_type === "meta_shipment_observation") {
+    return snapshot.shipment_number || snapshot.order_number || snapshot.pallet_id || `Meta-sändningsrad #${entry.entity_id}`;
+  }
   if (entry.entity_type === "productivity_file") {
     return snapshot.file_type || (snapshot.saved_types || []).join(", ") || "Produktivitetsfil";
   }
@@ -279,6 +283,16 @@ function detailSummary(entry) {
     if (snapshot.error_type) parts.push(`Fel: ${snapshot.error_type}`);
     if (snapshot.message) parts.push(String(snapshot.message));
     return parts.join(" | ") || "Meta-uppladdning";
+  }
+  if (entry.entity_type === "meta_shipment_observation") {
+    const parts = [];
+    if (snapshot.analysis_status) parts.push(`Status: ${snapshot.analysis_status}`);
+    if (snapshot.matched != null) parts.push(`ASK: ${snapshot.matched ? "träff" : "ingen träff"}`);
+    if (snapshot.order_number) parts.push(`Order: ${snapshot.order_number}`);
+    if (snapshot.shipment_number) parts.push(`Sändning: ${snapshot.shipment_number}`);
+    if (snapshot.username) parts.push(`Användare: ${snapshot.username}`);
+    if (snapshot.customer_name) parts.push(`Kund: ${snapshot.customer_name}`);
+    return parts.join(" | ") || "Meta-sändningsrad";
   }
   if (entry.entity_type === "allocation_flow") {
     const parts = [];
