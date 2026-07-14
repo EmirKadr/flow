@@ -107,6 +107,16 @@ def make_handler(
             except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
                 return
 
+        def _write_stream(self, response: requests.Response) -> None:
+            try:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                return
+            finally:
+                response.close()
+
         def do_GET(self) -> None:  # noqa: N802
             self._handle_request(with_body=False)
 
@@ -182,13 +192,13 @@ def make_handler(
                     headers=headers,
                     allow_redirects=False,
                     timeout=(8, 180),
+                    stream=True,
                 )
                 _clear_session_cookies(session)
             except requests.RequestException as exc:
                 self._send_json(502, f"Kunde inte na central server: {exc}")
                 return
 
-            content = b"" if head_only else response.content
             self.send_response(response.status_code)
             for key, value in response.headers.items():
                 lowered = key.lower()
@@ -197,10 +207,14 @@ def make_handler(
                 self.send_header(key, value)
             for cookie in _set_cookie_values(response):
                 self.send_header("Set-Cookie", localize_set_cookie(cookie))
-            self.send_header("Content-Length", str(len(content)))
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None:
+                self.send_header("Content-Length", content_length)
             self.end_headers()
-            if not head_only:
-                self._write_body(content)
+            if head_only:
+                response.close()
+                return
+            self._write_stream(response)
 
         def _send_json(self, status_code: int, detail: str) -> None:
             body = json.dumps({"detail": detail}, ensure_ascii=False).encode("utf-8")

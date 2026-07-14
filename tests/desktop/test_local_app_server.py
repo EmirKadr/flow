@@ -119,6 +119,77 @@ def test_local_app_server_serves_frontend_and_proxies_api(tmp_path):
         upstream_thread.join(timeout=3)
 
 
+def test_desktop_proxy_streams_media_and_forwards_range_without_buffering(tmp_path):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "index.html").write_text("<h1>flow</h1>", encoding="utf-8")
+    calls = []
+
+    class StreamingResponse:
+        status_code = 206
+        headers = {
+            "Content-Type": "video/quicktime",
+            "Content-Length": "6",
+            "Content-Range": "bytes 0-5/29",
+            "Accept-Ranges": "bytes",
+        }
+        raw = SimpleNamespace(headers={})
+
+        @property
+        def content(self):
+            raise AssertionError("Desktop-proxyn får inte buffra response.content")
+
+        def iter_content(self, chunk_size):
+            assert chunk_size == 64 * 1024
+            yield b"abc"
+            yield b"def"
+
+        def close(self):
+            calls.append({"closed": True})
+
+    class StreamingSession:
+        def __init__(self):
+            self.cookies = requests.cookies.RequestsCookieJar()
+
+        def request(self, method, url, **kwargs):
+            calls.append({
+                "method": method,
+                "url": url,
+                "range": kwargs["headers"].get("Range"),
+                "stream": kwargs.get("stream"),
+            })
+            return StreamingResponse()
+
+        def close(self):
+            return
+
+    local = LocalAppServer(
+        upstream_base_url="https://flow.example/",
+        frontend_dir=frontend,
+        preferred_port=0,
+    )
+    local._session.close()
+    local._session = StreamingSession()
+    try:
+        local_url = local.start()
+        response = requests.get(
+            f"{local_url}api/meta/uploads/155/content?variant=original",
+            headers={"Range": "bytes=0-5"},
+            timeout=5,
+        )
+
+        assert response.status_code == 206
+        assert response.content == b"abcdef"
+        assert response.headers["Content-Range"] == "bytes 0-5/29"
+        assert response.headers["Content-Length"] == "6"
+        assert calls[0]["method"] == "GET"
+        assert calls[0]["range"] == "bytes=0-5"
+        assert calls[0]["stream"] is True
+        assert calls[-1] == {"closed": True}
+    finally:
+        local.stop()
+
+
 def test_desktop_allocation_flow_fetches_central_workflow_source(monkeypatch, tmp_path):
     requests_seen = []
     upstream, upstream_thread = start_workflow_source_upstream(requests_seen)

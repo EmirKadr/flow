@@ -7,6 +7,19 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-14] fix | Backendspärr mot Meta-transkodning fran gamla flikar
+
+Frontendfixen i `release/2026.29.1` lag live och laddade original, men en flik
+som varit oppen fore deploy kunde fortfarande anropa `variant=playable` och
+starta den gamla synkrona x264-transkodningen. Backend behandlar nu bade HEAD
+och GET med `variant=playable` som originalstromning och markerar svaret med
+`X-Flow-Media-Variant: original`. Själva request-transkodern, semaforen och
+libx264-kommandot ar borttagna. Windows-appens lokala proxy vidarebefordrar
+Range-anrop och strommar mediesvar i 64 KiB-bitar utan att buffra hela filen i
+RAM. Regressionstester forbjuder subprocess-start, verifierar originalbytes och
+skyddar desktop-stromningen. Live laddades 29,2 MB originalvideo pa 0,84 s med
+frisk server direkt efterat.
+
 ## [2026-07-14] fix | Meta-nedladdning strommar original utan poddtung ffmpeg
 
 Meta-vyns nedladdningsknapp anvande tidigare alltid `variant=playable`, vilket
