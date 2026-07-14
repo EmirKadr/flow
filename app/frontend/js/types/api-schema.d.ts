@@ -987,6 +987,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/meta/shipment-observations/{observation_id}/dispatch-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Meta Shipment Dispatch Lookup */
+        patch: operations["update_meta_shipment_dispatch_lookup_api_meta_shipment_observations__observation_id__dispatch_lookup_patch"];
+        trace?: never;
+    };
     "/api/meta/shipment-observations/{observation_id}/status": {
         parameters: {
             query?: never;
@@ -4222,6 +4239,26 @@ export interface components {
             /** Minute Start */
             minute_start: number;
         };
+        /** ShipmentDispatchLookupUpdate */
+        ShipmentDispatchLookupUpdate: {
+            /** Customer Name */
+            customer_name?: string | null;
+            /**
+             * Matched
+             * @default false
+             */
+            matched: boolean;
+            /** Note */
+            note?: string | null;
+            /** Order Number */
+            order_number?: string | null;
+            /** Shipment Number */
+            shipment_number?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Username */
+            username?: string | null;
+        };
         /** ShipmentStatusUpdate */
         ShipmentStatusUpdate: {
             /** Status */
@@ -6732,6 +6769,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_meta_shipment_dispatch_lookup_api_meta_shipment_observations__observation_id__dispatch_lookup_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShipmentDispatchLookupUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
