@@ -1176,6 +1176,219 @@ def test_super_user_can_change_shipment_status_and_audit():
         engine.dispose()
 
 
+def test_super_user_can_apply_local_dispatch_lookup_and_audit():
+    engine, session = make_session()
+    upload = MetaMediaUpload(
+        batch_id="batch-local-dispatch",
+        original_filename="etikettfilm.mov",
+        stored_filename="20260531_120102_123456Z_01.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="f" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"local-dispatch-video", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(upload)
+    session.commit()
+    session.refresh(upload)
+    shipment = MetaShipmentObservation(
+        media_upload_id=upload.id,
+        video_hash=upload.content_hash,
+        record_hash="1" * 64,
+        pallet_id="8473877",
+        deviations=["Fel pa last"],
+        uncertainty_notes=(
+            "Dispatchpallar kunde inte hamtas fran ASK for pall-id 8473877 "
+            "(ExternalDataClientError).; Rosten var osaker pa pall-id"
+        ),
+        analysis_status="manual_review",
+    )
+    session.add(shipment)
+    session.commit()
+    session.refresh(shipment)
+    observation_id = shipment.id
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/meta/shipment-observations/{observation_id}/dispatch-lookup",
+            json={
+                "matched": True,
+                "order_number": "384150",
+                "shipment_number": "MG-JKP-260709-1715430-0",
+                "username": "DJAM04",
+                "customer_name": "Eliassons Jarn",
+                "source": "local_cli",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["matched"] is True
+        assert body["status"] == "manual_review"
+        assert body["item"]["order_number"] == "384150"
+        assert body["item"]["shipment_number"] == "MG-JKP-260709-1715430-0"
+        assert body["item"]["username"] == "DJAM04"
+        assert body["item"]["customer_name"] == "Eliassons Jarn"
+        assert "Dispatchpallar kunde inte" not in (body["item"]["uncertainty_notes"] or "")
+        assert "Rosten var osaker" in body["item"]["uncertainty_notes"]
+        session.expire_all()
+        stored = session.get(MetaShipmentObservation, observation_id)
+        assert stored.analysis_status == "manual_review"
+        assert stored.order_number == "384150"
+        audit = session.query(AuditLog).filter_by(
+            entity_type="meta_shipment_observation",
+            action="local_dispatch_lookup",
+        ).one()
+        assert audit.entity_id == observation_id
+        assert audit.old_value["analysis_status"] == "manual_review"
+        assert audit.new_value["matched"] is True
+        assert audit.new_value["order_number"] == "384150"
+        assert audit.new_value["source"] == "local_cli"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_local_dispatch_lookup_can_complete_manual_review_when_only_lookup_note_remains():
+    engine, session = make_session()
+    upload = MetaMediaUpload(
+        batch_id="batch-local-dispatch-complete",
+        original_filename="etikettfilm.mov",
+        stored_filename="20260531_120102_123456Z_02.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="9" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"local-dispatch-complete", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(upload)
+    session.commit()
+    session.refresh(upload)
+    shipment = MetaShipmentObservation(
+        media_upload_id=upload.id,
+        video_hash=upload.content_hash,
+        record_hash="2" * 64,
+        pallet_id="8473877",
+        deviations=["Fel pa kartongerna"],
+        uncertainty_notes="Dispatchpallar kunde inte hamtas fran ASK for pall-id 8473877 (ExternalDataClientError).",
+        analysis_status="manual_review",
+    )
+    session.add(shipment)
+    session.commit()
+    session.refresh(shipment)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/meta/shipment-observations/{shipment.id}/dispatch-lookup",
+            json={"matched": True, "order_number": "384150"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "analyzed"
+        assert response.json()["item"]["uncertainty_notes"] is None
+        session.expire_all()
+        assert session.get(MetaShipmentObservation, shipment.id).analysis_status == "analyzed"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_local_dispatch_lookup_no_match_replaces_previous_dispatch_note():
+    engine, session = make_session()
+    upload = MetaMediaUpload(
+        batch_id="batch-local-dispatch-miss",
+        original_filename="etikettfilm.mov",
+        stored_filename="20260531_120102_123456Z_03.mov",
+        content_type="video/quicktime",
+        media_type="video",
+        size_bytes=11,
+        content_hash="8" * 64,
+        storage_backend="filesystem",
+        storage_key=store_bytes(b"local-dispatch-miss", ".mov"),
+        status="pending_analysis",
+        source="public_upload",
+    )
+    session.add(upload)
+    session.commit()
+    session.refresh(upload)
+    shipment = MetaShipmentObservation(
+        media_upload_id=upload.id,
+        video_hash=upload.content_hash,
+        record_hash="3" * 64,
+        pallet_id="SAKNAS",
+        deviations=["Fel pa last"],
+        uncertainty_notes=(
+            "Dispatchpallar kunde inte hamtas fran ASK for pall-id SAKNAS "
+            "(ExternalDataClientError).; Rosten var osaker"
+        ),
+        analysis_status="analyzed",
+    )
+    session.add(shipment)
+    session.commit()
+    session.refresh(shipment)
+
+    def override_get_db():
+        yield session
+
+    def super_user():
+        return User(id=99, username="root", role="super_user", roles=["super_user"], is_active=True)
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = super_user
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/api/meta/shipment-observations/{shipment.id}/dispatch-lookup",
+            json={
+                "matched": False,
+                "note": "Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id SAKNAS.",
+            },
+        )
+
+        assert response.status_code == 200
+        item = response.json()["item"]
+        assert response.json()["status"] == "manual_review"
+        assert "kunde inte hamtas" not in item["uncertainty_notes"]
+        assert "ingen traff for pall-id SAKNAS" in item["uncertainty_notes"]
+        assert "Rosten var osaker" in item["uncertainty_notes"]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
+        session.close()
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
 def test_non_super_user_cannot_list_meta_uploads(monkeypatch):
     monkeypatch.setattr(settings, "SUPER_USER_USERNAMES", "admin,emikad")
     engine, session = make_session()
@@ -1194,6 +1407,11 @@ def test_non_super_user_cannot_list_meta_uploads(monkeypatch):
         assert response.status_code == 403
         delete_response = client.delete("/api/meta/uploads/1")
         assert delete_response.status_code == 403
+        lookup_response = client.patch(
+            "/api/meta/shipment-observations/1/dispatch-lookup",
+            json={"matched": True},
+        )
+        assert lookup_response.status_code == 403
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)

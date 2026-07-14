@@ -109,7 +109,9 @@ function runNextMetaDownload() {
   Promise.resolve()
     .then(entry.task)
     .catch((error) => {
-      showToast(error.message || "Kunde inte ladda ner filen.", "error", 7000);
+      // api.download loggar redan felet med URL och felspårning. Toasten ska
+      // synas utan att skapa en andra, identisk rad i dokumentloggen.
+      showToast(error.message || "Kunde inte ladda ner filen.", "error", 7000, { log: false });
     })
     .finally(() => {
       activeMetaDownloads = Math.max(0, activeMetaDownloads - 1);
@@ -126,11 +128,14 @@ function enqueueMetaDownload(task, button = null) {
 
 async function downloadShipmentMedia(item, button = null) {
   const url = item?.video_url
-    ? appendQuery(item.video_url, { download: "1", variant: "playable" })
+    ? appendQuery(item.video_url, { download: "1", variant: "original" })
     : null;
   if (!url) return;
   enqueueMetaDownload(
-    () => api.download(url, shipmentMediaFilename(item, "meta-video")),
+    // Originalet strommas direkt till browserns nedladdning. Den tidigare
+    // playable-varianten transkoderade hela videon synkront med ffmpeg och
+    // kunde sla ut den enda serverpodden innan nagra svarsbytes skickades.
+    () => api.download(url, shipmentMediaFilename(item, "meta-video"), { direct: true }),
     button
   );
 }

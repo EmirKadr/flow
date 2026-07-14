@@ -725,6 +725,7 @@ def test_audit_endpoints_can_filter_by_business(audit_db_session):
     [
         ("coredata_file", "Karnfil"),
         ("meta_media_upload", "Meta-uppladdning"),
+        ("meta_shipment_observation", "Meta-sandningsrad"),
         ("rfid_scan_event", "RFID-stämpel"),
         ("mcp_query", "MCP-fraga"),
         ("workflow_source", "Workflow-underlag"),

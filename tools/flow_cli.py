@@ -195,6 +195,8 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("meta.shipment_observations", "GET", "/api/meta/shipment-observations", "Sändningsanalys för Meta-videor"),
     ApiRoute("meta.shipment_observations_export", "GET", "/api/meta/shipment-observations/export", "Excel-export for Meta-sandningsanalys"),
     ApiRoute("meta.analyze", "POST", "/api/meta/uploads/{upload_id}/analyze", "Analysera Meta-video"),
+    ApiRoute("meta.shipment_status", "PATCH", "/api/meta/shipment-observations/{observation_id}/status", "Uppdatera status for Meta-rad"),
+    ApiRoute("meta.shipment_dispatch_lookup", "PATCH", "/api/meta/shipment-observations/{observation_id}/dispatch-lookup", "Skriv tillbaka lokalt ASK-uppslag for Meta-rad"),
     ApiRoute("meta.content", "GET", "/api/meta/uploads/{upload_id}/content", "Visa eller spela upp meta-uppladdning"),
     ApiRoute("meta.delete", "DELETE", "/api/meta/uploads/{upload_id}", "Radera meta-uppladdning"),
 )
@@ -658,6 +660,109 @@ def _run_allocation_open_excel(args: argparse.Namespace) -> int:
     return _print_response(response, args.output)
 
 
+DISPATCH_ARCHIVE_VIEW = "dblog_dispatch_pallet_log"
+
+
+def _clean_lookup_text(value: Any, max_length: int) -> str | None:
+    if isinstance(value, list):
+        value = ", ".join(str(item).strip() for item in value if str(item or "").strip())
+    text = str(value or "").strip()
+    return text[:max_length] if text else None
+
+
+def _row_field(row: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if name in row and row[name] not in (None, ""):
+            return row[name]
+    lowered = {str(key).lower(): value for key, value in row.items()}
+    for name in names:
+        value = lowered.get(name.lower())
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _pallet_filter_value(pallet: str) -> Any:
+    return int(pallet) if pallet.isdigit() else pallet
+
+
+def _dispatch_lookup_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "matched": True,
+        "order_number": _clean_lookup_text(_row_field(row, "order_num", "Ordernr", "ordernr"), 80),
+        "shipment_number": _clean_lookup_text(
+            _row_field(row, "shipment_id", "Sandningsnr", "sandningsnr", "sändningsnr"),
+            120,
+        ),
+        "username": _clean_lookup_text(_row_field(row, "user_id", "Anvandare", "användare"), 120),
+        "customer_name": _clean_lookup_text(
+            _row_field(row, "custom_desc", "custom_num", "Kund", "kund", "customer_name", "customer"),
+            200,
+        ),
+        "note": None,
+        "source": "local_cli",
+    }
+
+
+def _local_dispatch_lookup(pallet_id: Any, args: argparse.Namespace) -> dict[str, Any]:
+    pallet = str(pallet_id or "").strip()
+    if not pallet:
+        return {"matched": False, "note": "Inget pall-id att sla upp i Dispatchpallar.", "source": "local_cli"}
+
+    try:
+        load_env_files()
+        from app.backend.external_data_client import ExternalDataClient
+        from app.backend.workflow_data import _api_client, source_spec
+
+        tenant = (
+            str(getattr(args, "dispatch_tenant", "") or "").strip()
+            or os.environ.get("META_ANALYSIS_DATA_SOURCE_TENANT", "").strip()
+            or "frey"
+        )
+        filters = [ExternalDataClient.eq("pick_pall_num", _pallet_filter_value(pallet))]
+        client = _api_client(tenant=tenant)
+        rows = client.fetch_data(source_spec("dispatch").view, filters=filters)
+        if not rows:
+            rows = client.fetch_data(DISPATCH_ARCHIVE_VIEW, filters=filters)
+    except Exception as exc:  # noqa: BLE001 - CLI ska rapportera felet utan hemliga detaljer.
+        return {
+            "matched": False,
+            "note": f"Lokalt ASK-uppslag misslyckades for pall-id {pallet} ({type(exc).__name__}).",
+            "source": "local_cli",
+        }
+
+    if not rows:
+        return {
+            "matched": False,
+            "note": f"Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id {pallet}.",
+            "source": "local_cli",
+        }
+    return _dispatch_lookup_from_row(rows[0])
+
+
+def _patch_meta_dispatch_lookup(
+    session: requests.Session,
+    args: argparse.Namespace,
+    observation_id: Any,
+    lookup: dict[str, Any],
+) -> requests.Response:
+    return _request(
+        session=session,
+        base_url=args.base_url,
+        method="PATCH",
+        path=f"/api/meta/shipment-observations/{observation_id}/dispatch-lookup",
+        json_body={
+            "matched": bool(lookup.get("matched")),
+            "order_number": lookup.get("order_number"),
+            "shipment_number": lookup.get("shipment_number"),
+            "username": lookup.get("username"),
+            "customer_name": lookup.get("customer_name"),
+            "note": lookup.get("note"),
+            "source": lookup.get("source") or "local_cli",
+        },
+    )
+
+
 def _run_meta_process_queue(args: argparse.Namespace) -> int:
     session = _session(args.cookie_jar)
     list_response = _request(
@@ -695,6 +800,7 @@ def _run_meta_process_queue(args: argparse.Namespace) -> int:
         _save_session(session)
         if analyze_response.ok:
             analyzed = _json_response(analyze_response)
+            analyzed_item = analyzed.get("item") if isinstance(analyzed.get("item"), dict) else {}
             result = {
                 "observation_id": observation_id,
                 "media_upload_id": upload_id,
@@ -702,8 +808,30 @@ def _run_meta_process_queue(args: argparse.Namespace) -> int:
                 "new_status": analyzed.get("status"),
                 "message": analyzed.get("message"),
             }
+            dispatch_suffix = ""
+            if args.local_dispatch_lookup and observation_id:
+                lookup = _local_dispatch_lookup(analyzed_item.get("pallet_id") or item.get("pallet_id"), args)
+                dispatch_response = _patch_meta_dispatch_lookup(session, args, observation_id, lookup)
+                _save_session(session)
+                if dispatch_response.ok:
+                    dispatch_result = _json_response(dispatch_response)
+                    result["dispatch_lookup"] = "matched" if lookup.get("matched") else "not_matched"
+                    result["dispatch_lookup_status"] = dispatch_result.get("status")
+                    if lookup.get("note"):
+                        result["dispatch_lookup_message"] = lookup.get("note")
+                    result["new_status"] = dispatch_result.get("status") or result["new_status"]
+                    dispatch_suffix = " ; lokal ASK -> traff" if lookup.get("matched") else " ; lokal ASK -> ingen traff"
+                else:
+                    exit_code = 1
+                    result["dispatch_lookup"] = "error"
+                    result["dispatch_lookup_error"] = f"HTTP {dispatch_response.status_code}"
+                    result["dispatch_lookup_detail"] = dispatch_response.text[:500]
+                    dispatch_suffix = f" ; lokal ASK -> FEL HTTP {dispatch_response.status_code}"
             if not args.json:
-                print(f"observation {observation_id} (upload {upload_id}): {args.status} -> {result['new_status']}")
+                print(
+                    f"observation {observation_id} (upload {upload_id}): "
+                    f"{args.status} -> {result['new_status']}{dispatch_suffix}"
+                )
         else:
             exit_code = 1
             result = {
@@ -878,6 +1006,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=600,
         help="Las-timeout i sekunder per analys-anrop (default: 600).",
+    )
+    meta_process_queue.add_argument(
+        "--local-dispatch-lookup",
+        action="store_true",
+        help="Hamta Dispatchpallar fran lokal ASK-konfiguration och skriv tillbaka lookup-falt.",
+    )
+    meta_process_queue.add_argument(
+        "--dispatch-tenant",
+        default="",
+        help="Tenant for lokalt Dispatchpallar-uppslag (default: META_ANALYSIS_DATA_SOURCE_TENANT eller frey).",
     )
     meta_process_queue.add_argument("--json", action="store_true", help="Skriv resultatet som JSON istallet for rader.")
     meta_process_queue.set_defaults(func=_run_meta_process_queue)

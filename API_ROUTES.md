@@ -271,5 +271,7 @@ filtervariant via API/SSE i stÃ¤llet fÃ¶r att fÃ¶rbygga alla lokala vyer.
 | `meta.shipment_observations` | `GET` | `/api/meta/shipment-observations` | SÃ¤ndningsanalys fÃ¶r Meta-videor med video-ID, lÃ¤ngd och storlek |
 | `meta.shipment_observations_export` | `GET` | `/api/meta/shipment-observations/export` | Excel-export for Meta-sandningsanalys med videostorlek |
 | `meta.analyze` | `POST` | `/api/meta/uploads/{upload_id}/analyze` | Analysera Meta-video |
+| `meta.shipment_status` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/status` | Uppdatera status for Meta-rad |
+| `meta.shipment_dispatch_lookup` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/dispatch-lookup` | Skriv tillbaka lokalt ASK-uppslag for Meta-rad |
 | `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Visa eller spela upp meta-uppladdning |
 | `meta.delete` | `DELETE` | `/api/meta/uploads/{upload_id}` | Radera meta-uppladdning |

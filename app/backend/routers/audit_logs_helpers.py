@@ -116,6 +116,7 @@ AUDIT_ENTITY_LABELS = {
     "coredata_file": "Karnfil",
     "mcp_query": "MCP-fraga",
     "meta_media_upload": "Meta-uppladdning",
+    "meta_shipment_observation": "Meta-sandningsrad",
     "rfid_scan_event": "RFID-stämpel",
     "workflow_source": "Workflow-underlag",
 }
