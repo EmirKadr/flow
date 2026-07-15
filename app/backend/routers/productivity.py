@@ -19,6 +19,7 @@ from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, sco
 from ..database import SessionLocal
 from ..deps import get_db, require_view_access
 from ..models import Activity, Business, Person, User
+from ..observability import log_json_payload_size
 from ..productivity_service import (
     ProductivitySourceError,
     _number,
@@ -217,6 +218,19 @@ async def stream_productivity_overview(
                 progress_callback=progress,
             )
             events.put({"type": "done", "payload": payload})
+            # Mätpunkt (#46): se sankey.py - done-eventet bär hela rapporten och SSE
+            # undantas från gzip. Mäts EFTER put() så användarens data inte fördröjs.
+            log_json_payload_size(
+                "flow.productivity.payload_size",
+                feature="productivity",
+                payload=payload,
+                attributes={
+                    "sse_period": normalized_period,
+                    "sse_days": max(0, total_steps - 1),
+                },
+                event_alias="productivity_payload_size",
+                logger_=logger,
+            )
         except HTTPException as exc:
             events.put({"type": "error", "status": exc.status_code, "message": str(exc.detail)})
         except Exception as exc:  # noqa: BLE001

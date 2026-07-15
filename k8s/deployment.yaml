@@ -58,6 +58,18 @@ spec:
             limits:
               cpu: 1000m
               memory: 1Gi
+          # startupProbe äger startfönstret: kubelet håller tillbaka både
+          # liveness och readiness tills den passerat. Tålmodig budget
+          # (2s × 90 = 180s) eftersom prestart, uvicorns importkedja och
+          # alembic upgrade head alla körs FÖRE socketen binds. Snabb 2s-cykel
+          # gör podden Ready så fort den faktiskt lyssnar — inget fast golv.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            periodSeconds: 2
+            failureThreshold: 90
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /api/health
@@ -70,9 +82,12 @@ spec:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            failureThreshold: 6
+            # Inget initialDelaySeconds — startupProbe är startgrinden.
+            periodSeconds: 2
+            # 2s × 30 = 60s unready-tolerans, exakt som gamla 10s × 6. Med
+            # replicas: 1 betyder NotReady noll Service-endpoints = 503 för
+            # alla, så en snabbare cykel får inte krympa toleransen.
+            failureThreshold: 30
             timeoutSeconds: 5
       volumes:
         - name: flow-data

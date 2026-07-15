@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import gzip
+import json
 import logging
 import os
 import re
 import secrets
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Iterator
@@ -282,6 +285,65 @@ def emit_flow_event(
             extra=extra,
             exc_info=exc_info,
         )
+
+
+def measure_json_payload_bytes(payload: Any, *, gzip_level: int = 6) -> tuple[int, int]:
+    """Rå JSON-storlek och gzip-storlek för en payload, i bytes.
+
+    Serialiseringen är avsiktligt identisk med SSE-vägens (``json.dumps(...,
+    ensure_ascii=False)``) så siffran är den som faktiskt går över nätet, minus
+    SSE-ramen (``data: `` + ``\\n\\n``, ~8 byte per event).
+    """
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    return len(raw), len(gzip.compress(raw, compresslevel=gzip_level, mtime=0))
+
+
+def log_json_payload_size(
+    name: str,
+    *,
+    feature: str,
+    payload: Any,
+    attributes: dict[str, Any] | None = None,
+    gzip_level: int = 6,
+    event_alias: str | None = None,
+    logger_: logging.Logger | None = None,
+) -> dict[str, Any] | None:
+    """Mät och logga hur stor en färdig payload är (rå + gzip). Aldrig kunddata.
+
+    Ren mätpunkt för leveranslagret: SSE-svar undantas från GZipMiddleware
+    (``DEFAULT_EXCLUDED_CONTENT_TYPES``), så Sankey- och produktivitetsrapportens
+    slutpayload levereras okomprimerad utan att någon vet hur många bytes det är.
+    Loggar bara storlekar och räknare - aldrig rad-, kund- eller filterinnehåll.
+
+    Får aldrig fälla flödet den mäter: allt är inkapslat i try/except och
+    returnerar ``None`` när mätningen är avstängd eller misslyckas.
+    """
+    if not getattr(settings, "PAYLOAD_SIZE_LOGGING_ENABLED", True):
+        return None
+    try:
+        started = time.perf_counter()
+        raw_bytes, gzip_bytes = measure_json_payload_bytes(payload, gzip_level=gzip_level)
+        measure_ms = round((time.perf_counter() - started) * 1000, 1)
+        sizes = {
+            "payload_bytes": raw_bytes,
+            "payload_gzip_bytes": gzip_bytes,
+            "payload_gzip_level": gzip_level,
+            "payload_gzip_ratio": round(gzip_bytes / raw_bytes, 4) if raw_bytes else 0.0,
+            "payload_measure_ms": measure_ms,
+        }
+        emit_flow_event(
+            name,
+            feature=feature,
+            outcome="ok",
+            level=logging.INFO,
+            attributes={**sizes, **(attributes or {})},
+            event_alias=event_alias,
+            logger_=logger_,
+        )
+        return sizes
+    except Exception:  # noqa: BLE001 - en mätpunkt får aldrig fälla rapporten
+        (logger_ or logger).debug("Kunde inte mäta payloadstorlek för %s", name, exc_info=True)
+        return None
 
 
 @contextmanager

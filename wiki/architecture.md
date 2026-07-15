@@ -124,6 +124,10 @@ Tre miljonivaer:
   `SUPER_USER_USERNAMES`/`ARCHIVE_CACHE_*` utan effekt, tom Seq (OTel-env).
 - Render-driften ar avvecklad (2026-07-03); `render.yaml` och
   `backend.migrate_pg_to_mssql` ar borttagna ur repot och finns i git-historiken.
+  **Obs:** Emir kor fortfarande Render som levande drift, men da for ett
+  **separat, fristaende projekt** — inte for Flow. Nar Render namns i det har
+  repot syftar det alltid pa den gamla, avvecklade Flow-driften (historik eller
+  benchmark-jamforelse). Flows enda drift ar k8s/MSSQL.
 - `scripts\start_local.bat` startar lokal SQLite-baserad testmiljo i snabbt anvandarlage utan `uvicorn --reload` och utan implicit live-sync.
 - `scripts\start_dev.bat` startar samma lokala server med `uvicorn --reload` nar kod utvecklas.
 - `scripts\sync_live_local.bat` gor en explicit env-styrd live-till-SQLite-kopia innan lokal start. Bara att `LIVE_DATABASE_URL` finns i miljön ska inte langre gora vanlig start langsam eller forsoka ersatta en last `flow_local.db`.

@@ -257,6 +257,100 @@ def collect_background_jobs(checks: list[dict[str, Any]]) -> dict[str, Any]:
     return jobs
 
 
+DUCKDB_CHECK_NAME = "DuckDB (arkivcache)"
+# Mätpunkten för #08 är INFORMATION, inte ett hälsoutslag - därför är den här statusen
+# hårdkodad och får aldrig härledas ur verdicts. status_rank("info") == status_rank("ok")
+# == 0, så en info-check kan aldrig lyfta worst_status(checks) och alltså aldrig ändra
+# rapportens globala status. Det är avsiktligt och skyddat av
+# tests/services/test_duckdb_diagnostics.py::test_pod_shaped_measurement_never_changes_the_global_status:
+# i podden läser DuckDB värdens defaults (många trådar, jättelik memory_limit) och
+# verdicts blir "warn". Skrevs den warnen in i checks skulle GET /api/healthcheck flippa
+# permanent från ok till warn för Super User i Historik/Hälsa - en mätning som ändrar vad
+# användaren ser, och en permanent warn som desensibiliserar hela hälsovyn (AGENTS.md
+# hälsoregel). Bedömningarna finns kvar i topplevel-fältet report["duckdb"] (verdicts +
+# verdict_status) och läses med `python -m tools.healthcheck duckdb`.
+DUCKDB_CHECK_STATUS = "info"
+
+
+def duckdb_information_check(message: str, **details: Any) -> dict[str, Any]:
+    """Enda vägen in i ``checks`` för DuckDB-mätpunkten - statusen kan inte eskalera."""
+    return check(DUCKDB_CHECK_NAME, DUCKDB_CHECK_STATUS, f"Mätpunkt (#08, påverkar inte hälsostatus): {message}", **details)
+
+
+def collect_duckdb(checks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Mätpunkt för optimeringskandidat #08: vilka defaults valde DuckDB i den här podden?
+
+    Läser bara ``current_setting(...)`` mot arkivcachens egen anslutningsväg
+    (``local_archive_store._connect``, in-memory) plus cgroup-/värdfakta - inga rader,
+    inga tenant-filer, inga lås. Se ``app/backend/duckdb_diagnostics.py``. Ligger här
+    därför att Emir saknar kubectl-åtkomst: det enda sättet att läsa poddens
+    DuckDB-defaults är via den befintliga Super User-endpointen ``GET /api/healthcheck``.
+
+    Två gränser: (1) den skriver bara en icke-eskalerande info-check (se
+    ``DUCKDB_CHECK_STATUS``), och (2) den är gate:ad på ``local_archive_store.is_enabled()``
+    - är arkivcachen av öppnar appen aldrig DuckDB, och då ska healthchecken inte uttala
+    sig om en anslutning som inte finns.
+    """
+    try:
+        from .local_archive_store import is_enabled as archive_cache_enabled
+
+        enabled = archive_cache_enabled()
+    except Exception as exc:  # noqa: BLE001 - diagnostiken får aldrig fälla healthchecken
+        return {"available": False, "error": clean_text(exc)}
+
+    if not enabled:
+        return {
+            "available": False,
+            "archive_cache_enabled": False,
+            "reason": (
+                "Arkivcachen är avstängd (ARCHIVE_CACHE_ENABLED=0) - appen öppnar aldrig "
+                "DuckDB i den här processen, så det finns ingen anslutning att mäta."
+            ),
+        }
+
+    try:
+        from .duckdb_diagnostics import duckdb_diagnostics
+
+        report = duckdb_diagnostics()
+    except Exception as exc:  # noqa: BLE001 - diagnostiken får aldrig fälla healthchecken
+        checks.append(duckdb_information_check(f"DuckDB-diagnostiken kunde inte köras: {exc}"))
+        return {"available": False, "archive_cache_enabled": True, "error": clean_text(exc)}
+
+    report["archive_cache_enabled"] = True
+    verdicts = report.get("verdicts") or []
+    verdict_status = worst_status(verdicts)
+    report["verdict_status"] = verdict_status
+
+    if not report.get("available"):
+        checks.append(
+            duckdb_information_check(
+                f"DuckDB kunde inte läsas i den här processen: {report.get('error') or 'okänd orsak'}",
+                verdict_status=verdict_status,
+            )
+        )
+        return report
+
+    settings_map = report.get("settings") or {}
+    summary = (
+        f"DuckDB {report.get('version') or '?'}: threads={settings_map.get('threads', '?')}, "
+        f"memory_limit={settings_map.get('memory_limit', '?')}. "
+        + " ".join(str(item.get("message") or "") for item in verdicts)
+    )
+    checks.append(
+        duckdb_information_check(
+            summary,
+            version=report.get("version"),
+            threads=settings_map.get("threads"),
+            memory_limit=settings_map.get("memory_limit"),
+            verdict_status=verdict_status,
+            verdicts=verdicts,
+            cgroup=report.get("cgroup"),
+            host=report.get("host"),
+        )
+    )
+    return report
+
+
 def run_healthcheck(
     *,
     db: Session | None = None,
@@ -268,6 +362,7 @@ def run_healthcheck(
         "app": collect_app(base_url, checks),
         "database": collect_database(db, checks),
         "background_jobs": collect_background_jobs(checks),
+        "duckdb": collect_duckdb(checks),
     }
     report["checks"] = checks
     report["status"] = worst_status(checks)

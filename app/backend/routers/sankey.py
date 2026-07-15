@@ -17,6 +17,7 @@ from ..business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code, use
 from ..database import SessionLocal
 from ..deps import get_db, require_view_access
 from ..models import Business, User
+from ..observability import log_json_payload_size
 from ..sankey_inbound_service import (
     SANKEY_SOURCE_VIEWS,
     SankeyInboundError,
@@ -221,6 +222,23 @@ async def stream_sankey_inbound(
             )
             payload["business"] = business_payload
             events.put({"type": "done", "payload": payload})
+            # Mätpunkt (#46): done-eventet bär hela rapporten, och text/event-stream
+            # undantas från GZipMiddleware - payloaden går alltså rå över nätet utan
+            # att någon vet hur stor den är. Mäts EFTER put() så användarens data
+            # aldrig fördröjs av mätningen. Bara storlekar loggas, aldrig innehåll.
+            log_json_payload_size(
+                "flow.sankey_inbound.payload_size",
+                feature="sankey_inbound",
+                payload=payload,
+                attributes={
+                    "sse_period": period,
+                    "sse_only_consumed": bool(only_consumed),
+                    "client_filter_views": len(((payload.get("client_filters") or {}).get("views") or {})),
+                    "source_count": len(payload.get("source_status") or []),
+                },
+                event_alias="sankey_inbound_payload_size",
+                logger_=logger,
+            )
             try:
                 _audit_sankey_report(worker_db, user, business_id=business_id, action="run", payload=payload)
             except Exception:

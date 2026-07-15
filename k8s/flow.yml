@@ -216,6 +216,23 @@ spec:
             limits:
               cpu: "300m"
               memory: "#{JOB_MEMORY_MAX}Mi"
+          # startupProbe äger hela startfönstret: kubelet håller tillbaka BÅDE
+          # liveness och readiness tills den passerat. Budget 2s × 90 = 180s,
+          # medvetet MER tålmodig än den gamla effektiva startbudgeten
+          # (liveness initialDelay 30 + 30s × 3 = ca 120s). prestart
+          # (create_all + Azure SQL-connect), uvicorns importkedja och
+          # alembic upgrade head körs ALLA före uvicorn binder socketen, vid
+          # cpu-limit 300m. Snabb 2s-cykel gör att podden blir Ready så fort
+          # den faktiskt lyssnar, utan 15s golv. Sänk aldrig budgeten under
+          # 180s — då byts några sekunders deploy-tid mot CrashLoopBackOff vid
+          # kall Azure SQL / förstagångs-create_all / tung migration.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            periodSeconds: 2
+            failureThreshold: 90
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /api/health
@@ -230,9 +247,15 @@ spec:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            failureThreshold: 6
+            # Inget initialDelaySeconds — startupProbe är startgrinden nu.
+            periodSeconds: 2
+            # 2s × 30 = 60s innan en levande-men-CFS-strypt podd tas ur
+            # Service-endpointen — exakt samma tolerans som gamla 10s × 6.
+            # Med replicas: 1 betyder NotReady noll endpoints = 503 för ALLA
+            # användare, så toleransen får inte krympa bara för att cykeln
+            # blir snabbare. (successThreshold defaultar till 1, så ett högt
+            # failureThreshold kostar noll deploy-tid.)
+            failureThreshold: 30
             timeoutSeconds: 5
       volumes:
         - name: flow-data

@@ -271,6 +271,58 @@ Typ\tTill\tAntal\tAnvÃ¤ndare\tTimestamp\tBolag\tLager
     assert "kpi_target_rule" not in report["sources"]
 
 
+def test_score_kpi_events_hoists_process_key_per_rule_not_shared(tmp_path):
+    """Guardrail for B3-hoisten i score_kpi_events (scoring.py).
+
+    rule.process_key ar en @property som recomputas per atkomst; den hoistas EN
+    gang per regel INNE i regel-loopen. Flyttas hoisten UT ur regel-loopen far
+    ALLA regler samma nyckel, och en anvandare som gor tva olika processer far
+    bada bokforda pa fel process_key. Alvin gor har bade Manual_Pick (pick) och
+    Decanting (trans) -> bada nycklarna maste dyka upp korrekt. En delad
+    (fel-hoistad) nyckel kollapsar dem och roder detta test.
+    """
+    db = make_session()
+    data = seed_people_and_activities(db)
+    pick = write(
+        tmp_path / "pick.csv",
+        """
+Zon\tPlockat\tAnvÃ¤ndare\tÃ„ndrad\tLokation\tBolag\tLager
+A\t10\tALV94\t2026-06-08 07:10:00\tA101\tMG\t404
+""",
+    )
+    trans = write(
+        tmp_path / "trans.csv",
+        """
+Typ\tTill\tAntal\tAnvÃ¤ndare\tTimestamp\tBolag\tLager
+26\tAS100\t20\tALV94\t2026-06-08 08:10:00\tGG\t404
+""",
+    )
+    files = {
+        "pick": pick,
+        "trans": trans,
+        "pallet": empty_file(tmp_path, "pallet.csv", "Typ\tAnvÃ¤ndare\tÃ„ndrad\tBolag\tLager"),
+        "receive": empty_file(tmp_path, "receive.csv", "Typ\tStatus\tAnvÃ¤ndare\tTimestamp\tBolag\tLager"),
+        "sort": empty_file(tmp_path, "sort.csv", "SSCC\tAnvÃ¤ndare\tTimestamp\tSÃ¤ndningsnr"),
+        "kpi": base_kpi_file(tmp_path),
+    }
+
+    report = build_person_productivity_report_from_files(
+        db,
+        files,
+        report_date=date(2026, 6, 8),
+        business_id=data["business"].id,
+    )
+    alvin = next(person for person in report["people"] if person["name"] == "Alvin")
+    process_keys = {
+        entry["process_key"]
+        for cell in alvin["time_cells"]
+        for entry in cell.get("process_points", [])
+    }
+
+    assert "MANUAL_PICK" in process_keys
+    assert "DECANTING" in process_keys
+
+
 def test_person_productivity_report_uses_internal_kpi_logic_without_rule_file(tmp_path):
     db = make_session()
     data = seed_people_and_activities(db)

@@ -39,7 +39,6 @@ from .constants import (
 )
 from .io_utils import (
     find_col,
-    normalize_saldo,
     smart_to_datetime,
     to_num,
 )
@@ -656,6 +655,79 @@ def allocate(orders_raw: pd.DataFrame, buffer_raw: pd.DataFrame, log=None) -> Tu
     near_miss_df = pd.DataFrame(near_miss_rows)
     return allocated_df, near_miss_df
 
+def _group_sum_pairwise(values: pd.Series, keys: pd.Series) -> pd.Series:
+    """Summera `values` per `keys` med EXAKT samma flyttalsvag som en per-grupp
+    `Series.sum()` (numpy pairwise-summering).
+
+    Varfor inte `values.groupby(keys).sum()`? Den gar via pandas cythoniserade
+    `group_sum`, som ar KAHAN-KOMPENSERAD. Kompenserad och pairwise summering kan
+    ge olika resultat i sista ULP:en, och nedstroms gor `calculate_refill` bade
+    `round()` och `int()` pa summorna - en ULP kan darmed forstarkas till +/-1
+    pall i refill-tabellen. Vagen har (hoista konverteringen, behall per-grupp
+    `Series.sum()`) tar bort den dyra per-grupp-`to_numeric` men bevarar
+    flyttalsvagen bit-exakt.
+
+    `sort=True` (default) behalls medvetet: nyckelordningen ar ITERATIONSORDNING
+    nedstroms och matar en icke-stabil sortering i utdatatabellen.
+    Skyddas av tests/services/test_engine_properties.py.
+    """
+    return values.groupby(keys).apply(lambda s: float(s.sum()))
+
+def _saldo_maps(s_norm: pd.DataFrame) -> Tuple[Dict[str, float], Dict[str, str]]:
+    """Bygg (saldo_sum, plockplats_by_art) ur en normaliserad saldotabell.
+
+    Kontrakt:
+      - `saldo_sum[art]` = summan av Plocksaldo for artikeln.
+      - `plockplats_by_art[art]` = FORSTA ICKE-TOMMA Plockplats i RADORDNING.
+        Artiklar utan nagon icke-tom plockplats saknas i dikten (uppslag ger "").
+      - Strangen "nan" far ALDRIG lacka ut, aven om Plockplats innehaller NaN.
+
+    Bruten ut ur `calculate_refill` for att invarianten ska ga att testa direkt.
+    I produktion matas den med saldo som ANROPAREN redan normaliserat
+    (`allocation_flows._read_normalized_saldo -> normalize_saldo`), som redan
+    kollapsar till en rad per artikel - darfor kan maskningen och NaN-vakten
+    inte trigga via den produktionsvagen, och ett test som gar via
+    `calculate_refill` med redan normaliserad saldo bevisar dem INTE. Testa den
+    har funktionen direkt i stallet (den matas ocksa med flerradig, icke-
+    normaliserad saldo i test_refill_plockplats_end_to_end_contract).
+
+    Fotnot om flyttal: `saldo_sum` far ANVANDA den Kahan-kompenserade
+    `groupby().sum()` (till skillnad fran npu_sum/behov_per_art_as, se
+    `_group_sum_pairwise`). Via produktionsvagen har varje grupp exakt EN rad -
+    anroparens `normalize_saldo` har redan gjort flerrads-summeringen i sin egen
+    `.agg({"Plocksaldo": "sum"})`, som optimeringen aldrig rorde. En summa over
+    ett element ar bit-exakt oavsett summeringsalgoritm, sa det finns ingen
+    ULP-risk pa den vagen. (Matas den fran annat hall med flera rader per
+    artikel - som ovan namnda test - kan Kahan/pairwise teoretiskt divergera,
+    men ingen produktionsvag gor det, och guardrail-testet nedan later dubbel-
+    normaliseringen INTE ateruppsta tyst.)
+    """
+    s_art = s_norm["Artikel"].astype(str).str.strip()
+    # "0.0 + v" bevarar exakt flyttalsuttrycket i den gamla ackumuleringen
+    # (saldo_sum.get(art, 0.0) + float(...)).
+    # .astype(float) (inte pd.to_numeric(errors="coerce")) ar avsiktligt:
+    # den bevarar den gamla float()-vagens exception-beteende, sa
+    # try/except-fallbacken hos anroparen triggar i exakt samma fall som forut.
+    s_qty = s_norm["Plocksaldo"].astype(float) + 0.0
+    saldo_sum = {
+        str(k): float(v)
+        for k, v in s_qty.groupby(s_art, sort=False).sum().items()
+    }
+
+    pp_col = s_norm["Plockplats"]
+    # NaN ar truthy: utan denna vakt blir tom plockplats strangen "nan"
+    # i refill-tabellerna (pandas 2.2.x laser tomma celler som NaN).
+    pp = pp_col.where(pp_col.notna(), "").astype(str).str.strip()
+    nonempty = pp != ""
+    # first() pa den MASKADE serien = forsta ICKE-TOMMA i radordning,
+    # samma semantik som gamla loopens "if pp and art not in ...".
+    # first() pa HELA kolumnen vore FEL (den tar forsta raden, tom eller ej).
+    plockplats_by_art = {
+        str(k): str(v)
+        for k, v in pp[nonempty].groupby(s_art[nonempty], sort=False).first().items()
+    }
+    return saldo_sum, plockplats_by_art
+
 def calculate_refill(allocated_df: pd.DataFrame,
                      buffer_raw: pd.DataFrame,
                      saldo_df: pd.DataFrame | None = None,
@@ -702,16 +774,15 @@ def calculate_refill(allocated_df: pd.DataFrame,
     plockplats_by_art: Dict[str, str] = {}
     if isinstance(saldo_df, pd.DataFrame) and not saldo_df.empty:
         try:
-            s_norm = normalize_saldo(saldo_df)
-            for _, r in s_norm.iterrows():
-                art = str(r["Artikel"]).strip()
-                saldo_sum[art] = float(saldo_sum.get(art, 0.0) + float(r.get("Plocksaldo", 0.0)))
-                pp_raw = r.get("Plockplats", "")
-                # NaN ar truthy: utan denna vakt blir tom plockplats strangen "nan"
-                # i refill-tabellerna (pandas 2.2.x laser tomma celler som NaN).
-                pp = "" if pd.isna(pp_raw) else str(pp_raw).strip()
-                if pp and art not in plockplats_by_art:
-                    plockplats_by_art[art] = pp
+            # saldo_df ar REDAN normaliserad av den enda produktionsanroparen
+            # (allocation_flows._read_normalized_saldo -> normalize_saldo), dvs
+            # en rad per artikel. Den tidigare inre normalize_saldo(saldo_df) var
+            # darfor en no-op pa den datan (summa/forsta-icke-tom over EN rad =
+            # identitet) och togs bort - den enda vagen som gor den verkliga
+            # flerradssummeringen ar den forsta normalize_saldo hos anroparen.
+            # _saldo_maps Kahan-groupby-summa forblir bit-exakt eftersom varje
+            # grupp fortfarande har exakt en rad; en-radssumma ar ULP-fri.
+            saldo_sum, plockplats_by_art = _saldo_maps(saldo_df)
         except Exception:
             saldo_sum = {}
             plockplats_by_art = {}
@@ -722,16 +793,49 @@ def calculate_refill(allocated_df: pd.DataFrame,
             npu = not_putaway_df.copy()
             npu_art_col = find_col(npu, NOT_PUTAWAY_SCHEMA["artikel"])
             npu_qty_col = find_col(npu, NOT_PUTAWAY_SCHEMA["antal"])
-            grp = npu.groupby(npu[npu_art_col].astype(str).str.strip())[npu_qty_col].apply(lambda s: float(pd.to_numeric(s, errors="coerce").fillna(0).sum()))
+            # Hoista to_numeric/fillna ur lambdan (den dyra delen) men behall
+            # per-grupp Series.sum() - se _group_sum_pairwise. En bytt
+            # summeringsvag kan flytta "Ej inlagrade (antal)" med +/-1.
+            npu_qty = pd.to_numeric(npu[npu_qty_col], errors="coerce").fillna(0)
+            grp = _group_sum_pairwise(npu_qty, npu[npu_art_col].astype(str).str.strip())
             npu_sum = {str(k): float(v) for k, v in grp.to_dict().items()}
         except Exception:
             npu_sum = {}
 
+    # Hoista det artikeloberoende arbetet ur loopen: filtrera bort anvanda
+    # helpallar EN gang och gruppera bufferten EN gang, i stallet for en full
+    # boolean-scan av hela b per artikel (O(artiklar x buffertrader) -> O(N)).
+    # Grupperingen sker pa en SLIMMAD projektion (3 av ~31 kolumner) och
+    # sorteringen ar LAT: bara de artiklar som faktiskt slas upp (~278 av 3037
+    # grupper pa verklig data) sorteras nagonsin.
+    b_avail = b[~b["_source_id"].astype(str).isin(used_help_ids)] if used_help_ids else b
+    b_slim = b_avail[["_artikel", "_qty", "_received"]]
+    b_slim_empty = b_slim.iloc[:0]
+    # .indices ger positionsindex per artikel i ursprunglig radordning.
+    fifo_idx_by_art = b_slim.groupby("_artikel", sort=False).indices
+    fifo_cache: Dict[str, pd.DataFrame] = {}
+
     def fifo_for_art(art_key: str) -> pd.DataFrame:
-        d = b[b["_artikel"] == art_key].copy()
-        if not d.empty and used_help_ids:
-            d = d[~d["_source_id"].astype(str).isin(used_help_ids)].copy()
-        return d.sort_values("_received")
+        # Ramen ar read-only och delas mellan anrop - mutera den aldrig.
+        cached = fifo_cache.get(art_key)
+        if cached is not None:
+            return cached
+        # groupby skapar aldrig tomma grupper, sa en saknad artikel ger None
+        # (inte en tom DataFrame som boolean-masken gav) -> guarda, precis som
+        # ordersaldo.py:408-414. Pa verklig data ligger ALLA pallar for 5
+        # artiklar i used_help_ids, sa grenen tas pa riktigt.
+        idx = fifo_idx_by_art.get(art_key)
+        if idx is None:
+            d = b_slim_empty
+        else:
+            # Per-grupp sort_values med pandas DEFAULT (quicksort, na_position=
+            # "last") pa exakt samma radordning som boolean-masken gav ->
+            # bit-identisk FIFO-ordning. En GLOBAL stabil sort (mergesort) ar
+            # INTE ekvivalent: den byter tie-brytning och andrar kolumnen
+            # "FIFO-baserad beräkning". Skyddas av test_engine_properties.py.
+            d = b_slim.take(idx).sort_values("_received")
+        fifo_cache[art_key] = d
+        return d
 
     hp_like = result[result.get("Källtyp", "").isin(["HUVUDPLOCK", "SKRYMMANDE", "HIB", "EHANDEL"])].copy()
     rows_hp: List[dict] = []
@@ -802,9 +906,15 @@ def calculate_refill(allocated_df: pd.DataFrame,
         if not as_df.empty:
             art_col_res_as = find_col(as_df, ORDER_SCHEMA["artikel"])
             qty_col_res_as = find_col(as_df, ORDER_SCHEMA["qty"])
-            behov_per_art_as = as_df.groupby(as_df[art_col_res_as].astype(str).str.strip())[qty_col_res_as] \
-                                   .apply(lambda s: float(pd.to_numeric(s, errors="coerce").fillna(0).sum())) \
-                                   .to_dict()
+            # Samma transformation som NPU ovan - se _group_sum_pairwise.
+            # KRITISKT: sort=True (default) maste behallas - behov_per_art_as
+            # ITERERAS nedan och matar rows_as, som sorteras icke-stabilt pa
+            # "FIFO-baserad beräkning". Andrad nyckelordning = andrad tie-break
+            # i utdatatabellen. Lagg alltsa INTE till sort=False har.
+            as_qty = pd.to_numeric(as_df[qty_col_res_as], errors="coerce").fillna(0)
+            behov_per_art_as = _group_sum_pairwise(
+                as_qty, as_df[art_col_res_as].astype(str).str.strip()
+            ).to_dict()
 
             rows_as: List[dict] = []
             for art, behov in behov_per_art_as.items():

@@ -192,8 +192,7 @@ def _events_from_rows(source: str, rows: list[dict[str, str]], report_date: date
     return events
 
 
-def _rule_applies_for_target(rule: KpiRule, event: KpiLogEvent, targets: dict[tuple[str, str], KpiTarget]) -> KpiTarget | None:
-    process_key = rule.process_key
+def _rule_applies_for_target(event: KpiLogEvent, process_key: str, targets: dict[tuple[str, str], KpiTarget]) -> KpiTarget | None:
     return targets.get((_company(event), process_key))
 
 
@@ -234,10 +233,15 @@ def score_kpi_events(
     )
 
     for rule in rules:
+        # rule.process_key ar en @property som kor normalize_process(self.process)
+        # vid varje atkomst. KpiRule ar frozen och normalize_process ren, sa
+        # vardet ar loop-invariant per regel - las det EN gang har i stallet for
+        # ~1,85M ganger inne i handelse-loopen (B3, hoista ut ur loopen).
+        rule_process_key = rule.process_key
         for event in events_by_source.get(rule.source, []):
             if rule.company_override and _company(event) != rule.company_override.upper():
                 continue
-            target = _rule_applies_for_target(rule, event, targets)
+            target = _rule_applies_for_target(event, rule_process_key, targets)
             if target is None:
                 continue
             if not rule.predicate(event, context):
@@ -246,7 +250,7 @@ def score_kpi_events(
                 distinct_value = rule.distinct_key(event, context)
                 if not distinct_value:
                     continue
-                distinct_key = (_company(event), _warehouse(event), rule.process_key, rule.metric, distinct_value)
+                distinct_key = (_company(event), _warehouse(event), rule_process_key, rule.metric, distinct_value)
                 if distinct_key in seen_distinct:
                     continue
                 seen_distinct.add(distinct_key)
@@ -262,7 +266,7 @@ def score_kpi_events(
                     company=_company(event),
                     warehouse=_warehouse(event),
                     process=target.process or rule.process,
-                    process_key=rule.process_key,
+                    process_key=rule_process_key,
                     metric=rule.metric,
                     value=value,
                     points=points,

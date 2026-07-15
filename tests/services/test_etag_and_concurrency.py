@@ -5,7 +5,7 @@
 2) Samtidighets-smoke: parallella autentiserade GET får aldrig ge 5xx eller
    inkonsistenta svar — fångar klassen "funkar för en användare, låser för
    två" och är förutsättningsbeviset den dag workers-frågan öppnas
-   (se DEPLOY.md om _TRACE_CACHE).
+   (se DEPLOY.md, avsnitt "Leveransoptimering och workers").
 """
 from __future__ import annotations
 

@@ -390,6 +390,29 @@ def _rule_predicate(row: dict[str, str]) -> Callable[[KpiLogEvent, dict[str, Any
         "exclude_type_66_pall",
         "Exkludera trans typ 66 pall",
     )
+    # Lata uppslag: grenarna nedan ar no-ops nar kriterielistan ar tom, sa vardet
+    # behovs bara nar regeln faktiskt har motsvarande kriterier. Vinsten kommer
+    # framst av att de allra flesta reglerna (alla zonbaserade plockregler) saknar
+    # loc-/sscc-kriterier helt - da var de fyra uppslagen ren spillan per
+    # (regel, handelse). Extra dyrt blir det nar kolumnen dessutom SAKNAS i loggen:
+    # _row_text tar da sin miss-vag (alias-set + scan av radens alla headers).
+    #
+    # Vilka kolumner som finns skiljer sig per kalla, sa gaten far inte motiveras
+    # med "kolumnen saknas anda" - den galler oavsett:
+    #   pick  (v_ask_pick_log_full): har Lokation, men varken Fran/Till eller SSCC
+    #   trans (v_ask_trans_log):     har Fran, Till OCH SSCC, men ingen Lokation
+    #   sort  (sort_conveyor_log):   har SSCC
+    #
+    # Villkoren MASTE spegla exakt de grenar som laser vardet; en for snav gate ger
+    # tyst "" och fel utfall. Laggs ett nytt kriterium till som laser ett gate:at
+    # varde ska det ocksa in i motsvarande need_*-flagga - annars rodnar
+    # tests/services/test_productivity_kpi_rule_predicate.py, som harleder
+    # gate-tackningen ur AST:en for den har funktionen i stallet for att lista
+    # kriterierna. Se wiki/prestanda-optimeringar.md (B4).
+    need_loc_from = bool(loc_from_equals or loc_from_not_equals or loc_from_starts or loc_from_not_starts)
+    need_loc_to = bool(loc_to_equals or loc_to_not_equals or loc_to_starts or loc_to_not_starts)
+    need_location = bool(location_starts or location_not_starts)
+    need_sscc = sscc_length_lt > 0 or sscc_length_gte > 0
 
     def predicate(event: KpiLogEvent, context: dict[str, Any]) -> bool:
         if company_values and _company(event) not in company_values:
@@ -402,9 +425,9 @@ def _rule_predicate(row: dict[str, str]) -> Callable[[KpiLogEvent, dict[str, Any
             return False
         if statuses and _row_int_text(event.row, "Status", "status").upper() not in statuses:
             return False
-        loc_from = _row_text(event.row, "FrÃ¥n", "Fran", "loc_from")
-        loc_to = _row_text(event.row, "Till", "loc_to")
-        location = _row_text(event.row, "Lokation", "Lagerplats", "location")
+        loc_from = _row_text(event.row, "FrÃ¥n", "Fran", "loc_from") if need_loc_from else ""
+        loc_to = _row_text(event.row, "Till", "loc_to") if need_loc_to else ""
+        location = _row_text(event.row, "Lokation", "Lagerplats", "location") if need_location else ""
         if loc_from_equals and loc_from.upper() not in loc_from_equals:
             return False
         if loc_from_not_equals and loc_from.upper() in loc_from_not_equals:
@@ -427,7 +450,7 @@ def _rule_predicate(row: dict[str, str]) -> Callable[[KpiLogEvent, dict[str, Any
             return False
         if positive_columns and any(_row_number(event.row, column) <= 0 for column in positive_columns):
             return False
-        sscc = _row_text(event.row, "SSCC", "sscc")
+        sscc = _row_text(event.row, "SSCC", "sscc") if need_sscc else ""
         if sscc_length_lt > 0 and len(sscc) >= int(sscc_length_lt):
             return False
         if sscc_length_gte > 0 and len(sscc) < int(sscc_length_gte):

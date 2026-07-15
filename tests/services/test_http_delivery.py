@@ -1,13 +1,15 @@
 """Leveranslagret: gzip-komprimering, cache-headers för statiska filer och
 ETag/304 på API-GET. Kontrakten här skyddar prestandaoptimeringarna från
 2026-07 (se wiki/prestanda-leveranslager.md) mot tyst regression."""
+import hashlib
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from app.backend.config import settings
-from app.backend.main import app
+from app.backend.main import MediaAwareGZipMiddleware, api_get_etag, app
 
 
 def test_large_json_response_is_gzip_compressed():
@@ -55,6 +57,157 @@ def test_gzip_middleware_leaves_sse_streams_alone():
 
     assert response.status_code == 200
     assert "content-encoding" not in response.headers
+
+
+def test_meta_media_content_stream_is_never_gzipped():
+    """Meta-videon/bilden (/api/meta/uploads/{id}/content) får ALDRIG gzippas.
+
+    Media är redan komprimerad → gzip vinner noll storlek men komprimerar
+    synkront på event-loopen och buffrar strömmen (OOM-risk i den minnessnåla
+    podden, cgroup-tak ~256 Mi) OCH raderar Content-Length, vilket bröt
+    nedladdningen ("Site wasn't available" + nginx 503, 2026-07-15). Bypassen får
+    samtidigt INTE vara för bred: en vanlig stor JSON-väg (t.ex. uppladdnings-
+    listan) ska fortfarande komprimeras. Se wiki/meta-upload.md."""
+    media_app = FastAPI()
+    media_app.add_middleware(MediaAwareGZipMiddleware, minimum_size=1024, compresslevel=6)
+
+    @media_app.get("/api/meta/uploads/{upload_id}/content")
+    def content(upload_id: int):
+        # 8 KiB helt komprimerbar body: skulle definitivt gzippas om bypassen bröts.
+        return Response(content=bytes(8192), media_type="video/quicktime")
+
+    @media_app.get("/api/meta/uploads")
+    def listing():
+        return {"items": [{"i": n, "blob": "x" * 40} for n in range(60)]}
+
+    client = TestClient(media_app)
+
+    media = client.get("/api/meta/uploads/155/content", headers={"Accept-Encoding": "gzip"})
+    assert media.status_code == 200
+    assert "content-encoding" not in media.headers, "media får aldrig gzippas"
+    assert media.headers.get("content-length") == "8192", (
+        "gzip raderar Content-Length; utan den bryts nedladdningsprogress och Range-resume"
+    )
+
+    listing_response = client.get("/api/meta/uploads", headers={"Accept-Encoding": "gzip"})
+    assert listing_response.headers.get("content-encoding") == "gzip", (
+        "bypassen får bara träffa /content, inte JSON-listan på samma prefix"
+    )
+
+
+def test_gzip_middleware_pins_compresslevel_to_6():
+    """Nivån måste vara EXPLICIT satt till 6, inte ärvd från Starlette.
+
+    Starlettes default är compresslevel=9 — den dyraste zlib-nivån — och
+    GZipResponder komprimerar synkront på event-loopen i vår enda uvicorn-worker.
+    Nivå 9 kostar 3-4x CPU mot nivå 6 för nästan identisk storlek. Utan det här
+    kontraktet driver nivån tyst tillbaka till library-defaulten så fort någon
+    tar bort argumentet eller uppgraderar starlette.
+    """
+    gzip_layers = [m for m in app.user_middleware if issubclass(m.cls, GZipMiddleware)]
+
+    assert len(gzip_layers) == 1, "förväntar exakt en GZipMiddleware i kedjan"
+    kwargs = gzip_layers[0].kwargs
+    assert kwargs.get("compresslevel") == 6, (
+        "GZipMiddleware måste sätta compresslevel=6 explicit; "
+        f"fick {kwargs.get('compresslevel')!r} (Starlettes default är 9)"
+    )
+    assert kwargs.get("minimum_size") == 1024
+
+
+def test_gzip_response_decompresses_to_the_identical_uncompressed_body():
+    """Gzip är transparent transportkodning: klienten får byte-identisk payload
+    med och utan komprimering, och komprimeringen är faktiskt PÅ.
+
+    OBS: det här testet säger MEDVETET ingenting om compresslevel — det passerar
+    lika grönt vid nivå 1, 6 och 9, eftersom alla ger samma dekomprimerade bytes.
+    Nivå-pinningen (=6) bevisas av test_gzip_middleware_pins_compresslevel_to_6,
+    inte här. Det här testet vaktar att gzip är aktivt och inte korrumperar bodyn
+    (byt ut/ta bort GZipMiddleware → content-encoding-assertionen rodnar)."""
+    client = TestClient(app)
+
+    compressed = client.get("/js/api.js", headers={"Accept-Encoding": "gzip"})
+    plain = client.get("/js/api.js", headers={"Accept-Encoding": "identity"})
+
+    assert compressed.headers.get("content-encoding") == "gzip"
+    assert "content-encoding" not in plain.headers
+    # httpx avkodar gzip transparent -> .content är den dekomprimerade bodyn.
+    assert compressed.content == plain.content
+
+
+def test_gzip_middleware_is_outermost_relative_to_api_get_etag():
+    """Hela beteendeargumentet för compresslevel=6 vilar på att ETag hashas på
+    den OKOMPRIMERADE bodyn. Det kräver att GZipMiddleware ligger YTTERST och
+    api_get_etag INNANFÖR: på svarsvägen bygger api_get_etag ETag:en först
+    (okomprimerad body), sedan komprimerar gzip. add_middleware infogar först i
+    listan och stacken byggs i reversed ordning → lägre index i user_middleware
+    = längre ut. Kastas ordningen om skulle api_get_etag hasha gzip-bytes och
+    ETag:en bli innehållsberoende av komprimeringsnivån."""
+    gzip_index = next(
+        i for i, m in enumerate(app.user_middleware) if issubclass(m.cls, GZipMiddleware)
+    )
+    etag_index = next(
+        i
+        for i, m in enumerate(app.user_middleware)
+        if m.kwargs.get("dispatch") is api_get_etag
+    )
+    assert gzip_index < etag_index, (
+        "GZipMiddleware måste ligga ytterst om api_get_etag "
+        f"(gzip index {gzip_index}, etag index {etag_index}); annars hashas ETag "
+        "på den komprimerade bodyn och 304-revalideringen blir nivåberoende."
+    )
+
+
+def test_etag_is_the_hash_of_the_uncompressed_body_for_gzipped_api_json():
+    """Den otestade invarianten: ett API-JSON-svar >1024 B ska BÅDE gzippas OCH
+    få en ETag, och ETag:en ska vara hashen av den OKOMPRIMERADE bodyn (inte av
+    gzip-strömmen). Alla andra ETag-test använder /api/health, som är <1024 B och
+    aldrig gzippas — kombinationen 'gzippat API-JSON MED ETag' saknades helt.
+
+    Sonden monteras temporärt på den riktiga appen (framför StaticFiles-mounten
+    på '/') så den går genom den skarpa middleware-kedjan; en omkastning av
+    gzip/etag-ordningen i main.py får den här att rodna."""
+    probe_path = "/api/_gzip_etag_probe_tmp"
+    payload = {"rows": [{"i": n, "blob": "x" * 40} for n in range(60)]}
+
+    def _probe():
+        return payload
+
+    app.add_api_route(probe_path, _probe, methods=["GET"])
+    # add_api_route lägger sonden SIST, dvs efter StaticFiles-mounten på '/' som
+    # annars fångar allt → flytta den främst så den matchas.
+    app.router.routes.insert(0, app.router.routes.pop())
+    try:
+        client = TestClient(app)
+        response = client.get(probe_path, headers={"Accept-Encoding": "gzip"})
+
+        assert response.status_code == 200
+        assert response.headers.get("content-encoding") == "gzip", (
+            "sonden måste vara stor nog att gzippas för att bevisa något"
+        )
+        # httpx avkodar gzip transparent → .content är den okomprimerade bodyn.
+        uncompressed = response.content
+        assert len(uncompressed) > 1024
+        # Wire-storleken (content-length) < okomprimerad → gzip slog verkligen till.
+        assert int(response.headers["content-length"]) < len(uncompressed)
+
+        etag = response.headers.get("etag")
+        expected = 'W/"' + hashlib.sha256(uncompressed).hexdigest()[:32] + '"'
+        assert etag == expected, (
+            f"ETag {etag!r} != hash av okomprimerad body {expected!r}. Om gzip "
+            "ligger innanför api_get_etag hashas gzip-strömmen i stället."
+        )
+
+        conditional = client.get(
+            probe_path,
+            headers={"Accept-Encoding": "gzip", "If-None-Match": etag},
+        )
+        assert conditional.status_code == 304
+        assert conditional.content == b""
+    finally:
+        app.router.routes[:] = [
+            r for r in app.router.routes if getattr(r, "path", None) != probe_path
+        ]
 
 
 def test_api_get_json_gets_weak_etag_and_revalidation_headers():
