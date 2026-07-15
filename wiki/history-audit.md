@@ -49,6 +49,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - Seq far ocksa OTel-loggar nar `OTEL_LOGS_ENABLED=true`. API-anrop loggas som sanerade events med `flow_event=http_request`, `event.name=flow.http.request`, `http_method`, `http_route`, `http_status_code`, `duration_ms`, `endpoint_group`, `flow_trace_id` och `operation.id`. Querystring, request body, cookies och filnamn loggas inte; lyckade `/api/health` och vantetidsinsamling hoppas over for att undvika brus. I k8s ar `OTEL_SQLALCHEMY_ENABLED=false` sa standardsokningar inte fylls av `SELECT flow`; sla pa flaggan tillfalligt om en specifik DB-fraga ska felsokas i spans.
 - Frontendens API-wrapper satter `X-Flow-Operation-Id` pa anrop och backend svarar med samma header. Vid API-fel skriver dokumentloggen `Felsoknings-ID: <operation-id> / <trace-id>` nar bada finns. Samma operation-id skickas vidare till `client_error`, vantetidsmatningar, interaction-events och buggrapportens kontext, sa en anvandare kan kopiera ett ID fran UI och soka direkt i Seq eller Historik.
 - Hogvarde-floden har egna Seq-events utover ren HTTP: `flow.allocation.run` (`flow_event=allocation_run`), `flow.data_fetch.run` (`flow_event=data_fetch_run`), `flow.meta.upload` (`flow_event=meta_upload`) och `flow.meta.analyze` (`flow_event=meta_analyze`). De anvander `outcome=started|ok|blocked|failed`, duration, statuskod/feltyp och sanerade raknare som `flow_id`, vy, antal tabeller, antal sparade filer eller antal rader. `blocked` betyder normalt anvandar-/regelstopp (4xx), `failed` betyder server-/systemfel.
+- **Payloadstorlek pa SSE-vagen** (matpunkt, inford 2026-07-14): `flow.sankey_inbound.payload_size` (`flow_event=sankey_inbound_payload_size`) och `flow.productivity.payload_size` (`flow_event=productivity_payload_size`) loggas en gang per byggd rapport med `payload_bytes` (ra JSON), `payload_gzip_bytes` (gzip-6), `payload_gzip_ratio`, `payload_measure_ms` och sanerade raknare (`sse_period`, `client_filter_views`, `sse_days`). Anledningen: `text/event-stream` undantas fran GZipMiddleware, sa rapportens slutpayload gar okomprimerad over natet och storleken var aldrig matt (se `wiki/prestanda-leveranslager.md`). Inga rad-, kund- eller filtervarden loggas - bara storlekar. Stangs av med `PAYLOAD_SIZE_LOGGING_ENABLED=false`. Seq: `flow_event = 'sankey_inbound_payload_size'`, sortera pa `payload_bytes desc`.
 - Bearbeta-fel som sker efter att flodet startat loggas som `allocation_flow/flow_failed` med `flow_id`, statuskod, felkod, feltyp, kort felmeddelande, tekniskt meddelande nar det skiljer sig, verksamhet, toggle och eventuella filterradantal. Filnamn och inskickade parametervarden sparas inte.
 - Windows-lokala Bearbeta-/Produktivitet-korningar loggas som `desktop_local_run` via `/api/audit/local-run`. Payloaden innehaller feature, flode, status, feltyp, varaktighet, filslotar och rad-/resultatraknare, men aldrig lokal sokvag, localRef, filnamn eller filinnehall.
 - API-fel som frontend far tillbaka fran backend rapporteras tyst som `client_error/client_error`. Payloaden sparar metod, path utan querystring, HTTP-status, felkod, kort meddelande och aktuell sida. Om server/proxy skickar en HTML-felsida sanerar `api.js` detaljen till kort status, t.ex. `HTML-felsida fran servern: HTTP 502 (Bad Gateway)`, i stallet for att spara HTML. Det galler aven Bearbetas egna fetch-wrapper. Request body, losenord, cookies, queryvarden och filnamn ska inte sparas.
@@ -88,6 +89,67 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - Samma `api.js` skriver anvandarnara dokumentlogg for mutationer, nedladdningar och markerade GET-floden. Den interna, dolda download-lanken markeras med `data-track-ignore` sa exporttracking kopplas till anvandarens riktiga knappklick. Sidmoduler som anvander egna wrappers, till exempel Bearbeta, ska logga success/failure sjalva eller anropa `window.flowLog`.
 - `common.js` exponerar `window.flowTrack` och auto-capturar klick, submit, change, contextmenu, sidebar, tema, zoom, apphjalp, loggpanel och modaler. `api.js` kopplar API-resultat till senaste interaction-id sa dashboards kan visa vilka knappar som leder till API, fel, vantan och nedladdning.
 - Windows-appen anvander samma frontendtracking via QWebEngine och markerar `client_surface=desktop`. Desktop-bryggan trackar appstart, lokala filval och uppdateringsfloden med sanerad metadata.
+
+## Dra en fordelning ur telemetrin (exempel: hur stora ar Hamta data-exporterna?)
+
+Aterkommande behov: "hur stort ar det HAR i verkligheten?" innan en optimering byggs.
+Exemplet nedan ar optimeringskandidat #28 (radtak/`write_only` pa Excel-exporten), vars
+beslutstroskel ar **P95 av `shown_rows` < 5000 => kandidaten avfardas**. Metoden ar
+generisk: exportspanet finns i `routers/data_fetch.py` (`start_span("data_fetch.export", ...)`
+satter `data_fetch.shown_rows`/`data_fetch.total_rows`), och `/run` skriver samma raknare
+till auditloggen.
+
+**Vag 1 - Seq (exakt ratt population: bara det som faktiskt exporterades).**
+
+1. Bekrafta forst hur spanet ser ut (Seq renderar spans som events med `@SpanId` satt, span-namnet i `@Message` och span-attributen som properties). Tidsintervall: `Last 90 days`.
+   ```
+   select @Message, @Properties['data_fetch.shown_rows'] as shown_rows, @Properties['data_fetch.total_rows'] as total_rows
+   from stream
+   where @SpanId is not null and @Properties['data_fetch.shown_rows'] is not null
+   limit 20
+   ```
+2. Dra sedan fordelningen:
+   ```
+   select count(*) as n,
+          percentile(@Properties['data_fetch.shown_rows'], 50) as p50,
+          percentile(@Properties['data_fetch.shown_rows'], 95) as p95,
+          max(@Properties['data_fetch.shown_rows']) as max_rows
+   from stream
+   where @SpanId is not null and @Message = 'data_fetch.export'
+   ```
+   Fallgropar: **traces samplas** (`OTEL_TRACES_SAMPLE_RATE=0.5` i `k8s/flow.yml`), sa ungefar
+   varannan export finns i Seq. P95 pa ett 50 %-urval duger nar `n` ar minst nagra tiotal - ar
+   `n` ensiffrigt sager siffran ingenting. Kontrollera ocksa att Seqs retention verkligen racker
+   90 dagar; annars ta det langsta fonster som finns och skriv ut vilket.
+
+**Vag 2 - auditloggen (osamplad, ingen kubectl/DB-atkomst behovs).**
+
+`/api/data-fetch/run` skriver `data_fetch/fetch_success` med `total_rows`, `shown_rows` och
+`truncated` i `new_value`. Exporten sjalv skriver ingen auditrad, sa detta ar *populationen som
+exporterna dras ur* (alla hamtningar) - en trygg ovre grans: ar P95 over alla hamtningar under
+5000 rader kan exporterna omojligt vara storre an sa i normalfallet. Super User kan hamta raderna
+med samma cookie jar som `tools.healthcheck` anvander:
+
+```
+GET /api/audit?entity_type=data_fetch&action=fetch_success&from_at=<ISO-datum for 90 dagar sedan>&limit=500&offset=<0,500,1000,...>
+```
+
+Sortera `new_value.shown_rows` och ta 95:e percentilen lokalt (`statistics.quantiles`). Har du
+direkt SQL-atkomst gar samma sak i ett svep:
+
+```sql
+SELECT DISTINCT
+  COUNT(*) OVER () AS n,
+  PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY TRY_CAST(JSON_VALUE(new_value,'$.shown_rows') AS FLOAT)) OVER () AS p50,
+  PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY TRY_CAST(JSON_VALUE(new_value,'$.shown_rows') AS FLOAT)) OVER () AS p95,
+  MAX(TRY_CAST(JSON_VALUE(new_value,'$.shown_rows') AS INT)) OVER () AS max_rows
+FROM audit_log
+WHERE entity_type = 'data_fetch' AND action = 'fetch_success'
+  AND created_at >= DATEADD(day, -90, SYSUTCDATETIME());
+```
+
+`created_at` skrivs av MSSQL i svensk lokal tid men serialiseras som `+00:00` - forsumbart i ett
+90-dagarsfonster, men jamfor aldrig den kolumnen rakt av mot appens egna UTC-tider.
 
 ## Felsokningssvar for framtida chat
 

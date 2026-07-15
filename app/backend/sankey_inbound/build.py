@@ -147,6 +147,18 @@ def build_sankey_inbound_payload(
     # (build_outbound.py) som körs upp till 512+ gånger per cache-miss (en per
     # vy). alias_rows = hela item_alias-tabellen (>50k rader/bolag).
     package_ladders = build_package_ladders(alias_rows)
+    # Forberakna (row, bolag, datum-eller-None) per outbound-rad EN gang per
+    # payload-build i stallet for per vy: _build_outbound_sankey scannade forr
+    # hela pick_rows/dispatch_rows och parsade bolag + tidsstampel per rad per vy
+    # (upp till 512 vyer). Samma None-fallback-monster som package_ladders.
+    _pick_meta = [
+        (row, _row_company(row), (stamp.date() if (stamp := _row_datetime(row)) else None))
+        for row in pick_rows
+    ]
+    _dispatch_meta = [
+        (row, _row_company(row), (stamp.date() if (stamp := _row_datetime(row)) else None))
+        for row in dispatch_rows
+    ]
     warnings_out = list(warnings or [])
 
     row_companies = sorted({_row_company(row) for row in receive_rows + trans_rows + pick_rows + dispatch_rows if _row_company(row)})
@@ -589,6 +601,8 @@ def build_sankey_inbound_payload(
             view_period_end=view_period_end,
             include_trace_details=trace_detail,
             package_ladders=package_ladders,
+            pick_meta=_pick_meta,
+            dispatch_meta=_dispatch_meta,
         )
 
         view_receive_entries = [

@@ -6,7 +6,7 @@ hemsidan. Hemsidan ska alltså vara facit under övergången.
 
 ## Princip
 
-- App och hemsida ska använda samma backend, samma PostgreSQL och samma
+- App och hemsida ska använda samma backend, samma MSSQL-databas och samma
   endpoints tills vi aktivt beslutar något annat.
 - Windows-appen ska inte längre vara beroende av att rendera
   `https://stigamo.nu` som sida. Den ska köra en lokal app-yta och prata med
@@ -213,8 +213,9 @@ kontrollera session/tema/sidebar, uppdateringsdialog, öppna i webbläsare.
 - Lägg till en lokal server i desktopappen som servar `app/frontend`.
 - Proxy:a `/api/*` från den lokala servern till `SERVER_BASE_URL`.
 - Strippa `Secure` på proxade session cookies så lokal app-origin kan lagra
-  sessionen, men skicka själva API-trafiken vidare till Render över HTTPS.
-- Låt health check fortsätta gå mot Render.
+  sessionen, men skicka själva API-trafiken vidare till den centrala servern
+  (k8s, `SERVER_BASE_URL`) över HTTPS.
+- Låt health check fortsätta gå mot den centrala servern.
 - Låt appen öppna lokal URL, inte `https://stigamo.nu`.
 - Paketera frontendfilerna i PyInstaller.
 - Uppdatera tester och dokumentation.
@@ -235,13 +236,13 @@ Klart när app och hemsida ger samma resultat på samma databas.
 ### Fas 3: Produktivitet och lokal filhantering
 
 - Behåll lokal filhantering för stora loggar.
-- Säkerställ att appen inte skickar plock/trans/pall till Render.
+- Säkerställ att appen inte skickar plock/trans/pall till servern.
 - Mät att dagbyte använder cache.
 - Om lokal sökväg behövs senare: lägg Qt-brygga för filval så appen kan läsa
   sökväg direkt, men låt hemsidan fortsätta använda browser File-objekt.
 
 Klart när produktivitet känns lika snabb i appen som i lokal webview och inte
-orsakar Render memory-spikar.
+orsakar memory-spikar i webpodden.
 
 ### Fas 4: Framtida planerad API-hämtning
 
@@ -269,7 +270,7 @@ Vi ska inte gå vidare till nästa fas om något av detta händer:
 - App och hemsida visar olika schema för samma datum/användare.
 - Rollstyrning skiljer sig.
 - Viewer kan ändra data.
-- Produktivitet skickar stora loggar till Render av misstag.
+- Produktivitet skickar stora loggar till servern av misstag.
 - KPI-mål blir lokal istället för central sanning.
 - Undo/redo eller versionskonflikter beter sig olika.
 - En import ersätter gammal sanning innan ny data är validerad.

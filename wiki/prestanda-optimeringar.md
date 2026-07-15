@@ -1,7 +1,7 @@
 ---
 title: Prestandaoptimeringar - monster, vinster och revisionschecklista
 status: aktiv
-updated: 2026-07-08
+updated: 2026-07-15
 tags: [prestanda, latens, databas, cache, vektorisering, revision, checklista]
 ---
 
@@ -20,6 +20,13 @@ data anvandaren ser (verifierat med golden-karakterisering, differentialtester
 och full testsvit). Leveranslagret (gzip/ETag/service worker) har en egen sida:
 [Prestanda - leveranslagret](prestanda-leveranslager.md). Arkivcachen har sin:
 [Lokal arkiv-cache (DuckDB)](local-archive-cache.md).
+
+Den har sidan ar **katalogen over latensmonster**. En niva ovanfor ligger
+[Effektiviseringar - taxonomi over vara missar och losningar](effektivisering-taxonomi.md):
+alla 476 kartlagda effektiviseringar (inte bara latens - aven UX, verktyg, CI,
+drift och LLM-lagret) klassade pa *feltyp* och *losningstyp*. Las den nar du vill
+veta **vilken sorts misstag vi ar benagna att gora**; las den har nar du vill veta
+**hur man hittar och fixar ett konkret monster**.
 
 ## Viktig kontext innan du tolkar siffror
 
@@ -147,9 +154,30 @@ returnerat ett litet resultat.
   - (Systerverktyget D-pak: `groupby().agg()` med egen `def first`/lambda over
     ~130k grupper: **52 s -> 0,4 s (~130x)** - ursprunget till hela den har
     jakten.)
+- **Exempel (2026-07-14, allokering + HIB, optimeringsplanens steg 1):**
+  - `calculate_refill` (`engine_core/allocation.py`): saldo-/NPU-forarbetet
+    korde `iterrows` over hela saldofilen + `groupby().apply(lambda ...)` med
+    per-grupp `pd.to_numeric`. Vektoriserat till maskad `groupby().first()` +
+    hoistad `to_numeric`. **Funktionen 1,49 s -> 0,55 s (-63 %)**, bit-identisk
+    (golden oforandrad). Kandidat #45.
+  - HIB-koppling (`engine_core/hib.py`): `iterrows` + skalar `pd.to_datetime`
+    tva ganger per rad, plus per-HIB-order-omfiltrering av kundgruppen.
+    Vektoriserat + kolumnprojektion 45 -> 8 kolumner fore radmaterialiseringen.
+    **`compute_hib_koppling` 1,27 s -> 0,18 s (7,2x)**, `compute_missed_departures`
+    0,70 s -> 0,11 s; hela flodet **2,07 s -> 0,43 s (-79 %)**. Kandidat #42.
 - **Kritiskt:** verifiera att den inbyggda aggregeringen har **exakt** samma
   semantik (t.ex. `"first"` = forsta icke-NaN, `idxmax` = forsta forekomsten;
   akta flyttalsassociativitet nar Python-summa byts mot SQL/pandas-`SUM`).
+  **Konkret fallgrop (2026-07-14):** `Series.groupby(...).apply(lambda s:
+  float(s.sum()))` (numpy **pairwise**-summering per grupp) ger inte alltid
+  bit-identiskt resultat med `pd.to_numeric(...).groupby(...).sum()` (pandas
+  cython `group_sum`, **Kahan**-kompenserad) - de kan skilja i sista ULP:en, och
+  ett nedstroms `round()`/`int()` kan forstarka 1 ULP till +/-1 i en
+  utdatakolumn (en pall for mycket/for lite). En adversariell granskare fangade
+  det i #45; fixen bytte till att hoista `to_numeric` ur lambdan men **behalla**
+  per-grupp `Series.sum()`, sa flyttalsvagen ar exakt densamma som fore.
+  Golden var gron anda (kvantiteterna rakade vara heltalsvarda) - risken var
+  data-beroende och osynlig utan differentialtest pa float-hex-niva.
 
 #### B2. Ladda hela arkivet/historiken i minnet
 
@@ -197,6 +225,20 @@ returnerat ett litet resultat.
   (gzip-JSON med snapshot+schema-signatur) sa ar/manad-vyn slipper rakna om fran
   CSV; `productivity_cache_warm` bygger dagrapporten en gang och matar bade
   `person_productivity_daily` och `overview-report`.
+- **Exempel (2026-07-14, kvadratisk scan per artikel -> hoistad + lat):**
+  `fifo_for_art` i `calculate_refill` gjorde en full boolean-scan av hela
+  buffertramen (~57k rader) + `.copy()` + sort **per bristartikel** - O(artiklar
+  x buffertrader), och `used_help_ids`-filtreringen raknades om varje varv fast
+  den ar konstant genom loopen. Fixen filtrerar och grupperar bufferten **en
+  gang** fore loopen (`groupby(...).indices` pa en slimmad 3-kolumnsprojektion)
+  och sorterar **lat** - bara de ~278 artiklar som faktiskt slas upp sorteras,
+  inte alla 3037 grupper. **fifo-delen 1,28 s / 278 anrop -> helt borta ur
+  profilen**; hela allokeringsflodet kallt 5,06 s -> 4,10 s (-19 % - flodet
+  domineras nu av `allocate()`, som ar oror). Kandidat #41. **Fallgrop:** en
+  global stabil sort (`mergesort`) fore grupperingen ar INTE ekvivalent - den
+  byter tie-brytning och andrar kolumnen "FIFO-baserad berakning" for minst 1 av
+  268 verkliga artiklar. Fixen behaller per-grupp `sort_values` med pandas
+  default (quicksort) pa exakt samma radordning som boolean-masken gav.
 
 #### B4. Compute-then-filter: dyrt jobb for hela datat, bara delmangd visas
 
@@ -208,6 +250,18 @@ returnerat ett litet resultat.
   Forfiltrerat vektoriserat. **0,255 s -> 0,033 s (-87 %)** (2026-07-08).
   (Samma insikt fran D-pak: en dyr Lokationer-join flyttades sa den bara korde
   for de ~900 rader som faktiskt visades.)
+- **Exempel (2026-07-14, ovillkorlig lookup i ett het predikat):** KPI-
+  regelmotorns predikat (`productivity_kpi_rules/rules.py`) slog **ovillkorligt**
+  upp Fran/Till/Lokation **och** SSCC for varje (regel x handelse)-par - fyra
+  uppslag per par, aven for de ~34 av 44 regler som saknar loc-kriterier och de
+  42 som saknar sscc-kriterier. Nar kolumnen inte finns i loggen tog uppslaget
+  dessutom den dyra miss-vagen (`_canonical_header`-scan av radens alla headers).
+  Fixen gate:ar uppslaget lat, bara nar regeln faktiskt har motsvarande
+  kriterium. **`score_kpi_events` -26 %** pa syntetisk 60k-raders plocklogg;
+  `_canonical_header`-anropen foll fran **4 194 738 till 0**. Bit-identiskt
+  (sha256 over 82 867 utdatahandelser identisk). Kandidat #40. En adversariell
+  granskare hittade det fjarde uppslaget (sscc) som forsta svepet missade -
+  utan det halveras vinsten.
 
 ### C. Event-loop och samtidighet
 
@@ -254,6 +308,33 @@ Optimering ar fardskrivbord; det verkliga vardet ar att inte tappa vinsten igen.
 - **E3. Before/after-benchmark.** `tools.api_benchmark` mot en korande miljo -
   regel i AGENTS.md for prestandapaverkande andringar. Effekt ska matas, inte
   gissas.
+- **E4. Payloadbudget (2026-07-14, kandidat #52).** `api_benchmark` matte forr
+  bara latens - hela transportfamiljen (D) var osynlig for guardrailen, vilket
+  ar just varfor gzip-niva 9 och den okomprimerade SSE-payloaden kunde ligga
+  obemarkta. Verktyget registrerar nu `content_length_bytes` (dekomprimerat) och
+  `wire_bytes` + `content_encoding` per sample. Byte-taket ligger i
+  `tools/payload_budgets.json` OCH som ett pytest-kontrakt
+  (`tests/tools/test_gap_payload_budget.py`) med `TestClient` i pre-push - en
+  manuell benchmark-flagga fangar bara det nagon minns att kora, ett pytest-
+  kontrakt fangar allt. **Fallgrop:** en gzip-kontroll som substrangmatchar
+  `content_encoding` slapper igenom en endpoint dar bara EN DEL av svaren
+  gzippas (blandade sample kollapsar till `"identity,gzip"`) - kontrollen ska
+  krava att ALLA sample over troskeln ar komprimerade, och jamforelseoperatorn
+  ska matcha Starlette exakt (`>= minimum_size`, inte `>`).
+- **E5. Mutationstesta guardrailen - annars ar den teater.** Storsta lardomen
+  fran den adversariella granskningen 2026-07-14: ett skydd vars docstring lovar
+  en invariant men som **passerar aven nar fixen backas** ar varre an inget test
+  - det ar en falsk trygghetsutfastelse incheckad i repot, och nasta
+  refaktorering tappar tyst vinsten med gron svit. Granskningen hittade ett
+  dussin sadana (t.ex. ett refill-plockplats-test vars invariant redan
+  garanterades av `normalize_saldo` uppstroms, sa det bet aldrig pa den logik det
+  pastod skydda; ett fifo-test som inte laste "original row order" trots att
+  frasen stod i testnamnet; ett k8s-kontrakt som lastes produkten
+  `period x failureThreshold` men aldrig `periodSeconds`, sa en stadning till
+  k8s-default 10 s aterstallde det langsamma beteendet med alla tester grona).
+  **Regel:** for varje ny/andrad guardrail, infor mutationen den sags fanga
+  (backa fixen / andra invarianten), **se testet rodna**, aterstall. Kan det inte
+  bli rott skyddar det ingenting - skriv om det eller ta bort dess docstring.
 
 ---
 
@@ -305,6 +386,29 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
   sa personalen aldrig triggar on-demand-bygge kl 05; on-demand kvar som matbar
   fallback (loggtagg `productivity_overview_ondemand_build`). Se
   [Produktivitet](productivity.md).
+- **2026-07-14/15:** [Optimeringsplanens](optimeringsplan.md) steg 0-5 byggda
+  och matta (52 adversariellt granskade kandidater; se aven
+  [detaljbilagan](optimeringsplan-detalj.md)).
+  - **Steg 1, berakningsmotorerna (bit-identiska, golden oforandrade):**
+    #41 fifo-hoisting (fifo-delen 1,28 s -> borta), #45 saldo-/NPU-vektorisering
+    (`calculate_refill` -63 %), #42 HIB (flodet 2,07 s -> 0,43 s, -79 %),
+    #40 KPI-predikatets lata gate (`score_kpi_events` -26 %,
+    `_canonical_header` 4,2M -> 0 anrop).
+  - **Steg 0/2/3:** #52 payloadmatning i `api_benchmark` (E4); #02 gzip
+    `compresslevel=6` (se [leveranslagret](prestanda-leveranslager.md)); #31
+    `startupProbe` i `k8s/flow.yml` (budget >= dagens ~120 s, satt till 180 s
+    sa en kall Azure SQL-start inte ger CrashLoopBackOff).
+  - **Steg 4 (mata, inte fixa):** #08 DuckDB-defaults exponeras som ren
+    *information* i healthchecken (far aldrig lyfta global status), #46 SSE-
+    payloadstorlek loggas till Seq, #28 exportens `shown_rows` avlases ur Seq.
+  - **Steg 5:** `DEPLOY.md` rattad - den verkliga blockeraren for fler uvicorn-
+    workers ar DuckDB-arkivcachens single-writer-fillas (plus processlokala
+    `_RATE_HITS` och `background._STATUS`), inte Sankeys trace-cache.
+  - **Lardom:** varje byggagents siffra reproducerades oberoende och tre landade
+    marginellt battre an lovat - men den adversariella granskningen underkande
+    ett dussin guardrails som inte bet (E5) och tva blockerare (en matpunkt som
+    flippade healthcheckens globala status; en `DEPLOY.md` som pastod fel at det
+    lugnande hallet). Bada atgardade.
 
 ## Kallor
 
@@ -312,6 +416,10 @@ transaktioner). Verifiera med differentialtest eller golden-karakterisering.
 - `../app/backend/coredata_service.py` (A3: defer)
 - `../app/backend/models.py`, `../app/alembic/versions/0048_audit_log_indexes.py` (A5)
 - `../warehouse_tools/engine_core/reports.py`, `observations.py`, `ordersaldo.py` (B1/B4)
+- `../warehouse_tools/engine_core/allocation.py` (B1/B3: #41 fifo-hoisting, #45 saldo-/NPU-vektorisering),
+  `../warehouse_tools/engine_core/hib.py` (B1/B3: #42),
+  `../app/backend/productivity_kpi_rules/rules.py` (B4: #40 lat gate)
+- `../tools/payload_budgets.json`, `../tests/tools/test_gap_payload_budget.py` (E4: #52 payloadbudget)
 - `../app/backend/sankey_inbound/build.py`, `build_outbound.py`, `trace.py` (B2/B3)
 - `../app/backend/routers/allocation.py`, `meta_uploads.py`, `data_fetch.py`, `assistant.py` (C1)
 - `../app/backend/routers/public.py`, `staffing_calculator_service.py` (A2)

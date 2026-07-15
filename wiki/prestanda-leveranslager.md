@@ -1,7 +1,7 @@
 ---
 title: Prestanda - leveranslagret
 status: aktiv
-updated: 2026-07-06
+updated: 2026-07-14
 tags: [prestanda, cache, gzip, service-worker, latens]
 ---
 
@@ -16,11 +16,46 @@ vilken data användaren ser.
 ## Lagren, utifrån och in
 
 1. **GZip (backend, `app/backend/main.py`).** `GZipMiddleware`
-   (`minimum_size=1024`) läggs ytterst i middleware-kedjan och komprimerar
-   både API-JSON och statiska JS/CSS-svar. Starlette undantar
+   (`minimum_size=1024, compresslevel=6`) läggs ytterst i middleware-kedjan och
+   komprimerar både API-JSON och statiska JS/CSS-svar. Starlette undantar
    `text/event-stream` som standard, så SSE-progressströmmarna
    (produktivitet/sankey) påverkas inte — kontraktstestat i
    `tests/services/test_http_delivery.py`. Ingressen behöver INTE gzippa.
+
+   **compresslevel=6 (2026-07-14, kandidat #02/#47).** Starlettes default är
+   `compresslevel=9` — deflate-nivån med brantast avtagande avkastning, och den
+   körs **synkront på event-loopen** i appens enda uvicorn-worker. Nivå 6 ger
+   nästan identisk utdatastorlek (0 % skillnad på CSS, +2–8 % bytes på JSON) för
+   3–4x mindre CPU: ~45 ms sparad CPU per MB gzippad body, realistiskt några ms
+   till ~15 ms per API-GET. Värdet är **systemiskt** (mindre synkron CPU → mindre
+   head-of-line-blockering för samtidiga requests), inte per-request-latens —
+   /api/overview domineras av DB-tid. Beteendebevarande: gzip ligger ytterst, så
+   `api_get_etag`-middlewaren hashar den **okomprimerade** bodyn → nivåbytet kan
+   inte ändra ETags eller 304-logiken. Ett kontraktstest låser `compresslevel=6`
+   så nivån inte tyst driftar tillbaka till library-defaulten vid en
+   Starlette-uppgradering. `orjson` förblir **avfärdat** (kandidat #48): dess
+   ~5,8 ms/svar drunknar i gzip-CPU:n — utvärdera det först om/när gzip-CPU:n
+   mätts om och fortfarande dominerar.
+
+   **Viktig nyansering (2026-07-14):** SSE-undantaget är inte bara progress.
+   Sankey - Inbound och Produktivitetsöversikten skickar *hela slutrapporten* i
+   strömmens `done`-event (`routers/sankey.py`, `routers/productivity.py`), och
+   SSE är default-vägen i frontend — vanlig GET är bara fallback. Appens
+   sannolikt största JSON-svar levereras alltså **okomprimerat**. Storleken var
+   aldrig mätt, så vinsten av att flytta payloaden till en gzippad GET
+   (optimeringskandidat #46) gick inte att bedöma. Sedan 2026-07-14 mäts den:
+   varje byggd rapport loggar ett Seq-event med rå och gzip-6-storlek
+   (`flow.sankey_inbound.payload_size`, `flow.productivity.payload_size` — se
+   `wiki/history-audit.md`). Mätpunkten kan stängas av med
+   `PAYLOAD_SIZE_LOGGING_ENABLED=false`. Ingen fix är byggd: beslutströskeln är
+   rå payload ≥ ~300 KiB **och** uppmätt överföringstid ≥ ~150 ms.
+
+   Snabbaste vägen till samma siffra utan att vänta på trafik: mät GET-vägen,
+   som bygger identisk payload men går genom gzip:
+   `python -m tools.api_benchmark --base-url <miljö> --username <user> --password <***>
+   --endpoints "/api/sankey/inbound?period=month&date=<datum>,/api/productivity/overview?period=month&date=<datum>"`.
+   Rapportens `content_length_bytes` = de rå bytes SSE-vägen skickar,
+   `wire_bytes` = vad gzip skulle ha gjort av dem.
 2. **Versionsstämplade statiska filer.** `tools/stamp_asset_versions.py` körs
    i Docker-bygget (se `Dockerfile`) och skriver om alla lokala
    script/link-taggar till `?v=<10 tecken sha256 av filinnehållet>`.

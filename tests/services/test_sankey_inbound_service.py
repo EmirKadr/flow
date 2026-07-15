@@ -875,6 +875,42 @@ def test_only_consumed_filters_open_branches():
     assert consumed_payload["summary"]["labels_consumed"] == 1
 
 
+def test_outbound_precompute_excludes_empty_and_out_of_window_timestamps():
+    """Guardrail for outbound-forberakningen (#39, build_outbound.py pick_meta/
+    dispatch_meta).
+
+    Forr scannades varje pick/dispatch-rad PER vy och parsade bolag + tidsstampel
+    per rad; nu forberaknas (row, bolag, datum-eller-None) EN gang per payload.
+    None-fallan: en rad utan tolkbar tidsstampel far day=None och MASTE
+    exkluderas FORE fonster-jamforelsen - 'view_period_start <= None' ar
+    TypeError. Detta test har outbound-rader med giltig / tom / utanfor-fonstret
+    tidsstampel och kraver att de tva sistnamnda ar osynliga, exakt som den gamla
+    _is_in_date_window-scannen. Den befintliga golden (ovan) saknar outbound-
+    rader och exercerade darfor aldrig denna vag.
+    """
+    valid_pick = outbound_pick("op1", "SO100", "PLOCK", 5, timestamp="2026-06-01T11:00:00")
+    empty_pick = outbound_pick("op2", "SO101", "PLOCK", 7, timestamp="")
+    outside_pick = outbound_pick("op3", "SO102", "PLOCK", 9, timestamp="2026-05-01T11:00:00")
+    valid_disp = dispatch("od1", timestamp="2026-06-01T12:00:00")
+    empty_disp = dispatch("od2", timestamp="")
+    outside_disp = dispatch("od3", timestamp="2026-05-01T12:00:00")
+
+    # Tom tidsstampel far inte krascha bygget (None-fallan), och edge-raderna
+    # ska vara osynliga -> hela payloaden identisk med bara-giltiga-rader-bygget.
+    full = build(
+        {
+            "pick": [valid_pick, empty_pick, outside_pick],
+            "dispatch": [valid_disp, empty_disp, outside_disp],
+        }
+    )
+    valid_only = build({"pick": [valid_pick], "dispatch": [valid_disp]})
+
+    assert full["summary"] == valid_only["summary"]
+    assert full["nodes"] == valid_only["nodes"]
+    assert full["links"] == valid_only["links"]
+    assert full["client_filters"]["views"] == valid_only["client_filters"]["views"]
+
+
 def test_client_filter_views_include_company_and_day_variants():
     payload = build_sankey_inbound_payload(
         source_rows={

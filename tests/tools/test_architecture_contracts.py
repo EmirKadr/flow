@@ -131,6 +131,212 @@ def test_container_start_command_keeps_single_worker():
         )
 
 
+# --- DEPLOY.md: runbooken man läser precis innan man rör --workers -----------
+#
+# Den gamla varianten av det här kontraktet var guardrail-teater: den klippte
+# sektionen med split("## Leveransoptimering")[1] (= allt till filslutet, inte
+# bara worker-avsnittet) och asserterade bara på TOKENNÄRVARO. Ett DEPLOY.md som
+# påstod raka motsatsen passerade, så länge orden fanns någonstans. Testerna
+# nedan binder i stället dokumentets PÅSTÅENDEN mot koden de beskriver.
+
+
+def _deploy_text() -> str:
+    return (ROOT / "DEPLOY.md").read_text(encoding="utf-8")
+
+
+def _deploy_section(heading: str) -> str:
+    """Sektionen från `heading` fram till NÄSTA '## '-rubrik (inte filslutet)."""
+    deploy = _deploy_text()
+    assert heading in deploy, f"DEPLOY.md saknar rubriken {heading!r}"
+    after = deploy.split(heading, 1)[1]
+    end = after.find("\n## ")
+    return after if end == -1 else after[:end]
+
+
+def _worker_section() -> str:
+    return _deploy_section("## Leveransoptimering")
+
+
+def _call_name(call: ast.Call) -> str | None:
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    return None
+
+
+def _covered_range_calls_are_all_guarded() -> bool:
+    """Ligger VARJE covered_range()-anrop i sankey_inbound/fetch.py inuti ett
+    try-block? Med >1 worker kastar anropet duckdb.IOException medan ledaren
+    skriver; ett oskyddat anrop = hård 500 på hela Sankey-rapporten."""
+    tree = ast.parse(
+        (BACKEND / "sankey_inbound" / "fetch.py").read_text(encoding="utf-8"),
+        filename="fetch.py",
+    )
+    guarded: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        for stmt in node.body:
+            for inner in ast.walk(stmt):
+                if isinstance(inner, ast.Call) and _call_name(inner) == "covered_range":
+                    guarded.add(id(inner))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_name(node) == "covered_range"
+    ]
+    assert calls, (
+        "covered_range() anropas inte längre i sankey_inbound/fetch.py. Koden har "
+        "ändrats - uppdatera det här kontraktet OCH worker-avsnittet i DEPLOY.md."
+    )
+    return all(id(call) in guarded for call in calls)
+
+
+# Processlokalt tillstånd som var för sig blockerar `uvicorn --workers > 1`.
+# (doc-token som måste stå i DEPLOY.md, källfil, symbol som bevisar att den lever)
+WORKER_BLOCKERS = (
+    ("local_archive_store", BACKEND / "local_archive_store.py", "_LOCKS"),
+    ("_RATE_HITS", BACKEND / "routers" / "meta_uploads_helpers.py", "_RATE_HITS"),
+    ("_STATUS", BACKEND / "background.py", "_STATUS"),
+)
+
+
+def test_deploy_worker_section_lists_every_process_local_blocker():
+    """Varje processlokalt tillstånd som hindrar --workers ska stå i runbooken.
+    Symbolkollen mot koden gör listan självstädande: försvinner blockeraren ur
+    koden failar testet och tvingar fram en uppdatering av BÅDE listan och
+    DEPLOY.md - i stället för att tyst skydda ett inaktuellt påstående."""
+    section = _worker_section()
+    for token, source, symbol in WORKER_BLOCKERS:
+        assert symbol in source.read_text(encoding="utf-8"), (
+            f"{source.name}: symbolen {symbol} finns inte längre. Är blockeraren "
+            "åtgärdad? Ta då bort den ur WORKER_BLOCKERS och ur DEPLOY.md:s "
+            "worker-avsnitt i samma ändring."
+        )
+        assert token in section, (
+            "DEPLOY.md:s worker-avsnitt måste namnge ALLA processlokala blockerare "
+            f"innan någon höjer --workers. Saknar: {token} (från {source.name})."
+        )
+    for token in ("ARCHIVE_CACHE_ENABLED", "test_container_start_command_keeps_single_worker"):
+        assert token in section, f"Worker-avsnittet saknar {token}."
+
+
+def test_deploy_worker_section_does_not_claim_a_single_blocker():
+    """Exklusivitetspåståenden ("den kvarvarande blockeraren") är precis felet:
+    de får läsaren att tro att en fix räcker. Det finns minst tre."""
+    section = _worker_section()
+    for phrase in (
+        "enda blockeraren",
+        "den enda blockeraren",
+        "kvarvarande blockeraren",
+        "enda kvarvarande",
+    ):
+        assert phrase not in section, (
+            f"DEPLOY.md utnämner igen EN blockerare för --workers ({phrase!r}). "
+            "Minst tre processlokala tillstånd blockerar: "
+            + ", ".join(token for token, _s, _y in WORKER_BLOCKERS)
+        )
+
+
+def test_deploy_worker_section_matches_the_guarding_of_covered_range():
+    """Tvåvägsbind mot koden. Så länge fetch.py anropar covered_range() UTAN
+    try/except måste runbooken säga att en icke-ledar-worker får en hård 500 på
+    Sankey - inte att felet sväljs och faller tillbaka. Skyddas anropet någon
+    gång ska dokumentet uppdateras i samma ändring; då failar testet åt andra
+    hållet i stället."""
+    section = _worker_section()
+    if _covered_range_calls_are_all_guarded():
+        assert "utan `try/except`" not in section, (
+            "covered_range() är numera skyddat i fetch.py, men DEPLOY.md påstår "
+            "fortfarande att det är oskyddat. Uppdatera worker-avsnittet."
+        )
+        return
+    assert "covered_range" in section, (
+        "fetch.py anropar covered_range() utan try/except - det ger en hård 500 på "
+        "Sankey-rapporten med >1 worker. Runbooken MÅSTE namnge anropet."
+    )
+    assert "utan `try/except`" in section, (
+        "Worker-avsnittet måste säga att covered_range() anropas UTAN try/except."
+    )
+    assert "500" in section, (
+        "Worker-avsnittet måste säga att följden är en hård 500, inte en fallback."
+    )
+    for lie in ("sväljer felet", "svaljer felet"):
+        assert lie not in section, (
+            f"DEPLOY.md påstår igen att läsvägarna {lie!r} och faller tillbaka. "
+            "Det oskyddade covered_range()-anropet i sankey_inbound/fetch.py gör att "
+            "Sankey-rapporten svarar 500 - det är en högljudd failning på huvudvägen."
+        )
+
+
+def test_deploy_worker_section_does_not_prescribe_the_disproven_read_only_fix():
+    """"En skrivare - ledaren - och read_only för alla andra" är motbevisat av
+    tests/services/test_local_archive_store.py::test_duckdb_file_lock_blocks_a_second_process:
+    medan ledaren skriver kan en annan process inte ens ÖPPNA filen read_only.
+    Dessutom öppnar alla läsvägar i local_archive_store redan read_only=True, så
+    "fixen" är redan gjord. Nämner runbooken read_only måste den säga att det
+    inte räcker, och peka ut den åtgärd som faktiskt håller."""
+    section = _worker_section()
+    if "read_only" in section:
+        assert "INTE fixen" in section, (
+            "DEPLOY.md föreskriver read_only som åtgärd för DuckDB-blockeraren. "
+            "Läsvägarna är redan read_only=True, och "
+            "test_duckdb_file_lock_blocks_a_second_process visar att en read_only-"
+            "öppning ändå kastar IOException medan ledaren skriver."
+        )
+        assert "test_duckdb_file_lock_blocks_a_second_process" in section, (
+            "Nämner runbooken read_only ska den citera testet som motbevisar det."
+        )
+    assert "os.replace" in section, (
+        "Worker-avsnittet måste namnge den åtgärd som faktiskt håller (atomisk "
+        "os.replace()-snapshot eller processöverskridande lagring)."
+    )
+
+
+def _deploy_probe_config() -> dict:
+    """Probe-blocket som DEPLOY.md ber läsaren kopiera."""
+    import yaml
+
+    section = _deploy_section("## 7. Healthcheck och probes")
+    blocks = re.findall(r"```yaml\n(.*?)```", section, re.DOTALL)
+    assert blocks, "Avsnitt 7 i DEPLOY.md saknar ett yaml-block med probes."
+    return yaml.safe_load(blocks[0])
+
+
+def test_deploy_doc_prescribes_the_probe_config_that_prepush_accepts():
+    """DEPLOY.md är filen man kopierar probe-konfigen ur. Föreskriver den ett
+    initialDelaySeconds-golv på readiness ber runbooken läsaren göra exakt det
+    som tests/tools/test_gap_k8s_contracts.py::test_readiness_has_no_initial_delay_floor
+    underkänner i pre-push."""
+    probes = _deploy_probe_config()
+    assert "startupProbe" in probes, (
+        "DEPLOY.md måste föreskriva en startupProbe - utan den är readinessProbens "
+        "initialDelaySeconds enda startgrinden (test_startup_probe_exists_and_is_patient)."
+    )
+    readiness = probes.get("readinessProbe") or {}
+    assert "initialDelaySeconds" not in readiness, (
+        "DEPLOY.md föreskriver readinessProbe.initialDelaySeconds="
+        f"{readiness.get('initialDelaySeconds')!r}. startupProbe är startgrinden; "
+        "ett golv här är ren nedtid vid varje deploy och underkänns av "
+        "test_readiness_has_no_initial_delay_floor."
+    )
+    startup = probes["startupProbe"]
+    budget = startup.get("periodSeconds", 10) * startup.get("failureThreshold", 3)
+    assert budget >= 180, (
+        f"DEPLOY.md:s startupProbe-budget är {budget}s < 180s - snålare än "
+        "manifesten och test_startup_probe_exists_and_is_patient."
+    )
+    for name in ("startupProbe", "livenessProbe", "readinessProbe"):
+        assert (probes.get(name) or {}).get("timeoutSeconds") == 5, (
+            f"DEPLOY.md:s {name} saknar timeoutSeconds: 5. Default 1s räcker inte "
+            "vid CFS-strypning (test_all_probes_keep_generous_timeout)."
+        )
+    assert "initialDelaySeconds: 15" not in _deploy_text(), (
+        "DEPLOY.md föreskriver fortfarande det gamla readiness-golvet på 15s."
+    )
+
+
 # --- Domängränser -----------------------------------------------------------
 
 # Delad grund som alla domäner får importera.

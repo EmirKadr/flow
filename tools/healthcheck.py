@@ -5,6 +5,13 @@ Examples:
   python -m tools.healthcheck report --local --skip-db
   python -m tools.healthcheck waits --local --period 24h
   python -m tools.healthcheck report --base-url https://stigamo.nu --username admin --password ***
+  python -m tools.healthcheck duckdb --local
+  python -m tools.healthcheck duckdb --base-url https://flow-development.nowastelogistics.com --username admin --password ***
+
+`duckdb` ar matpunkten for optimeringskandidat #08: den visar vilka defaults DuckDB
+faktiskt valde (threads/memory_limit) och jamfor dem med poddens cgroup-limits.
+Utan --local hamtas siffrorna ur den KORANDE poddens `GET /api/healthcheck`, vilket
+ar det enda sattet att lasa dem utan kubectl-atkomst.
 """
 from __future__ import annotations
 
@@ -95,6 +102,49 @@ def local_waits(args: argparse.Namespace) -> dict[str, Any]:
         db.close()
 
 
+def local_duckdb(_args: argparse.Namespace) -> dict[str, Any]:
+    from app.backend.duckdb_diagnostics import duckdb_diagnostics
+
+    return duckdb_diagnostics()
+
+
+def remote_duckdb(args: argparse.Namespace) -> dict[str, Any]:
+    """Poddens DuckDB-defaults via den befintliga Super User-healthchecken (ingen kubectl behovs)."""
+    report = get_remote(args, "/api/healthcheck")
+    duckdb = report.get("duckdb")
+    if not isinstance(duckdb, dict) or not duckdb:
+        raise SystemExit(
+            "Svaret saknar duckdb-blocket. Kor miljon en version som har matpunkten? "
+            "(GET /api/healthcheck ska ha ett 'duckdb'-falt.)"
+        )
+    return duckdb
+
+
+def print_duckdb(report: dict[str, Any]) -> None:
+    settings = report.get("settings") or {}
+    cgroup = report.get("cgroup") or {}
+    host = report.get("host") or {}
+    print(f"DuckDB-version: {report.get('version') or '-'}")
+    print(f"Kalla: {report.get('source') or '-'}")
+    print("\nInstallningar (current_setting)")
+    for name in ("threads", "memory_limit", "external_threads", "temp_directory"):
+        if name in settings:
+            print(f"- {name:16} {settings.get(name)}")
+    print("\nPoddens/maskinens verklighet")
+    print(f"- cgroup          {cgroup.get('version') or 'ingen hittad'}")
+    print(f"- cpu_limit       {cgroup.get('cpu_limit_cores') if cgroup.get('cpu_limit_cores') is not None else '-'} karnor")
+    memory_limit = cgroup.get("memory_limit_bytes")
+    print(f"- memory_limit    {round(memory_limit / 1024**3, 2) if memory_limit else '-'} GiB")
+    print(f"- nodens karnor   {host.get('cpu_count')} (affinity: {host.get('affinity_cpus')})")
+    total = host.get("memory_total_bytes")
+    print(f"- nodens RAM      {round(total / 1024**3, 1) if total else '-'} GiB")
+    print("\nBedomning")
+    for item in report.get("verdicts") or []:
+        print(f"- {str(item.get('status') or '-').upper():7} {item.get('message', '-')}")
+    if report.get("error"):
+        print(f"\nFel: {report['error']}")
+
+
 def print_report(report: dict[str, Any]) -> None:
     print(f"Status: {str(report.get('status') or '-').upper()}")
     database = report.get("database") or {}
@@ -122,7 +172,7 @@ def print_waits(summary: dict[str, Any]) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("report", "waits"), nargs="?", default="report")
+    parser.add_argument("command", choices=("report", "waits", "duckdb"), nargs="?", default="report")
     parser.add_argument("--local", action="store_true", help="Kor mot lokal databas direkt.")
     parser.add_argument("--base-url", help="Remote flow-bas-URL, t.ex. https://stigamo.nu.")
     parser.add_argument("--cookie-jar", type=Path, default=DEFAULT_COOKIE_JAR)
@@ -140,9 +190,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        # Windows-konsolen ar cp1252: annars blir a/a/o i bedomningstexterna sopor.
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except Exception:
+        pass
     args = parse_args(argv)
     if args.local:
-        payload = local_waits(args) if args.command == "waits" else local_report(args)
+        if args.command == "waits":
+            payload = local_waits(args)
+        elif args.command == "duckdb":
+            payload = local_duckdb(args)
+        else:
+            payload = local_report(args)
     elif args.command == "waits":
         payload = get_remote(args, "/api/healthcheck/wait-metrics/summary", {
             "period": args.period,
@@ -150,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             "user_id": args.user_id,
             "q": args.query,
         })
+    elif args.command == "duckdb":
+        payload = remote_duckdb(args)
     else:
         payload = get_remote(args, "/api/healthcheck")
 
@@ -157,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     elif args.command == "waits":
         print_waits(payload)
+    elif args.command == "duckdb":
+        print_duckdb(payload)
     else:
         print_report(payload)
     return 0

@@ -212,6 +212,29 @@ diagnostikrapport:
   `mestergruppen` mot development-länken) pekar på att den tenanten
   saknas/är feldeployad i just det nätet, inte ett generellt länk-problem.
 
+## ASK-tenants (13 st) — bara 3 används av Flow
+
+ASK-plattformen har 13 tenants. **Att en tenant finns betyder inte att Flow
+använder den** — appen mappar bara tre bolag till tenant (se
+[businesses.md](businesses.md)). Övriga finns i ASK men har ingen verksamhet i
+Flow.
+
+| Tenant | Används av Flow | Kommentar |
+| --- | --- | --- |
+| `frey` | Ja — bolag `STIGAMO` (och `MG`) | Default-tenant för Meta-analys (`META_ANALYSIS_DATA_SOURCE_TENANT`). |
+| `loki` | Ja — bolag `R3` | |
+| `itworks` | Ja — bolag `T3` | |
+| `aegir` | Nej | |
+| `atria` | Nej | |
+| `bragi` | Nej | |
+| `everfresh` | Nej | |
+| `idun` | Nej | |
+| `mi17` | Nej | |
+| `njord` | Nej | |
+| `tpnas` | Nej | |
+| `trademax` | Nej | |
+| `mestergruppen` | Nej — **avvecklad** | Finns inte längre som egen tenant. Mestergruppen är numera ett bolag (`MG`) inuti `frey`. Förklarar 0/32 i diagnostiken 2026-07-10. |
+
 Praktisk konsekvens: kör alltid diagnostiken **från den nätverksplacering som
 matchar länken man vill testa** (företagsnät för den publika gatewayen,
 en development-pod för development-länken, en prod-pod för prod-länken).

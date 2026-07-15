@@ -1,8 +1,11 @@
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.backend import duckdb_diagnostics as diag
+from app.backend.config import settings as app_settings
 from app.backend.database import Base
-from app.backend.healthcheck_service import clean_text, run_healthcheck
+from app.backend.healthcheck_service import DUCKDB_CHECK_NAME, clean_text, run_healthcheck
 from app.backend.models import Business, User, UserWaitMetric
 from app.backend.routers import healthcheck
 from app.backend.schemas import WaitMetricBatchIn, WaitMetricIn
@@ -15,7 +18,29 @@ def make_session():
     return engine, SessionLocal()
 
 
-def test_healthcheck_reports_sqlite_database():
+@pytest.fixture
+def pod_shaped_duckdb(monkeypatch):
+    """Poddens verklighet, inte utvecklarmaskinens: arkivcachen PÅ och DuckDB läser
+    VÄRDENS defaults (64 trådar / 204.8 GiB) trots cgroup 0,3 kärnor / 1 GiB.
+
+    Utan den här fixturen är ett friskt ``status`` bara ett artefakt av att
+    utvecklarmaskinen saknar cgroup-limits: DuckDB-mätpunktens verdicts blir "ok"/"info"
+    här men "warn" i varje limitad container. Med fixturen mäter testet det som faktiskt
+    ska hålla - att mätpunkten aldrig eskalerar healthcheckens globala status.
+    """
+    monkeypatch.setattr(app_settings, "ARCHIVE_CACHE_ENABLED", True)
+    monkeypatch.setattr(
+        diag, "cgroup_limits", lambda: {"version": "v2", "cpu_limit_cores": 0.3, "memory_limit_bytes": 1024**3}
+    )
+    monkeypatch.setattr(
+        diag, "host_facts", lambda: {"cpu_count": 64, "affinity_cpus": 64, "memory_total_bytes": 256 * 1024**3}
+    )
+    monkeypatch.setattr(
+        diag, "duckdb_settings", lambda: {"version": "1.5.4", "settings": {"threads": 64, "memory_limit": "204.8 GiB"}}
+    )
+
+
+def test_healthcheck_reports_sqlite_database(pod_shaped_duckdb):
     engine, db = make_session()
     try:
         report = run_healthcheck(db=db)
@@ -24,7 +49,12 @@ def test_healthcheck_reports_sqlite_database():
         Base.metadata.drop_all(engine)
         engine.dispose()
 
-    assert report["status"] in {"ok", "info"}
+    # Grön även i poddfallet: DuckDB-mätpunkten är information och får inte lyfta
+    # rapportens status (se tests/services/test_duckdb_diagnostics.py för guardrailen).
+    assert report["status"] in {"ok", "info"}, [
+        (item["name"], item["status"]) for item in report["checks"] if item["status"] not in {"ok", "info"}
+    ]
+    assert any(item["name"] == DUCKDB_CHECK_NAME for item in report["checks"])
     assert report["database"]["connected"] is True
     assert report["database"]["dialect"] == "sqlite"
     assert any(item["name"] == "Databas" for item in report["checks"])

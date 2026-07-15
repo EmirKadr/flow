@@ -188,6 +188,13 @@ class Settings(BaseSettings):
     OTEL_REQUEST_LOG_ENABLED: bool = False
     OTEL_SQLALCHEMY_ENABLED: bool = True
     OTEL_CONSOLE_EXPORTER: bool = False
+    # Mätpunkt (inte en optimering): loggar hur många bytes de SSE-levererade
+    # slutpayloaderna (Sankey - Inbound, Produktivitetsöversikt) faktiskt är, rått
+    # och gzip-6-komprimerat. text/event-stream undantas från GZipMiddleware, så de
+    # payloaderna har aldrig mätts. Kostar en extra json.dumps + gzip per byggd
+    # rapport (rapportbygget tar sekunder, mätningen millisekunder). Sätt false för
+    # att stänga av helt.
+    PAYLOAD_SIZE_LOGGING_ENABLED: bool = True
     ALLOCATION_OBSERVATIONS_STARTUP_SYNC: bool = False
     ALLOCATION_OBSERVATIONS_STARTUP_DELAY_SECONDS: float = 180.0
     ALLOCATION_OBSERVATIONS_STARTUP_SPACING_SECONDS: float = 30.0

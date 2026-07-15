@@ -1,11 +1,112 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-14
+updated: 2026-07-15
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-14] lint | Render-referenser sanerade i APP_MIGRATION_PLAN.md
+
+`APP_MIGRATION_PLAN.md` anvande fortfarande "Render" som synonym for Flows
+centrala backend pa fem stallen (API-proxy, health check, produktivitetsloggar,
+memory-spikar, stopplistan) plus "samma PostgreSQL" i principavsnittet. Efter
+k8s/MSSQL-migreringen ar det direkt felaktiga instruktioner — en agent som foljde
+dem skulle peka desktop-appens proxy mot fel drift. Ersatta med "den centrala
+servern (k8s, `SERVER_BASE_URL`)" respektive MSSQL.
+
+Sjalva planen (lokalt appskal, API-proxy, paritetstest webb/desktop) ar fortfarande
+giltig och behalls — det var bara namngivningen som var stale.
+
+Viktig disambiguering tillagd i [architecture.md](architecture.md): Emir kor
+fortfarande Render som **levande drift, men for ett separat fristaende projekt**.
+Render i det har repot syftar alltid pa den gamla, avvecklade Flow-driften.
+`DEPLOY.md` granskades och lamnades orord — den ar redan helt k8s/MSSQL-skriven
+och dess enda Render-omnamnande ar en avsiktlig historiknot.
+
+## [2026-07-14] query | Optimeringsplanen verifierad: 20 bekraftade, 17 osakra, 15 avfardade
+
+Korde den adversariella verifieringsvagen som tidigare foll pa sessionsgransen: **52
+skeptiker, en per kandidat**, var och en med uppdraget att FORSOKA AVFARDA sin kandidat.
+Utfall: 20 bekraftade, 17 osakra, 15 avfardade — nastan 30 % dodades.
+[optimeringsplan.md](optimeringsplan.md) ar omskriven till den verifierade listan.
+
+Tre larddomar som andrar hur vi ska jobba:
+
+1. **Svepagenternas siffror holl inte.** Nastan varje uppmatt vinst skrevs ned av
+   granskaren, flera var fabricerade. "Mat, gissa inte" galler aven vara egna kandidater.
+2. **Gzip-9 doljer orjson.** orjson AVFARDADES: dess vinst (~5,8 ms) drunknar i att
+   `compresslevel=9` kostar ~40 ms pa SAMMA event-loop. Fixa gzip forst, mat om, utvardera
+   orjson darefter.
+3. **`readinessProbe.initialDelaySeconds: 15` ater upp ALLA uppstartsvinster.** prestart,
+   openpyxl-import och compileall ar var for sig verkliga men ger 0 s anvandarsynlig vinst
+   sa lange proben har ett 15-sekundersgolv. startupProbe ar forkrav for att de tre ska
+   vara vart nagot.
+
+Uppmatta vinster redo att byggas: `fifo_for_art` 1,63 s -> 0,02-0,20 s (hela allocate
+6,6 -> 5,1 s); HIB-koppling 3,3 s -> under 0,5 s; allokeringens groupby/iterrows 0,4-0,55 s;
+KPI-predikatet -23 % CPU. Alla fyra i berakningsmotorerna, alla skyddade av
+golden-karakterisering.
+
+Notabla avfardanden: Sankey-SSE-avbrytningen ar ingen prestandafix (backend avbryts inte
+av client disconnect) utan en korrekthetsbugg; Meta drar inte "hela LLM-rasvaret" (det ar
+~0,3 kB/rad); index pa `meta_shipment_observations` ar mätbart 0 (30 dagars retention
+bindar tabellen).
+
+## [2026-07-14] query | Optimeringsplan: 52 nya kandidater + 49 omvarldstekniker
+
+Uppfoljning pa taxonomin: Emir bad om en genomlysning av hela appen for att hitta
+liknande optimeringar pa andra stallen, plus omvarldsbevakning av vad andra appar
+gor. Kort med 10 kodsvep (SQL/rundresor, pandas/compute, async-blocking, frontend,
+leverans, minne/OOM, manuella steg, tak/konfig, CI, uppstart) och 5 researchagenter
+(backend, frontend, data, infra, LLM). Resultat i ny [optimeringsplan.md](optimeringsplan.md).
+
+**VIKTIGT:** den adversariella verifieringsvagen (28 skeptiker) kordes aldrig -
+sessionsgransen slog till. Planen ar darfor en **overifierad arbetslista**, inte
+bekraftade fynd. Poster med uppmatta siffror ar dock matta mot riktig kod.
+
+Tyngsta fynden: (1) **DuckDB oppnas med vardens defaults** - threads = nodens karnor,
+memory_limit ~80 % av nodens RAM - i en 300m/1Gi-podd. Exakt samma feltyp som
+ffmpeg-incidenten. (2) **Arkiv-cachens lasvag ar obunden** - `SELECT *` utan LIMIT nar
+datumfilter saknas, dvs. samma OOM-vag som redan dodat podden. (3) **Hamta data-exporten
+har inget radtak alls** (`max_rows=None` hoppar over clampningen) - wikin pastod
+felaktigt att radtak fanns. (4) **SSE-strommarna komprimeras aldrig** - appens tva
+storsta JSON-svar gzippas inte (705 KiB -> 93 KiB outnyttjat). (5) **GZip kor pa
+compresslevel=9** pa event-loopen: uppmatt 124 ms -> 36 ms vid ett radbyte till 6.
+(6) **DEPLOY.md:293-299 ar fel** - DuckDB:s single-writer-fillas, inte trace-cachen, ar
+den faktiska blockeraren for fler workers; dokumentationen doljer en korruptionsrisk.
+
+Planen innehaller ocksa en **avfardad-lista med belagg** (Redis, CDN, Early Hints,
+modulepreload, Polars, PodDisruptionBudget, Gemini context caching, uvloop - redan pa,
+content-visibility pa tabeller - fungerar inte). Den ar lika viktig som atgardslistan.
+
+## [2026-07-14] query | Taxonomi over vara effektiviseringar: missar och losningar
+
+Emir bad om en genomlysning av alla andringar som sparat tid och effektiviserat
+appen, med fragan vilken *typ* av optimeringar det ar, vilken *typ* av missar vi
+gjort och vilken *typ* av losningar vi hittat. Kartlagt med 15 parallella lasare
+over wiki, hela git-historiken, incidenter, guardrails, UX-floden, verktyg, CI,
+desktop, LLM-lagret, migrationer och koden: **476 belagda poster, 86 med uppmatt
+vinst**, klassade pa feltyp och losningstyp.
+
+Slutsatserna ligger i nya [effektivisering-taxonomi.md](effektivisering-taxonomi.md):
+nastan allt ar *placeringsoptimering* (ratt arbete pa fel lager/tidpunkt/
+granularitet/frekvens) plus en underskattad femte klass - att inte gora arbetet
+alls. Vanligaste feltyp: manuellt steg (89), omrakning (81), konfig-antagande (49),
+fel lager (48), inget tak (39), ingen matning (27). Vanligaste losningstyp ar inte
+en optimering utan **guardrail (63 av 476)**. Farligast ar konfig-antagandena - det
+ar den enda klassen som gav skarpa produktionsincidenter, och varje fall var ett
+arvt standardvarde som var ratt i dokumentationen och fel i var cgroup/podd/gateway.
+
+Oppna luckor noterade: CI cachar varken pip, npm eller Playwright-browsers;
+Excel-exporterna bygger hela arbetsboken i minnet (latent B2 givet var OOM-historik);
+och `wiki/test-strategi.md` ar en orphan utan index-/loggpost.
+
+Sidofynd: `migrate_postgres_to_mssql.py` har DB-losenord i klartext. Verifierat att
+filen ar gitignorerad (`.gitignore:85`) och **aldrig** legat i git-historiken, sa
+hemligheten har inte lackt till repot. Kvarvarande risk: klartext pa disk i en
+OneDrive-synkad mapp. Render-losenordet ar dott; Azure-losenordet bor roteras.
 
 ## [2026-07-14] fix | Backendspärr mot Meta-transkodning fran gamla flikar
 
@@ -3168,3 +3269,38 @@ en worktree per agent; forks förkastade (EmirKadr/flow är prod-infra för
 desktop-updatern). Fyra faser: flytt, provisioneringsskript, AGENTS.md-regler,
 strukturella spärrar (branch protection på main, wiki/log.md merge=union).
 Index uppdaterat.
+
+## [2026-07-14] ingest | ASK-tenants: alla 13 listade, mestergruppen avvecklad
+
+Källa: `ask-diagnostik-DATA_SOURCE_API_BASE_URL2-2026-07-10.html`. De 13 ASK-tenants
+namnges nu i `ask-datalagring.md` (aegir, atria, bragi, everfresh, frey, idun,
+itworks, loki, mestergruppen, mi17, njord, tpnas, trademax) med kolumn för om
+Flow använder dem — bara `frey` (STIGAMO/MG), `loki` (R3) och `itworks` (T3) gör det.
+Att en tenant finns i ASK betyder alltså inte att den är aktiv i appen.
+Mestergruppen är avvecklad som egen tenant och är numera bolaget `MG` inuti `frey`
+— det förklarar 0/32 OK i diagnostiken 2026-07-10.
+Sidor: `ask-datalagring.md`, `businesses.md`.
+
+## [2026-07-15] optimering | Optimeringsplanens steg 0-5 byggda och matta
+
+Steg 0-5 ur `optimeringsplan.md` genomforda med sekventiellt bygge + oberoende
+eftermatning + adversariell granskning (mutationstestade guardrails).
+
+Steg 1-motorerna ar bit-identiska (golden oforandrade, KPI-utdatan sha256-
+identisk) med granskade eftermatningar: HIB-flodet 2,07 s -> 0,43 s (-79 %),
+`calculate_refill` 1,49 s -> 0,55 s (-63 %), `score_kpi_events` -26 %
+(`_canonical_header` 4,2M -> 0 anrop), `fifo_for_art` borta ur profilen,
+allokeringsflodet kallt -19 %. Aven #52 payloadmatning (`api_benchmark` +
+`payload_budgets.json` + pre-push-kontrakt), #02 gzip `compresslevel=6`,
+#31 `startupProbe` (budget 180 s). Steg 4 mater #08/#46/#28 utan att fixa dem;
+DuckDB-defaults exponeras som ren *information* i healthchecken (far inte lyfta
+global status). Steg 5 rattade `DEPLOY.md`: verklig worker-blockerare ar DuckDB-
+arkivcachens single-writer-fillas, inte trace-cachen.
+
+En adversariell granskning underkande tva blockerare (en matpunkt som flippade
+healthcheckens globala status; `DEPLOY.md` som pastod fel at det lugnande hallet)
+och ett dussin guardrails som passerade aven nar fixen backades - alla atgardade.
+Lardom inford som E5 i `prestanda-optimeringar.md`: mutationstesta guardrailen,
+annars ar den teater. Annu inte commitat/pushat.
+
+Sidor: `optimeringsplan.md`, `prestanda-optimeringar.md`, `prestanda-leveranslager.md`.
