@@ -316,7 +316,15 @@ async def api_get_etag(request: Request, call_next):
 # Läggs till sist = ytterst i middleware-kedjan: komprimerar både API-JSON och
 # statiska JS/CSS-svar (60-80 % mindre payload). Starlette undantar
 # text/event-stream automatiskt, så SSE-progressströmmarna påverkas inte.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+#
+# compresslevel=6 sätts EXPLICIT: Starlettes default är 9, den dyraste
+# zlib-nivån, och GZipResponder komprimerar synkront i ASGI-send-vägen — alltså
+# på event-loopen i vår enda uvicorn-worker. Nivå 9 kostar 3-4x CPU mot nivå 6
+# för nästan identisk storlek. Nivån är ren transportkodning: gzip-strömmen är
+# självbeskrivande och ETag hashas på den OKOMPRIMERADE bodyn (api_get_etag
+# ligger innanför denna middleware), så bytet är beteendebevarande.
+# Kontraktstest: tests/services/test_http_delivery.py.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 
 @app.get("/api/health")

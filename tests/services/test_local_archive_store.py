@@ -1,3 +1,6 @@
+import subprocess
+import sys
+import textwrap
 from datetime import date, timedelta
 
 import pytest
@@ -190,3 +193,29 @@ def test_query_applies_terms_and_ne_operators(enabled_store):
 
     ne = store.query_rows(TENANT, VIEW, [window, {"id": "company", "operator": "NE", "value": "MG"}])
     assert {row["order_num"] for row in ne} == {"A1", "A3"}
+
+
+def test_duckdb_file_lock_blocks_a_second_process(tmp_path):
+    """_LOCKS är PROCESSLOKALT. Medan en skrivare håller filen kan en annan
+    process inte ens öppna den read_only — den får duckdb.IOException. Det är
+    blockeraren för `uvicorn --workers > 1` (se DEPLOY.md, avsnitt
+    'Leveransoptimering och workers'). Går detta test rött har DuckDB bytt
+    semantik och DEPLOY.md måste omprövas."""
+    pytest.importorskip("duckdb")
+    path = tmp_path / "t.duckdb"
+    child = textwrap.dedent(
+        f'''
+        import duckdb
+        try:
+            duckdb.connect(r"{path}", read_only=True).close()
+            print("OPENED")
+        except duckdb.IOException:
+            print("LOCKED")
+        '''
+    )
+    with store._connection(path, read_only=False) as con:
+        con.execute("CREATE TABLE t(a VARCHAR)")
+        result = subprocess.run(
+            [sys.executable, "-c", child], capture_output=True, text=True, timeout=60
+        )
+    assert result.stdout.strip() == "LOCKED", result.stdout + result.stderr

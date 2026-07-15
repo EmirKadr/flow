@@ -1,0 +1,12 @@
+{
+  "_kommentar": "Payloadbudget per endpoint (max DEKOMPRIMERADE bytes) för tools/api_benchmark --payload-budget. Motsvarar latency_budgets.json men för leveranslagret: fångar en payload som svällt och en komprimering som slutat fungera.",
+  "_okalibrerad": "null = nyckeln finns, taket är INTE satt än. Payloadstorlek har aldrig mätts mot en riktig miljö (mätningen infördes i samma ändring som den här filen), och ett påhittat tak vore falsk trygghet, inte en budget. Kör benchmarken mot dev med --payload-budget: verktyget skriver ut ett föreslaget tak (1,8x uppmätt median, samma marginalmetod som latency_budgets.json) att fylla i här. Även med null-tak kontrolleras att svaret kom fram och att det fortfarande levereras gzip-komprimerat.",
+  "_galler_inte_sse": "SSE/strömmade svar (produktivitetsöversikt, sankey) ingår inte i DEFAULT_ENDPOINTS och saknar Content-Length (chunked). Den här budgeten säger ingenting om dem.",
+  "_pre_push": "Det byte-tak som faktiskt körs vid varje push ligger i tests/tools/test_gap_payload_budget.py (TestClient, ingen miljö behövs). Den här filen är komplementet som körs manuellt mot riktig datamängd.",
+  "/api/areas": null,
+  "/api/activities": null,
+  "/api/persons": null,
+  "/api/schedule?year=2026&week=27&weekday=5": null,
+  "/api/schedule/summary?year=2026&week=27&weekday=5": null,
+  "/api/overview?year=2026&week=27": null
+}

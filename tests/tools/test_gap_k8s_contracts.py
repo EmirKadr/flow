@@ -267,3 +267,252 @@ def test_flow_manifest_placeholders_are_declared_octopus_variables():
         "namnet i OCTOPUS_PROJECT_VARIABLES, eller hårdkoda värdet om det "
         "inte är hemligt."
     )
+
+
+# --------------------------------------------------------------------------- #
+# (d) probe-kontrakt: startupProbe är startgrinden                             #
+# --------------------------------------------------------------------------- #
+# Före startupProbe var den EFFEKTIVA startbudgeten livenessProbens:
+# initialDelay 30 + periodSeconds 30 × failureThreshold 3 (default) = ca 120 s.
+# En startupProbe tar över den rollen helt (kubelet håller tillbaka liveness
+# OCH readiness tills den passerat), så dess budget får ALDRIG vara snålare —
+# då blir kall Azure SQL / förstagångs-create_all / tung alembic-migration
+# CrashLoopBackOff och havererad release i stället för en långsam start.
+MIN_STARTUP_BUDGET_SECONDS = 180
+
+# readinessProbe före ändringen: periodSeconds 10 × failureThreshold 6 = 60 s
+# innan en levande-men-CFS-strypt podd tas ur Service-endpointen. Med
+# replicas: 1 betyder NotReady noll endpoints = 503 för ALLA användare. När
+# periodSeconds sänks för snabbare deploy MÅSTE failureThreshold höjas i takt.
+MIN_READINESS_FAILURE_TOLERANCE_SECONDS = 60
+
+# CFS-strypning vid cpu-limit 300m (ffmpeg i meta-analysen) gör default 1 s för
+# snålt — härdningen från 2026-07 får inte rullas tillbaka av en probe-tweak.
+REQUIRED_PROBE_TIMEOUT_SECONDS = 5
+
+# HELA deploy-vinsten i #31 kommer från probe-GRANULARITETEN (periodSeconds: 2),
+# inte bara från produkten period × failureThreshold. En rutinstädning som
+# "normaliserar" cyklerna till k8s-default (10 s) håller budget-/toleranstesterna
+# gröna (de kollar bara produkten) men återinför exakt det gamla långsamma
+# beteendet: podden blir Ready först i 10-sekunders-steg vid varje deploy.
+# Därför låser vi periodSeconds direkt. 3 s ger minimal marginal men utesluter
+# klart 10 s-defaulten. Höjer du detta: mät om och motivera i commit-texten.
+MAX_READINESS_PERIOD_SECONDS = 3
+MAX_STARTUP_PERIOD_SECONDS = 3
+
+PROBE_MANIFESTS = [FLOW_MANIFEST, DEPLOYMENT]
+PROBE_IDS = [p.name for p in PROBE_MANIFESTS]
+
+
+def _probed_container(path: Path) -> dict:
+    return _main_container(_pod_spec(_first_kind(_load_all(path), "Deployment")))
+
+
+def _container_port_numbers(container: dict) -> list[int]:
+    """containerPort-numren (ints) i containerns ports-lista."""
+    numbers = []
+    for p in container.get("ports", []) or []:
+        if isinstance(p, dict) and isinstance(p.get("containerPort"), int):
+            numbers.append(p["containerPort"])
+    return numbers
+
+
+def _container_port_names(container: dict) -> set[str]:
+    """Namngivna portar (för named targetPort i en Service)."""
+    names = set()
+    for p in container.get("ports", []) or []:
+        if isinstance(p, dict) and p.get("name"):
+            names.add(p["name"])
+    return names
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_startup_probe_exists_and_is_patient(manifest):
+    """startupProbe måste finnas och vara MER tålmodig än den gamla
+    liveness-baserade startbudgeten (ca 120 s), annars byter vi några sekunders
+    deploy-tid mot CrashLoopBackOff vid en långsam start."""
+    container = _probed_container(manifest)
+    startup = container.get("startupProbe")
+    assert isinstance(startup, dict), (
+        f"{manifest.name}: startupProbe saknas — utan den är readinessProbens "
+        "initialDelaySeconds enda startgrinden och liveness kan döda en podd "
+        "som fortfarande importerar/migrerar."
+    )
+    assert startup.get("httpGet", {}).get("path") == "/api/health", (
+        f"{manifest.name}: startupProbe måste proba /api/health (DB-fri, svarar "
+        "först när uvicorn bundit socketen efter prestart + alembic)."
+    )
+    # Kubernetes-defaults om fälten utelämnas.
+    period = startup.get("periodSeconds", 10)
+    failures = startup.get("failureThreshold", 3)
+    budget = period * failures
+    assert budget >= MIN_STARTUP_BUDGET_SECONDS, (
+        f"{manifest.name}: startupProbe-budget {period}s × {failures} = "
+        f"{budget}s < {MIN_STARTUP_BUDGET_SECONDS}s. Budgeten får aldrig "
+        "understiga den gamla effektiva startbudgeten (ca 120 s) — höj "
+        "failureThreshold, sänk inte tålamodet."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_all_probes_keep_generous_timeout(manifest):
+    """timeoutSeconds: 5 på alla tre probar. Default (1 s) är för snålt när
+    ffmpeg CFS-stryper hela cgroupen vid cpu-limit 300m."""
+    container = _probed_container(manifest)
+    for name in ("startupProbe", "livenessProbe", "readinessProbe"):
+        probe = container.get(name)
+        assert isinstance(probe, dict), f"{manifest.name}: {name} saknas"
+        assert probe.get("timeoutSeconds") == REQUIRED_PROBE_TIMEOUT_SECONDS, (
+            f"{manifest.name}: {name}.timeoutSeconds="
+            f"{probe.get('timeoutSeconds')!r}, väntade "
+            f"{REQUIRED_PROBE_TIMEOUT_SECONDS}. Default 1 s räcker inte vid "
+            "CFS-strypning — kubelet dödar då podden på en tillfälligt långsam "
+            "proba."
+        )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_readiness_has_no_initial_delay_floor(manifest):
+    """När startupProbe finns är den startgrinden. Ett initialDelaySeconds-golv
+    på readiness är då ren extra nedtid vid varje deploy (strategy: Recreate,
+    replicas: 1 → varje sekund innan Ready är nedtid för alla användare)."""
+    container = _probed_container(manifest)
+    readiness = container.get("readinessProbe")
+    assert isinstance(readiness, dict), f"{manifest.name}: readinessProbe saknas"
+    assert readiness.get("initialDelaySeconds", 0) == 0, (
+        f"{manifest.name}: readinessProbe.initialDelaySeconds="
+        f"{readiness.get('initialDelaySeconds')!r} är ett rent nedtidsgolv när "
+        "startupProbe redan håller tillbaka readiness under starten."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_readiness_unready_tolerance_is_not_reduced(manifest):
+    """En snabbare readiness-cykel får inte köpas genom att podden tas ur
+    Service-endpointen snabbare. Med replicas: 1 är NotReady = 503 för alla."""
+    container = _probed_container(manifest)
+    readiness = container.get("readinessProbe") or {}
+    period = readiness.get("periodSeconds", 10)
+    failures = readiness.get("failureThreshold", 3)
+    tolerance = period * failures
+    assert tolerance >= MIN_READINESS_FAILURE_TOLERANCE_SECONDS, (
+        f"{manifest.name}: readiness-tolerans {period}s × {failures} = "
+        f"{tolerance}s < {MIN_READINESS_FAILURE_TOLERANCE_SECONDS}s. Sänkt "
+        "periodSeconds kräver höjd failureThreshold — annars slår en kort "
+        "ffmpeg-strypning ut hela appen (replicas: 1, inga andra endpoints)."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_readiness_period_stays_granular(manifest):
+    """Låser SJÄLVA vinsten i #31: readinessProbe.periodSeconds. Produkttestet
+    ovan (period × failureThreshold) är grönt även vid k8s-default 10 s × 6, men
+    då blir podden Ready först i 10-sekunders-steg vid deploy — exakt det gamla
+    långsamma beteendet. Utan den här assertionen kunde en normalisering till
+    default återställa nedtiden med helt grön svit."""
+    container = _probed_container(manifest)
+    readiness = container.get("readinessProbe") or {}
+    period = readiness.get("periodSeconds", 10)
+    assert period <= MAX_READINESS_PERIOD_SECONDS, (
+        f"{manifest.name}: readinessProbe.periodSeconds={period}s > "
+        f"{MAX_READINESS_PERIOD_SECONDS}s. En grov cykel gör podden Ready först i "
+        f"{period}-sekunders-steg vid varje deploy och äter upp deploy-vinsten i "
+        "#31. Höj bara efter ny mätning — och höj failureThreshold i takt så "
+        "unready-toleransen hålls."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_startup_period_stays_granular(manifest):
+    """Samma granularitetsvinst för startupProbe. test_startup_probe_exists...
+    kollar bara att period × failureThreshold ≥ 180 s, vilket är grönt även vid
+    10 s × 18. Men med 10 s-cykel blir podden Ready i 10-sekunders-steg efter att
+    den börjat lyssna i stället för 2 — så granulariteten måste låsas här."""
+    container = _probed_container(manifest)
+    startup = container.get("startupProbe") or {}
+    period = startup.get("periodSeconds", 10)
+    assert period <= MAX_STARTUP_PERIOD_SECONDS, (
+        f"{manifest.name}: startupProbe.periodSeconds={period}s > "
+        f"{MAX_STARTUP_PERIOD_SECONDS}s. Grov startcykel fördröjer Ready i "
+        f"{period}-sekunders-steg. Behåll fin cykel och höj failureThreshold för "
+        "budgeten, sänk inte granulariteten."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_startup_probe_has_no_initial_delay_floor(manifest):
+    """startupProbe.initialDelaySeconds är ett rent nedtidsgolv: kubelet väntar
+    så många sekunder innan FÖRSTA startup-proben, vilket fördröjer Ready lika
+    mycket vid VARJE deploy (strategy: Recreate, replicas: 1). Fältet var
+    oassertat — golvet kunde återinföras med grön svit. Låser det till 0."""
+    container = _probed_container(manifest)
+    startup = container.get("startupProbe") or {}
+    assert startup.get("initialDelaySeconds", 0) == 0, (
+        f"{manifest.name}: startupProbe.initialDelaySeconds="
+        f"{startup.get('initialDelaySeconds')!r} lägger tillbaka ett fast "
+        "nedtidsgolv före första proben vid varje deploy. Snabb periodSeconds ska "
+        "göra podden Ready så fort den lyssnar, utan golv."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_startup_probe_targets_the_container_port(manifest):
+    """startupProbe blockerar BÅDE liveness och readiness tills den passerat — en
+    felriktad probe-port är därför ett TOTALSTOPP (podden blir aldrig Ready,
+    CrashLoop), inte en degradering. Porten var oassertad (bara path == /api/health).
+    Låser httpGet.port mot containerns containerPort."""
+    container = _probed_container(manifest)
+    startup = container.get("startupProbe") or {}
+    probe_port = startup.get("httpGet", {}).get("port")
+    assert probe_port is not None, (
+        f"{manifest.name}: startupProbe saknar httpGet.port"
+    )
+    container_ports = _container_port_numbers(container)
+    if not container_ports:
+        pytest.skip(f"{manifest.name}: containern saknar ports[].containerPort")
+    assert probe_port in container_ports, (
+        f"{manifest.name}: startupProbe httpGet.port={probe_port!r} finns inte "
+        f"bland containerPort {container_ports}. Proben träffar en port som "
+        "uvicorn inte lyssnar på → podden blir aldrig Ready (totalstopp)."
+    )
+
+
+@pytest.mark.parametrize("manifest", PROBE_MANIFESTS, ids=PROBE_IDS)
+def test_service_target_port_matches_container_and_startup_port(manifest):
+    """Service.targetPort, containerPort och startupProbe-porten måste vara samma
+    port. Glider de isär går antingen trafik (Service) eller startgrinden (probe)
+    till fel port. Servicen ligger i samma multidoc-fil för flow.yml; saknas en
+    Service i filen hoppas testet mjukt över (t.ex. deployment.yaml)."""
+    docs = _load_all(manifest)
+    services = _by_kind(docs, "Service")
+    if not services:
+        pytest.skip(f"{manifest.name}: ingen Service i samma fil")
+    container = _main_container(_pod_spec(_first_kind(docs, "Deployment")))
+    container_ports = _container_port_numbers(container)
+    container_names = _container_port_names(container)
+    if not container_ports:
+        pytest.skip(f"{manifest.name}: containern saknar ports[].containerPort")
+
+    target_ports = []
+    for svc in services:
+        for p in svc.get("spec", {}).get("ports", []) or []:
+            if isinstance(p, dict) and p.get("targetPort") is not None:
+                target_ports.append(p["targetPort"])
+    if not target_ports:
+        pytest.skip(f"{manifest.name}: Service saknar targetPort")
+
+    for target in target_ports:
+        # targetPort kan vara int (portnummer) eller str (portnamn).
+        matches = target in container_ports or target in container_names
+        assert matches, (
+            f"{manifest.name}: Service targetPort={target!r} matchar varken "
+            f"containerPort {container_ports} eller portnamn {sorted(container_names)} "
+            "— trafiken routas till en port podden inte lyssnar på."
+        )
+
+    startup_port = container.get("startupProbe", {}).get("httpGet", {}).get("port")
+    if startup_port is not None:
+        assert startup_port in container_ports, (
+            f"{manifest.name}: startupProbe-port {startup_port!r} matchar inte "
+            f"containerPort {container_ports} — probe och trafik pekar på olika portar."
+        )
