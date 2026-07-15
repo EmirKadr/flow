@@ -103,15 +103,33 @@ def _build_outbound_sankey(
     view_period_end: date,
     include_trace_details: bool = True,
     package_ladders: dict | None = None,
+    pick_meta: list[tuple[dict[str, Any], str, date | None]] | None = None,
+    dispatch_meta: list[tuple[dict[str, Any], str, date | None]] | None = None,
 ) -> dict[str, Any]:
+    # (row, bolag, datum-eller-None) forberaknas normalt en gang per payload i
+    # build_sankey_inbound_payload och skickas in - bolag och tidsstampel ar
+    # vy-oberoende per rad, bara fonster-jamforelsen varierar per vy. Fallback
+    # om funktionen anropas fristaende. Samma monster som package_ladders.
+    if pick_meta is None:
+        pick_meta = [
+            (row, _row_company(row), (stamp.date() if (stamp := _row_datetime(row)) else None))
+            for row in pick_rows
+        ]
+    if dispatch_meta is None:
+        dispatch_meta = [
+            (row, _row_company(row), (stamp.date() if (stamp := _row_datetime(row)) else None))
+            for row in dispatch_rows
+        ]
     target_companies = (
         {view_company_filter}
         if view_company_filter != "ALL"
         else {company for company in allowed_companies if company}
     )
     if not target_companies:
-        row_companies = {_row_company(row) for row in pick_rows + dispatch_rows if _row_company(row)}
-        target_companies = row_companies
+        target_companies = (
+            {company for _row, company, _day in pick_meta if company}
+            | {company for _row, company, _day in dispatch_meta if company}
+        )
 
     nodes: dict[str, dict] = {}
     links: dict[tuple[str, str, str], dict] = {}
@@ -142,13 +160,16 @@ def _build_outbound_sankey(
 
     pick_rows_by_company: dict[str, list[dict[str, Any]]] = {company: [] for company in target_companies}
     dispatch_rows_by_company: dict[str, list[dict[str, Any]]] = {company: [] for company in target_companies}
-    for row in pick_rows:
-        company = _row_company(row)
-        if company in target_companies and _is_in_date_window(row, view_period_start, view_period_end):
+    # 'day is not None' MASTE sta fore fonster-jamforelsen: _is_in_date_window
+    # returnerade False for oparsbar/saknad tidsstampel (day=None), och 'None <=
+    # date' ar TypeError. day ar redan .date() (inte datetime) i meta, sa
+    # gransfallen pa periodens sista dag ar bevarade. Radordning bevaras eftersom
+    # meta itereras i samma ordning som pick_rows/dispatch_rows.
+    for row, company, day in pick_meta:
+        if company in target_companies and day is not None and view_period_start <= day <= view_period_end:
             pick_rows_by_company.setdefault(company, []).append(row)
-    for row in dispatch_rows:
-        company = _row_company(row)
-        if company in target_companies and _is_in_date_window(row, view_period_start, view_period_end):
+    for row, company, day in dispatch_meta:
+        if company in target_companies and day is not None and view_period_start <= day <= view_period_end:
             dispatch_rows_by_company.setdefault(company, []).append(row)
 
     def _metric_rows_for_company(metric: dict[str, str], company: str) -> list[dict[str, Any]]:
