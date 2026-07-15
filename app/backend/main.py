@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response
+from starlette.types import Receive, Scope, Send
 
 from . import allocation_bridge, background, demo_session, leader_lock
 from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
@@ -313,9 +314,40 @@ async def api_get_etag(request: Request, call_next):
     )
 
 
+class MediaAwareGZipMiddleware(GZipMiddleware):
+    """GZipMiddleware som ALDRIG komprimerar meta-mediaströmmarna.
+
+    Videor/bilder serveras chunkat från ``/api/meta/uploads/{id}/content`` och är
+    redan komprimerade — gzip ger noll storleksvinst men GZipResponder
+    komprimerar synkront på event-loopen (per 8 MiB-chunk) i vår enda
+    uvicorn-worker OCH buffrar strömmen. I den minnessnåla podden (cgroup-tak
+    ~256 Mi, baslinje ~250 MB efter uppstart) räcker den transienten för att
+    trycka RSS över taket → cgroup-OOM dödar hela containern mitt i en
+    nedladdning → nginx svarar 503. gzip raderar dessutom Content-Length, vilket
+    bryter nedladdningsprogress och Range-resume ("Site wasn't available" i
+    Chrome). Range-svar (206) gzippas dessutom med Content-Range i OKOMPRIMERADE
+    bytes, alltså semantiskt trasigt. All övrig trafik (API-JSON, JS/CSS)
+    komprimeras som förut. Se wiki/prestanda-leveranslager.md + wiki/meta-upload.md.
+    """
+
+    @staticmethod
+    def _is_media_content(scope: Scope) -> bool:
+        if scope["type"] != "http":
+            return False
+        path = scope.get("path", "")
+        return path.startswith("/api/meta/uploads/") and path.endswith("/content")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self._is_media_content(scope):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
 # Läggs till sist = ytterst i middleware-kedjan: komprimerar både API-JSON och
 # statiska JS/CSS-svar (60-80 % mindre payload). Starlette undantar
-# text/event-stream automatiskt, så SSE-progressströmmarna påverkas inte.
+# text/event-stream automatiskt, så SSE-progressströmmarna påverkas inte, och
+# MediaAwareGZipMiddleware undantar dessutom meta-mediaströmmarna (se klassen).
 #
 # compresslevel=6 sätts EXPLICIT: Starlettes default är 9, den dyraste
 # zlib-nivån, och GZipResponder komprimerar synkront i ASGI-send-vägen — alltså
@@ -324,7 +356,7 @@ async def api_get_etag(request: Request, call_next):
 # självbeskrivande och ETag hashas på den OKOMPRIMERADE bodyn (api_get_etag
 # ligger innanför denna middleware), så bytet är beteendebevarande.
 # Kontraktstest: tests/services/test_http_delivery.py.
-app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+app.add_middleware(MediaAwareGZipMiddleware, minimum_size=1024, compresslevel=6)
 
 
 @app.get("/api/health")
