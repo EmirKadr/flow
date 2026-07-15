@@ -224,3 +224,31 @@ bredvid snapshoten: `productivity_snapshots/<datum>/overview-report-<business_id
 - Med cachen **av** är beteendet identiskt med tidigare (allt via API/dblog).
 - Mätt lokalt: läsning ur cachen ~9× snabbare än dblog-API för en dags plock, och
   helt immun mot dblog-403/500.
+
+## Vilka defaults kör DuckDB med? (mätpunkt för #08)
+
+`local_archive_store._connect()` öppnar DuckDB **utan en enda `SET`**. Frågan är om
+DuckDB då härleder `threads`/`memory_limit` från *nodens* kärnor och RAM eller från
+*poddens* cgroup-limits (CPU 300m, minne enligt `#{JOB_MEMORY_MAX}`). Gissa inte —
+läs av det:
+
+```
+python -m tools.healthcheck duckdb --local                      # den här maskinen
+python -m tools.healthcheck duckdb --base-url <miljö> --username <user>   # den körande podden
+```
+
+Podd-varianten går via Super User-healthchecken (`GET /api/healthcheck` bär ett
+`duckdb`-block, se `app/backend/duckdb_diagnostics.py`), så den fungerar utan
+kubectl-åtkomst. Samma siffror syns i Historik → **Hälsa** som kontrollen
+"DuckDB (arkivcache)".
+
+Mätningen öppnar en `:memory:`-anslutning — den rör alltså varken tenant-filerna,
+deras lås eller DuckDB:s instanscache, men får identiska `threads`/`memory_limit`
+(de härleds ur värden, inte ur databasfilen). `temp_directory` är däremot *inte*
+jämförbart: en filbackad databas defaultar till `<dbfil>.tmp/` bredvid filen (dvs.
+redan på PVC:n).
+
+Uppmätt lokalt 2026-07-14 (Windows, 32 kärnor): DuckDB 1.5.4 väljer `threads=32`
+och `memory_limit=100.0 GiB` — alltså rakt av maskinens kapacitet. Om podden visar
+samma mönster mot en cgroup på 0,3 kärnor är kandidat #08 (`SET threads`) verklig;
+visar den ett litet `threads` är DuckDB cgroup-medveten och kandidaten faller.
