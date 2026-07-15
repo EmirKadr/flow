@@ -6,10 +6,10 @@ import hashlib
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from app.backend.config import settings
-from app.backend.main import api_get_etag, app
+from app.backend.main import MediaAwareGZipMiddleware, api_get_etag, app
 
 
 def test_large_json_response_is_gzip_compressed():
@@ -59,6 +59,42 @@ def test_gzip_middleware_leaves_sse_streams_alone():
     assert "content-encoding" not in response.headers
 
 
+def test_meta_media_content_stream_is_never_gzipped():
+    """Meta-videon/bilden (/api/meta/uploads/{id}/content) får ALDRIG gzippas.
+
+    Media är redan komprimerad → gzip vinner noll storlek men komprimerar
+    synkront på event-loopen och buffrar strömmen (OOM-risk i den minnessnåla
+    podden, cgroup-tak ~256 Mi) OCH raderar Content-Length, vilket bröt
+    nedladdningen ("Site wasn't available" + nginx 503, 2026-07-15). Bypassen får
+    samtidigt INTE vara för bred: en vanlig stor JSON-väg (t.ex. uppladdnings-
+    listan) ska fortfarande komprimeras. Se wiki/meta-upload.md."""
+    media_app = FastAPI()
+    media_app.add_middleware(MediaAwareGZipMiddleware, minimum_size=1024, compresslevel=6)
+
+    @media_app.get("/api/meta/uploads/{upload_id}/content")
+    def content(upload_id: int):
+        # 8 KiB helt komprimerbar body: skulle definitivt gzippas om bypassen bröts.
+        return Response(content=bytes(8192), media_type="video/quicktime")
+
+    @media_app.get("/api/meta/uploads")
+    def listing():
+        return {"items": [{"i": n, "blob": "x" * 40} for n in range(60)]}
+
+    client = TestClient(media_app)
+
+    media = client.get("/api/meta/uploads/155/content", headers={"Accept-Encoding": "gzip"})
+    assert media.status_code == 200
+    assert "content-encoding" not in media.headers, "media får aldrig gzippas"
+    assert media.headers.get("content-length") == "8192", (
+        "gzip raderar Content-Length; utan den bryts nedladdningsprogress och Range-resume"
+    )
+
+    listing_response = client.get("/api/meta/uploads", headers={"Accept-Encoding": "gzip"})
+    assert listing_response.headers.get("content-encoding") == "gzip", (
+        "bypassen får bara träffa /content, inte JSON-listan på samma prefix"
+    )
+
+
 def test_gzip_middleware_pins_compresslevel_to_6():
     """Nivån måste vara EXPLICIT satt till 6, inte ärvd från Starlette.
 
@@ -68,7 +104,7 @@ def test_gzip_middleware_pins_compresslevel_to_6():
     kontraktet driver nivån tyst tillbaka till library-defaulten så fort någon
     tar bort argumentet eller uppgraderar starlette.
     """
-    gzip_layers = [m for m in app.user_middleware if m.cls is GZipMiddleware]
+    gzip_layers = [m for m in app.user_middleware if issubclass(m.cls, GZipMiddleware)]
 
     assert len(gzip_layers) == 1, "förväntar exakt en GZipMiddleware i kedjan"
     kwargs = gzip_layers[0].kwargs
@@ -108,7 +144,7 @@ def test_gzip_middleware_is_outermost_relative_to_api_get_etag():
     = längre ut. Kastas ordningen om skulle api_get_etag hasha gzip-bytes och
     ETag:en bli innehållsberoende av komprimeringsnivån."""
     gzip_index = next(
-        i for i, m in enumerate(app.user_middleware) if m.cls is GZipMiddleware
+        i for i, m in enumerate(app.user_middleware) if issubclass(m.cls, GZipMiddleware)
     )
     etag_index = next(
         i

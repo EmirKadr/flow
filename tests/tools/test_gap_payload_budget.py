@@ -120,7 +120,7 @@ def test_gzip_minimum_size_matches_the_app_configuration():
     hade blivit falskt röd av en semantiskt identisk omkastning av kwargs
     (``compresslevel=6, minimum_size=1024``); inspektionen bryr sig bara om det
     faktiska värdet."""
-    gzip_layers = [m for m in app.user_middleware if m.cls is GZipMiddleware]
+    gzip_layers = [m for m in app.user_middleware if issubclass(m.cls, GZipMiddleware)]
     assert len(gzip_layers) == 1, (
         f"förväntar exakt en GZipMiddleware i app-kedjan, fann {len(gzip_layers)}"
     )
