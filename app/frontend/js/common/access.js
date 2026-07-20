@@ -140,7 +140,7 @@ function canUseAllocationProcess(user) {
   return canViewPage(user, "allocationProcess");
 }
 
-const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "mcp", "dataFetch", "analytics", "meta", "archiveStatus", "bugReports"];
+const SIDEBAR_TOOLS_TAB_VIEW_IDS = ["allocationSplit", "labelEditor", "removeDuplicates", "mcp", "dataFetch", "analytics", "meta", "archiveStatus", "bugReports"];
 const SIDEBAR_STAFFING_TAB_VIEW_IDS = [
   "schedule",
   "overview",
@@ -162,6 +162,7 @@ const SIDEBAR_SETTINGS_TAB_VIEW_IDS = [
 const SIDEBAR_VIEW_HREFS = {
   allocationSplit: "/dela.html",
   labelEditor: "/label-editor.html",
+  removeDuplicates: "/dubbletter.html",
   mcp: "/mcp.html",
   dataFetch: "/hamta-data.html",
   analytics: "/historik.html",
@@ -313,6 +314,15 @@ function sidebarPageDefinitions(user, activePage) {
       iconHtml: MCP_ICON,
       visible: canViewPage(user, "mcp"),
       active: activePage === "mcp",
+      sidebar: false,
+    },
+    {
+      id: "removeDuplicates",
+      label: "Dubbletter",
+      href: "/dubbletter.html",
+      icon: "⧉",
+      visible: canViewPage(user, "removeDuplicates"),
+      active: activePage === "removeDuplicates",
       sidebar: false,
     },
     {

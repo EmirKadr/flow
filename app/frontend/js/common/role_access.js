@@ -22,6 +22,7 @@
     { id: "dataFetch", label: "Hämta data" },
     { id: "mcp", label: "MCP" },
     { id: "labelEditor", label: "Etiketter" },
+    { id: "removeDuplicates", label: "Dubbletter" },
     { id: "allocationUploads", label: "Uppladdningar" },
     { id: "allocationProcess", label: "Bearbeta" },
     { id: "allocationProcessMatrix", label: "Bearbeta-matris" },

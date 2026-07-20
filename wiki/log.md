@@ -3304,3 +3304,24 @@ Lardom inford som E5 i `prestanda-optimeringar.md`: mutationstesta guardrailen,
 annars ar den teater. Annu inte commitat/pushat.
 
 Sidor: `optimeringsplan.md`, `prestanda-optimeringar.md`, `prestanda-leveranslager.md`.
+
+## [2026-07-20] ingest | Nytt verktyg: Dubbletter (Ta bort dubbletter)
+
+Nytt fristaende verktyg `Dubbletter` (`/dubbletter.html`, vy-id
+`removeDuplicates`) under verktygsfliken: klistra in varden och fa unika rader
+tillbaka, som Excels "Ta bort dubbletter". Stodjer bade enkolumnsklistring och
+tabbseparerade Excel-kolumner med kolumnval, samt reglerna trimma blanksteg /
+ignorera skiftlage / hoppa over tomma rader (alla pa som default). Forsta
+forekomsten behalls och radordningen bevaras.
+
+Helt klientsidigt - inga API-anrop, ingen audit-rad. Undantaget ar dokumenterat
+och testat i stallet for tyst. Nyckeln byggs med `JSON.stringify` efter att en
+join-separator visade sig kunna lata raden "a b" kollidera med cellerna
+"a" + "b".
+
+Registrerat i bada klienternas vyregister (`user_access.py`, `foundation.js`,
+`role_access.js`, `access.js`) med default-access for alla arbetsroller utom
+person-only. Windows-appen far vyn automatiskt via den delade frontendkatalogen;
+kopieringsknappen har `execCommand`-fallback for QtWebEngine.
+
+Sidor: `dubbletter.md` (ny), `index.md`, `ui-map.md`.

@@ -43,6 +43,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Hämta data](data-fetch.md) - MiniMax-tolkad extern data-export med publicerbar katalog och Excel-export.
 - [MCP](mcp.md) - fråga/svar-vy där backend hämtar tenant-baserad Noeffect-MCP-kontext och vald LLM-hjärna svarar.
 - [Etiketter](label-editor.md) - experimentell lokal label editor för QR, Code128, text, former, symboler och utskrift.
+- [Dubbletter](dubbletter.md) - klientsidigt verktyg som gör Excels "Ta bort dubbletter" på inklistrade värden, med jämförelseregler och kolumnval.
 - [ASK datalagring](ask-datalagring.md) - hur länge ASK/WMan-tabeller behålls (rensning vs arkivering) och vad det betyder för historisk data per vy.
 - [Lokal arkiv-cache (DuckDB)](local-archive-cache.md) - per-tenant DuckDB som speglar dblog_*-arkiven så Sankey/Produktivitet/Hämta data läser historik från disk (lokalt och deployat sedan 2026-07-04, dblog kvar som fallback); inkl. förbyggd `overview-report`-cache för Produktivitets periodöversikt.
 - [ASK statuskoder](ask-statuskoder.md) - hur `status`, `type` och andra kodvarden i ASK/Nowaste-vyer ska forklaras och anvandas i Hamta data, pallspårning och framtida chat.
