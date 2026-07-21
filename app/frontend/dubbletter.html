@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dubbletter - flow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/app-icon-192.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body class="with-sidebar">
+  <header class="topbar"></header>
+
+  <section class="tools-page-head" aria-labelledby="tools-title">
+    <div class="section-title" id="tools-title">Verktyg</div>
+    <nav class="tools-tabs" aria-label="Verktyg">
+      <a class="tools-tab" href="/dela.html" data-tools-tab-view="allocationSplit">Dela</a>
+      <a class="tools-tab" href="/label-editor.html" data-tools-tab-view="labelEditor">Etiketter</a>
+      <a class="tools-tab active" href="/dubbletter.html" aria-current="page" data-tools-tab-view="removeDuplicates">Dubbletter</a>
+      <a class="tools-tab" href="/mcp.html" data-tools-tab-view="mcp">MCP</a>
+      <a class="tools-tab" href="/hamta-data.html" data-tools-tab-view="dataFetch">Hämta data</a>
+      <a class="tools-tab" href="/historik.html" data-tools-tab-view="analytics">Historik</a>
+      <a class="tools-tab" href="/meta.html" data-tools-tab-view="meta">Meta</a>
+    </nav>
+  </section>
+
+  <main class="dedupe-page">
+    <div class="section-title">Ta bort dubbletter</div>
+
+    <section class="dedupe-panel">
+      <div class="dedupe-panel-head">
+        <div>
+          <h2>Klistra in värden</h2>
+          <p class="note">Klistra in en kolumn eller flera kolumner från Excel. Första förekomsten behålls, ordningen bevaras.</p>
+        </div>
+        <span id="dedupeInputCount" class="dedupe-pill">0 rader</span>
+      </div>
+
+      <label for="dedupeInput">Indata</label>
+      <textarea id="dedupeInput" rows="12" spellcheck="false" placeholder="Klistra in värden här, en per rad..."></textarea>
+
+      <fieldset class="dedupe-options">
+        <legend>Jämförelseregler</legend>
+        <label class="dedupe-check"><input type="checkbox" id="dedupeTrim" checked /> Trimma blanksteg</label>
+        <label class="dedupe-check"><input type="checkbox" id="dedupeIgnoreCase" checked /> Ignorera skiftläge</label>
+        <label class="dedupe-check"><input type="checkbox" id="dedupeSkipEmpty" checked /> Hoppa över tomma rader</label>
+      </fieldset>
+
+      <fieldset id="dedupeColumnsBox" class="dedupe-options" hidden>
+        <legend>Jämför kolumner</legend>
+        <p class="note">Flera kolumner upptäcktes. Kryssa i vilka som avgör om en rad är en dubblett.</p>
+        <div id="dedupeColumns" class="dedupe-columns"></div>
+        <div class="dedupe-column-actions">
+          <button type="button" id="dedupeColumnsAll">Markera alla</button>
+          <button type="button" id="dedupeColumnsNone">Avmarkera alla</button>
+        </div>
+      </fieldset>
+
+      <div class="dedupe-actions">
+        <button type="button" id="dedupeClear">Rensa</button>
+        <button type="button" id="dedupeRun" class="primary" data-control-id="dedupe-run">Ta bort dubbletter</button>
+      </div>
+    </section>
+
+    <section id="dedupeResultPanel" class="dedupe-panel" hidden>
+      <div class="dedupe-panel-head">
+        <div>
+          <h2>Resultat</h2>
+          <p id="dedupeSummary" class="note"></p>
+        </div>
+        <button type="button" id="dedupeCopy" data-control-id="dedupe-copy">Kopiera resultat</button>
+      </div>
+
+      <label for="dedupeOutput">Unika värden</label>
+      <textarea id="dedupeOutput" rows="12" spellcheck="false" readonly></textarea>
+
+      <div id="dedupeRemovedBox" class="dedupe-removed" hidden>
+        <h3>Borttagna dubbletter</h3>
+        <div id="dedupeRemoved" class="dedupe-removed-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/common/foundation.js?v=20260616-speed-common"></script>
+  <script src="/js/common/theme.js?v=20260616-speed-common"></script>
+  <script src="/js/common/area_focus.js?v=20260616-speed-common"></script>
+  <script src="/js/common/runtime.js?v=20260616-speed-common"></script>
+  <script src="/js/common/app_log.js?v=20260616-speed-common"></script>
+  <script src="/js/common/telemetry.js?v=20260616-speed-common"></script>
+  <script src="/js/common/access.js?v=20260616-speed-common"></script>
+  <script src="/js/common/sidebar.js?v=20260616-speed-common"></script>
+  <script src="/js/common/uploads.js?v=20260616-speed-common"></script>
+  <script src="/js/common/demo_prefetch_init.js?v=20260616-speed-common"></script>
+  <script src="/js/common/import_tools.js?v=20260616-speed-common"></script>
+  <script src="/js/common/table_sort.js?v=20260616-speed-common"></script>
+  <script src="/js/common/date_state.js?v=20260616-speed-common"></script>
+  <script src="/js/common.js?v=20260616-speed-common"></script>
+  <script src="/js/dubbletter.js?v=20260720-dedupe"></script>
+</body>
+</html>

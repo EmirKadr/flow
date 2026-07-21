@@ -243,6 +243,7 @@ const ROLE_VIEW_IDS = [
   "dataFetch",
   "mcp",
   "labelEditor",
+  "removeDuplicates",
   "allocationUploads",
   "allocationProcess",
   "allocationProcessMatrix",
@@ -290,6 +291,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     personImport: "edit",
     activities: "edit",
     activityImport: "edit",
+    removeDuplicates: "edit",
   },
   staffing_manager: {
     schedule: "edit",
@@ -299,6 +301,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     personImport: "edit",
     activities: "edit",
     activityImport: "edit",
+    removeDuplicates: "edit",
   },
   admin: {
     schedule: "edit",
@@ -312,6 +315,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     users: "edit",
     appSettings: "edit",
     mcp: "edit",
+    removeDuplicates: "edit",
     staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",
@@ -328,6 +332,7 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
     users: "edit",
     appSettings: "edit",
     mcp: "edit",
+    removeDuplicates: "edit",
     staffingSettings: "edit",
     allocationProcessMatrix: "edit",
     allocationSettings: "edit",
@@ -335,14 +340,17 @@ const ROLE_VIEW_DEFAULT_ACCESS = {
   warehouse_clerk: {
     allocationUploads: "edit",
     allocationSplit: "edit",
+    removeDuplicates: "edit",
   },
   article_placer: {
     allocationUploads: "edit",
     allocationSplit: "edit",
+    removeDuplicates: "edit",
   },
   viewer: {
     schedule: "view",
     overview: "view",
+    removeDuplicates: "view",
   },
   person: {
     mySchedule: "view",

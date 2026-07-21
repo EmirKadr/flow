@@ -209,3 +209,127 @@ def test_iso_dates_sort_chronologically(table_sort_page):
 def test_swedish_text_order_places_aao_after_z(table_sort_page):
     result = _sort_values(table_sort_page, ["Örebro", "Arlöv", "Zinkgruvan", "Åmål", "Ängelholm"])
     assert result == ["Arlöv", "Zinkgruvan", "Åmål", "Ängelholm", "Örebro"]
+
+
+# ---------------------------------------------------------------------------
+# Dedupe-kärnan (dubbletter.js): parsning av inklistrad Excel-text och själva
+# dubblettborttagningen. Regelvalen (trim, skiftläge, tomma rader, vilka
+# kolumner som jämförs) avgör vad användaren får tillbaka — fel här ger tyst
+# dataförlust, därför enhetstestas de i stället för bara via UI:t.
+# ---------------------------------------------------------------------------
+
+DEDUPE_JS = ROOT / "app" / "frontend" / "js" / "dubbletter.js"
+
+
+@pytest.fixture(scope="module")
+def dedupe_page(chromium_browser):
+    page = chromium_browser.new_page()
+    page.goto("about:blank")
+    # initDedupePage() körs vid laddning och kan inte nå initPage här; det är
+    # en avvisad promise och stoppar inte funktionsdefinitionerna.
+    page.add_script_tag(content=DEDUPE_JS.read_text(encoding="utf-8"))
+    yield page
+    page.close()
+
+
+def _dedupe(page, text, *, trim=True, ignore_case=True, skip_empty=True, columns=None):
+    return page.evaluate(
+        """({ text, trim, ignoreCase, skipEmpty, columns }) => {
+             const rows = dedupeParseRows(text);
+             const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+             const selected = columns || Array.from({ length: width }, () => true);
+             const result = dedupeRows(rows, { trim, ignoreCase, skipEmpty, columns: selected });
+             return {
+               unique: result.unique.map((row) => row.join("\\t")),
+               removedCount: result.removedCount,
+               skippedEmpty: result.skippedEmpty,
+               duplicates: result.duplicates,
+             };
+           }""",
+        {
+            "text": text,
+            "trim": trim,
+            "ignoreCase": ignore_case,
+            "skipEmpty": skip_empty,
+            "columns": columns,
+        },
+    )
+
+
+def test_dedupe_keeps_first_occurrence_and_input_order(dedupe_page):
+    result = _dedupe(dedupe_page, "banan\napple\nbanan\ncitron\napple")
+    assert result["unique"] == ["banan", "apple", "citron"]
+    assert result["removedCount"] == 2
+
+
+def test_dedupe_parses_windows_and_mac_line_endings(dedupe_page):
+    assert _dedupe(dedupe_page, "a\r\nb\r\na")["unique"] == ["a", "b"]
+    assert _dedupe(dedupe_page, "a\rb\ra")["unique"] == ["a", "b"]
+    # En avslutande radbrytning ska inte bli en extra tom rad.
+    assert _dedupe(dedupe_page, "a\nb\n", skip_empty=False)["unique"] == ["a", "b"]
+
+
+def test_dedupe_trim_and_case_rules_are_independent(dedupe_page):
+    text = "  A1\nA1  \na1"
+    assert _dedupe(dedupe_page, text)["unique"] == ["  A1"]
+    only_trim = _dedupe(dedupe_page, text, ignore_case=False)
+    assert only_trim["unique"] == ["  A1", "a1"]
+    only_case = _dedupe(dedupe_page, text, trim=False)
+    assert only_case["unique"] == ["  A1", "A1  ", "a1"]
+    neither = _dedupe(dedupe_page, text, trim=False, ignore_case=False)
+    assert neither["unique"] == ["  A1", "A1  ", "a1"]
+
+
+def test_dedupe_skip_empty_rows(dedupe_page):
+    text = "a\n\nb\n   \na"
+    skipped = _dedupe(dedupe_page, text)
+    assert skipped["unique"] == ["a", "b"]
+    assert skipped["skippedEmpty"] == 2
+    assert skipped["removedCount"] == 1
+
+    kept = _dedupe(dedupe_page, text, skip_empty=False)
+    # Tomraderna blir ett eget värde som i sin tur kan vara en dubblett.
+    assert kept["unique"] == ["a", "", "b"]
+    assert kept["skippedEmpty"] == 0
+
+
+def test_dedupe_compares_whole_row_across_columns(dedupe_page):
+    text = "A1\tRöd\t10\nA2\tBlå\t20\nA1\tRöd\t10\nA1\tGrön\t10"
+    result = _dedupe(dedupe_page, text)
+    assert result["unique"] == ["A1\tRöd\t10", "A2\tBlå\t20", "A1\tGrön\t10"]
+    assert result["removedCount"] == 1
+
+
+def test_dedupe_respects_selected_columns_only(dedupe_page):
+    text = "A1\tRöd\t10\nA2\tBlå\t20\nA1\tGrön\t99"
+    first_column = _dedupe(dedupe_page, text, columns=[True, False, False])
+    assert first_column["unique"] == ["A1\tRöd\t10", "A2\tBlå\t20"]
+    assert first_column["removedCount"] == 1
+
+    last_column = _dedupe(dedupe_page, text, columns=[False, False, True])
+    assert last_column["unique"] == ["A1\tRöd\t10", "A2\tBlå\t20", "A1\tGrön\t99"]
+
+
+def test_dedupe_ragged_rows_do_not_collide(dedupe_page):
+    """En rad med färre celler är inte samma sak som en med tomma celler."""
+    result = _dedupe(dedupe_page, "A1\nA1\tRöd", skip_empty=False)
+    assert result["unique"] == ["A1", "A1\tRöd"]
+    assert result["removedCount"] == 0
+
+
+def test_dedupe_key_does_not_collide_across_column_boundaries(dedupe_page):
+    """En rad med mellanslag är inte samma sak som två celler.
+
+    Med en join-separator i nyckeln blev "a b" och cellerna "a" + "b" samma
+    värde och den ena raden försvann tyst.
+    """
+    result = _dedupe(dedupe_page, "a b\na\tb")
+    assert result["unique"] == ["a b", "a\tb"]
+    assert result["removedCount"] == 0
+
+
+def test_dedupe_reports_duplicate_counts(dedupe_page):
+    result = _dedupe(dedupe_page, "a\nb\na\na\nb")
+    counts = {entry["label"]: entry["count"] for entry in result["duplicates"]}
+    assert counts == {"a": 3, "b": 2}
+    assert result["removedCount"] == 3

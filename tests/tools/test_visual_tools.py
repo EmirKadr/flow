@@ -119,6 +119,7 @@ def test_visual_smoke_covers_expected_routes():
         "bearbeta",
         "dela",
         "etiketter",
+        "dubbletter",
     }
     assert pages_by_name["mitt-schema"].roles == ("admin", "person")
     assert pages_by_name["min-produktivitet"].roles == ("admin", "person")

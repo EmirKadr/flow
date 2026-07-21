@@ -142,6 +142,10 @@ Forvantat talflode:
 - Personen beskriver sedan vad som ar fel pa pallen eller pallarna.
 
 Regler:
+- Ett pall-id bestar ALLTID av exakt 7 siffror. Om din forsta tolkning ger 6
+  eller 8 siffror har du raknat fel — lyssna om och justera till 7 siffror.
+  Blir det fortfarande inte 7 siffror, skriv osakerheten i uncertainty_notes
+  och behall den tolkning som later mest sannolik som exakt 7 siffror.
 - Returnera exakt ett pallet_id: det pall-id som hors tydligast.
 - Tolka "pall", "godsmärkning", "godsmarkning", "godsmärke" eller liknande
   som pallet_id nar personen anvander det som pallens identitet.

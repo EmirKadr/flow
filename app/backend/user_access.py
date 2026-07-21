@@ -38,6 +38,7 @@ ROLE_VIEW_ORDER = (
     "dataFetch",
     "mcp",
     "labelEditor",
+    "removeDuplicates",
     "allocationUploads",
     "allocationProcess",
     "allocationProcessMatrix",
@@ -74,6 +75,7 @@ ROLE_VIEW_LABELS = {
     "dataFetch": "Hämta data",
     "mcp": "MCP",
     "labelEditor": "Etiketter",
+    "removeDuplicates": "Dubbletter",
     "allocationUploads": "Uppladdningar",
     "allocationProcess": "Bearbeta",
     "allocationProcessMatrix": "Bearbeta-matris",
@@ -139,6 +141,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "personImport": "edit",
         "activities": "edit",
         "activityImport": "edit",
+        "removeDuplicates": "edit",
     },
     STAFFING_MANAGER_ROLE: {
         "schedule": "edit",
@@ -148,6 +151,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "personImport": "edit",
         "activities": "edit",
         "activityImport": "edit",
+        "removeDuplicates": "edit",
     },
     "admin": {
         "schedule": "edit",
@@ -161,6 +165,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "users": "edit",
         "appSettings": "edit",
         "mcp": "edit",
+        "removeDuplicates": "edit",
         "staffingSettings": "edit",
         "allocationProcessMatrix": "edit",
         "allocationSettings": "edit",
@@ -177,6 +182,7 @@ ROLE_VIEW_DEFAULT_ACCESS = {
         "users": "edit",
         "appSettings": "edit",
         "mcp": "edit",
+        "removeDuplicates": "edit",
         "staffingSettings": "edit",
         "allocationProcessMatrix": "edit",
         "allocationSettings": "edit",
@@ -184,14 +190,17 @@ ROLE_VIEW_DEFAULT_ACCESS = {
     WAREHOUSE_CLERK_ROLE: {
         "allocationUploads": "edit",
         "allocationSplit": "edit",
+        "removeDuplicates": "edit",
     },
     ARTICLE_PLACER_ROLE: {
         "allocationUploads": "edit",
         "allocationSplit": "edit",
+        "removeDuplicates": "edit",
     },
     VIEWER_ROLE: {
         "schedule": "view",
         "overview": "view",
+        "removeDuplicates": "view",
     },
     PERSON_ROLE: {
         "mySchedule": "view",
