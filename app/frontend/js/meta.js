@@ -140,6 +140,39 @@ async function downloadShipmentMedia(item, button = null) {
   );
 }
 
+async function downloadShipmentAudio(item, button = null) {
+  if (!item?.media_upload_id) return;
+  const url = `/api/meta/uploads/${encodeURIComponent(item.media_upload_id)}/audio`;
+  enqueueMetaDownload(
+    () => api.download(url, shipmentMediaFilename(item, "meta-audio") + ".mp3", { direct: true }),
+    button
+  );
+}
+
+function showReviewReasonMenu(event, item) {
+  if (item?.analysis_status !== "manual_review") return;
+  event.preventDefault();
+  document.getElementById("metaReviewReasonMenu")?.remove();
+  const menu = document.createElement("div");
+  menu.id = "metaReviewReasonMenu";
+  menu.className = "meta-review-reason-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Visa orsak";
+  button.addEventListener("click", () => {
+    menu.remove();
+    window.alert(item.uncertainty_notes || "Ingen orsak har sparats för den här raden.");
+  });
+  menu.appendChild(button);
+  document.body.appendChild(menu);
+  const close = (closeEvent) => {
+    if (!(closeEvent.target instanceof Node) || !menu.contains(closeEvent.target)) menu.remove();
+  };
+  setTimeout(() => document.addEventListener("pointerdown", close, { once: true }), 0);
+}
+
 async function analyzeShipmentVideo(item, button = null) {
   if (!item?.media_upload_id) return;
   if (button) button.disabled = true;
@@ -394,7 +427,7 @@ function renderShipmentRows() {
     const timestampTitle = `Skapad: ${formatTimestamp(item.created_at)}\nUppdaterad: ${formatTimestamp(item.updated_at)}`;
     const analysisId = item.id == null ? "-" : `#${item.id}`;
     return `
-      <tr>
+      <tr data-meta-observation="${escapeHtml(item.id || "")}">
         <td class="meta-admin-observation-id">${escapeHtml(analysisId)}</td>
         <td>${escapeHtml(item.order_number || "")}</td>
         <td>${escapeHtml(item.shipment_number || "")}</td>
@@ -417,7 +450,8 @@ function renderShipmentRows() {
         <td>
           <div class="meta-admin-table-actions">
             ${statusSelect(item)}
-            ${iconButton({ dataset: { "download-shipment-video": item.id }, label: videoDownloadLabel, icon: "↓", disabled: !item.video_url })}
+            ${iconButton({ dataset: { "download-shipment-video": item.id }, label: videoDownloadLabel, icon: "VID", disabled: !item.video_url })}
+            ${iconButton({ dataset: { "download-shipment-audio": item.id }, label: "Ladda ner ljud som MP3", icon: "LJD", disabled: !item.media_upload_id })}
             ${iconButton({ className: "primary", dataset: { "analyze-upload": item.id }, label: "Analysera", icon: "AI", disabled: status === "analyzing" })}
             ${iconButton({ className: "danger", dataset: { "delete-upload": item.id }, label: "Radera video permanent", icon: "🗑", disabled: !item.media_upload_id })}
           </div>
@@ -430,6 +464,18 @@ function renderShipmentRows() {
     button.addEventListener("click", () => {
       const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentVideo));
       void downloadShipmentMedia(item, button);
+    });
+  });
+  tbody.querySelectorAll("[data-download-shipment-audio]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (button).dataset.downloadShipmentAudio));
+      void downloadShipmentAudio(item, button);
+    });
+  });
+  tbody.querySelectorAll("[data-meta-observation]").forEach((row) => {
+    row.addEventListener("contextmenu", (event) => {
+      const item = shipmentItems.find((entry) => Number(entry.id) === Number(/** @type {HTMLElement} */ (row).dataset.metaObservation));
+      showReviewReasonMenu(event, item);
     });
   });
   tbody.querySelectorAll("[data-analyze-upload]").forEach((button) => {

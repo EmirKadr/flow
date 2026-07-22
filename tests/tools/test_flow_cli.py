@@ -59,6 +59,14 @@ class CliTestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/meta/shipment-observations?status=empty&limit=200":
             self._json({"count": 0, "items": []})
             return
+        if self.path == "/api/meta/uploads/101/audio":
+            body = b"fake-mp3"
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/api/allokering/download/abc/result":
             body = b"Kolumn 1,Kolumn 2\nA,C\nB,\n"
             self.send_response(200)
@@ -119,6 +127,14 @@ class CliTestHandler(BaseHTTPRequestHandler):
                         "order_number": payload.get("order_number"),
                         "shipment_number": payload.get("shipment_number"),
                     },
+                }
+            )
+            return
+        if self.path == "/api/meta/shipment-observations/11/local-analysis":
+            self._json(
+                {
+                    "status": "analyzed",
+                    "item": {"id": 11, "analysis_status": "analyzed", "pallet_id": payload.get("pallet_id")},
                 }
             )
             return
@@ -352,6 +368,38 @@ def test_cli_meta_process_queue_can_apply_local_dispatch_lookup(tmp_path, capsys
             },
         )
     ]
+
+
+def test_cli_meta_process_queue_can_analyze_downloaded_audio_locally(tmp_path, capsys, monkeypatch):
+    from app.backend import meta_transcription
+
+    CliTestHandler.patch_requests = []
+    monkeypatch.setattr(
+        meta_transcription,
+        "analyze_audio_with_openai",
+        lambda **_kwargs: {
+            "pallet_id": "8473877",
+            "deviations": ["Fel på kartong"],
+            "uncertainty_notes": None,
+        },
+    )
+    server, thread = start_cli_test_server()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_address[1]}"
+        common = ["--base-url", base_url, "--cookie-jar", str(tmp_path / "cookies.txt")]
+        result = flow_cli.main([*common, "meta", "process-queue", "--status", "local", "--local-analysis", "--json"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert output["results"][0]["new_status"] == "analyzed"
+    path, payload = CliTestHandler.patch_requests[0]
+    assert path == "/api/meta/shipment-observations/11/local-analysis"
+    assert payload["pallet_id"] == "8473877"
+    assert payload["deviations"] == ["Fel på kartong"]
 
 
 def test_cli_meta_process_queue_reports_empty_queue(tmp_path, capsys):

@@ -1,11 +1,23 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-15
+updated: 2026-07-22
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-22] beteende | Meta använder GPT-4o Transcribe
+
+Meta-videoanalysen transkriberar nu ljudet med `gpt-4o-transcribe` och låter
+`gpt-4o-mini` extrahera samma strukturerade pall-id och avvikelser från texten.
+Konfigurationen använder `OPENAI_API_KEY`, `META_TRANSCRIPTION_MODEL` och
+`META_ANALYSIS_TEXT_MODEL`.
+
+CLI:t kan dessutom köra hela ljudanalysen lokalt med `--local-analysis` genom
+att hämta MP3 direkt från Flow; videon laddas inte ner. Resultatet skrivs
+sanerat tillbaka via `local-analysis`-endpointen och auditloggen sparar inga
+transkriptions- eller avvikelsevärden.
 
 ## [2026-07-14] lint | Render-referenser sanerade i APP_MIGRATION_PLAN.md
 

@@ -273,5 +273,7 @@ filtervariant via API/SSE i stÃ¤llet fÃ¶r att fÃ¶rbygga alla lokala vyer.
 | `meta.analyze` | `POST` | `/api/meta/uploads/{upload_id}/analyze` | Analysera Meta-video |
 | `meta.shipment_status` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/status` | Uppdatera status for Meta-rad |
 | `meta.shipment_dispatch_lookup` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/dispatch-lookup` | Skriv tillbaka lokalt ASK-uppslag for Meta-rad |
+| `meta.local_analysis` | `PATCH` | `/api/meta/shipment-observations/{observation_id}/local-analysis` | Skriv tillbaka lokal GPT-4o-ljudanalys utan transkription eller media i payload |
 | `meta.content` | `GET` | `/api/meta/uploads/{upload_id}/content` | Stromma originaluppladdning; legacy `variant=playable` aliasas resurssakert till original utan videotranskodning |
+| `meta.audio` | `GET` | `/api/meta/uploads/{upload_id}/audio` | Ladda ner extraherat Meta-ljud som MP3 |
 | `meta.delete` | `DELETE` | `/api/meta/uploads/{upload_id}` | Radera meta-uppladdning |

@@ -101,6 +101,12 @@ spec:
               value: "#{GEMINI_API_KEY}"
             - name: GEMINI_MODEL
               value: "gemini-2.5-pro"
+            - name: OPENAI_API_KEY
+              value: "#{OPENAI_API_KEY}"
+            - name: META_TRANSCRIPTION_MODEL
+              value: "gpt-4o-transcribe"
+            - name: META_ANALYSIS_TEXT_MODEL
+              value: "gpt-4o-mini"
             # Ej hemlig och samma i alla miljöer — hårdkodad i stället för
             # Octopus-variabel. En platshållare vars variabel saknas i Octopus
             # lämnas ordagrant kvar i manifestet och blev 2026-07-09 ett

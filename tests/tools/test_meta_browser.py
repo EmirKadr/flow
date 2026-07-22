@@ -194,3 +194,34 @@ def test_meta_download_streams_original_without_playable_transcode(local_server,
         assert all("variant=playable" not in url for url in request_urls)
     finally:
         context.close()
+
+
+def test_meta_has_separate_audio_video_downloads_and_review_reason_menu(local_server, chromium_browser):
+    context = chromium_browser.new_context(locale="sv-SE", accept_downloads=True)
+    page = context.new_page()
+    try:
+        page.goto(f"{local_server}/login.html", wait_until="load")
+        page.fill("#username", "admin")
+        page.fill("#password", "admin123")
+        page.click("button.primary")
+        page.wait_for_url("**/index.html", timeout=15000)
+        shipment = _shipment(12, "2026-07-22T10:00:00Z")
+        shipment.update({"analysis_status": "manual_review", "uncertainty_notes": "Pall-id hördes otydligt."})
+        page.route("**/api/meta/uploads?*", lambda route: _fulfill_json(route, {"items": []}))
+        page.route(
+            "**/api/meta/shipment-observations?*",
+            lambda route: _fulfill_json(route, {"items": [shipment]}),
+        )
+        page.goto(f"{local_server}/meta.html", wait_until="load")
+
+        expect(page.locator('[data-download-shipment-video="12"]')).to_have_attribute("aria-label", "Ladda ner video.mp4")
+        expect(page.locator('[data-download-shipment-audio="12"]')).to_have_attribute("aria-label", "Ladda ner ljud som MP3")
+        page.locator('[data-meta-observation="12"]').click(button="right")
+        reason = page.get_by_role("button", name="Visa orsak")
+        expect(reason).to_be_visible()
+        messages = []
+        page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.dismiss()))
+        reason.click()
+        assert messages == ["Pall-id hördes otydligt."]
+    finally:
+        context.close()
