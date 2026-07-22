@@ -12,11 +12,13 @@ app/backend/routers/activities.py::delete_activity.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from datetime import time as dtime
 
 import pytest
 
 from app.backend.models import (
     Activity,
+    Area,
     AuditLog,
     Person,
     PersonScheduleTemplate,
@@ -28,6 +30,7 @@ from app.backend.schedule_freeze import (
     materialize_schedule_day,
 )
 from app.backend.template_service import (
+    LOCAL_TIMEZONE,
     get_schedule_freeze_horizon,
     get_template_hours_map_for_dates,
 )
@@ -302,31 +305,42 @@ def test_delete_person_keeps_history_and_purges_future(client, db_session):
 
 
 def test_delete_person_preserves_todays_worked_hours(client, db_session):
-    """En borttagning mitt pa dagen far inte radera dagens redan arbetade timmar."""
+    """En borttagning mitt pa dagen behaller det som redan arbetats idag.
+
+    Dagens passerade timmar ar journal och ska sta kvar; resten av dagen ar en
+    plan som forsvinner med personen.
+    """
     today = date.today()
     if today.isoweekday() > 5:
         pytest.skip("Standardmallen ar tom pa helger.")
     activity = _make_activity(db_session, code="PLOCK", label="Plock")
     person = _make_person(db_session, name="Borttagen idag", home_activity_id=activity.id)
-    _add_template(db_session, person.id, today.isoweekday(), 8, 11)
+    _add_template(db_session, person.id, today.isoweekday(), 6, 20)
     person_id = person.id
+    # Mallen 6-20 minus lunch (6+5=11); journalen gar till innevarande timme.
+    current_hour = datetime.now(LOCAL_TIMEZONE).hour
+    expected = [hour for hour in range(6, 20) if hour != 11 and hour < current_hour]
 
     login(client, "anna")
     assert client.delete(f"/api/persons/{person_id}").status_code == 204
     db_session.expire_all()
 
-    # Dagens timmar finns kvar som celler trots att personen ar inaktiverad.
     kept = db_session.get(Person, person_id)
     assert kept.is_active is False and kept.has_fixed_schedule is False
     today_cells = _cells_for_date(db_session, person_id, today)
-    assert sorted(cell.hour for cell in today_cells) == [8, 9, 10]
+    assert sorted(cell.hour for cell in today_cells) == expected
     assert all(cell.activity_id == activity.id for cell in today_cells)
 
+    if not expected:
+        return
     iso = today.isocalendar()
-    day = client.get(f"/api/schedule?year={iso.year}&week={iso.week}&weekday={iso.weekday}")
-    payload = day.json()
+    payload = client.get(
+        f"/api/schedule?year={iso.year}&week={iso.week}&weekday={iso.weekday}"
+    ).json()
     assert any(row["id"] == person_id for row in payload["persons"])
-    assert sum(1 for cell in payload["cells"] if cell["person_id"] == person_id) == 3
+    assert sorted(
+        cell["hour"] for cell in payload["cells"] if cell["person_id"] == person_id
+    ) == expected
 
 
 def test_delete_person_without_history_hard_deletes(client, db_session):
@@ -737,6 +751,118 @@ def test_healthcheck_warns_when_freeze_lags(db_session):
     result = collect_schedule_freeze(db_session, checks)
     assert checks[0]["status"] == "ok"
     assert result["lag_days"] == 0
+
+
+def _set_template_hours(db_session, person_id: int, weekday: int, start: int, end: int) -> None:
+    row = (
+        db_session.query(PersonScheduleTemplate)
+        .filter_by(person_id=person_id, weekday=weekday)
+        .one()
+    )
+    row.start_hour, row.end_hour = start, end
+    db_session.commit()
+
+
+def test_todays_elapsed_hours_survive_a_template_change(client, db_session):
+    """Kardinalregeln for dagens datum: passerade timmar ar journal.
+
+    Schemat ar plan framat och journal bakat; dagens datum ar bada. En
+    arbetsledare som andrar mallen kl 15 far inte radera formiddagens redan
+    utforda arbete - bara resten av dagen ar en plan som far andras.
+    """
+    from app.backend.schedule_freeze import materialize_elapsed_hours
+
+    today = date.today()
+    if today.isoweekday() > 5:
+        pytest.skip("Standardmallen ar tom pa helger.")
+    activity = _make_activity(db_session, code="PLOCK", label="Plock")
+    person = _make_person(db_session, name="Mitt pa dagen", home_activity_id=activity.id)
+    weekday = today.isoweekday()
+    _add_template(db_session, person.id, weekday, 6, 20)
+
+    # Klockan ar 15: timmarna 6-14 ar avklarade, 15-19 ar fortfarande plan.
+    now = datetime.combine(today, dtime(15, 0))
+    materialize_elapsed_hours(db_session, now=now)
+    db_session.commit()
+
+    # Arbetsledaren andrar schemat till 13-20 mitt pa dagen.
+    _set_template_hours(db_session, person.id, weekday, 13, 20)
+
+    iso = today.isocalendar()
+    login(client, "anna")
+    payload = client.get(
+        f"/api/schedule?year={iso.year}&week={iso.week}&weekday={iso.weekday}"
+    ).json()
+    shown = set(payload["scheduled_hours"].get(str(person.id), []))
+    worked = {cell["hour"] for cell in payload["cells"] if cell["person_id"] == person.id}
+
+    # Formiddagen star kvar som utfort arbete (lunch 11 ar undantagen).
+    assert {6, 7, 8, 9, 10, 12, 13, 14} <= worked
+    assert {6, 7, 8, 9, 10, 12, 13, 14} <= shown
+    # Och resten av dagen foljer den nya mallen - den ar fortfarande en plan.
+    assert 19 in shown
+
+
+def test_shrinking_template_still_drops_todays_remaining_hours(db_session):
+    """Planen ska andras: timmar som inte passerat foljer den nya mallen."""
+    from app.backend.schedule_freeze import materialize_elapsed_hours
+
+    today = date.today()
+    if today.isoweekday() > 5:
+        pytest.skip("Standardmallen ar tom pa helger.")
+    activity = _make_activity(db_session, code="PLOCK", label="Plock")
+    person = _make_person(db_session, name="Kortare dag", home_activity_id=activity.id)
+    weekday = today.isoweekday()
+    _add_template(db_session, person.id, weekday, 6, 20)
+    materialize_elapsed_hours(db_session, now=datetime.combine(today, dtime(10, 0)))
+    db_session.commit()
+
+    _set_template_hours(db_session, person.id, weekday, 6, 14)
+
+    hours = get_template_hours_map_for_dates(db_session, [person.id], [today])[(person.id, today)]
+    # Ingen timme fore 10 kommer fran mallen langre (de ar journal),
+    # och kvallen ar borta eftersom planen kortades.
+    assert hours is not None
+    assert min(hours) >= 10
+    assert max(hours) < 14
+
+
+def test_frozen_area_attribution_survives_moving_the_activity(client, db_session):
+    """Historisk bemanning per stalle far inte flytta med vid omorganisation."""
+    target = _past_weekday_date()
+    mg = Area(business_id=1, code="MG", name="MG", is_active=True)
+    gg = Area(business_id=1, code="GG", name="GG", is_active=True)
+    db_session.add_all([mg, gg])
+    db_session.commit()
+    activity = Activity(
+        business_id=1, code="MG_PLOCK", label="MG Plock", area_id=mg.id, color="#f00", is_active=True
+    )
+    db_session.add(activity)
+    db_session.commit()
+    db_session.refresh(activity)
+    person = _make_person(db_session, name="MG-are", home_activity_id=activity.id)
+    person.home_area_id = gg.id
+    db_session.commit()
+    _add_template(db_session, person.id, target.isoweekday(), 8, 11)
+
+    materialize_schedule_day(db_session, target)
+    db_session.commit()
+
+    iso = target.isocalendar()
+    login(client, "root")
+    url = f"/api/schedule/summary?year={iso.year}&week={iso.week}&weekday={iso.weekday}&area_id={mg.id}"
+    before = {row["activity_label"]: row["hours"] for row in client.get(url).json()}
+    assert before == {"MG Plock": 3.0}
+
+    # Aktiviteten flyttas till ett annat omrade idag.
+    activity.area_id = gg.id
+    db_session.commit()
+
+    after = {row["activity_label"]: row["hours"] for row in client.get(url).json()}
+    assert after == before, "Historisk omradesbemanning andrades av en omorganisation"
+    # Stampeln finns pa cellerna.
+    cells = _cells_for_date(db_session, person.id, target)
+    assert cells and all(cell.activity_area_id == mg.id for cell in cells)
 
 
 def test_freeze_state_singleton_row(db_session):

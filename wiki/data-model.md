@@ -19,7 +19,7 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 | `persons` | `Person` | Planerbara personer inom en verksamhet | `business_id`, `name`, `noman`, `rfid_code`, `collar_type`, `home_area_id`, `home_activity_id`, `has_fixed_schedule`, `is_active`, `sort_order` |
 | `activities` | `Activity` | Aktiviteter som kan bemannas inom en verksamhet | `business_id`, `code`, `label`, `area_id`, `summary_activity_id`, `kpi_process_name`, `color`, `category`, `work_type`, `sort_order`, `is_active` |
 | `schedule_cells` | `ScheduleCell` | Explicita schemaandringar + materialiserad historik | `year`, `week`, `weekday`, `hour`, `minute_start`, `minute_end`, `person_id`, `activity_id`, `empty_override`, `is_template_fill`, `version`, `updated_by` |
-| `schedule_freeze_state` | `ScheduleFreezeState` | Singelrad med frysgransen for schemahistorik | `id=1`, `frozen_until`, `updated_at` |
+| `schedule_freeze_state` | `ScheduleFreezeState` | Singelrad: hur langt schemajournalen stracker sig | `id=1`, `frozen_until`, `elapsed_date`, `elapsed_hour`, `updated_at` |
 | `rfid_devices` | `RfidDevice` | Fysiska RFID-moduler kopplade till aktivitet | `business_id`, `device_id`, `module_name`, `activity_id`, `is_active`, `last_seen_at` |
 | `rfid_scan_events` | `RfidScanEvent` | Sparade RFID-stamplingar innan/efter Bemanning applicerar dem | `business_id`, `device_identifier`, `module_name`, `tag_code`, `person_id`, `activity_id`, `scan_time`, `status`, `schedule_year/week/weekday/hour/minute`, `applied_by`, `ignored_by` |
 | `person_schedule_templates` | `PersonScheduleTemplate` | Personlig veckomall | `person_id`, `weekday`, `start_hour`, `end_hour`, `is_off` |
@@ -58,19 +58,31 @@ Kort svar: bemanningen bygger pa verksamheter, personer, aktiviteter, omraden, s
 - `activity_id=null` betyder tomt/ledig.
 - `empty_override=true` betyder att anvandaren uttryckligen tomt en schemalagd malltimme.
 - `is_template_fill=true` betyder att cellen ar en materialiserad implicit
-  malltimme, skriven av schemafrysningen vid dygnsskiftet (inte av en
+  malltimme, skriven av schemafrysningen nar timmen passerat (inte av en
   anvandare; `updated_by=null`). Se [Schemahistorikens mutabilitet](schema-historik-mutabilitet.md).
+- `activity_area_id` ar det omrade aktiviteten tillhorde nar arbetet
+  registrerades. Stamplas av frysningen och laser fore `Activity.area_id` i
+  summering och omradesfiltrering.
 - `version` anvands som optimistic concurrency-skydd. Klienten skickar aktuell version som `expected_version`.
 
 ## Schemafrysning
 
-- `schedule_freeze_state` har en rad (`id=1`) med `frozen_until`: senaste
-  materialiserade datum. Datum <= gransen ar en frusen logg: veckomallen
-  appliceras inte vid lasning och register-/malländringar paverkar dem inte.
-- Bakgrundsjobbet `schedule_freeze_scheduler` materialiserar ofrysta dagar
-  var 30:e minut (normalt en dag per dygn). Forsta korningen backfyller hela
-  historiken fran aldsta cell/person.
-- Dagens datum och framtiden projiceras fortfarande live fran mallen.
+Schemat ar bade plan och journal: **framtiden ar plan, fortiden journal, idag
+en blandning.** `schedule_freeze_state` (en rad, `id=1`) haller gransen:
+
+- `frozen_until` — sista helt materialiserade datumet. Datum <= det ar ren
+  journal: veckomallen appliceras inte vid lasning, sa register-/malländringar
+  kan inte rora dem.
+- `elapsed_date`/`elapsed_hour` — hur langt in i den pagaende dagen journalen
+  gar. Timmar fore gransen ar avklarade och skyddade; timmarna darefter ar
+  fortfarande plan och foljer mallen.
+- Bakgrundsjobbet `schedule_freeze_scheduler` kor var 30:e minut: materialiserar
+  ofrysta hela dagar och skriver ut dagens passerade timmar. Forsta korningen
+  backfyller hela historiken fran aldsta cell/person.
+- Framtida datum projiceras helt fran mallen — de ar en plan.
+- `schedule_cells.activity_area_id` stamplas vid frysning med aktivitetens
+  omrade da, sa historisk bemanning per stalle inte flyttar med vid en
+  omorganisation.
 
 ## Personlig veckomall
 

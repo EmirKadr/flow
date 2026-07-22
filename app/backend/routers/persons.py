@@ -860,22 +860,20 @@ def delete_person(
     from ..schedule_freeze import (
         freeze_pending_for_request,
         person_predates_today,
-        preserve_today_for_persons,
         purge_future_schedule_cells,
     )
 
     person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
     before = _person_snapshot(person)
-    freeze_pending_for_request(db)
+    # Lases fore frysningen: den skriver ut dagens passerade timmar som celler,
+    # och da skulle aven en felskapad person se ut att ha historik.
     had_cells_before = (
         db.query(ScheduleCell.id).filter(ScheduleCell.person_id == person_id).first() is not None
     )
     has_history = had_cells_before or person_predates_today(person)
-    if has_history:
-        # Dagens timmar skrivs ut innan has_fixed_schedule slas av, annars
-        # skulle en borttagning mitt pa dagen radera personens redan arbetade
-        # timmar ur dagens vy.
-        preserve_today_for_persons(db, [person_id])
+    # Sakrar journalen fram till nu: gardagen om den ar ofryst, och dagens
+    # redan arbetade timmar. Resten av dagen ar plan och foljer med bort.
+    freeze_pending_for_request(db)
     future_cells_deleted = purge_future_schedule_cells(db, person_ids=[person_id])
     if has_history:
         person.is_active = False

@@ -111,11 +111,37 @@ Narvarande-utskriften och produktivitetens KPI-segment.
   saknar dessutom `created_at`-vakten (dar far nya personer fiktiv historik
   bakat). Fran v0.1.6 och framat ar det specifika symptomet fixat.
 
-## Losningen: schemafrysning (byggd 2026-07-21)
+## Domanmodellen: plan, journal och dagens blandning
 
-Beslut av Emir 2026-07-21: **(a) materialisering** plus **"ta bort framtida
-men behall historiska"** for raderingar. Schemaandringar ska bara paverka
-framtida dagar — historiken ska visa hur en person faktiskt har jobbat.
+Emirs beskrivning 2026-07-22, som styr hela designen:
+
+> Det ar ett bemanningsprogram. Arbetsledare pillar med det varje dag for att
+> fylla i vad varje person har gjort under varje period. Vi vill kunna lagga
+> schema for att ofta gor personer samma sak. Andrar vi personens schema ska
+> det inte paverka hur de har jobbat. Arbetsledarna vill kunna ga tillbaka i
+> tiden och kolla hur och vad personalen gjort och hur mycket vi bemannade pa
+> varje stalle. Detta ar dyrbar information som vi inte kan paverka i efterhand.
+>
+> Det ar bade en plan och en journal: **framtiden ar en plan, fortiden ar en
+> journal, idag ar en mix av bada.**
+
+Tre konsekvenser som all kod har att folja:
+
+1. **Veckomallen ar en bekvamlighet, inte sanningen.** Den finns for att folk
+   ofta gor samma sak. Sanningen om en passerad timme ar vad arbetsledaren
+   fyllde i — eller, om hen lat mallen sta, vad mallen sa **da**.
+2. **Granulariteten ar timme, inte dygn.** Dagens formiddag ar journal medan
+   eftermiddagen fortfarande ar plan. En malländring kl 15 far andra kvallen
+   men aldrig formiddagen.
+3. **"Hur mycket vi bemannade pa varje stalle"** ar en av de dyrbara
+   fragorna. Alltsa maste aven omradestillhorigheten frysas, inte bara timmar
+   och uppgift.
+
+## Losningen: schemafrysning (byggd 2026-07-21/22)
+
+Beslut av Emir: **(a) materialisering** plus **"ta bort framtida men behall
+historiska"** for raderingar. Schemaandringar ska bara paverka planen —
+journalen ska visa hur en person faktiskt har jobbat.
 
 Sa fungerar det (`app/backend/schedule_freeze.py`):
 
@@ -129,6 +155,19 @@ Sa fungerar det (`app/backend/schedule_freeze.py`):
    `template_service`-uppslag returnerar None for datum <= gransen, sa
    mall-/flagg-/hemaktivitetsandringar ALDRIG paverkar frysta datum. Forsta
    korningen backfyller hela historiken fran aldsta cell/person.
+2b. **Dagens skarning** (`elapsed_date`/`elapsed_hour`, infort 2026-07-22):
+   samma jobb skriver ocksa ut dagens **redan passerade** malltimmar och
+   flyttar fram en timgrans. `_apply_elapsed_cutoff` tar bort timmar fore
+   gransen ur mallens svar for det datumet. Darfor kan en malländring kl 15
+   inte rita om formiddagen — men kvallen, som fortfarande ar plan, foljer
+   andringen. Gransen gar vid borjan av innevarande timme, samma skarning som
+   Produktivitet anvander for "avslutade timmar".
+2c. **Fryst omradestillhorighet** (`schedule_cells.activity_area_id`, infort
+   2026-07-22): frysningen stamplar vilket omrade cellens aktivitet tillhorde
+   da. Summeringen och omradesfiltreringen laser stampeln fore
+   `Activity.area_id`, sa en omorganisation inte flyttar historisk bemanning
+   mellan stallen. Ostamplade celler (framtid, eller redigerade efter
+   frysning) faller tillbaka pa aktivitetens nuvarande omrade.
 3. **Radering bevarar historik**: `DELETE person` fryser forst ofrysta
    gardagar, **skriver ut dagens malltimmar som celler** (annars skulle en
    borttagning kl 16 radera personens redan arbetade timmar ur dagens vy),
@@ -227,12 +266,18 @@ Server (alltsa snabb aven pa en stor `schedule_cells`).
 
 Kanda begransningar:
 
-- **Dagens datum ar live till midnatt.** En malländring idag paverkar idag
-  (aven timmar som redan passerat) och framat. Granulariteten ar dygn, enligt
-  regeln "bara framtida dagar". Undantaget ar personradering, som skriver ut
-  dagens timmar innan personen inaktiveras. Vill man skydda dagens redan
-  arbetade timmar aven vid malländring ar samma mekanism
-  (`preserve_today_for_persons`) ratt stalle att utoka.
+- **Innevarande timme ar plan, inte journal.** Skarningen gar vid timmens
+  borjan, sa en andring kl 15:40 kan andra hela timmen 15. Samma konvention
+  som Produktivitets "avslutade timmar".
+- **Mellan tva jobbpass** (max 30 min) kan en nyss passerad timme annu vara
+  omarkerad. Register- och mall-andringar kallar darfor
+  `freeze_pending_for_request` forst, sa just de vagarna alltid ser en
+  aktuell grans. En ren lasning kan daremot visa en nyss passerad timme som
+  plan tills nasta pass.
+- **Omradesstampeln satts vid frysning**, inte vid skrivning. En cell som
+  skapas idag stamplas nar dagen fryses; en cell som redigeras pa en redan
+  fryst dag far ingen stampel och faller tillbaka pa aktivitetens nuvarande
+  omrade.
 - Explicita cellredigeringar pa frysta dagar ar fortsatt tillatna (medvetna
   historikkorrigeringar, auditloggas som vanligt). Rensa dag pa fryst datum
   tar aven bort fill-celler och lamnar dagen tom — mallen aterfyller inte.
@@ -248,10 +293,11 @@ Kanda begransningar:
   overtid, eftersom namnaren da ar timmar-med-innehall i stallet for malltimmar.
 - `get_template_hours_map` (datumlos) saknar bade frysgrans och
   `created_at`-vakt och far aldrig anvandas i en lasvag som visar ett datum.
-- **Omradesfiltrering av historik** anvander fortfarande nuvarande
-  `home_area_id` och `Activity.area_id`. Efter frysningen har varje schemalagd
-  timme en cell med aktivitet, sa personen syns i den aktivitetens omrade aven
-  bakat — men flyttas *aktiviteten* mellan omraden foljer historiken med.
+- **Personens hemomrade** styr fortfarande vilken omradesvy hen listas i, aven
+  bakat: flyttas en person fran GG till AS forsvinner hen ur GG:s historiska
+  personlista (men timmarna ligger kvar i det omrade dar arbetet utfordes,
+  tack vare `activity_area_id`). Hemomradet ar en tillhorighet, inte en
+  uppgift, sa det bedomdes som ratt avvagning.
 - **Demo-lage** kor mot en egen sandbox-databas som bakgrundsjobbet inte ror,
   sa demo-historik forblir en live-projektion. Medvetet: sandboxarna ar
   kortlivade.

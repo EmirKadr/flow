@@ -221,11 +221,12 @@ def get_schedule(
             if home_activity_id is not None:
                 scheduled_defaults[p.id] = {hour: home_activity_id for hour in sorted_hours}
 
-    if is_date_frozen(db, selected_date):
-        # Fryst datum: mallen appliceras inte (template_hours_map är tom), så
-        # vilka timmar som var schemalagda härleds ur cellerna i stället —
-        # timmar med aktivitet eller uttryckligt tom markering. Utan det tappar
-        # Bemanning den diskreta schemalagd-markeringen på hela historiken.
+    if selected_date <= datetime.now(LOCAL_TIMEZONE).date():
+        # Journaldelen (frysta dagar och dagens redan passerade timmar): mallen
+        # svarar inte längre för de timmarna, så vilka som var schemalagda
+        # härleds ur cellerna i stället — timmar med aktivitet eller
+        # uttryckligt tom markering. Utan det tappar Bemanning den diskreta
+        # schemalagd-markeringen på historiken och på dagens förmiddag.
         hours_by_person: dict[int, set[int]] = {}
         for cell in cells:
             if cell.activity_id is not None or cell.empty_override or cell.is_template_fill:

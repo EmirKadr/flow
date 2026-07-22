@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
@@ -134,7 +134,13 @@ def _visible_schedule_persons(
                     ScheduleCell.year == year,
                     ScheduleCell.week == week,
                     ScheduleCell.weekday.in_(weekdays),
-                    or_(Activity.area_id == area_id, ScheduleCell.loan_area_id == area_id),
+                    or_(
+                        # Stampeln forst: den sager vilket omrade arbetet
+                        # utfordes i, aven om aktiviteten flyttats sedan dess.
+                        ScheduleCell.activity_area_id == area_id,
+                        and_(ScheduleCell.activity_area_id.is_(None), Activity.area_id == area_id),
+                        ScheduleCell.loan_area_id == area_id,
+                    ),
                 )
                 .distinct()
             )

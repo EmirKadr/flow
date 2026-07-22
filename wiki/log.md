@@ -3468,3 +3468,38 @@ riktade testerna missade - alla vardefulla signaler, inga av dem falska:
    `put_schedule` borjade frysa gardagen. Riggen listar nu tabellerna explicit.
 
 Sidor: (ingen wikisida berord - kodhygien).
+
+## [2026-07-22] ingest | Plan, journal och dagens blandning
+
+Emir preciserade domanmodellen: schemat ar bade en plan och en journal —
+framtiden ar plan, fortiden journal, **idag ar en mix av bada**. Arbetsledarna
+fyller i vad varje person faktiskt gjort; veckomallen finns bara for att folk
+ofta gor samma sak. Det de vill kunna ga tillbaka till ar hur och vad
+personalen gjort och hur mycket som bemannades pa varje stalle.
+
+Tva luckor foll ut ur det, bada verifierade mot kod fore fix:
+
+1. **Dygnsgranulariteten var for grov.** 0049 fryste hela dygn, sa en
+   malländring kl 15 raderade formiddagens redan utforda arbete ur vyn
+   (uppmatt: timmarna 6,7,8,9,10,12 forsvann nar mallen andrades fran 6-20 till
+   13-20) — och vid midnatt bakades den omritade formiddagen in i journalen
+   permanent. Nu skriver jobbet ocksa ut dagens **passerade** malltimmar och
+   flyttar fram `elapsed_date`/`elapsed_hour`; `_apply_elapsed_cutoff` tar bort
+   timmar fore gransen ur mallens svar. Formiddagen star still, kvallen foljer
+   den nya planen. Skarningen gar vid innevarande timmes borjan, samma
+   konvention som Produktivitets "avslutade timmar".
+2. **Omradesbemanningen foljde registret.** Historisk bemanning per stalle
+   lastes live ur `Activity.area_id` (uppmatt: MG gick fran 3,0 h till 0 h nar
+   aktiviteten flyttades till GG). Frysningen stamplar nu
+   `schedule_cells.activity_area_id`, och summeringen/omradesfiltreringen laser
+   stampeln forst.
+
+`preserve_today_for_persons` utgick — nar dagens passerade timmar skrivs ut for
+alla behovs ingen specialvag vid personradering. Kvar ar regeln att en person
+som skapats idag utan en enda cell hardraderas (`person_predates_today`); den
+lasningen sker nu FORE frysningen, annars skulle utskrivna timmar fa en
+felskapad person att se ut att ha historik.
+
+Migration 0050 renderad mot MSSQL (offline-laget enligt testing-release.md).
+
+Sidor: `schema-historik-mutabilitet.md`, `data-model.md`.

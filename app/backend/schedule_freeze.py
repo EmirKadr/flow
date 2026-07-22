@@ -34,10 +34,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .audit import log as audit_log
-from .models import Person, ScheduleCell, ScheduleFreezeState
+from .models import Activity, Person, ScheduleCell, ScheduleFreezeState
 from .template_service import (
+    get_elapsed_cutoff,
     get_schedule_freeze_horizon,
     get_template_hours_map_for_dates,
+    set_cached_elapsed_cutoff,
     set_cached_freeze_horizon,
 )
 
@@ -177,6 +179,80 @@ def _lock_freeze_state(db: Session) -> date | None:
     return horizon
 
 
+def _stamp_activity_areas(db: Session, target_date: date) -> int:
+    """Snäpp fast vilket område varje cells aktivitet tillhörde den dagen.
+
+    Historisk bemanning per område ska stå still även om en aktivitet senare
+    flyttas till ett annat område. Utan stämpeln läses området live ur
+    ``Activity.area_id`` och en omorganisation skriver om hur mycket som
+    bemannades var.
+    """
+    iso = target_date.isocalendar()
+    return int(
+        db.query(ScheduleCell)
+        .filter(
+            ScheduleCell.year == iso.year,
+            ScheduleCell.week == iso.week,
+            ScheduleCell.weekday == iso.weekday,
+            ScheduleCell.activity_id.is_not(None),
+            ScheduleCell.activity_area_id.is_(None),
+        )
+        .update(
+            {
+                ScheduleCell.activity_area_id: select(Activity.area_id)
+                .where(Activity.id == ScheduleCell.activity_id)
+                .scalar_subquery()
+            },
+            synchronize_session=False,
+        )
+    )
+
+
+def materialize_elapsed_hours(db: Session, *, now=None) -> dict:
+    """Skriv ut dagens redan passerade malltimmar som celler.
+
+    Dagens datum är en blandning av journal och plan: timmarna som passerat är
+    utfört arbete och måste överleva en malländring mitt på dagen, medan
+    timmarna som återstår fortfarande är en plan som ska följa ändringen.
+    Gränsen går vid början av innevarande timme, samma skärning som
+    Produktivitet använder för "avslutade timmar".
+
+    Idempotent och billig: normalt finns högst en ny timme att skriva ut.
+    Committar inte.
+    """
+    if now is None:
+        now = datetime.now(LOCAL_TIMEZONE)
+    today = _local_today(now)
+    current_hour = now.hour if isinstance(now, datetime) else 0
+
+    cutoff = get_elapsed_cutoff(db)
+    if cutoff is not None and cutoff[0] == today and cutoff[1] >= current_hour:
+        return {"date": today.isoformat(), "status": "current", "cells_created": 0}
+
+    cells = [
+        cell
+        for cell in _build_fill_cells(db, today)
+        if cell.hour < current_hour
+    ]
+    if cells:
+        db.add_all(cells)
+    _stamp_activity_areas(db, today)
+
+    row = db.get(ScheduleFreezeState, 1)
+    if row is None:
+        row = ScheduleFreezeState(id=1)
+        db.add(row)
+    row.elapsed_date = today
+    row.elapsed_hour = current_hour
+    set_cached_elapsed_cutoff(db, (today, current_hour))
+    return {
+        "date": today.isoformat(),
+        "status": "materialized",
+        "through_hour": current_hour,
+        "cells_created": len(cells),
+    }
+
+
 def materialize_schedule_day(db: Session, target_date: date, *, now=None) -> dict:
     """Materialisera en dags implicita malltimmar och flytta fram frysgränsen.
 
@@ -194,6 +270,8 @@ def materialize_schedule_day(db: Session, target_date: date, *, now=None) -> dic
     to_create = _build_fill_cells(db, target_date)
     if to_create:
         db.add_all(to_create)
+        db.flush()
+    _stamp_activity_areas(db, target_date)
     advance_freeze_horizon(db, target_date)
     audit_log(
         db,
@@ -295,32 +373,21 @@ def person_predates_today(person: Person, *, now=None) -> bool:
     return created_date < _local_today(now)
 
 
-def preserve_today_for_persons(db: Session, person_ids: list[int], *, now=None) -> int:
-    """Skriv ut dagens implicita malltimmar för vissa personer som celler.
-
-    Används när en person tas bort: utan detta skulle ``has_fixed_schedule``
-    slås av och personens redan arbetade timmar idag försvinna ur vyerna mitt
-    på dagen. Flyttar inte frysgränsen — dagen förblir live för alla andra.
-    """
-    if not person_ids:
-        return 0
-    today = _local_today(now)
-    cells = _build_fill_cells(db, today, person_ids_filter=person_ids)
-    if cells:
-        db.add_all(cells)
-    return len(cells)
 
 
 def freeze_pending_for_request(db: Session) -> dict:
-    """Stäng midnattsfönstret före en registerändring i ett HTTP-anrop.
+    """Säkra journalen fram till nu innan en registerändring skrivs.
 
-    Bakgrundsjobbet fryser gårdagen inom 30 minuter, men mellan midnatt och
-    första passet är gårdagen fortfarande live. Register- och mall-ändringar
-    kallar därför den här före sin mutation. Taket gör att en oväntat stor
-    backfill (t.ex. första deployen) lämnas till bakgrundsjobbet i stället för
-    att låsa upp ett användaranrop.
+    Två luckor stängs: gårdagen kan vara ofryst (bakgrundsjobbet går var 30:e
+    minut, så mellan midnatt och första passet är den fortfarande live), och
+    dagens redan passerade timmar är utfört arbete som en malländring annars
+    skulle rita om. Taket gör att en oväntat stor backfill (t.ex. första
+    deployen) lämnas till bakgrundsjobbet i stället för att låsa ett
+    användaranrop.
     """
-    return materialize_pending_days(db, max_days=REQUEST_PATH_MAX_DAYS)
+    result = materialize_pending_days(db, max_days=REQUEST_PATH_MAX_DAYS)
+    result["elapsed"] = materialize_elapsed_hours(db)
+    return result
 
 
 def _earliest_relevant_date(db: Session) -> date | None:
@@ -436,6 +503,8 @@ def run_schedule_freeze_scheduler(
             db = SessionLocal()
             try:
                 materialize_pending_days(db)
+                materialize_elapsed_hours(db)
+                db.commit()
             finally:
                 db.close()
         except Exception:
