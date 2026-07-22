@@ -1004,6 +1004,23 @@ export interface paths {
         patch: operations["update_meta_shipment_dispatch_lookup_api_meta_shipment_observations__observation_id__dispatch_lookup_patch"];
         trace?: never;
     };
+    "/api/meta/shipment-observations/{observation_id}/local-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Meta Shipment Local Analysis */
+        patch: operations["update_meta_shipment_local_analysis_api_meta_shipment_observations__observation_id__local_analysis_patch"];
+        trace?: never;
+    };
     "/api/meta/shipment-observations/{observation_id}/status": {
         parameters: {
             query?: never;
@@ -1067,6 +1084,23 @@ export interface paths {
         put?: never;
         /** Analyze Meta Media Upload */
         post: operations["analyze_meta_media_upload_api_meta_uploads__upload_id__analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/meta/uploads/{upload_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Meta Media Audio */
+        get: operations["download_meta_media_audio_api_meta_uploads__upload_id__audio_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4259,6 +4293,20 @@ export interface components {
             /** Username */
             username?: string | null;
         };
+        /** ShipmentLocalAnalysisUpdate */
+        ShipmentLocalAnalysisUpdate: {
+            /** Deviations */
+            deviations?: string[];
+            /**
+             * Llm Model
+             * @default gpt-4o-transcribe + gpt-4o-mini
+             */
+            llm_model: string;
+            /** Pallet Id */
+            pallet_id?: string | null;
+            /** Uncertainty Notes */
+            uncertainty_notes?: string | null;
+        };
         /** ShipmentStatusUpdate */
         ShipmentStatusUpdate: {
             /** Status */
@@ -6819,6 +6867,43 @@ export interface operations {
             };
         };
     };
+    update_meta_shipment_local_analysis_api_meta_shipment_observations__observation_id__local_analysis_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                observation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShipmentLocalAnalysisUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_meta_shipment_status_api_meta_shipment_observations__observation_id__status_patch: {
         parameters: {
             query?: never;
@@ -6974,6 +7059,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_meta_media_audio_api_meta_uploads__upload_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                upload_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

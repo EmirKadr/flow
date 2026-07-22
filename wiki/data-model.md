@@ -106,7 +106,7 @@ Viktiga settings:
 - Super User kan radera en meta-rad via Meta-vyn. Da tas blobben bort och audit-loggen sparar bara metadata, inte filens bytes.
 - `status=pending_analysis` betyder att filen finns redo for ett senare LLM-flode. `analysis` ar reserverat for analysresultat.
 - `meta_shipment_observations` skapas for videor. Raden lankar till videon med `media_upload_id` och `video_hash` och har `record_hash` som hash av video-hash, pall-id och avvikelser. Kolumnerna `label_image_upload_id`/`label_image_hash`/`label_frame_time_seconds` ar historiska: stillbildsfunktionen togs bort 2026-07-09 och de fylls aldrig for nya analyser. Ordernummer, sandningsnummer, anvandarnamn och kund ingar inte i hashen eftersom de fylls fran ASK via pall-id.
-- Gemini-analysen anvander bara extraherat ljud fran videon och ska fylla `pallet_id` och `deviations`. `order_number`, `shipment_number`, `username` och `customer_name` lamnas tomma. Osakra eller saknade pall-id/avvikelser ger `analysis_status=manual_review`; misslyckad ljudextraktion ger `analysis_status=analysis_failed`.
+- Meta-analysen transkriberar bara extraherat ljud med `gpt-4o-transcribe`; `gpt-4o-mini` fyller sedan `pallet_id` och `deviations` fran texten. `order_number`, `shipment_number`, `username` och `customer_name` lamnas tomma. Osakra eller saknade pall-id/avvikelser ger `analysis_status=manual_review`; misslyckad ljudextraktion ger `analysis_status=analysis_failed`.
 
 ## Kallor
 

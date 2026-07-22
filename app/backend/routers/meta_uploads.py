@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
+import shutil
+import tempfile
 from uuid import uuid4
 
 import time
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from starlette.background import BackgroundTask
@@ -21,6 +24,8 @@ from ..media_store import get_media_store
 from ..meta_analysis_service import (
     analyze_meta_upload,
     ensure_shipment_observations,
+    extract_audio_file,
+    MetaAnalysisFailed,
     meta_analysis_configured,
     refresh_record_hash,
     run_meta_analysis_background,
@@ -97,6 +102,13 @@ class ShipmentDispatchLookupUpdate(BaseModel):
     customer_name: str | None = None
     note: str | None = None
     source: str | None = None
+
+
+class ShipmentLocalAnalysisUpdate(BaseModel):
+    pallet_id: str | None = None
+    deviations: list[str] = Field(default_factory=list)
+    uncertainty_notes: str | None = None
+    llm_model: str = "gpt-4o-transcribe + gpt-4o-mini"
 
 
 DISPATCH_LOOKUP_NOTE_PREFIXES = (
@@ -642,6 +654,55 @@ def update_meta_shipment_status(
     }
 
 
+@router.patch("/shipment-observations/{observation_id}/local-analysis")
+def update_meta_shipment_local_analysis(
+    observation_id: int,
+    payload: ShipmentLocalAnalysisUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_user),
+) -> dict:
+    row = db.get(MetaShipmentObservation, observation_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Sändningsraden hittades inte.")
+    old_status = row.analysis_status
+    pallet_id = _clean_dispatch_lookup_text(payload.pallet_id, 120)
+    deviations = [str(value).strip()[:500] for value in payload.deviations if str(value or "").strip()][:100]
+    uncertainty_notes = _clean_dispatch_lookup_text(payload.uncertainty_notes, 2000)
+    row.pallet_id = pallet_id
+    row.deviations = deviations
+    row.uncertainty_notes = uncertainty_notes
+    row.llm_model = _clean_dispatch_lookup_text(payload.llm_model, 120)
+    row.llm_raw_response = {
+        "source": "local_cli",
+        "has_pallet_id": bool(pallet_id),
+        "deviation_count": len(deviations),
+        "has_uncertainty_notes": bool(uncertainty_notes),
+    }
+    row.analysis_error = None
+    row.analysis_status = "manual_review" if uncertainty_notes or not pallet_id or not deviations else "analyzed"
+    refresh_record_hash(row)
+    db.flush()
+    audit_log(
+        db,
+        entity_type="meta_shipment_observation",
+        entity_id=row.id,
+        action="local_audio_analysis",
+        old_value={"analysis_status": old_status},
+        new_value={
+            "analysis_status": row.analysis_status,
+            "has_pallet_id": bool(pallet_id),
+            "deviation_count": len(deviations),
+            "has_uncertainty_notes": bool(uncertainty_notes),
+            "llm_model": row.llm_model,
+        },
+        user_id=user.id,
+        business_id=None,
+    )
+    db.commit()
+    db.refresh(row)
+    return {"item": _shipment_observation_out(row), "status": row.analysis_status}
+
+
 @router.patch("/shipment-observations/{observation_id}/dispatch-lookup")
 def update_meta_shipment_dispatch_lookup(
     observation_id: int,
@@ -768,11 +829,72 @@ def get_meta_media_content(
     variant: str | None = Query(None, pattern="^(original|playable)$"),
     download: bool = Query(False),
     db: Session = Depends(get_db),
-    _: User = Depends(require_super_user),
+    user: User = Depends(require_super_user),
 ) -> Response:
     row = db.get(MetaMediaUpload, upload_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Uppladdningen hittades inte.")
+    if download:
+        audit_log(
+            db,
+            entity_type="meta_media_upload",
+            entity_id=row.id,
+            action="download_video",
+            old_value=None,
+            new_value={"media_type": "video", "size_bytes": int(row.size_bytes or 0)},
+            user_id=user.id,
+            business_id=None,
+        )
+        db.commit()
     # variant=playable är ett bakåtkompatibelt alias till original. Ingen
     # request-driven videotranskodning får köras i den enda serverpodden.
     return _media_response(row, request, variant=variant, as_attachment=download)
+
+
+@router.get("/uploads/{upload_id}/audio")
+def download_meta_media_audio(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_super_user),
+) -> FileResponse:
+    row = db.get(MetaMediaUpload, upload_id)
+    if row is None or row.media_type != "video":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Videon hittades inte.")
+    with tempfile.NamedTemporaryFile(prefix="flow-meta-audio-", suffix=".mp3", delete=False) as temp_file:
+        output = Path(temp_file.name)
+    try:
+        with extract_audio_file(row) as audio:
+            shutil.copyfile(audio.path, output)
+    except Exception as exc:
+        output.unlink(missing_ok=True)
+        audit_log(
+            db,
+            entity_type="meta_media_upload",
+            entity_id=row.id,
+            action="download_audio_failed",
+            old_value=None,
+            new_value={"media_type": "audio", "error_type": type(exc).__name__},
+            user_id=user.id,
+            business_id=None,
+        )
+        db.commit()
+        if isinstance(exc, MetaAnalysisFailed):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        raise
+    audit_log(
+        db,
+        entity_type="meta_media_upload",
+        entity_id=row.id,
+        action="download_audio",
+        old_value=None,
+        new_value={"media_type": "audio", "size_bytes": output.stat().st_size},
+        user_id=user.id,
+        business_id=None,
+    )
+    db.commit()
+    return FileResponse(
+        output,
+        media_type="audio/mpeg",
+        filename=f"meta-audio-{upload_id}.mp3",
+        background=BackgroundTask(_cleanup_path, output),
+    )

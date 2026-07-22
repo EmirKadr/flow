@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from http.cookiejar import MozillaCookieJar
@@ -197,7 +198,9 @@ ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("meta.analyze", "POST", "/api/meta/uploads/{upload_id}/analyze", "Analysera Meta-video"),
     ApiRoute("meta.shipment_status", "PATCH", "/api/meta/shipment-observations/{observation_id}/status", "Uppdatera status for Meta-rad"),
     ApiRoute("meta.shipment_dispatch_lookup", "PATCH", "/api/meta/shipment-observations/{observation_id}/dispatch-lookup", "Skriv tillbaka lokalt ASK-uppslag for Meta-rad"),
+    ApiRoute("meta.local_analysis", "PATCH", "/api/meta/shipment-observations/{observation_id}/local-analysis", "Skriv tillbaka lokal Meta-ljudanalys"),
     ApiRoute("meta.content", "GET", "/api/meta/uploads/{upload_id}/content", "Visa eller spela upp meta-uppladdning"),
+    ApiRoute("meta.audio", "GET", "/api/meta/uploads/{upload_id}/audio", "Ladda ner extraherat Meta-ljud"),
     ApiRoute("meta.delete", "DELETE", "/api/meta/uploads/{upload_id}", "Radera meta-uppladdning"),
 )
 
@@ -763,6 +766,55 @@ def _patch_meta_dispatch_lookup(
     )
 
 
+def _run_local_meta_audio_analysis(
+    session: requests.Session,
+    args: argparse.Namespace,
+    observation_id: Any,
+    upload_id: Any,
+) -> requests.Response:
+    audio_response = _request(
+        session=session,
+        base_url=args.base_url,
+        method="GET",
+        path=f"/api/meta/uploads/{upload_id}/audio",
+        timeout=(8, args.timeout),
+    )
+    _save_session(session)
+    if not audio_response.ok:
+        return audio_response
+    load_env_files()
+    from app.backend.config import settings
+    from app.backend.meta_analysis_service import META_ANALYSIS_INSTRUCTIONS, normalize_meta_analysis
+    from app.backend.meta_transcription import analyze_audio_with_openai
+
+    with tempfile.NamedTemporaryFile(prefix="flow-meta-cli-", suffix=".mp3") as audio_file:
+        audio_file.write(audio_response.content)
+        audio_file.flush()
+        raw = analyze_audio_with_openai(
+            audio_path=Path(audio_file.name),
+            filename="meta-audio.mp3",
+            content_type="audio/mpeg",
+            instructions=META_ANALYSIS_INSTRUCTIONS,
+        )
+    fields = normalize_meta_analysis(raw)
+    return _request(
+        session=session,
+        base_url=args.base_url,
+        method="PATCH",
+        path=f"/api/meta/shipment-observations/{observation_id}/local-analysis",
+        json_body={
+            "pallet_id": fields.get("pallet_id"),
+            "deviations": fields.get("deviations") or [],
+            "uncertainty_notes": fields.get("uncertainty_notes"),
+            "llm_model": (
+                f"{settings.META_TRANSCRIPTION_MODEL or 'gpt-4o-transcribe'} + "
+                f"{settings.META_ANALYSIS_TEXT_MODEL or 'gpt-4o-mini'}"
+            ),
+        },
+        timeout=(8, args.timeout),
+    )
+
+
 def _run_meta_process_queue(args: argparse.Namespace) -> int:
     session = _session(args.cookie_jar)
     list_response = _request(
@@ -790,13 +842,31 @@ def _run_meta_process_queue(args: argparse.Namespace) -> int:
         upload_id = item.get("media_upload_id")
         if not upload_id:
             continue
-        analyze_response = _request(
-            session=session,
-            base_url=args.base_url,
-            method="POST",
-            path=f"/api/meta/uploads/{upload_id}/analyze",
-            timeout=(8, args.timeout),
-        )
+        try:
+            analyze_response = (
+                _run_local_meta_audio_analysis(session, args, observation_id, upload_id)
+                if args.local_analysis
+                else _request(
+                    session=session,
+                    base_url=args.base_url,
+                    method="POST",
+                    path=f"/api/meta/uploads/{upload_id}/analyze",
+                    timeout=(8, args.timeout),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - fortsatt till nasta korad efter begriplig lokal felrad.
+            exit_code = 1
+            result = {
+                "observation_id": observation_id,
+                "media_upload_id": upload_id,
+                "old_status": args.status,
+                "error": type(exc).__name__,
+                "detail": str(exc)[:500],
+            }
+            results.append(result)
+            if not args.json:
+                print(f"observation {observation_id} (upload {upload_id}): LOKALT FEL {type(exc).__name__}")
+            continue
         _save_session(session)
         if analyze_response.ok:
             analyzed = _json_response(analyze_response)
@@ -1006,6 +1076,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=600,
         help="Las-timeout i sekunder per analys-anrop (default: 600).",
+    )
+    meta_process_queue.add_argument(
+        "--local-analysis",
+        action="store_true",
+        help="Hamta MP3 fran Flow, kor GPT-4o Transcribe lokalt och skriv tillbaka analysfalten.",
     )
     meta_process_queue.add_argument(
         "--local-dispatch-lookup",

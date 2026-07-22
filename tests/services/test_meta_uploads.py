@@ -1,5 +1,7 @@
 import asyncio
+from contextlib import contextmanager
 import io
+import json
 from pathlib import Path
 import re
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ from app.backend.deps import get_current_user, get_db
 from app.backend.main import app
 from app.backend.models import AuditLog, MetaMediaUpload, MetaShipmentObservation, User
 from app.backend import meta_analysis_service
+from app.backend import meta_transcription
 from app.backend.routers import meta_uploads
 from app.backend.routers import meta_uploads_helpers
 
@@ -27,7 +30,7 @@ from app.backend.routers import meta_uploads_helpers
 def disable_meta_analysis_provider(monkeypatch, tmp_path):
     from app.backend import media_store
 
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
     monkeypatch.setattr(settings, "MEDIA_STORE_ROOT", str(tmp_path / "media_store"))
     monkeypatch.setattr(meta_uploads, "_probe_video_duration_from_path", lambda path: None)
     media_store.reset_media_store_cache()
@@ -71,12 +74,73 @@ def test_meta_upload_default_rate_limit_allows_long_sequential_queues(monkeypatc
     assert defaults.MAX_META_UPLOAD_FILES >= 1
 
 
-def test_meta_analysis_uses_gemini_config_and_parses_json_response(monkeypatch):
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
-    monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-2.5-pro")
+def test_meta_analysis_uses_openai_config_and_models(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(settings, "META_TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
+    monkeypatch.setattr(settings, "META_ANALYSIS_TEXT_MODEL", "gpt-4o-mini")
 
     assert meta_analysis_service.meta_analysis_configured()
-    assert meta_analysis_service.gemini_model_name() == "gemini-2.5-pro"
+    assert meta_analysis_service.meta_model_name() == "gpt-4o-transcribe"
+    assert meta_analysis_service.meta_text_model_name() == "gpt-4o-mini"
+
+
+def test_openai_meta_analysis_transcribes_audio_then_extracts_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "OPENAI_API_BASE_URL", "https://api.openai.test/v1")
+    monkeypatch.setattr(settings, "META_TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
+    monkeypatch.setattr(settings, "META_ANALYSIS_TEXT_MODEL", "gpt-4o-mini")
+    audio_path = tmp_path / "meta.mp3"
+    audio_path.write_bytes(b"audio")
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/audio/transcriptions"):
+            return FakeResponse({"text": "Pall ID 8 4 7 3 8 7 7. Fel på kartongerna."})
+        return FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "pallet_id": "8473877",
+                                    "deviations": ["Fel på kartongerna"],
+                                    "uncertainty_notes": None,
+                                    "confidence": 0.99,
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(meta_transcription.requests, "post", fake_post)
+    result = meta_transcription.analyze_audio_with_openai(
+        audio_path=audio_path,
+        filename="meta.mp3",
+        content_type="audio/mpeg",
+        instructions="Returnera JSON.",
+    )
+
+    assert result["pallet_id"] == "8473877"
+    assert calls[0][1]["data"]["model"] == "gpt-4o-transcribe"
+    assert calls[0][1]["data"]["language"] == "sv"
+    assert calls[1][1]["json"]["model"] == "gpt-4o-mini"
+    assert "8473877" not in str(calls[1][1]["json"]), "testet ska använda transkriptet, inte förväntat facit"
 
     extracted = meta_analysis_service._extract_json_candidate(
         {
@@ -197,7 +261,7 @@ def test_meta_ffmpeg_resolver_uses_imageio_fallback(monkeypatch):
 
 
 def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monkeypatch):
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -250,7 +314,7 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
 
 
 def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatch):
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -320,7 +384,7 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
 
 
 def test_analyze_meta_upload_marks_audio_extraction_failure(monkeypatch):
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(meta_analysis_service, "_resolve_ffmpeg", lambda: None)
     engine, session = make_session()
     row = MetaMediaUpload(
@@ -354,7 +418,7 @@ def test_analyze_meta_upload_marks_unexpected_error_instead_of_leaking_500(monke
     """Ett oväntat fel (inte MetaAnalysisFailed) får inte lämna raden låst i
     'analyzing' med en naken 500 — den ska bli 'analysis_failed' med felet synligt
     så Analysera-knappen inte disablas för alltid."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
 
     def _boom(upload):
         raise RuntimeError("oväntad krasch")
@@ -394,7 +458,7 @@ def test_analyze_endpoint_returns_200_not_500_on_unexpected_error(monkeypatch):
     buggen propagerade undantaget (TestClient reser det); med fixen svarar
     endpointen 200 med analysis_failed och felet i message, och raden är inte
     kvar i 'analyzing' (Analysera-knappen disablas annars för alltid)."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
 
     def _boom(upload):
         raise RuntimeError("oväntad krasch")
@@ -699,7 +763,7 @@ def test_meta_upload_rejects_non_media_files():
         engine.dispose()
 
 
-def test_super_user_can_list_meta_uploads_and_stream_content():
+def test_super_user_can_list_meta_uploads_and_stream_content(monkeypatch, tmp_path):
     engine, session = make_session()
     row = MetaMediaUpload(
         batch_id="batch",
@@ -755,6 +819,33 @@ def test_super_user_can_list_meta_uploads_and_stream_content():
         assert download.status_code == 206
         assert download.content == b"hello"
         assert download.headers["content-disposition"].startswith("attachment;")
+
+        @contextmanager
+        def fake_extract(_row):
+            audio_path = tmp_path / "audio.mp3"
+            audio_path.write_bytes(b"audio-only")
+            yield SimpleNamespace(path=audio_path)
+
+        monkeypatch.setattr(meta_uploads, "extract_audio_file", fake_extract)
+        audio = client.get(f"/api/meta/uploads/{row.id}/audio")
+        assert audio.status_code == 200
+        assert audio.content == b"audio-only"
+        assert audio.headers["content-type"].startswith("audio/mpeg")
+        assert audio.headers["content-disposition"].startswith("attachment;")
+        actions = [entry.action for entry in session.query(AuditLog).order_by(AuditLog.id).all()]
+        assert "download_video" in actions
+        assert "download_audio" in actions
+
+        @contextmanager
+        def failed_extract(_row):
+            raise meta_analysis_service.MetaAnalysisFailed("Videon saknar ljud att analysera.")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(meta_uploads, "extract_audio_file", failed_extract)
+        failed_audio = client.get(f"/api/meta/uploads/{row.id}/audio")
+        assert failed_audio.status_code == 422
+        assert failed_audio.json()["detail"] == "Videon saknar ljud att analysera."
+        assert session.query(AuditLog).filter_by(action="download_audio_failed").count() == 1
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -1166,6 +1257,24 @@ def test_super_user_can_change_shipment_status_and_audit():
             json={"status": "not-a-real-status"},
         )
         assert rejected.status_code == 400
+
+        local_analysis = client.patch(
+            f"/api/meta/shipment-observations/{observation_id}/local-analysis",
+            json={
+                "pallet_id": "8473877",
+                "deviations": ["Fel på kartong"],
+                "uncertainty_notes": None,
+                "llm_model": "gpt-4o-transcribe + gpt-4o-mini",
+            },
+        )
+        assert local_analysis.status_code == 200
+        assert local_analysis.json()["status"] == "analyzed"
+        assert local_analysis.json()["item"]["pallet_id"] == "8473877"
+        local_audit = session.query(AuditLog).filter_by(action="local_audio_analysis").one()
+        assert local_audit.new_value["has_pallet_id"] is True
+        assert local_audit.new_value["deviation_count"] == 1
+        assert "8473877" not in json.dumps(local_audit.new_value)
+        assert "Fel på kartong" not in json.dumps(local_audit.new_value)
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -1531,7 +1640,7 @@ def _make_analyzed_upload(session, content_hash: str) -> MetaMediaUpload:
 def test_dispatch_lookup_miss_becomes_note_not_failure(monkeypatch):
     """Ingen traff i Dispatchpallar ska ge en tydlig anteckning med pall-id
     och status Kontrollera — inte ett fel."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -1562,7 +1671,7 @@ def test_dispatch_lookup_passes_configured_tenant_fallback(monkeypatch):
     inloggningsfri), sa ASK-uppslaget maste falla tillbaka pa den konfigurerade
     META_ANALYSIS_DATA_SOURCE_TENANT — annars blir bas-URL:en olost "{tenant}"
     pa miljoer dar DATA_SOURCE_API_BASE_URL ar en multi-tenant-mall."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(settings, "META_ANALYSIS_DATA_SOURCE_TENANT", "frey")
     monkeypatch.setattr(
         meta_analysis_service,
@@ -1594,7 +1703,7 @@ def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
     """Live-vyn haller bara ~14 dagar — aldre pallar ska hittas i arkivet
     (dblog_dispatch_pallet_log) och fylla lookup-falten utan anteckning.
     Numeriska pall-id skickas som tal sa EQ matchar den numeriska kolumnen."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -1643,7 +1752,7 @@ def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
 def test_dispatch_lookup_unexpected_error_becomes_note_not_failure(monkeypatch):
     """Aven ett OVANTAT fel i ASK-uppslaget (inte bara kanda klientfel) ska
     bli en anteckning pa raden — analysen far aldrig kranga pa uppslaget."""
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
         "_call_meta_analysis_provider",
@@ -1671,6 +1780,7 @@ def test_dispatch_lookup_unexpected_error_becomes_note_not_failure(monkeypatch):
 
 
 def test_analyze_meta_upload_scrubs_api_key_from_analysis_error(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-test-key")
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "super-hemlig-nyckel")
 
     def _boom(upload):
