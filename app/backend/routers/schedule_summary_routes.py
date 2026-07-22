@@ -45,6 +45,7 @@ def get_summary(
                 ScheduleCell.person_id,
                 ScheduleCell.hour,
                 ScheduleCell.activity_id,
+                ScheduleCell.activity_area_id,
                 ScheduleCell.empty_override,
                 ScheduleCell.minute_start,
                 ScheduleCell.minute_end,
@@ -61,10 +62,18 @@ def get_summary(
             duration = int(row.minute_end - row.minute_start)
             if row.activity_id is not None:
                 activity = activities.get(row.activity_id)
+                # Stampeln vinner over aktivitetens nuvarande omrade: den sager
+                # var arbetet faktiskt utfordes, sa en omorganisation inte
+                # flyttar historisk bemanning mellan omraden.
+                cell_area_id = (
+                    row.activity_area_id
+                    if row.activity_area_id is not None
+                    else (activity.area_id if activity is not None else None)
+                )
                 count_for_area = (
                     area_id is None
                     or row.person_id in home_area_person_ids
-                    or (activity is not None and activity.area_id == area_id)
+                    or cell_area_id == area_id
                 )
                 if count_for_area:
                     minutes_by_activity[row.activity_id] = (

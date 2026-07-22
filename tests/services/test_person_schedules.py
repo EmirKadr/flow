@@ -1,28 +1,45 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import Activity, Area, Person, PersonScheduleTemplate, User
+from app.backend.models import (
+    Activity,
+    Area,
+    AuditLog,
+    Person,
+    PersonScheduleTemplate,
+    ScheduleCell,
+    ScheduleFreezeState,
+    User,
+)
 from app.backend.routers import person_schedules
 from app.backend.schemas import TemplateUpdate
 from app.backend.template_service import get_template_hours
 
+# put_schedule fryser gardagen innan mallen andras (se schedule_freeze), sa
+# riggen behover aven frys-, cell- och audittabellerna.
+_TABLES = (
+    Area.__table__,
+    Activity.__table__,
+    Person.__table__,
+    PersonScheduleTemplate.__table__,
+    ScheduleCell.__table__,
+    ScheduleFreezeState.__table__,
+    AuditLog.__table__,
+)
+
 
 def make_session():
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Area.__table__.create(engine)
-    Activity.__table__.create(engine)
-    Person.__table__.create(engine)
-    PersonScheduleTemplate.__table__.create(engine)
+    for table in _TABLES:
+        table.create(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     return engine, SessionLocal()
 
 
 def close_session(engine, session):
     session.close()
-    PersonScheduleTemplate.__table__.drop(engine)
-    Person.__table__.drop(engine)
-    Activity.__table__.drop(engine)
-    Area.__table__.drop(engine)
+    for table in reversed(_TABLES):
+        table.drop(engine)
     engine.dispose()
 
 

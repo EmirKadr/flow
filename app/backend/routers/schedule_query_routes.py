@@ -25,6 +25,7 @@ def get_schedule_revision(
         week=week,
         weekdays=[weekday],
     )
+
     return {
         "year": year,
         "week": week,
@@ -54,7 +55,11 @@ def get_schedule_presence(
     selected_date = _schedule_date(year, week, weekday)
     scoped_business_id = visible_business_id(db, user, business_id)
 
-    persons_q = select(Person).where(Person.is_active)
+    historical_ids = historical_person_ids_subquery(db, [(year, week, weekday)])
+    if historical_ids is not None:
+        persons_q = select(Person).where(or_(Person.is_active, Person.id.in_(historical_ids)))
+    else:
+        persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -215,6 +220,19 @@ def get_schedule(
             home_activity_id = home_activity_by_person_id.get(p.id)
             if home_activity_id is not None:
                 scheduled_defaults[p.id] = {hour: home_activity_id for hour in sorted_hours}
+
+    if selected_date <= datetime.now(LOCAL_TIMEZONE).date():
+        # Journaldelen (frysta dagar och dagens redan passerade timmar): mallen
+        # svarar inte längre för de timmarna, så vilka som var schemalagda
+        # härleds ur cellerna i stället — timmar med aktivitet eller
+        # uttryckligt tom markering. Utan det tappar Bemanning den diskreta
+        # schemalagd-markeringen på historiken och på dagens förmiddag.
+        hours_by_person: dict[int, set[int]] = {}
+        for cell in cells:
+            if cell.activity_id is not None or cell.empty_override or cell.is_template_fill:
+                hours_by_person.setdefault(cell.person_id, set()).add(cell.hour)
+        for person_id, hours in hours_by_person.items():
+            scheduled_hours[person_id] = sorted(set(scheduled_hours.get(person_id, [])) | hours)
 
     return ScheduleOut(
         year=year,

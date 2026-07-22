@@ -521,6 +521,10 @@ def bulk_update_cells(
             selected_date = dates_by_ywd[(year, week, weekday)]
             template_hours = template_hours_map.get((person_id, selected_date))
             hour_segments = list(hour_segments_by_key.get((person_id, year, week, weekday, hour), []))
+            # Pa ett fryst datum svarar mallen inte; timmens egna celler far da
+            # avgora om den var schemalagd, sa en historisk rattning inte
+            # tappar schemalagd-markeringen.
+            frozen_segments = hour_segments if is_date_frozen(db, selected_date) else None
             item_by_range = {
                 (item.minute_start, item.minute_end): item
                 for item in group_items
@@ -640,6 +644,7 @@ def bulk_update_cells(
                                 template_hours,
                                 hour=hour,
                                 activity_id=desired_activity_id,
+                                frozen_segments=frozen_segments,
                             ),
                             version=1,
                             updated_by=user.id,
@@ -687,6 +692,7 @@ def bulk_update_cells(
                     template_hours,
                     hour=hour,
                     activity_id=item.activity_id,
+                    frozen_segments=frozen_segments,
                 )
 
                 if matching is None:

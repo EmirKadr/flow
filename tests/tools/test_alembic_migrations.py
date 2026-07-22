@@ -57,6 +57,16 @@ def _migration_specs() -> list[dict[str, object]]:
     return specs
 
 
+def _is_sqlalchemy_call(node: ast.AST, name: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "sa"
+        and node.func.attr == name
+    )
+
+
 def test_alembic_revision_ids_fit_version_table():
     too_long = [
         f"{spec['revision']} ({spec['path'].name})"
@@ -113,3 +123,28 @@ def test_alembic_revision_graph_is_connected_and_has_one_head():
 
     walk(head_revisions[0])
     assert sorted(all_revisions - visited) == []
+
+
+def test_boolean_server_defaults_are_portable_between_postgres_and_mssql():
+    violations = []
+    for path in sorted(VERSIONS.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not _is_sqlalchemy_call(node, "Column"):
+                continue
+            if not any(_is_sqlalchemy_call(argument, "Boolean") for argument in node.args):
+                continue
+            default = next(
+                (keyword.value for keyword in node.keywords if keyword.arg == "server_default"),
+                None,
+            )
+            if default is not None and not (
+                _is_sqlalchemy_call(default, "true")
+                or _is_sqlalchemy_call(default, "false")
+            ):
+                violations.append(f"{path.name}:{node.lineno}")
+
+    assert violations == [], (
+        "Boolean-server-default ska anvanda sa.true()/sa.false() sa migrationen "
+        "renderas korrekt for bade PostgreSQL och MSSQL: " + ", ".join(violations)
+    )

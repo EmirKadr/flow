@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import log as audit_log
@@ -23,7 +23,12 @@ from ..staffing_calculator_service import (
     staffing_calculator_profile_count,
     staffing_process_options,
 )
-from ..template_service import get_template_hours_for_date, get_template_hours_map_for_dates
+from ..template_service import (
+    LOCAL_TIMEZONE,
+    get_template_hours_for_date,
+    get_template_hours_map_for_dates,
+    is_date_frozen,
+)
 from ..user_access import is_super_user
 from ..schemas import (
     BulkCellRequest,
@@ -61,6 +66,39 @@ def _iso(value) -> str:
     return value.isoformat() if value is not None else ""
 
 
+def _safe_iso_date(year: int, week: int, weekday: int) -> date | None:
+    try:
+        return date.fromisocalendar(year, week, weekday)
+    except ValueError:
+        return None
+
+
+def historical_person_ids_subquery(db: Session, year_week_weekdays: list[tuple[int, int, int]]):
+    """Subquery med person-id som har celler på historiska datum i perioden.
+
+    Historiken ska visa personer som arbetade då även om de senare
+    inaktiverats/tagits bort. "Historisk" är datum till och med idag: frysta
+    dagar plus dagens (ännu ofrysta) dag, så en person som tas bort mitt på
+    dagen inte försvinner från morgonens celler. Returnerar None när inget
+    datum i perioden är historiskt (då gäller vanlig is_active-filtrering
+    ensam).
+    """
+    today = datetime.now(LOCAL_TIMEZONE).date()
+    historical = [
+        (int(year), int(week), int(weekday))
+        for year, week, weekday in year_week_weekdays
+        if (candidate := _safe_iso_date(int(year), int(week), int(weekday))) is not None
+        and candidate <= today
+    ]
+    if not historical:
+        return None
+    conditions = [
+        (ScheduleCell.year == year) & (ScheduleCell.week == week) & (ScheduleCell.weekday == weekday)
+        for year, week, weekday in historical
+    ]
+    return select(ScheduleCell.person_id).where(or_(*conditions)).distinct()
+
+
 def _visible_schedule_persons(
     db: Session,
     user: User,
@@ -72,7 +110,15 @@ def _visible_schedule_persons(
     weekdays: list[int] | None = None,
 ) -> tuple[list[Person], int | None]:
     scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active)
+    historical_ids = None
+    if year is not None and week is not None and weekdays:
+        historical_ids = historical_person_ids_subquery(
+            db, [(year, week, weekday) for weekday in weekdays]
+        )
+    if historical_ids is not None:
+        persons_q = select(Person).where(or_(Person.is_active, Person.id.in_(historical_ids)))
+    else:
+        persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -88,7 +134,13 @@ def _visible_schedule_persons(
                     ScheduleCell.year == year,
                     ScheduleCell.week == week,
                     ScheduleCell.weekday.in_(weekdays),
-                    or_(Activity.area_id == area_id, ScheduleCell.loan_area_id == area_id),
+                    or_(
+                        # Stampeln forst: den sager vilket omrade arbetet
+                        # utfordes i, aven om aktiviteten flyttats sedan dess.
+                        ScheduleCell.activity_area_id == area_id,
+                        and_(ScheduleCell.activity_area_id.is_(None), Activity.area_id == area_id),
+                        ScheduleCell.loan_area_id == area_id,
+                    ),
                 )
                 .distinct()
             )
@@ -285,6 +337,10 @@ def _presence_business_group(
     )
 
 def _cell_to_dict(cell: ScheduleCell) -> dict:
+    # `is_template_fill` ar medvetet inte med: klienten behover aldrig skilja en
+    # materialiserad malltimme fran en vanlig cell (den ritas likadant, och
+    # `updated_by=None` gor den redigerbar precis som en implicit timme var).
+    # Ett falt per cell kostar transport pa varje schemaladdning.
     return {
         "person_id": cell.person_id,
         "hour": cell.hour,
@@ -540,9 +596,39 @@ def _hours_from_minutes(total_minutes: int) -> float:
     return round(float(total_minutes) / 60.0, 2)
 
 
+def _hour_was_scheduled_in_frozen_day(
+    db: Session, person_id: int, year: int, week: int, weekday: int, hour: int
+) -> bool:
+    """Var timmen schemalagd enligt den frysta dagens egna celler?
+
+    På ett fryst datum ger mallen inget svar längre. Bevis finns i stället i
+    cellerna: en materialiserad malltimme (`is_template_fill`) eller en
+    uttryckligen tömd timme (`empty_override`). Utan det tappar en historisk
+    rättning cellens schemalagd-markering.
+    """
+    return (
+        db.query(ScheduleCell.id)
+        .filter(
+            ScheduleCell.year == year,
+            ScheduleCell.week == week,
+            ScheduleCell.weekday == weekday,
+            ScheduleCell.person_id == person_id,
+            ScheduleCell.hour == hour,
+            or_(ScheduleCell.is_template_fill, ScheduleCell.empty_override),
+        )
+        .first()
+        is not None
+    )
+
+
 def _is_scheduled_hour(db: Session, person_id: int, year: int, week: int, weekday: int, hour: int) -> bool:
-    template = get_template_hours_for_date(db, person_id, _schedule_date(year, week, weekday))
-    return bool(template and hour in template)
+    target_date = _schedule_date(year, week, weekday)
+    template = get_template_hours_for_date(db, person_id, target_date)
+    if template is not None:
+        return hour in template
+    if is_date_frozen(db, target_date):
+        return _hour_was_scheduled_in_frozen_day(db, person_id, year, week, weekday, hour)
+    return False
 
 
 def _empty_override_for(
@@ -563,8 +649,20 @@ def _empty_override_for_template(
     *,
     hour: int,
     activity_id: int | None,
+    frozen_segments: list[ScheduleCell] | None = None,
 ) -> bool:
-    return activity_id is None and bool(template_hours and hour in template_hours)
+    """Ska en tomd cell markeras som "schemalagd men tom"?
+
+    ``frozen_segments`` skickas in for frysta datum, dar mallen inte langre
+    svarar: timmens befintliga celler far da avgora om den var schemalagd.
+    """
+    if activity_id is not None:
+        return False
+    if template_hours and hour in template_hours:
+        return True
+    if frozen_segments:
+        return any(cell.is_template_fill or cell.empty_override for cell in frozen_segments)
+    return False
 
 
 def _bulk_conflict_dict(item, current_segments: list[ScheduleCell]) -> dict:

@@ -15,8 +15,17 @@ from ..home_activity import build_home_activity_resolver, person_out_with_home_a
 from ..models import Activity, Area, Person, ScheduleCell, User
 from ..schedule_locks import assert_can_modify_schedule_cells, foreign_schedule_cell_lock_applies
 from ..schemas import PersonOut
-from ..template_service import get_template_hours_map_for_dates
-from .overview_cells import load_bulk_day_cells_by_key, load_day_cells_by_hour, overview_day_key
+from ..template_service import get_schedule_freeze_horizon, get_template_hours_map_for_dates
+from .overview_cells import (
+    effective_minutes_by_activity as _effective_minutes_by_activity,
+    hours_from_minutes as _hours_from_minutes,
+    load_bulk_day_cells_by_key,
+    load_day_cells_by_hour,
+    overview_day_key,
+    summarize_day as _summarize_day,
+    template_hours_count as _template_hours_count,
+)
+from .schedule_shared import historical_person_ids_subquery
 
 logger = logging.getLogger("overview")
 
@@ -188,40 +197,6 @@ class OverviewDayRequest(BaseModel):
 class OverviewBulkDayRequest(BaseModel):
     days: list[OverviewDayRequest]
     atomic: bool = False
-
-
-def _hours_from_minutes(total_minutes: int) -> float:
-    return round(float(total_minutes) / 60.0, 2)
-
-
-def _effective_minutes_by_activity(
-    *,
-    explicit_minutes: dict[int, int],
-    covered_minutes: dict[int, int],
-    template: set[int] | None,
-    home_activity_id: int | None,
-) -> dict[int, int]:
-    minutes_by_activity = dict(explicit_minutes)
-    if template is None or home_activity_id is None:
-        return minutes_by_activity
-
-    for hour in template:
-        remaining = 60 - covered_minutes.get(hour, 0)
-        if remaining <= 0:
-            continue
-        minutes_by_activity[home_activity_id] = minutes_by_activity.get(home_activity_id, 0) + remaining
-
-    return minutes_by_activity
-
-
-def _summarize_day(minutes_by_activity: dict[int, int]) -> tuple[int | None, bool, int]:
-    total_minutes = sum(minutes_by_activity.values())
-    if not minutes_by_activity:
-        return None, False, total_minutes
-
-    dominant = max(minutes_by_activity.items(), key=lambda item: item[1])[0]
-    mixed = len(minutes_by_activity) > 1
-    return dominant, mixed, total_minutes
 
 
 def _sorted_segments(cells: list[ScheduleCell]) -> list[ScheduleCell]:
@@ -596,7 +571,13 @@ def get_overview(
     user: User = Depends(require_view_access("overview", "view")),
 ) -> OverviewOut:
     scoped_business_id = visible_business_id(db, user, business_id)
-    persons_q = select(Person).where(Person.is_active)
+    historical_ids = historical_person_ids_subquery(
+        db, [(year, week, weekday) for weekday in range(1, 8)]
+    )
+    if historical_ids is not None:
+        persons_q = select(Person).where(or_(Person.is_active, Person.id.in_(historical_ids)))
+    else:
+        persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -650,12 +631,18 @@ def get_overview(
     home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
     week_dates = {weekday: _overview_date(year, week, weekday) for weekday in range(1, 8)}
     template_hours_map = get_template_hours_map_for_dates(db, person_ids, week_dates.values())
+    freeze_horizon = get_schedule_freeze_horizon(db)
     matrix: list[OverviewCell] = []
     for person in persons:
         home_activity_id = home_activity_for(person)
         for weekday in range(1, 8):
             template_hours = template_hours_map.get((person.id, week_dates[weekday]))
-            template_count = 0 if template_hours is None else len(template_hours)
+            template_count = _template_hours_count(
+                template_hours,
+                target_date=week_dates[weekday],
+                freeze_horizon=freeze_horizon,
+                covered_hours=covered_minutes.get((person.id, weekday), {}),
+            )
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((person.id, weekday), {}),
                 covered_minutes=covered_minutes.get((person.id, weekday), {}),
@@ -713,7 +700,13 @@ def get_month_overview(
         )
         current_day += timedelta(days=1)
 
-    persons_q = select(Person).where(Person.is_active)
+    historical_ids = historical_person_ids_subquery(
+        db, [(day.year, day.week, day.weekday) for day in days_list]
+    )
+    if historical_ids is not None:
+        persons_q = select(Person).where(or_(Person.is_active, Person.id.in_(historical_ids)))
+    else:
+        persons_q = select(Person).where(Person.is_active)
     if scoped_business_id is not None:
         persons_q = persons_q.where(Person.business_id == scoped_business_id)
     if area_id is not None:
@@ -771,12 +764,20 @@ def get_month_overview(
     home_activity_for = build_home_activity_resolver(activity_query.all(), area_query.all())
     date_by_iso = {day_info.date: date.fromisoformat(day_info.date) for day_info in days_list}
     template_hours_map = get_template_hours_map_for_dates(db, person_ids, date_by_iso.values())
+    freeze_horizon = get_schedule_freeze_horizon(db)
     matrix: list[MonthOverviewCell] = []
     for person in persons:
         home_activity_id = home_activity_for(person)
         for day_info in days_list:
             template_hours = template_hours_map.get((person.id, date_by_iso[day_info.date]))
-            template_count = 0 if template_hours is None else len(template_hours)
+            template_count = _template_hours_count(
+                template_hours,
+                target_date=date_by_iso[day_info.date],
+                freeze_horizon=freeze_horizon,
+                covered_hours=covered_minutes.get(
+                    (person.id, day_info.year, day_info.week, day_info.weekday), {}
+                ),
+            )
             minutes_by_activity = _effective_minutes_by_activity(
                 explicit_minutes=explicit_minutes.get((person.id, day_info.year, day_info.week, day_info.weekday), {}),
                 covered_minutes=covered_minutes.get((person.id, day_info.year, day_info.week, day_info.weekday), {}),
