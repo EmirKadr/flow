@@ -8,12 +8,90 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Person, PersonScheduleTemplate
+from .models import Person, PersonScheduleTemplate, ScheduleFreezeState
 
 DEFAULT_START = 7
 LOCAL_TIMEZONE = ZoneInfo("Europe/Stockholm")
 DEFAULT_END = 16          # exklusiv → timslots 7..15
 LUNCH_OFFSET = 5          # lunchen sätts 5 timmar in i passet (start_hour + 5)
+
+
+_FREEZE_HORIZON_CACHE_KEY = "schedule_freeze_horizon"
+_ELAPSED_CUTOFF_CACHE_KEY = "schedule_elapsed_cutoff"
+
+
+def get_elapsed_cutoff(db: Session) -> tuple[date, int] | None:
+    """Hur långt in i den pågående dagen journalen går: ``(datum, timme)``.
+
+    Timmar före den timmen det datumet är avklarade och får inte längre ritas
+    om av veckomallen - annars skulle en malländring mitt på dagen radera
+    förmiddagens redan utförda arbete. None = ingen pågående dag registrerad.
+    """
+    info = getattr(db, "info", None)
+    if info is not None and _ELAPSED_CUTOFF_CACHE_KEY in info:
+        return info[_ELAPSED_CUTOFF_CACHE_KEY]
+    row = db.get(ScheduleFreezeState, 1)
+    cutoff = None
+    if row is not None and row.elapsed_date is not None and row.elapsed_hour is not None:
+        cutoff = (row.elapsed_date, int(row.elapsed_hour))
+    if info is not None:
+        info[_ELAPSED_CUTOFF_CACHE_KEY] = cutoff
+    return cutoff
+
+
+def set_cached_elapsed_cutoff(db: Session, cutoff: tuple[date, int] | None) -> None:
+    info = getattr(db, "info", None)
+    if info is not None:
+        info[_ELAPSED_CUTOFF_CACHE_KEY] = cutoff
+
+
+def _apply_elapsed_cutoff(
+    hours: set[int] | None,
+    *,
+    target_date: date | None,
+    cutoff: tuple[date, int] | None,
+) -> set[int] | None:
+    """Ta bort avklarade timmar ur mallens svar för den pågående dagen."""
+    if hours is None or target_date is None or cutoff is None:
+        return hours
+    cutoff_date, cutoff_hour = cutoff
+    if target_date != cutoff_date:
+        return hours
+    remaining = {hour for hour in hours if hour >= cutoff_hour}
+    return remaining or None
+
+
+def get_schedule_freeze_horizon(db: Session) -> date | None:
+    """Senaste materialiserade datum, eller None om frysning inte initierats.
+
+    Datum <= horisonten är historik: implicita malltimmar är redan skrivna som
+    explicita celler (is_template_fill) och mallen får inte appliceras vid
+    läsning, annars skulle senare malländringar ändra förfluten tid.
+
+    Cachas per session (db.info) så upprepade uppslag i samma request inte
+    kostar en SQL-fråga var — särskilt viktigt innan frysraden finns, då
+    db.get inte kan träffa identity map.
+    """
+    info = getattr(db, "info", None)
+    if info is not None and _FREEZE_HORIZON_CACHE_KEY in info:
+        return info[_FREEZE_HORIZON_CACHE_KEY]
+    row = db.get(ScheduleFreezeState, 1)
+    horizon = row.frozen_until if row is not None else None
+    if info is not None:
+        info[_FREEZE_HORIZON_CACHE_KEY] = horizon
+    return horizon
+
+
+def set_cached_freeze_horizon(db: Session, horizon: date | None) -> None:
+    """Uppdatera sessionscachen när frysgränsen flyttas i samma session."""
+    info = getattr(db, "info", None)
+    if info is not None:
+        info[_FREEZE_HORIZON_CACHE_KEY] = horizon
+
+
+def is_date_frozen(db: Session, target_date: date) -> bool:
+    horizon = get_schedule_freeze_horizon(db)
+    return horizon is not None and target_date <= horizon
 
 
 def _hours_with_lunch_removed(start: int, end: int) -> set[int]:
@@ -80,6 +158,9 @@ def get_template_hours(
     Om personen saknar egen mall: vardagar default 07..15 minus lunch, helg ledig.
     Om personen har en egen mall men saknar rad för dagen: ledig.
     """
+    if target_date is not None and is_date_frozen(db, target_date):
+        return None
+
     person = db.get(Person, person_id)
     if person is not None and not person.has_fixed_schedule:
         return None
@@ -90,10 +171,13 @@ def get_template_hours(
         )
     ).scalars().all()
     hours = _hours_from_template_rows(rows, weekday)
-    return _apply_person_start_date(
+    hours = _apply_person_start_date(
         hours,
         created_at=person.created_at if person is not None else None,
         target_date=target_date,
+    )
+    return _apply_elapsed_cutoff(
+        hours, target_date=target_date, cutoff=get_elapsed_cutoff(db)
     )
 
 
@@ -110,6 +194,11 @@ def get_template_hours_map(
 
     Nyckeln i resultatet är ``(person_id, weekday)``.
     Om en rad saknas används samma defaultbeteende som i ``get_template_hours``.
+
+    OBS: datumlös och därför utan både frysgräns och ``created_at``-vakt. Får
+    inte användas i läsvägar som visar ett konkret datum — då skulle
+    veckomallen rita om fryst historik igen. Använd
+    ``get_template_hours_map_for_dates``.
     """
     unique_person_ids = sorted({int(person_id) for person_id in person_ids})
     unique_weekdays = sorted({int(weekday) for weekday in weekdays})
@@ -172,6 +261,9 @@ def get_template_hours_map_for_dates(
     if not unique_person_ids or not unique_dates:
         return {}
 
+    freeze_horizon = get_schedule_freeze_horizon(db)
+    elapsed_cutoff = get_elapsed_cutoff(db)
+
     rows = db.execute(
         select(PersonScheduleTemplate).where(
             PersonScheduleTemplate.person_id.in_(unique_person_ids),
@@ -193,14 +285,22 @@ def get_template_hours_map_for_dates(
         has_fixed_schedule, created_at = person_info_by_id.get(person_id, (True, None))
         person_rows = rows_by_person.get(person_id, [])
         for target_date in unique_dates:
+            if freeze_horizon is not None and target_date <= freeze_horizon:
+                # Fryst datum: implicita timmar ligger redan som explicita
+                # is_template_fill-celler; mallen får inte skriva om historik.
+                template_map[(person_id, target_date)] = None
+                continue
             if not has_fixed_schedule:
                 template_map[(person_id, target_date)] = None
                 continue
             hours = _hours_from_template_rows(person_rows, target_date.isoweekday())
-            template_map[(person_id, target_date)] = _apply_person_start_date(
+            hours = _apply_person_start_date(
                 hours,
                 created_at=created_at,
                 target_date=target_date,
+            )
+            template_map[(person_id, target_date)] = _apply_elapsed_cutoff(
+                hours, target_date=target_date, cutoff=elapsed_cutoff
             )
 
     return template_map

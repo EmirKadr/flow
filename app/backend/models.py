@@ -158,13 +158,47 @@ class ScheduleCell(Base):
     person_id: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
     activity_id: Mapped[int | None] = mapped_column(ForeignKey("activities.id"))
     loan_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
+    # Vilket omrade aktiviteten tillhorde nar arbetet registrerades. Stamplas
+    # av frysningen; historisk bemanning per omrade far inte folja med nar en
+    # aktivitet senare flyttas till ett annat omrade.
+    activity_area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"))
     remark: Mapped[str | None] = mapped_column(Text)
     empty_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_template_fill: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class ScheduleFreezeState(Base):
+    """Singelrad (id=1) med hur långt schemajournalen sträcker sig.
+
+    Schemat är både plan och journal: framtiden är plan, förfluten tid journal
+    och dagens datum en blandning.
+
+    - ``frozen_until``: sista helt materialiserade datumet. Dagar till och med
+      det är ren journal - implicita malltimmar är skrivna som explicita
+      ``schedule_cells`` (``is_template_fill=True``) och veckomallen appliceras
+      inte längre vid läsning.
+    - ``elapsed_date``/``elapsed_hour``: hur långt in i den pågående dagen
+      journalen går. Timmar före ``elapsed_hour`` det datumet är avklarade och
+      får inte längre ritas om av mallen; timmarna därefter är fortfarande plan.
+    """
+
+    __tablename__ = "schedule_freeze_state"
+
+    # autoincrement=False: raden har alltid id=1 och skapas av migrationen.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    frozen_until: Mapped[date | None] = mapped_column(Date)
+    elapsed_date: Mapped[date | None] = mapped_column(Date)
+    elapsed_hour: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RfidDevice(Base):

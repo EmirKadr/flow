@@ -28,6 +28,7 @@ Kort svar: flow ar en FastAPI/vanilla-JS webbapp och PyQt-baserad Windows-app fo
 - [Optimeringsplan - detaljbilaga](optimeringsplan-detalj.md) - fullstandig radata: varje kandidats hela skeptikergranskning, justerade vinst, exakta matning och forutsattningar, plus alla 49 omvarldstekniker i fulltext. Slå upp den post du ska bygga - las inte hela filen.
 - [Begrepp och agentordlista](terminology.md) - namngivna produktbegrepp som
   ska tolkas konsekvent i framtida chattar.
+- [Schemahistorikens mutabilitet](schema-historik-mutabilitet.md) - skeptikergranskad analys (2026-07-21) av att historiska schemadagar var en live-projektion som skrevs om av register-/malländringar — plus losningen: schemafrysningen (`schedule_freeze`) som materialiserar gardagens malltimmar till explicita celler vid dygnsskiftet och gor att raderingar bara rensar framtiden. Byggd 2026-07-21 pa `feature/historik-frys`.
 
 ## Funktionssidor
 

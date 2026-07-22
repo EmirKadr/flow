@@ -4673,6 +4673,22 @@ body.dragging-ov select { pointer-events: none; }
   cursor: not-allowed;
 }
 
+.meta-review-reason-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.meta-review-reason-menu button {
+  width: 100%;
+  text-align: left;
+}
+
 .button-link {
   min-height: 34px;
   padding: 7px 11px;

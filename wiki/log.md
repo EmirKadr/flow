@@ -1,11 +1,23 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-15
+updated: 2026-07-22
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-22] beteende | Meta använder GPT-4o Transcribe
+
+Meta-videoanalysen transkriberar nu ljudet med `gpt-4o-transcribe` och låter
+`gpt-4o-mini` extrahera samma strukturerade pall-id och avvikelser från texten.
+Konfigurationen använder `OPENAI_API_KEY`, `META_TRANSCRIPTION_MODEL` och
+`META_ANALYSIS_TEXT_MODEL`.
+
+CLI:t kan dessutom köra hela ljudanalysen lokalt med `--local-analysis` genom
+att hämta MP3 direkt från Flow; videon laddas inte ner. Resultatet skrivs
+sanerat tillbaka via `local-analysis`-endpointen och auditloggen sparar inga
+transkriptions- eller avvikelsevärden.
 
 ## [2026-07-14] lint | Render-referenser sanerade i APP_MIGRATION_PLAN.md
 
@@ -3325,3 +3337,181 @@ person-only. Windows-appen far vyn automatiskt via den delade frontendkatalogen;
 kopieringsknappen har `execCommand`-fallback for QtWebEngine.
 
 Sidor: `dubbletter.md` (ny), `index.md`, `ui-map.md`.
+
+## [2026-07-21] query | Schemahistoriken ar en live-projektion, inte en logg
+
+Anvandarrapport: efter storre andringar (ta bort personer, andra schema)
+andras uppgifter och tider aven i historiken. Skeptikergranskad
+arbetsflodesanalys (5 lasare + verifierare) bekraftade att historiska dagar
+raknas om fran nuvarande masterdata: veckomallar saknar giltighetsperiod,
+`has_fixed_schedule`/huvudaktivitet lases live, personradering hardraderar all
+schemacell- och produktivitetshistorik (regression 7d55584, 2026-05-21),
+aktivitetsradering skriver om explicita celler till tomma. Enda skydden:
+`created_at`-vakten (b884bb9, v0.1.6), `empty_override` och explicita cellers
+foretrade. Git-verifierat: beteendet ar identiskt i alla 36 release-branchar
+t.o.m. 2026.30.1 - uppgradering fixar inte buggen. Fixriktningar (materialisering,
+versionerade mallar, soft-delete) dokumenterade; beslut ej fattat.
+
+Sidor: `schema-historik-mutabilitet.md` (ny), `index.md`.
+
+## [2026-07-21] ingest | Schemafrysning: historiken ar nu en logg
+
+Byggde fixen for historikmutabiliteten (beslut: materialisering + "ta bort
+framtida men behall historiska"). Nytt: migration 0049 (`is_template_fill` pa
+schemaceller + `schedule_freeze_state`), service `schedule_freeze.py`
+(materialisering, frysgrans, backfill, framtidsrensning), bakgrundsjobb
+`schedule_freeze_scheduler` (30-min pass bakom ledarlaset, auto-backfill vid
+forsta korningen). `template_service` laser aldrig veckomallen for datum <=
+frysgransen. DELETE person/aktivitet inaktiverar i stallet for att radera nar
+schemahistorik finns, rensar bara framtida celler och frigor RFID-brickan;
+omradesradering rensar bara framtida celler. Historiska lasvagar (dagvy,
+summering, Oversikt, narvaro, produktivitetsombyggnad) visar inaktiva
+personer med celler pa frysta datum. Mitt schema visar fill-celler som
+Standardtid. Audit: `schedule_freeze/materialize` per dag,
+`delete`/`mode=history_preserved` for bevarande raderingar. CLI:
+`python -m app.backend.schedule_freeze [--status]`. Nya tester i
+`tests/services/test_schedule_freeze.py`; raderingskontraktstestet
+uppdaterat. API-typer omgenererade (CellOut.is_template_fill).
+
+Sidor: `schema-historik-mutabilitet.md`, `data-model.md`,
+`bemanning-schedule.md`, `history-audit.md`, `index.md`.
+
+## [2026-07-21] lint | Granskning av schemafrysningen: fem hal tappta
+
+Adversariell genomgang av `feature/historik-frys` innan commit. Viktigaste
+fyndet: pa en fryst dag returnerar mallen inget, sa Oversikt fick
+`template_hours=0` - och klienten ritar `template_hours === 0` som **"Ledig"**.
+Hela historiken hade sett tom ut. Antalet harleds nu ur cellerna
+(timmar-med-innehall) i bade vecko- och manadsvyn, med regressionstest.
+
+Ovriga fyra:
+
+1. **Midnattsfonstret** - mall-/person-andringar saknade frysning helt, sa
+   mellan midnatt och forsta jobbpasset kunde gardagen fortfarande ritas om.
+   `freeze_pending_for_request` kallas nu fran mall-, person-, aktivitets- och
+   omradesandringar, med tak (3 dagar) sa en backfill aldrig kor i ett anrop.
+2. **Samtidighet** - bakgrundsjobbet och en request-vag kunde materialisera
+   samma dag samtidigt och krocka pa unik-nyckeln. Singelraden skapas nu i
+   migrationen och radlases (`FOR UPDATE`); kontroll och insattning sker i
+   samma lasta transaktion.
+3. **Kopiera dag** tog med materialiserade fill-celler, vilket bade forde over
+   en fryst dags implicita timmar och laste maldagen mot mottagarens mall.
+   Fills hoppas nu over, sa beteendet ar identiskt med fore frysningen.
+4. **Tyst haveri** - bakgrundsjobbet fangar sina egna fel och forblir
+   `running`, sa ett trasigt frysjobb hade varit osynligt i Halsa medan
+   historiken tyst blev mutabel igen. Ny check `Schemafrysning` varnar nar
+   `frozen_until` halkar efter gardagen (E5-lardomen: mutationstesta
+   guardrailen, annars ar den teater).
+
+Dessutom: cellrattningar pa frysta dagar behaller schemalagd-markeringen
+(`_is_scheduled_hour`/`_empty_override_for_template` faller tillbaka pa
+timmens egna celler), och `get_template_hours_map` ar markerad som datumlos
+och forbjuden i lasvagar. 25 tester i frys-/halsosviten grona.
+
+Sidor: `schema-historik-mutabilitet.md`, `history-audit.md`.
+
+## [2026-07-21] lint | Tva MSSQL-fallgropar i frysningen (bada deploy-stoppande)
+
+Fortsattning pa granskningen ovan, bada hittade genom att kompilera DDL/SQL
+mot `mssql.dialect()` i stallet for att lita pa att SQLite-testerna racker:
+
+1. **Laset var teater.** MSSQL saknar `FOR UPDATE` och SQLAlchemy tystar bort
+   `with_for_update()` helt dar - fragan kompilerade utan nagon lasning alls,
+   sa samtidighetsskyddet fanns bara pa Postgres/i teorin. Ratt losning ar
+   tabellhinten `WITH (UPDLOCK, HOLDLOCK)` via `with_hint(..., "mssql")`.
+2. **IDENTITY-kollision.** `Integer primary_key` blir IDENTITY pa MSSQL, sa
+   migrationens `INSERT INTO schedule_freeze_state VALUES (1, NULL)` hade
+   avvisats med "Cannot insert explicit value for identity column" och fallt
+   hela `alembic upgrade head` vid deploy. Fixat med `autoincrement=False`.
+
+Bada ar nu skyddade av kompileringstester mot mssql-/postgres-dialekten i
+`tests/services/test_schedule_freeze.py`, sa de kan inte tyst atervanda.
+
+Rotorsaken ar att sviten bygger schemat med `create_all` och alltsa aldrig kor
+migrationsfilerna - och hela alembic-kedjan gar inte pa SQLite (en aldre
+migration anvander PG-syntax). En migration kan darfor vara trasig lokalt gron.
+Losningen ar att rendera den i alembics offline-lage mot MSSQL
+(`upgrade <forra>:<din> --sql`), vilket ar exakt den SQL deployen kor. Det
+kravet ligger nu i `testing-release.md` for alla framtida migrationer.
+
+Sidor: `schema-historik-mutabilitet.md`, `testing-release.md`.
+
+## [2026-07-21] ingest | Frysningen skyddar aven dagens arbetade timmar
+
+Sista justeringen fore commit. En person som togs bort mitt pa dagen tappade
+HELA dagens timmar ur vyerna - aven de som redan arbetats - eftersom
+borttagningen slar av `has_fixed_schedule` och dagens timmar an sa lange ar en
+live-projektion. `preserve_today_for_persons` skriver darfor ut dagens
+malltimmar som celler innan flaggan slas av.
+
+Bieffekt som ocksa hanterades: med dagens celler utskrivna skulle en person som
+skapats av misstag aldrig hardraderas langre. Fallen skiljs nu med
+`person_predates_today` - skapad idag utan en enda schemacell ar ett felskapat
+register, inte historik, och tas bort pa riktigt.
+
+Nytt test `test_freezing_does_not_change_what_the_day_looks_like` jamfor
+Bemanning, summeringen och Oversikt precis fore och efter frysningen for fyra
+personprofiler (full mall, mall + avvikelse, utan huvudaktivitet, timmis).
+Det ar guardrailen som fangar en yta som glomts anpassa - det var sa
+Oversikt-buggen borde ha hittats fran borjan.
+
+Sidor: `schema-historik-mutabilitet.md`.
+
+## [2026-07-22] lint | Tre arkitekturgrindar sprack av frysningen
+
+Fullsviten (`pytest -m "not browser"`, 1585 grona) fangade tre saker som de
+riktade testerna missade - alla vardefulla signaler, inga av dem falska:
+
+1. **Payloadbudget** for `/api/schedule` sprack (45 465 B mot taket 45 000).
+   Orsak: `is_template_fill` lades pa varje cell i svaret - men **ingen
+   frontendkod laser faltet**. Det behovs bara serversidigt (Mitt schema,
+   kopiera dag, scheduled_hours, empty_override-harledningen). Borttaget ur
+   `CellOut`/`_cell_to_dict`; klienten behover aldrig skilja en materialiserad
+   malltimme fran en vanlig cell, och `updated_by=None` gor den redigerbar
+   precis som en implicit timme var. Testets egen formulering satte fingret pa
+   det: "transportkostnaden syns aldrig i latenstesterna".
+2. **Radtaket** for `routers/overview.py` (1024 > 1000). Enligt regeln splittas
+   filen i stallet for att taket hojs: `hours_from_minutes`,
+   `effective_minutes_by_activity`, `summarize_day` och nya
+   `template_hours_count` flyttade till `routers/overview_cells.py` (981 rader
+   kvar). `schemas.py` gick under taket igen nar faltet togs bort.
+3. **Testrigg utan frysbord**: `test_person_schedules` bygger sitt schema med
+   enskilda `Table.create` och saknade `schedule_freeze_state` nar
+   `put_schedule` borjade frysa gardagen. Riggen listar nu tabellerna explicit.
+
+Sidor: (ingen wikisida berord - kodhygien).
+
+## [2026-07-22] ingest | Plan, journal och dagens blandning
+
+Emir preciserade domanmodellen: schemat ar bade en plan och en journal —
+framtiden ar plan, fortiden journal, **idag ar en mix av bada**. Arbetsledarna
+fyller i vad varje person faktiskt gjort; veckomallen finns bara for att folk
+ofta gor samma sak. Det de vill kunna ga tillbaka till ar hur och vad
+personalen gjort och hur mycket som bemannades pa varje stalle.
+
+Tva luckor foll ut ur det, bada verifierade mot kod fore fix:
+
+1. **Dygnsgranulariteten var for grov.** 0049 fryste hela dygn, sa en
+   malländring kl 15 raderade formiddagens redan utforda arbete ur vyn
+   (uppmatt: timmarna 6,7,8,9,10,12 forsvann nar mallen andrades fran 6-20 till
+   13-20) — och vid midnatt bakades den omritade formiddagen in i journalen
+   permanent. Nu skriver jobbet ocksa ut dagens **passerade** malltimmar och
+   flyttar fram `elapsed_date`/`elapsed_hour`; `_apply_elapsed_cutoff` tar bort
+   timmar fore gransen ur mallens svar. Formiddagen star still, kvallen foljer
+   den nya planen. Skarningen gar vid innevarande timmes borjan, samma
+   konvention som Produktivitets "avslutade timmar".
+2. **Omradesbemanningen foljde registret.** Historisk bemanning per stalle
+   lastes live ur `Activity.area_id` (uppmatt: MG gick fran 3,0 h till 0 h nar
+   aktiviteten flyttades till GG). Frysningen stamplar nu
+   `schedule_cells.activity_area_id`, och summeringen/omradesfiltreringen laser
+   stampeln forst.
+
+`preserve_today_for_persons` utgick — nar dagens passerade timmar skrivs ut for
+alla behovs ingen specialvag vid personradering. Kvar ar regeln att en person
+som skapats idag utan en enda cell hardraderas (`person_predates_today`); den
+lasningen sker nu FORE frysningen, annars skulle utskrivna timmar fa en
+felskapad person att se ut att ha historik.
+
+Migration 0050 renderad mot MSSQL (offline-laget enligt testing-release.md).
+
+Sidor: `schema-historik-mutabilitet.md`, `data-model.md`.

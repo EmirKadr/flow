@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.backend.models import Activity, Area, Person, PersonScheduleTemplate
+from app.backend.models import Activity, Area, Person, PersonScheduleTemplate, ScheduleFreezeState
 from app.backend.template_service import get_template_hours, get_template_hours_map, get_template_hours_map_for_dates
 
 
@@ -14,6 +14,7 @@ def make_session():
     Activity.__table__.create(engine)
     Person.__table__.create(engine)
     PersonScheduleTemplate.__table__.create(engine)
+    ScheduleFreezeState.__table__.create(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = SessionLocal()
     return engine, session
@@ -21,6 +22,7 @@ def make_session():
 
 def close_session(engine, session):
     session.close()
+    ScheduleFreezeState.__table__.drop(engine)
     PersonScheduleTemplate.__table__.drop(engine)
     Person.__table__.drop(engine)
     Activity.__table__.drop(engine)

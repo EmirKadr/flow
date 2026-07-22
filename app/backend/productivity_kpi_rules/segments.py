@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..home_activity import build_home_activity_resolver
@@ -28,7 +28,7 @@ from ..productivity_service import (
     _source_payload,
     _timestamp,
 )
-from ..template_service import get_template_hours_map_for_dates
+from ..template_service import LOCAL_TIMEZONE, get_template_hours_map_for_dates
 from .rules import (  # noqa: F401
     METRIC_TARGET_COLUMNS,
     METRIC_POINT_COLUMNS,
@@ -376,16 +376,32 @@ def build_schedule_segments(
     *,
     business_id: int | None,
 ) -> dict[int, dict[str, Any]]:
+    # Historik: personer som tagits bort/inaktiverats efter dagen ska ändå
+    # ingå i ombyggda historikdagar (t.o.m. idag) om de har celler den dagen,
+    # och inaktiverade aktiviteter/områden måste kunna slås upp för etiketter.
+    iso_report = report_date.isocalendar()
+    person_filter = Person.is_active
+    if report_date <= datetime.now(LOCAL_TIMEZONE).date():
+        historical_ids = (
+            select(ScheduleCell.person_id)
+            .where(
+                ScheduleCell.year == iso_report.year,
+                ScheduleCell.week == iso_report.week,
+                ScheduleCell.weekday == iso_report.weekday,
+            )
+            .distinct()
+        )
+        person_filter = or_(Person.is_active, Person.id.in_(historical_ids))
     persons_query = (
         select(Person)
         .where(
-            Person.is_active,
+            person_filter,
             func.trim(func.coalesce(Person.noman, "")) != "",
         )
         .order_by(Person.sort_order, Person.name)
     )
-    activities_query = select(Activity).where(Activity.is_active).order_by(Activity.sort_order, Activity.label)
-    areas_query = select(Area).where(Area.is_active).order_by(Area.sort_order, Area.name)
+    activities_query = select(Activity).order_by(Activity.sort_order, Activity.label)
+    areas_query = select(Area).order_by(Area.sort_order, Area.name)
     if business_id is not None:
         persons_query = persons_query.where(Person.business_id == business_id)
         activities_query = activities_query.where(Activity.business_id == business_id)

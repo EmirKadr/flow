@@ -86,6 +86,8 @@ def put_schedule(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("persons", "edit")),
 ) -> TemplateOut:
+    from ..schedule_freeze import freeze_pending_for_request
+
     person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
 
     seen = set()
@@ -94,6 +96,11 @@ def put_schedule(
         if day.weekday in seen:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Dubbel weekday {day.weekday}")
         seen.add(day.weekday)
+
+    # Frys gårdagen innan mallen ändras. Bakgrundsjobbet gör det inom 30 min,
+    # men mellan midnatt och första passet vore gårdagen annars fortfarande
+    # live och skulle ritas om av den nya mallen.
+    freeze_pending_for_request(db)
 
     if payload.has_fixed_schedule is not None and person.has_fixed_schedule != payload.has_fixed_schedule:
         old = {"has_fixed_schedule": person.has_fixed_schedule}

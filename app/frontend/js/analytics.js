@@ -16,6 +16,7 @@ const TRACKING_HISTORY_MODES = new Set(["functions", "buttons", "columns", "flow
 
 const ENTITY_LABELS = {
   schedule_cell: "Schema",
+  schedule_freeze: "Schemafrysning",
   person: "Person",
   person_schedule_template: "Standardschema",
   activity: "Aktivitet",
@@ -180,6 +181,10 @@ function objectSummary(entry) {
     const activity = snapshot.activity_label || snapshot.module_name || "Okänd aktivitet";
     const time = snapshot.local_time ? ` ${snapshot.local_time}` : "";
     return `${person} · ${activity}${time}`;
+  }
+  if (entry.entity_type === "schedule_freeze") {
+    // entity_id är datumet som YYYYMMDD; visa det läsbara datumet i stället.
+    return snapshot.date || `Schemafrysning #${entry.entity_id}`;
   }
   return `${entityLabel(entry.entity_type)} #${entry.entity_id}`;
 }

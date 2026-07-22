@@ -436,9 +436,15 @@ def test_activity_delete_removes_inactive_legacy_activity_and_clears_references(
 
     delete_activity(activity_id=legacy.id, db=import_db, admin=staffing)
 
-    assert import_db.get(Activity, legacy.id) is None
+    # Aktiviteten har en historisk schemacell: historiken ar en logg, sa
+    # aktiviteten inaktiveras (raden behalls for etikett/farg) och den
+    # historiska cellen behaller sin aktivitet. Referenser for framtida
+    # projektion (hemaktivitet, summeringspekare) rensas fortfarande.
+    kept = import_db.get(Activity, legacy.id)
+    assert kept is not None
+    assert kept.is_active is False
     assert import_db.get(Person, person.id).home_activity_id is None
     assert import_db.get(Activity, child.id).summary_activity_id is None
-    cleared_cell = import_db.get(ScheduleCell, cell.id)
-    assert cleared_cell.activity_id is None
-    assert cleared_cell.empty_override is True
+    historical_cell = import_db.get(ScheduleCell, cell.id)
+    assert historical_cell.activity_id == legacy.id
+    assert historical_cell.empty_override is False

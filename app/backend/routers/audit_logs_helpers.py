@@ -114,6 +114,7 @@ KNOWN_INTERACTION_CONTROLS = [
 AUDIT_ENTITY_LABELS = {
     "assistant_chat": "Apphjalp-fraga",
     "coredata_file": "Karnfil",
+    "schedule_freeze": "Schemafrysning",
     "mcp_query": "MCP-fraga",
     "meta_media_upload": "Meta-uppladdning",
     "meta_shipment_observation": "Meta-sandningsrad",

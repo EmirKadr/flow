@@ -479,6 +479,12 @@ def _purge_expired_meta_media_background() -> None:
             logger.warning("Meta media retention purge failed at startup.", exc_info=True)
 
 
+def _run_schedule_freeze_scheduler_job() -> None:
+    from .schedule_freeze import run_schedule_freeze_scheduler
+
+    run_schedule_freeze_scheduler()
+
+
 # Alla uppstartsjobb registreras här och startas av lifespan via background-runnern.
 # Nya bakgrundsjobb ska in i den här listan, inte som egna trådar eller startup-hooks.
 BACKGROUND_JOBS = [
@@ -514,6 +520,11 @@ BACKGROUND_JOBS = [
         name="bug_reports_retention_purge",
         run=_purge_expired_bug_reports_background,
         description="Rensar buggrapporter äldre än retentionen vid uppstart.",
+    ),
+    background.BackgroundJob(
+        name="schedule_freeze_scheduler",
+        run=_run_schedule_freeze_scheduler_job,
+        description="Fryser schemahistorik: materialiserar gårdagens malltimmar till explicita celler.",
     ),
 ]
 

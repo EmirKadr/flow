@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
+    META_TRANSCRIPTION_MODEL: str = "gpt-4o-transcribe"
+    META_ANALYSIS_TEXT_MODEL: str = "gpt-4o-mini"
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-v4-pro"
     DEEPSEEK_API_BASE_URL: str = "https://api.deepseek.com"

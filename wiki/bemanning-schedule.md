@@ -77,6 +77,16 @@ Falt:
 - Vid konflikt returnerar API `409`; klienten visar toast och laddar om dagen.
 - Om en person har fast veckomall och vald huvudaktivitet visas huvudaktiviteten som standard i malltimmar utan explicit cell. Om huvudaktivitet saknas visas cellen tom med diskret schemalagd-markering; Bemanning hittar inte langre pa en aktivitet fran personens hemomrade.
 - Implicita malltimmar galler bara fran personens skapandedatum och framat. Gamla datum fore `persons.created_at` visar inga standardtimmar for personen, men explicita schemaceller visas fortfarande.
+- **Schemafrysning (2026-07-21/22):** schemat ar plan framat och journal
+  bakat, och dagens datum ar bada. Nar en timme passerat skrivs personens
+  implicita malltimme ut som en explicit cell (`is_template_fill=True`), och
+  mallen far darefter aldrig rora den timmen igen. Darfor paverkar mall-,
+  huvudaktivitets- och `has_fixed_schedule`-andringar bara det som annu ar
+  plan: resten av dagen och framat. Formiddagen star still aven om schemat
+  andras kl 15. Borttagna/inaktiverade personer visas fortfarande pa dagar dar
+  de har celler, och `activity_area_id` gor att bemanning per omrade inte
+  flyttar med nar en aktivitet omorganiseras. Se
+  [Schemahistorikens mutabilitet](schema-historik-mutabilitet.md).
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
@@ -139,6 +149,10 @@ Falt:
 | "Varfor kan jag inte dra namnet for att sortera?" | Anvandaren maste ha `Personsortering=Redigera`. Bemanningsansvarig/admin maste ha samma omrade som personens hemomrade; Super User och demo kan sortera alla synliga personer. Rensa personfiltret om det ar aktivt. |
 | "Varfor hander inget nar jag skickar en person till omrade?" | Personen maste ha schemalagda timmar eller explicita celler fran aktuell/startad timme den dagen. Om alla celler ar lasta visas varning och inget skrivs. |
 | "Varfor syns inga standardtimmar for en ny person bakat i tiden?" | Personen far implicit veckomall forst fran sitt skapandedatum. Det hindrar att nyanstallda raknas som schemalagda innan de lades till. |
+| "Varfor andras inte gamla dagar nar jag byter nagons veckomall?" | Avsiktligt: fortiden ar en journal over utfort arbete. En malländring ar en andring av planen och galler darfor bara det som annu inte hant. |
+| "Jag andrade schemat mitt pa dagen - varfor andrades bara eftermiddagen?" | Dagens datum ar en blandning: timmarna som passerat ar journal och star still, timmarna som aterstar ar plan och foljer den nya mallen. Gransen gar vid innevarande timmes borjan. |
+| "Varfor ligger gamla timmar kvar i ett omrade jag flyttat aktiviteten fran?" | Cellen minns vilket omrade arbetet utfordes i. Bemanningsstatistik bakat far inte flytta mellan stallen nar registret omorganiseras. |
+| "Varfor syns en borttagen person i gamla scheman?" | Avsiktligt: personen jobbade da. Borttagning rensar bara framtida dagar; historiken bevaras och personen visas inaktiv pa frysta datum dar den har celler. |
 | "Varfor sag Bemanning tom ut efter att ett omrade togs bort?" | Browsern kan ha haft ett gammalt omradesfokus sparat. Nu faller sidan tillbaka till Alla nar det sparade omradet inte langre finns. Kontrollera Historik efter 404 `Omrade hittades inte` om felet hande innan fixen. |
 | "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet eller tom lanemarkering som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker eller ska planeras och dar personen hor hemma. |
 | "Varfor ar Produktivitet tom i Bemanning?" | Personen har ingen avslutad KPI-timme i vald period, har bara STOD/absence hittills, saknar huvudaktivitet/explicit KPI-aktivitet, saknar faktisk KPI-process/poang den dagen, saknar materialiserad produktivitetscache for dagen eller sa ar extern snapshot-sync nere och ingen lokal cache finns. |

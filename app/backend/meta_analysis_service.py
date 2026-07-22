@@ -27,6 +27,7 @@ from .database import SessionLocal
 from .external_data_client import ExternalDataClient, ExternalDataClientError
 from .media_store import get_media_store
 from .models import MetaMediaUpload, MetaShipmentObservation
+from .meta_transcription import analyze_audio_with_openai
 from .observability import add_span_attributes, start_span
 from .workflow_data import WorkflowDataError, _api_client, source_spec, workflow_api_configured
 
@@ -171,7 +172,15 @@ class MetaAnalysisFailed(RuntimeError):
 
 
 def meta_analysis_configured() -> bool:
-    return bool(settings.GEMINI_API_KEY.strip())
+    return bool(settings.OPENAI_API_KEY.strip())
+
+
+def meta_model_name() -> str:
+    return settings.META_TRANSCRIPTION_MODEL.strip() or "gpt-4o-transcribe"
+
+
+def meta_text_model_name() -> str:
+    return settings.META_ANALYSIS_TEXT_MODEL.strip() or "gpt-4o-mini"
 
 
 def gemini_model_name() -> str:
@@ -284,8 +293,8 @@ def ensure_shipment_observation(db: Session, upload: MetaMediaUpload) -> MetaShi
         video_hash=video_hash,
         record_hash=calculate_record_hash(video_hash=video_hash),
         analysis_status="queued" if meta_analysis_configured() else "needs_configuration",
-        analysis_error=None if meta_analysis_configured() else "GEMINI_API_KEY saknas.",
-        llm_model=gemini_model_name(),
+        analysis_error=None if meta_analysis_configured() else "OPENAI_API_KEY saknas.",
+        llm_model=f"{meta_model_name()} + {meta_text_model_name()}",
     )
     db.add(row)
     db.flush()
@@ -354,9 +363,9 @@ def _gemini_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 def _scrub_secrets(text: str) -> str:
     """Maska API-nyckeln i text som sparas/visas (analysis_error, toasts)."""
-    key = settings.GEMINI_API_KEY.strip()
-    if key:
-        text = text.replace(key, "***")
+    for key in (settings.OPENAI_API_KEY.strip(), settings.GEMINI_API_KEY.strip()):
+        if key:
+            text = text.replace(key, "***")
     return re.sub(r"(key=)[A-Za-z0-9_\-]+", r"\1***", text)
 
 
@@ -558,13 +567,17 @@ def _gemini_generate_content(file_info: dict) -> dict:
 
 def _call_meta_analysis_provider(upload: MetaMediaUpload) -> dict:
     if not meta_analysis_configured():
-        raise MetaAnalysisNotConfigured("GEMINI_API_KEY saknas.")
-    file_info = _gemini_wait_file_active(_gemini_upload_audio(upload))
-    response = _gemini_generate_content(file_info)
-    try:
-        return _extract_json_candidate(response)
-    except (json.JSONDecodeError, TypeError, ValueError) as exc:
-        raise MetaAnalysisFailed("Gemini-svaret kunde inte tolkas som JSON.") from exc
+        raise MetaAnalysisNotConfigured("OPENAI_API_KEY saknas.")
+    with extract_audio_file(upload) as audio:
+        try:
+            return analyze_audio_with_openai(
+                audio_path=audio.path,
+                filename=audio.display_name,
+                content_type=audio.content_type,
+                instructions=META_ANALYSIS_INSTRUCTIONS,
+            )
+        except RuntimeError as exc:
+            raise MetaAnalysisFailed(str(exc)) from exc
 
 
 def _field(payload: dict, *names: str) -> Any:
@@ -717,7 +730,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
 
     if not meta_analysis_configured():
         observation.analysis_status = "needs_configuration"
-        observation.analysis_error = "GEMINI_API_KEY saknas."
+        observation.analysis_error = "OPENAI_API_KEY saknas."
         refresh_record_hash(observation)
         db.commit()
         db.refresh(observation)
@@ -725,7 +738,7 @@ def analyze_meta_upload(db: Session, upload_id: int) -> MetaShipmentObservation:
 
     observation.analysis_status = "analyzing"
     observation.analysis_error = None
-    observation.llm_model = gemini_model_name()
+    observation.llm_model = f"{meta_model_name()} + {meta_text_model_name()}"
     db.commit()
 
     try:

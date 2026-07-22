@@ -17,7 +17,7 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 | Period | Valjer 24h, 7d, 30d, all | Raknar `start_at` for query | `periodStartIso`, `/api/audit*` | "All historik" kan bli tung om mycket data finns. |
 | Verksamhet | Valjer Alla eller en verksamhet | Skickar `business_id` till audit-, felkods- och vantetidsendpoints och filtrerar anvandarlistan i klienten | `businessFilter`, `/api/businesses`, `business_id` | Galler inte Halsa-fliken, som visar global driftstatus. Systemrader utan verksamhet syns bara i Alla. |
 | Anvandare | Filtrerar pa user | Skickar user-filter | `userFilter` | Listan laddas fran `/api/users` och smalnas av nar verksamhet valjs. |
-| Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `app_setting`, `productivity_file`, `allocation_flow`, `mcp_query`. |
+| Typ | Filtrerar entity type | Skickar `entity_type` | `entityFilter` | Typnamn ar tekniska, t.ex. `schedule_cell`, `schedule_freeze`, `app_setting`, `productivity_file`, `allocation_flow`, `mcp_query`. |
 | Atgard | Skriver action | Skickar action-filter | `actionFilter` | Exempel: `update`, `clear`, `drag_fill`. |
 | Objekt-id | Skriver id | Skickar `entity_id` | `entityIdFilter` | Maste vara numeriskt. |
 | Uppdatera | Klickar knapp | Hamter summary, rader och felkodsdashboard igen | `GET /api/audit/summary`, `GET /api/audit`, `GET /api/audit/errors` | Nekas om saknar Super User. |
@@ -37,11 +37,18 @@ Kort svar: Historik har nu auditlagen plus ett separat interaction-trackinglager
 - `AI-analys`: MiniMax-fragor om trackinghistorik, till exempel "Vilka funktioner anvands minst?", "Kopierar folk forsta kolumnen i Pafyllnadsprio eller flera?" och "Vilka vyer anvands i Windows men inte webben?".
 - `Felkoder`: statkort for felkoder, topplistor for felkod, vy/API och felatgard samt senaste felhandelser.
 - `Vantetider`: p50/p95/max for vyload, API-anrop, nedladdningar och bakgrundsladdning, sa flaskhalsar syns utan manuell magkansla.
+- `Halsa` visar ocksa checken `Schemafrysning`: varnar nar frysgransen
+  (`frozen_until`) halkar efter gardagen eller saknas trots att schemadata
+  finns, sa ett tyst havererat frysjobb inte gor schemahistoriken mutabel igen
+  utan att nagon marker det. Tom databas ger `info`.
 - `Halsa`: app-, databas- och bakgrundsjobbsstatus for lokal/serverdrift; samma signal anvands av `tools.healthcheck`, visar processens RSS-minne och varnar nar webprocessen nar hog minnesniva. Serverloggar hamtas med `kubectl -n flow logs deploy/flow-web` (Render-loggintegrationen togs bort 2026-07-03).
 - Detalj byggs av old/new snapshots och forsoker oversatta person, aktivitet och omrade via lookups.
 - Loggade floden omfattar nu register/schema, anvandare/forsta losenord, globala installningar, Hamta data, produktivitetens snapshot-/rapportstatus och korda lagerverktygsfloden.
+- Schemafrysningen skriver `schedule_freeze/materialize` som systemrad (utan anvandare/verksamhet) per fryst dag med datum och antal materialiserade celler. Visas som `Schemafrysning` i Historik/Analys, med det lasbara datumet som objekt (`entity_id` ar datumet som YYYYMMDD). Person-/aktivitetsradering som bevarar historik skriver `delete` med `new_value.mode=history_preserved` och antal rensade framtida celler.
 - Misslyckade filuppladdningar som hinner na backend loggas som `allocation_flow/upload_failed` eller `allocation_flow/detect_failed` med steg, feltyp, kort felmeddelande och eventuell HTTP-status.
 - Publika Meta-uppladdningar som hinner na backend loggas som `meta_media_upload/upload_success` eller `meta_media_upload/upload_failed` utan inloggad anvandare. Felkoder visar misslyckade forsok som systemhandelser med path `/api/meta/uploads`, HTTP-status, feltyp, antal filer och total uppladdad storlek, men utan filnamn eller filinnehall.
+- Meta-vyns nedladdningar sparar `meta_media_upload/download_video`, `download_audio` eller `download_audio_failed` med mediatyp, storlek eller feltyp, men utan filnamn, filvag eller innehall.
+- Lokal CLI-analys sparar `meta_shipment_observation/local_audio_analysis` med status, modell, om pall-id finns och antal avvikelser. Ljud, transkription, pall-id och avvikelsetext sparas inte i auditpayloaden.
 - Workflow-kallor som hamtas via `/api/workflow-data/source` loggas som `workflow_source/source_fetch` eller `workflow_source/source_fetch_failed` med feature, flow-id, kallnyckel, status, radantal och sanerat felmeddelande.
 - MCP-fragor loggas som `mcp_query/query_success` eller `mcp_query/query_failed` med status, hjarna/tool, modell, antal tool-anrop och teckenantal. Fragan, svaret, token, privat serveradress, provider-nycklar och request body sparas inte.
 - Coredata-handelser visas som `Karnfil` i Historik/Analys via `coredata_file`, sa permanenta karnfilsuppladdningar inte faller tillbaka till tekniskt entity-namn.

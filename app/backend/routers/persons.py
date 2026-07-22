@@ -816,6 +816,13 @@ def update_person(
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Huvudaktivitet hittades inte")
         if activity.business_id != person.business_id:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Huvudaktivitet tillhör annan verksamhet")
+    if any(field in data for field in ("home_activity_id", "has_fixed_schedule")):
+        # Bada styr implicita malltimmar. Frys gardagen forst sa andringen
+        # bara galler idag och framat (bakgrundsjobbet kan ligga upp till en
+        # halvtimme efter vid midnatt).
+        from ..schedule_freeze import freeze_pending_for_request
+
+        freeze_pending_for_request(db)
     for key, value in data.items():
         setattr(person, key, value)
     person.is_active = True
@@ -840,21 +847,64 @@ def delete_person(
     db: Session = Depends(get_db),
     user: User = Depends(require_view_access("persons", "edit")),
 ) -> None:
+    """Ta bort en person: framtiden rensas, historiken bevaras.
+
+    Historiska schemadagar är en logg och får aldrig ändras av registerskötsel.
+    Därför fryses ev. ofrysta gårdagar först, personens framtida celler tas
+    bort och personen inaktiveras (raden och alla celler t.o.m. idag behålls
+    så förflutna dagar fortsätter visa hur personen faktiskt jobbade).
+
+    Undantaget är en person som skapats idag och aldrig fått en schemacell —
+    ett felskapat register, inte historik. Den tas bort på riktigt som förut.
+    """
+    from ..schedule_freeze import (
+        freeze_pending_for_request,
+        person_predates_today,
+        purge_future_schedule_cells,
+    )
+
     person = scoped_get(db, Person, person_id, user, detail="Person hittades inte")
     before = _person_snapshot(person)
-    db.query(ScheduleCell).filter(ScheduleCell.person_id == person_id).delete(synchronize_session=False)
-    db.query(PersonScheduleTemplate).filter(PersonScheduleTemplate.person_id == person_id).delete(
-        synchronize_session=False
+    # Lases fore frysningen: den skriver ut dagens passerade timmar som celler,
+    # och da skulle aven en felskapad person se ut att ha historik.
+    had_cells_before = (
+        db.query(ScheduleCell.id).filter(ScheduleCell.person_id == person_id).first() is not None
     )
-    db.delete(person)
-    audit_log(
-        db,
-        entity_type="person",
-        entity_id=person.id,
-        action="delete",
-        old_value=before,
-        new_value=None,
-        user_id=user.id,
-        business_id=person.business_id,
-    )
+    has_history = had_cells_before or person_predates_today(person)
+    # Sakrar journalen fram till nu: gardagen om den ar ofryst, och dagens
+    # redan arbetade timmar. Resten av dagen ar plan och foljer med bort.
+    freeze_pending_for_request(db)
+    future_cells_deleted = purge_future_schedule_cells(db, person_ids=[person_id])
+    if has_history:
+        person.is_active = False
+        person.has_fixed_schedule = False
+        person.rfid_code = None
+        audit_log(
+            db,
+            entity_type="person",
+            entity_id=person.id,
+            action="delete",
+            old_value=before,
+            new_value={
+                "mode": "history_preserved",
+                "future_cells_deleted": future_cells_deleted,
+            },
+            user_id=user.id,
+            business_id=person.business_id,
+        )
+    else:
+        db.query(PersonScheduleTemplate).filter(PersonScheduleTemplate.person_id == person_id).delete(
+            synchronize_session=False
+        )
+        db.delete(person)
+        audit_log(
+            db,
+            entity_type="person",
+            entity_id=person.id,
+            action="delete",
+            old_value=before,
+            new_value=None,
+            user_id=user.id,
+            business_id=person.business_id,
+        )
     db.commit()
