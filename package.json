@@ -15,5 +15,9 @@
   },
   "dependencies": {
     "rrweb": "^2.1.0"
+  },
+  "overrides": {
+    "brace-expansion@2.1.1": "2.1.2",
+    "js-yaml@4.2.0": "4.3.0"
   }
 }
