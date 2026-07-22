@@ -88,7 +88,10 @@ def copy_schedule(
         )
         if area_person_ids is not None:
             src_q = src_q.where(ScheduleCell.person_id.in_(area_person_ids))
-        src_cells = db.execute(src_q).scalars().all()
+        # Materialiserade malltimmar hoppas over: fore frysningen fanns de inte
+        # som celler, sa att kopiera dem skulle plotsligt fora over en fryst
+        # dags implicita timmar och lasa maldagen mot mottagarens egen mall.
+        src_cells = [cell for cell in db.execute(src_q).scalars().all() if not cell.is_template_fill]
         if not src_cells:
             continue
 
@@ -143,6 +146,7 @@ def copy_schedule(
                         loan_area_id=src.loan_area_id,
                         remark=src.remark,
                         empty_override=src.empty_override,
+                        is_template_fill=False,
                         version=1,
                         updated_by=user.id,
                     )

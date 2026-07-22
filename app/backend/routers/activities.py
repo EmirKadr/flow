@@ -828,8 +828,19 @@ def delete_activity(
     db: Session = Depends(get_db),
     admin: User = Depends(require_view_access("activities", "edit")),
 ) -> None:
+    """Ta bort en aktivitet: framtiden rensas, historiken bevaras.
+
+    Historiska schemaceller som pekar på aktiviteten är en logg och skrivs
+    aldrig om. Ofrysta gårdagar fryses först, framtida celler töms och
+    aktiviteten inaktiveras (raden behålls för etikett/färg i historiken).
+    En aktivitet helt utan schemaceller tas bort på riktigt som förut.
+    """
+    from ..schedule_freeze import clear_future_cells_for_activities, freeze_pending_for_request
+
     activity = scoped_get(db, Activity, activity_id, admin, detail="Aktivitet hittades inte")
     before = _activity_snapshot(activity)
+    freeze_pending_for_request(db)
+    future_cells_cleared = clear_future_cells_for_activities(db, [activity_id])
     db.query(Person).filter(Person.home_activity_id == activity_id).update(
         {Person.home_activity_id: None},
         synchronize_session=False,
@@ -838,19 +849,34 @@ def delete_activity(
         {Activity.summary_activity_id: None},
         synchronize_session=False,
     )
-    db.query(ScheduleCell).filter(ScheduleCell.activity_id == activity_id).update(
-        {ScheduleCell.activity_id: None, ScheduleCell.empty_override: True},
-        synchronize_session=False,
+    has_history = (
+        db.query(ScheduleCell.id).filter(ScheduleCell.activity_id == activity_id).first() is not None
     )
-    db.delete(activity)
-    audit_log(
-        db,
-        entity_type="activity",
-        entity_id=activity.id,
-        action="delete",
-        old_value=before,
-        new_value=None,
-        user_id=admin.id,
-        business_id=activity.business_id,
-    )
+    if has_history:
+        activity.is_active = False
+        audit_log(
+            db,
+            entity_type="activity",
+            entity_id=activity.id,
+            action="delete",
+            old_value=before,
+            new_value={
+                "mode": "history_preserved",
+                "future_cells_cleared": future_cells_cleared,
+            },
+            user_id=admin.id,
+            business_id=activity.business_id,
+        )
+    else:
+        db.delete(activity)
+        audit_log(
+            db,
+            entity_type="activity",
+            entity_id=activity.id,
+            action="delete",
+            old_value=before,
+            new_value=None,
+            user_id=admin.id,
+            business_id=activity.business_id,
+        )
     db.commit()

@@ -552,9 +552,11 @@ def test_delete_area_hard_deletes_empty_and_deactivates_linked_data(business_ses
     assert data["r3_person"].home_activity_id is None
     assert linked_activity.area_id is None
     assert linked_activity.is_active is False
-    assert cell.activity_id is None
-    assert cell.empty_override is True
-    assert loan_cell.loan_area_id is None
+    # Historiska celler (datum <= idag) ar en frusen logg och rors inte av
+    # omradesradering; bara framtida celler loskopplas numera.
+    assert cell.activity_id == linked_activity.id
+    assert cell.empty_override is False
+    assert loan_cell.loan_area_id == linked_area_id
     assert [area.code for area in list_areas(db=session, user=data["r3_user"])] == []
     assert [area.code for area in list_areas(include_inactive=True, db=session, user=data["r3_user"])] == ["R3"]
     assert [activity.code for activity in list_activities(db=session, user=data["r3_user"])] == ["R3_LEDIG"]

@@ -77,6 +77,13 @@ Falt:
 - Vid konflikt returnerar API `409`; klienten visar toast och laddar om dagen.
 - Om en person har fast veckomall och vald huvudaktivitet visas huvudaktiviteten som standard i malltimmar utan explicit cell. Om huvudaktivitet saknas visas cellen tom med diskret schemalagd-markering; Bemanning hittar inte langre pa en aktivitet fran personens hemomrade.
 - Implicita malltimmar galler bara fran personens skapandedatum och framat. Gamla datum fore `persons.created_at` visar inga standardtimmar for personen, men explicita schemaceller visas fortfarande.
+- **Schemafrysning (2026-07-21):** vid dygnsskiftet materialiseras gardagens
+  implicita malltimmar till explicita celler (`is_template_fill=True`), och
+  datum till och med frysgransen laser aldrig veckomallen igen. Darfor
+  paverkar mall-, huvudaktivitets- och `has_fixed_schedule`-andringar bara
+  idag och framat — historiska dagar star stilla. Borttagna/inaktiverade
+  personer visas fortfarande pa frysta dagar dar de har celler. Se
+  [Schemahistorikens mutabilitet](schema-historik-mutabilitet.md).
 - Om anvandaren tommer en malltimme skapas explicit tom override.
 - `lock_foreign_schedule_cells` kan hindra ledare fran att andra celler skapade av annan anvandare.
 - Bemanning cachar bara API-svar som redan ar synliga for inloggad anvandare och aktuell verksamhet. Nar cache saknas prioriterar klienten all-data for hela dagen/verksamheten, filtrerar vald area lokalt och fyller bade all-cache och exakt omradescache innan anvandaren togglar vidare. Cachen ogiltigforklaras vid cellandring, split/merge, drag, undo/redo, rensa och kopiera dag sa omradestoggle inte visar gamla data.
@@ -139,6 +146,8 @@ Falt:
 | "Varfor kan jag inte dra namnet for att sortera?" | Anvandaren maste ha `Personsortering=Redigera`. Bemanningsansvarig/admin maste ha samma omrade som personens hemomrade; Super User och demo kan sortera alla synliga personer. Rensa personfiltret om det ar aktivt. |
 | "Varfor hander inget nar jag skickar en person till omrade?" | Personen maste ha schemalagda timmar eller explicita celler fran aktuell/startad timme den dagen. Om alla celler ar lasta visas varning och inget skrivs. |
 | "Varfor syns inga standardtimmar for en ny person bakat i tiden?" | Personen far implicit veckomall forst fran sitt skapandedatum. Det hindrar att nyanstallda raknas som schemalagda innan de lades till. |
+| "Varfor andras inte gamla dagar nar jag byter nagons veckomall?" | Avsiktligt sedan 2026-07-21: forflutna dagar ar frysta som logg. Malländringar galler idag och framat. |
+| "Varfor syns en borttagen person i gamla scheman?" | Avsiktligt: personen jobbade da. Borttagning rensar bara framtida dagar; historiken bevaras och personen visas inaktiv pa frysta datum dar den har celler. |
 | "Varfor sag Bemanning tom ut efter att ett omrade togs bort?" | Browsern kan ha haft ett gammalt omradesfokus sparat. Nu faller sidan tillbaka till Alla nar det sparade omradet inte langre finns. Kontrollera Historik efter 404 `Omrade hittades inte` om felet hande innan fixen. |
 | "Varfor syns en person i tva omraden?" | Personen har sitt hemomrade i det ena omradet men ar tilldelad en aktivitet eller tom lanemarkering som tillhor det andra omradet. Det ar avsiktligt: personen ska synas dar arbetet sker eller ska planeras och dar personen hor hemma. |
 | "Varfor ar Produktivitet tom i Bemanning?" | Personen har ingen avslutad KPI-timme i vald period, har bara STOD/absence hittills, saknar huvudaktivitet/explicit KPI-aktivitet, saknar faktisk KPI-process/poang den dagen, saknar materialiserad produktivitetscache for dagen eller sa ar extern snapshot-sync nere och ingen lokal cache finns. |

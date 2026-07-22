@@ -63,6 +63,20 @@ def _area_has_linked_data(db: Session, area_id: int) -> bool:
 
 
 def _detach_area_references(db: Session, area_id: int) -> dict[str, int]:
+    """Koppla loss framtiden från området; historiska schemaceller bevaras.
+
+    Historiska celler (t.o.m. idag) är en frusen logg: lånemarkeringar och
+    aktivitetsceller i förfluten tid rörs inte. Bara framtida celler töms.
+    Ofrysta gårdagar materialiseras först så inga implicita malltimmar hinner
+    tappas när huvudaktiviteter nollas.
+    """
+    from ..schedule_freeze import (
+        clear_future_cells_for_activities,
+        clear_future_loan_markers,
+        freeze_pending_for_request,
+    )
+
+    freeze_pending_for_request(db)
     activity_ids = [
         activity_id
         for (activity_id,) in db.query(Activity.id).filter(Activity.area_id == area_id).all()
@@ -78,9 +92,7 @@ def _detach_area_references(db: Session, area_id: int) -> dict[str, int]:
         "home_activities": 0,
         "summary_activities": 0,
         "schedule_cells": 0,
-        "loan_schedule_cells": db.query(ScheduleCell)
-        .filter(ScheduleCell.loan_area_id == area_id)
-        .update({ScheduleCell.loan_area_id: None}, synchronize_session=False),
+        "loan_schedule_cells": clear_future_loan_markers(db, area_id),
     }
     if activity_ids:
         detached["home_activities"] = db.query(Person).filter(Person.home_activity_id.in_(activity_ids)).update(
@@ -91,10 +103,7 @@ def _detach_area_references(db: Session, area_id: int) -> dict[str, int]:
             {Activity.summary_activity_id: None},
             synchronize_session=False,
         )
-        detached["schedule_cells"] = db.query(ScheduleCell).filter(ScheduleCell.activity_id.in_(activity_ids)).update(
-            {ScheduleCell.activity_id: None, ScheduleCell.empty_override: True},
-            synchronize_session=False,
-        )
+        detached["schedule_cells"] = clear_future_cells_for_activities(db, activity_ids)
         detached["activities"] = db.query(Activity).filter(Activity.id.in_(activity_ids)).update(
             {Activity.area_id: None, Activity.is_active: False},
             synchronize_session=False,

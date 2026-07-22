@@ -104,7 +104,15 @@ export interface paths {
         /** Update Activity */
         put: operations["update_activity_api_activities__activity_id__put"];
         post?: never;
-        /** Delete Activity */
+        /**
+         * Delete Activity
+         * @description Ta bort en aktivitet: framtiden rensas, historiken bevaras.
+         *
+         *     Historiska schemaceller som pekar på aktiviteten är en logg och skrivs
+         *     aldrig om. Ofrysta gårdagar fryses först, framtida celler töms och
+         *     aktiviteten inaktiveras (raden behålls för etikett/färg i historiken).
+         *     En aktivitet helt utan schemaceller tas bort på riktigt som förut.
+         */
         delete: operations["delete_activity_api_activities__activity_id__delete"];
         options?: never;
         head?: never;
@@ -1342,7 +1350,18 @@ export interface paths {
         /** Update Person */
         put: operations["update_person_api_persons__person_id__put"];
         post?: never;
-        /** Delete Person */
+        /**
+         * Delete Person
+         * @description Ta bort en person: framtiden rensas, historiken bevaras.
+         *
+         *     Historiska schemadagar är en logg och får aldrig ändras av registerskötsel.
+         *     Därför fryses ev. ofrysta gårdagar först, personens framtida celler tas
+         *     bort och personen inaktiveras (raden och alla celler t.o.m. idag behålls
+         *     så förflutna dagar fortsätter visa hur personen faktiskt jobbade).
+         *
+         *     Undantaget är en person som skapats idag och aldrig fått en schemacell —
+         *     ett felskapat register, inte historik. Den tas bort på riktigt som förut.
+         */
         delete: operations["delete_person_api_persons__person_id__delete"];
         options?: never;
         head?: never;

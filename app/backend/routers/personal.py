@@ -262,13 +262,32 @@ def _build_schedule_payload(db: Session, person: Person, year: int, week: int) -
                         minute_start=cell.minute_start,
                         minute_end=cell.minute_end,
                         label=label,
-                        source="registrerad",
+                        # Materialiserade malltimmar ska se ut som standardtid,
+                        # inte som manuellt registrerade celler.
+                        source="standard" if cell.is_template_fill else "registrerad",
                         activity_id=cell.activity_id,
                         color=color,
                         category=category,
                     )
                     segments.append(segment)
                     key = _total_key(activity_id=cell.activity_id, label=label, color=color, category=category)
+                    day_totals[key] += segment.minutes
+                    week_totals[key] += segment.minutes
+                elif cell.empty_override and cell.is_template_fill:
+                    # Fryst schemalagd timme utan huvudaktivitet: visades och
+                    # räknades som "Standardtid" när dagen var aktuell.
+                    segment = _make_segment(
+                        hour=hour,
+                        minute_start=cell.minute_start,
+                        minute_end=cell.minute_end,
+                        label="Standardtid",
+                        source="standard",
+                        activity_id=None,
+                        color=None,
+                        category="work",
+                    )
+                    segments.append(segment)
+                    key = _total_key(activity_id=None, label="Standardtid", color=None, category="work")
                     day_totals[key] += segment.minutes
                     week_totals[key] += segment.minutes
                 elif cell.empty_override:

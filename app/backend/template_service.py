@@ -8,12 +8,48 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Person, PersonScheduleTemplate
+from .models import Person, PersonScheduleTemplate, ScheduleFreezeState
 
 DEFAULT_START = 7
 LOCAL_TIMEZONE = ZoneInfo("Europe/Stockholm")
 DEFAULT_END = 16          # exklusiv → timslots 7..15
 LUNCH_OFFSET = 5          # lunchen sätts 5 timmar in i passet (start_hour + 5)
+
+
+_FREEZE_HORIZON_CACHE_KEY = "schedule_freeze_horizon"
+
+
+def get_schedule_freeze_horizon(db: Session) -> date | None:
+    """Senaste materialiserade datum, eller None om frysning inte initierats.
+
+    Datum <= horisonten är historik: implicita malltimmar är redan skrivna som
+    explicita celler (is_template_fill) och mallen får inte appliceras vid
+    läsning, annars skulle senare malländringar ändra förfluten tid.
+
+    Cachas per session (db.info) så upprepade uppslag i samma request inte
+    kostar en SQL-fråga var — särskilt viktigt innan frysraden finns, då
+    db.get inte kan träffa identity map.
+    """
+    info = getattr(db, "info", None)
+    if info is not None and _FREEZE_HORIZON_CACHE_KEY in info:
+        return info[_FREEZE_HORIZON_CACHE_KEY]
+    row = db.get(ScheduleFreezeState, 1)
+    horizon = row.frozen_until if row is not None else None
+    if info is not None:
+        info[_FREEZE_HORIZON_CACHE_KEY] = horizon
+    return horizon
+
+
+def set_cached_freeze_horizon(db: Session, horizon: date | None) -> None:
+    """Uppdatera sessionscachen när frysgränsen flyttas i samma session."""
+    info = getattr(db, "info", None)
+    if info is not None:
+        info[_FREEZE_HORIZON_CACHE_KEY] = horizon
+
+
+def is_date_frozen(db: Session, target_date: date) -> bool:
+    horizon = get_schedule_freeze_horizon(db)
+    return horizon is not None and target_date <= horizon
 
 
 def _hours_with_lunch_removed(start: int, end: int) -> set[int]:
@@ -80,6 +116,9 @@ def get_template_hours(
     Om personen saknar egen mall: vardagar default 07..15 minus lunch, helg ledig.
     Om personen har en egen mall men saknar rad för dagen: ledig.
     """
+    if target_date is not None and is_date_frozen(db, target_date):
+        return None
+
     person = db.get(Person, person_id)
     if person is not None and not person.has_fixed_schedule:
         return None
@@ -110,6 +149,11 @@ def get_template_hours_map(
 
     Nyckeln i resultatet är ``(person_id, weekday)``.
     Om en rad saknas används samma defaultbeteende som i ``get_template_hours``.
+
+    OBS: datumlös och därför utan både frysgräns och ``created_at``-vakt. Får
+    inte användas i läsvägar som visar ett konkret datum — då skulle
+    veckomallen rita om fryst historik igen. Använd
+    ``get_template_hours_map_for_dates``.
     """
     unique_person_ids = sorted({int(person_id) for person_id in person_ids})
     unique_weekdays = sorted({int(weekday) for weekday in weekdays})
@@ -172,6 +216,8 @@ def get_template_hours_map_for_dates(
     if not unique_person_ids or not unique_dates:
         return {}
 
+    freeze_horizon = get_schedule_freeze_horizon(db)
+
     rows = db.execute(
         select(PersonScheduleTemplate).where(
             PersonScheduleTemplate.person_id.in_(unique_person_ids),
@@ -193,6 +239,11 @@ def get_template_hours_map_for_dates(
         has_fixed_schedule, created_at = person_info_by_id.get(person_id, (True, None))
         person_rows = rows_by_person.get(person_id, [])
         for target_date in unique_dates:
+            if freeze_horizon is not None and target_date <= freeze_horizon:
+                # Fryst datum: implicita timmar ligger redan som explicita
+                # is_template_fill-celler; mallen får inte skriva om historik.
+                template_map[(person_id, target_date)] = None
+                continue
             if not has_fixed_schedule:
                 template_map[(person_id, target_date)] = None
                 continue

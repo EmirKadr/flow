@@ -39,7 +39,9 @@ QUERY_BUDGETS = {
     "/api/areas": 4,
     "/api/activities": 4,
     "/api/persons": 6,
-    f"/api/schedule?year={_ISO[0]}&week={_ISO[1]}&weekday=3": 12,
+    # +1 sedan 2026-07-21: frysgransen (schedule_freeze_state) slas upp en
+    # gang per session och cachas i db.info.
+    f"/api/schedule?year={_ISO[0]}&week={_ISO[1]}&weekday=3": 13,
     f"/api/schedule/summary?year={_ISO[0]}&week={_ISO[1]}&weekday=3": 11,
     f"/api/overview?year={_ISO[0]}&week={_ISO[1]}": 12,
     f"/api/overview/revision?year={_ISO[0]}&week={_ISO[1]}": 7,

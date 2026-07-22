@@ -4,8 +4,9 @@ import os
 import platform
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import text
@@ -245,6 +246,67 @@ def build_recommendations(checks: list[dict[str, Any]], report: dict[str, Any]) 
     return recs
 
 
+def collect_schedule_freeze(db: Session | None, checks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Frysgransens efterslapning - guardrail mot att historiken tyst blir mutabel igen.
+
+    Bakgrundsjobbet fangar sina egna fel och fortsatter loopa, sa ett trasigt
+    frysjobb skulle annars aldrig synas: `state` forblir "running" medan
+    veckomallen ater borjar rita om gardagen. Halkar `frozen_until` efter
+    gardagen ar frysningen i praktiken ur funktion.
+    """
+    if db is None:
+        checks.append(check("Schemafrysning", "info", "Frysningskontroll hoppades over."))
+        return {"skipped": True}
+    try:
+        from .models import ScheduleCell, ScheduleFreezeState
+
+        row = db.get(ScheduleFreezeState, 1)
+        has_schedule_data = db.query(ScheduleCell.id).limit(1).first() is not None
+    except Exception as exc:
+        checks.append(check("Schemafrysning", "unknown", f"Kunde inte lasa frysgransen: {clean_text(exc)}"))
+        return {"error": clean_text(exc)}
+
+    frozen_until = row.frozen_until if row is not None else None
+    yesterday = datetime.now(ZoneInfo("Europe/Stockholm")).date() - timedelta(days=1)
+    result: dict[str, Any] = {
+        "frozen_until": frozen_until.isoformat() if frozen_until else None,
+        "expected_until": yesterday.isoformat(),
+    }
+    if frozen_until is None:
+        # Tom databas (lokal dev, nyuppsatt miljo): det finns ingen historik att
+        # skydda an, sa avsaknaden av frysgrans ar information - inte ett fel.
+        if not has_schedule_data:
+            checks.append(
+                check("Schemafrysning", "info", "Ingen schemahistorik att frysa an.", **result)
+            )
+            return result
+        checks.append(
+            check(
+                "Schemafrysning",
+                "warn",
+                "Schemahistoriken ar inte fryst an. Tills jobbet kort om ritar veckomallen om forflutna dagar.",
+                **result,
+            )
+        )
+        return result
+    lag_days = (yesterday - frozen_until).days
+    result["lag_days"] = lag_days
+    if lag_days > 0:
+        checks.append(
+            check(
+                "Schemafrysning",
+                "warn",
+                f"Frysgransen ligger {lag_days} dag(ar) efter. Ofrysta dagar kan fortfarande ritas om av registerandringar.",
+                **result,
+            )
+        )
+    else:
+        checks.append(
+            check("Schemafrysning", "ok", f"Schemahistoriken ar fryst till {frozen_until.isoformat()}.", **result)
+        )
+    return result
+
+
 def collect_background_jobs(checks: list[dict[str, Any]]) -> dict[str, Any]:
     jobs = background_job_status()
     failed = sorted(name for name, entry in jobs.items() if entry.get("state") == "error")
@@ -362,6 +424,7 @@ def run_healthcheck(
         "app": collect_app(base_url, checks),
         "database": collect_database(db, checks),
         "background_jobs": collect_background_jobs(checks),
+        "schedule_freeze": collect_schedule_freeze(db, checks),
         "duckdb": collect_duckdb(checks),
     }
     report["checks"] = checks
