@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import SessionLocal
-from .external_data_client import ExternalDataClient, ExternalDataClientError
+from .external_data_client import ExternalDataClient
 from .media_store import get_media_store
 from .models import MetaMediaUpload, MetaShipmentObservation
 from .meta_transcription import analyze_audio_with_openai
@@ -647,9 +647,10 @@ def _append_uncertainty_note(existing: str | None, note: str | None) -> str | No
     return f"{cleaned_existing}; {cleaned_note}"[:2000]
 
 
-# Live-vyn (v_ask_dispatch_pallet) haller bara ~14 dagar; aldre pallar finns
-# enbart i arkivet (~800 dagar). Se wiki/ask-datalagring.md.
+# Live-vyerna har kort retention; aldre pallar finns i respektive arkiv.
+# Se wiki/ask-datalagring.md.
 DISPATCH_ARCHIVE_VIEW = "dblog_dispatch_pallet_log"
+PICK_LOG_ARCHIVE_VIEW = "dblog_pick_log"
 
 
 def _pallet_filter_value(pallet: str) -> Any:
@@ -658,44 +659,125 @@ def _pallet_filter_value(pallet: str) -> Any:
     return int(pallet) if pallet.isdigit() else pallet
 
 
-def lookup_dispatch_pallet_fields(pallet_id: str | None) -> dict[str, str | None]:
-    """Bast-effort ASK-uppslag: far ALDRIG falla analysen — varje utfall utan
-    traff blir en begriplig osakerhetsanteckning pa raden i stallet."""
+def _fetch_live_then_archive(
+    client: ExternalDataClient,
+    live_view: str,
+    archive_view: str,
+    filters: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = client.fetch_data(live_view, filters=filters)
+    if not rows:
+        rows = client.fetch_data(archive_view, filters=filters)
+    return rows
+
+
+def _picker_username(rows: list[dict[str, Any]]) -> str | None:
+    for row in rows:
+        username = _clean_text(
+            _row_field(row, "user_id", "Användare", "anvandare", "användare"),
+            120,
+        )
+        if username:
+            return username
+    return None
+
+
+def lookup_dispatch_pallet_fields(
+    pallet_id: str | None,
+    *,
+    tenant: str | None = None,
+) -> dict[str, str | None]:
+    """Bast-effort ASK-uppslag for Meta.
+
+    Dispatchpallar ger order-, sandnings- och kundfalt. Plocklogg Full ger
+    anvandarnamnet, eftersom Dispatchpallars user_id kan vara den som senast
+    hanterade pallen och inte den som plockade den.
+    """
     pallet = str(pallet_id or "").strip()
     if not pallet:
-        return {"note": "Inget pall-id att sla upp i Dispatchpallar."}
+        return {"note": "Inget pall-id att sla upp i Dispatchpallar och Plocklogg Full."}
     if not workflow_api_configured():
-        return {"note": "Extern datakalla ar inte konfigurerad, sa Dispatchpallar kunde inte slas upp."}
+        return {
+            "note": "Extern datakalla ar inte konfigurerad, sa Dispatchpallar och Plocklogg Full kunde inte slas upp."
+        }
     filters = [ExternalDataClient.eq("pick_pall_num", _pallet_filter_value(pallet))]
     try:
-        client = _api_client(tenant=settings.META_ANALYSIS_DATA_SOURCE_TENANT or None)
-        rows = client.fetch_data(source_spec("dispatch").view, filters=filters)
-        if not rows:
-            rows = client.fetch_data(DISPATCH_ARCHIVE_VIEW, filters=filters)
+        client = _api_client(tenant=tenant or settings.META_ANALYSIS_DATA_SOURCE_TENANT or None)
     except Exception as exc:  # noqa: BLE001 — aven ovantade fel ska bli en anteckning, inte analysis_failed
-        logger.warning("Could not enrich Meta analysis from Dispatchpallar for pallet %s: %s", pallet, exc)
+        logger.warning(
+            "Could not create ASK client for Meta pallet lookup %s (%s)",
+            pallet,
+            type(exc).__name__,
+        )
         return {
-            "note": f"Dispatchpallar kunde inte hamtas fran ASK for pall-id {pallet} ({type(exc).__name__}).",
-        }
-    if not rows:
-        return {
-            "note": f"Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id {pallet}.",
+            "note": (
+                f"Dispatchpallar och Plocklogg Full kunde inte hamtas fran ASK "
+                f"for pall-id {pallet} ({type(exc).__name__})."
+            ),
         }
 
-    row = rows[0]
-    return {
-        "order_number": _clean_text(_row_field(row, "order_num", "Ordernr", "ordernr"), 80),
-        "shipment_number": _clean_text(
-            _row_field(row, "shipment_id", "Sändningsnr", "sandningsnr", "sändningsnr"),
-            120,
-        ),
-        "username": _clean_text(_row_field(row, "user_id", "Användare", "anvandare", "användare"), 120),
-        "customer_name": _clean_text(
-            _row_field(row, "custom_desc", "custom_num", "Kund", "kund", "customer_name", "customer"),
-            200,
-        ),
-        "note": None,
-    }
+    result: dict[str, str | None] = {}
+    notes: list[str] = []
+
+    try:
+        dispatch_rows = _fetch_live_then_archive(
+            client,
+            source_spec("dispatch").view,
+            DISPATCH_ARCHIVE_VIEW,
+            filters,
+        )
+    except Exception as exc:  # noqa: BLE001 — uppslagsfel ska synas pa raden, inte falla analysen
+        logger.warning(
+            "Could not enrich Meta analysis from Dispatchpallar for pallet %s (%s)",
+            pallet,
+            type(exc).__name__,
+        )
+        notes.append(f"Dispatchpallar kunde inte hamtas fran ASK for pall-id {pallet} ({type(exc).__name__}).")
+        dispatch_rows = []
+    else:
+        if dispatch_rows:
+            row = dispatch_rows[0]
+            result.update(
+                {
+                    "order_number": _clean_text(_row_field(row, "order_num", "Ordernr", "ordernr"), 80),
+                    "shipment_number": _clean_text(
+                        _row_field(row, "shipment_id", "Sändningsnr", "sandningsnr", "sändningsnr"),
+                        120,
+                    ),
+                    "customer_name": _clean_text(
+                        _row_field(row, "custom_desc", "custom_num", "Kund", "kund", "customer_name", "customer"),
+                        200,
+                    ),
+                }
+            )
+        else:
+            notes.append(f"Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id {pallet}.")
+
+    try:
+        pick_rows = _fetch_live_then_archive(
+            client,
+            source_spec("pick").view,
+            PICK_LOG_ARCHIVE_VIEW,
+            filters,
+        )
+    except Exception as exc:  # noqa: BLE001 — uppslagsfel ska synas pa raden, inte falla analysen
+        logger.warning(
+            "Could not enrich Meta analysis from Plocklogg Full for pallet %s (%s)",
+            pallet,
+            type(exc).__name__,
+        )
+        notes.append(f"Plocklogg Full kunde inte hamtas fran ASK for pall-id {pallet} ({type(exc).__name__}).")
+    else:
+        username = _picker_username(pick_rows)
+        if username:
+            result["username"] = username
+        elif pick_rows:
+            notes.append(f"Plocklogg Full saknade anvandarnamn for pall-id {pallet}.")
+        else:
+            notes.append(f"Plocklogg Full (inklusive arkivet) gav ingen traff for pall-id {pallet}.")
+
+    result["note"] = "; ".join(notes) or None
+    return result
 
 
 def _apply_dispatch_lookup(observation: MetaShipmentObservation, fields: dict) -> None:

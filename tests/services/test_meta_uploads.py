@@ -313,7 +313,7 @@ def test_analyze_meta_upload_keeps_lookup_fields_blank_without_dispatch_api(monk
         engine.dispose()
 
 
-def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatch):
+def test_analyze_meta_upload_uses_picker_from_pick_log_not_last_dispatch_user(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
@@ -331,15 +331,22 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
 
         def fetch_data(self, view, filters=None, identifiers=None):
             self.calls.append((view, filters, identifiers))
-            return [
-                {
-                    "pick_pall_num": "BOX-001",
-                    "order_num": "100001",
-                    "shipment_id": "RIG-REF-1",
-                    "user_id": "LOTS01",
-                    "custom_desc": "Kund AB",
-                }
-            ]
+            if view == "v_ask_dispatch_pallet":
+                return [
+                    {
+                        "pick_pall_num": "BOX-001",
+                        "order_num": "100001",
+                        "shipment_id": "RIG-REF-1",
+                        "user_id": "LAST_TOUCH",
+                        "custom_desc": "Kund AB",
+                    }
+                ]
+            if view == "v_ask_pick_log_full":
+                return [
+                    {"pick_pall_num": "BOX-001", "user_id": ""},
+                    {"pick_pall_num": "BOX-001", "user_id": "PICKER01"},
+                ]
+            return []
 
     fake_client = FakeDispatchClient()
     monkeypatch.setattr(meta_analysis_service, "_api_client", lambda tenant=None: fake_client)
@@ -368,12 +375,17 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
                 "v_ask_dispatch_pallet",
                 [{"id": "pick_pall_num", "value": "BOX-001", "operator": "EQ"}],
                 None,
-            )
+            ),
+            (
+                "v_ask_pick_log_full",
+                [{"id": "pick_pall_num", "value": "BOX-001", "operator": "EQ"}],
+                None,
+            ),
         ]
         assert result.analysis_status == "analyzed"
         assert result.order_number == "100001"
         assert result.shipment_number == "RIG-REF-1"
-        assert result.username == "LOTS01"
+        assert result.username == "PICKER01"
         assert result.customer_name == "Kund AB"
         assert result.pallet_id == "BOX-001"
         assert result.deviations == ["Pall lutar"]
@@ -381,6 +393,33 @@ def test_analyze_meta_upload_enriches_lookup_fields_from_dispatch_api(monkeypatc
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def test_meta_lookup_never_falls_back_to_dispatch_username(monkeypatch):
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+
+    def fetch_data(view, filters=None, identifiers=None):
+        if view == "v_ask_dispatch_pallet":
+            return [
+                {
+                    "pick_pall_num": 8473877,
+                    "order_num": "100001",
+                    "user_id": "LAST_TOUCH",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(
+        meta_analysis_service,
+        "_api_client",
+        lambda tenant=None: SimpleNamespace(fetch_data=fetch_data),
+    )
+
+    result = meta_analysis_service.lookup_dispatch_pallet_fields("8473877")
+
+    assert result.get("order_number") == "100001"
+    assert result.get("username") is None
+    assert "Plocklogg Full" in (result.get("note") or "")
 
 
 def test_analyze_meta_upload_marks_audio_extraction_failure(monkeypatch):
@@ -1395,7 +1434,10 @@ def test_local_dispatch_lookup_can_complete_manual_review_when_only_lookup_note_
         record_hash="2" * 64,
         pallet_id="8473877",
         deviations=["Fel pa kartongerna"],
-        uncertainty_notes="Dispatchpallar kunde inte hamtas fran ASK for pall-id 8473877 (ExternalDataClientError).",
+        uncertainty_notes=(
+            "Dispatchpallar kunde inte hamtas fran ASK for pall-id 8473877 (ExternalDataClientError).; "
+            "Plocklogg Full kunde inte hamtas fran ASK for pall-id 8473877 (ExternalDataClientError)."
+        ),
         analysis_status="manual_review",
     )
     session.add(shipment)
@@ -1478,6 +1520,7 @@ def test_local_dispatch_lookup_no_match_replaces_previous_dispatch_note():
             f"/api/meta/shipment-observations/{shipment.id}/dispatch-lookup",
             json={
                 "matched": False,
+                "username": "PICKER01",
                 "note": "Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id SAKNAS.",
             },
         )
@@ -1488,6 +1531,7 @@ def test_local_dispatch_lookup_no_match_replaces_previous_dispatch_note():
         assert "kunde inte hamtas" not in item["uncertainty_notes"]
         assert "ingen traff for pall-id SAKNAS" in item["uncertainty_notes"]
         assert "Rosten var osaker" in item["uncertainty_notes"]
+        assert item["username"] == "PICKER01"
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_current_user, None)
@@ -1699,10 +1743,9 @@ def test_dispatch_lookup_passes_configured_tenant_fallback(monkeypatch):
         engine.dispose()
 
 
-def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
-    """Live-vyn haller bara ~14 dagar — aldre pallar ska hittas i arkivet
-    (dblog_dispatch_pallet_log) och fylla lookup-falten utan anteckning.
-    Numeriska pall-id skickas som tal sa EQ matchar den numeriska kolumnen."""
+def test_meta_lookup_falls_back_to_dispatch_and_pick_log_archives(monkeypatch):
+    """Aldre pallar ska hittas i bada arkiven. Anvandarnamnet maste komma
+    fran dblog_pick_log, aldrig fran den senaste Dispatch-hanteraren."""
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(
         meta_analysis_service,
@@ -1721,10 +1764,12 @@ def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
                     "pick_pall_num": 8473877,
                     "order_num": "PR100485115",
                     "shipment_id": "GG-404-260610-PR100485115-0",
-                    "user_id": "LOTS01",
+                    "user_id": "LAST_TOUCH",
                     "custom_num": "10231",
                 }
             ]
+        if view == "dblog_pick_log":
+            return [{"pick_pall_num": 8473877, "user_id": "PICKER01"}]
         return []
 
     monkeypatch.setattr(meta_analysis_service, "_api_client", lambda tenant=None: SimpleNamespace(fetch_data=fetch_data))
@@ -1733,14 +1778,19 @@ def test_dispatch_lookup_falls_back_to_archive_view(monkeypatch):
     try:
         result = meta_analysis_service.analyze_meta_upload(session, row.id)
 
-        assert [view for view, _ in calls] == ["v_ask_dispatch_pallet", "dblog_dispatch_pallet_log"]
-        # Samma filter till bada vyerna, med numeriskt varde.
+        assert [view for view, _ in calls] == [
+            "v_ask_dispatch_pallet",
+            "dblog_dispatch_pallet_log",
+            "v_ask_pick_log_full",
+            "dblog_pick_log",
+        ]
+        # Samma filter till samtliga vyer, med numeriskt varde.
         assert calls[0][1] == [{"id": "pick_pall_num", "value": 8473877, "operator": "EQ"}]
-        assert calls[1][1] == calls[0][1]
+        assert all(filters == calls[0][1] for _, filters in calls)
         assert result.analysis_status == "analyzed"
         assert result.order_number == "PR100485115"
         assert result.shipment_number == "GG-404-260610-PR100485115-0"
-        assert result.username == "LOTS01"
+        assert result.username == "PICKER01"
         assert result.customer_name == "10231"  # arkivet saknar custom_desc; kundnr anvands
         assert result.uncertainty_notes is None
     finally:
