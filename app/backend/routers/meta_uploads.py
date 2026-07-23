@@ -860,13 +860,24 @@ def download_meta_media_audio(
     row = db.get(MetaMediaUpload, upload_id)
     if row is None or row.media_type != "video":
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Videon hittades inte.")
-    with tempfile.NamedTemporaryFile(prefix="flow-meta-audio-", suffix=".mp3", delete=False) as temp_file:
-        output = Path(temp_file.name)
+    output: Path | None = None
+    content_type = "audio/mp4"
+    filename = f"meta-audio-{upload_id}.m4a"
     try:
         with extract_audio_file(row) as audio:
+            suffix = Path(audio.display_name).suffix or ".m4a"
+            with tempfile.NamedTemporaryFile(
+                prefix="flow-meta-audio-",
+                suffix=suffix,
+                delete=False,
+            ) as temp_file:
+                output = Path(temp_file.name)
             shutil.copyfile(audio.path, output)
+            content_type = audio.content_type
+            filename = f"meta-audio-{upload_id}{suffix}"
     except Exception as exc:
-        output.unlink(missing_ok=True)
+        if output is not None:
+            output.unlink(missing_ok=True)
         audit_log(
             db,
             entity_type="meta_media_upload",
@@ -881,6 +892,8 @@ def download_meta_media_audio(
         if isinstance(exc, MetaAnalysisFailed):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
         raise
+    if output is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ljudfilen kunde inte skapas.")
     audit_log(
         db,
         entity_type="meta_media_upload",
@@ -894,7 +907,7 @@ def download_meta_media_audio(
     db.commit()
     return FileResponse(
         output,
-        media_type="audio/mpeg",
-        filename=f"meta-audio-{upload_id}.mp3",
+        media_type=content_type,
+        filename=filename,
         background=BackgroundTask(_cleanup_path, output),
     )

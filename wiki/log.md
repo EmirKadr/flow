@@ -1,11 +1,24 @@
 ---
 title: Wiki-logg
 status: aktiv
-updated: 2026-07-22
+updated: 2026-07-23
 tags: [wiki, logg]
 ---
 
 # Wiki-logg
+
+## [2026-07-23] robusthet | Meta-ljud stream-kopieras utan videoavkodning
+
+Development-podden gav 502/503 vid lokal Meta-analys. Halsorapporten visade att
+Flow-processen ensam hade toppat 264 MB RSS medan containerns minnestak var cirka
+0,2 GiB. Ljudendpointen kodade samtidigt om ljudet till MP3 med ffmpeg i den enda
+webbpodden.
+
+Endpointen mappar nu endast forsta ljudsparet till M4A med
+`-map 0:a:0 -c:a copy`. Ingen videobild avkodas, och CLI:t laddar bara ned
+M4A-ljudet och skickar ratt filnamn/MIME-typ till GPT-4o Transcribe. Codec som
+inte kan stream-kopieras ger ett kontrollerat analysfel i stallet for tung
+fallback-omkodning.
 
 ## [2026-07-22] beteende | Meta använder GPT-4o Transcribe
 
@@ -15,7 +28,7 @@ Konfigurationen använder `OPENAI_API_KEY`, `META_TRANSCRIPTION_MODEL` och
 `META_ANALYSIS_TEXT_MODEL`.
 
 CLI:t kan dessutom köra hela ljudanalysen lokalt med `--local-analysis` genom
-att hämta MP3 direkt från Flow; videon laddas inte ner. Resultatet skrivs
+att hämta M4A-ljud direkt från Flow; videon laddas inte ner. Resultatet skrivs
 sanerat tillbaka via `local-analysis`-endpointen och auditloggen sparar inga
 transkriptions- eller avvikelsevärden.
 
