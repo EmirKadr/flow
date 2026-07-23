@@ -1,7 +1,9 @@
+import argparse
 import json
 import sqlite3
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 from fastapi.routing import APIRoute
@@ -319,6 +321,45 @@ def test_cli_meta_process_queue_analyzes_each_row_and_reports_errors(tmp_path, c
         "message": None,
     }
     assert payload["results"][1]["error"] == "HTTP 400"
+
+
+def test_local_meta_lookup_uses_shared_pick_log_username(monkeypatch):
+    from app.backend import meta_analysis_service
+
+    calls = []
+    seen_tenants = []
+
+    def fetch_data(view, filters=None, identifiers=None):
+        calls.append(view)
+        if view == "v_ask_dispatch_pallet":
+            return [
+                {
+                    "order_num": "384150",
+                    "shipment_id": "MG-JKP-260709-1715430-0",
+                    "user_id": "LAST_TOUCH",
+                    "custom_desc": "Eliassons Jarn",
+                }
+            ]
+        if view == "v_ask_pick_log_full":
+            return [{"user_id": "PICKER01"}]
+        return []
+
+    def api_client(tenant=None):
+        seen_tenants.append(tenant)
+        return SimpleNamespace(fetch_data=fetch_data)
+
+    monkeypatch.setattr(flow_cli, "load_env_files", lambda: None)
+    monkeypatch.setattr(meta_analysis_service, "workflow_api_configured", lambda: True)
+    monkeypatch.setattr(meta_analysis_service, "_api_client", api_client)
+
+    result = flow_cli._local_dispatch_lookup("8473877", argparse.Namespace(dispatch_tenant="frey"))
+
+    assert calls == ["v_ask_dispatch_pallet", "v_ask_pick_log_full"]
+    assert seen_tenants == ["frey"]
+    assert result["matched"] is True
+    assert result["username"] == "PICKER01"
+    assert result["order_number"] == "384150"
+    assert result["note"] is None
 
 
 def test_cli_meta_process_queue_can_apply_local_dispatch_lookup(tmp_path, capsys, monkeypatch):

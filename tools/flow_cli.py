@@ -663,70 +663,25 @@ def _run_allocation_open_excel(args: argparse.Namespace) -> int:
     return _print_response(response, args.output)
 
 
-DISPATCH_ARCHIVE_VIEW = "dblog_dispatch_pallet_log"
-
-
-def _clean_lookup_text(value: Any, max_length: int) -> str | None:
-    if isinstance(value, list):
-        value = ", ".join(str(item).strip() for item in value if str(item or "").strip())
-    text = str(value or "").strip()
-    return text[:max_length] if text else None
-
-
-def _row_field(row: dict[str, Any], *names: str) -> Any:
-    for name in names:
-        if name in row and row[name] not in (None, ""):
-            return row[name]
-    lowered = {str(key).lower(): value for key, value in row.items()}
-    for name in names:
-        value = lowered.get(name.lower())
-        if value not in (None, ""):
-            return value
-    return None
-
-
-def _pallet_filter_value(pallet: str) -> Any:
-    return int(pallet) if pallet.isdigit() else pallet
-
-
-def _dispatch_lookup_from_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "matched": True,
-        "order_number": _clean_lookup_text(_row_field(row, "order_num", "Ordernr", "ordernr"), 80),
-        "shipment_number": _clean_lookup_text(
-            _row_field(row, "shipment_id", "Sandningsnr", "sandningsnr", "sändningsnr"),
-            120,
-        ),
-        "username": _clean_lookup_text(_row_field(row, "user_id", "Anvandare", "användare"), 120),
-        "customer_name": _clean_lookup_text(
-            _row_field(row, "custom_desc", "custom_num", "Kund", "kund", "customer_name", "customer"),
-            200,
-        ),
-        "note": None,
-        "source": "local_cli",
-    }
-
-
 def _local_dispatch_lookup(pallet_id: Any, args: argparse.Namespace) -> dict[str, Any]:
     pallet = str(pallet_id or "").strip()
     if not pallet:
-        return {"matched": False, "note": "Inget pall-id att sla upp i Dispatchpallar.", "source": "local_cli"}
+        return {
+            "matched": False,
+            "note": "Inget pall-id att sla upp i Dispatchpallar och Plocklogg Full.",
+            "source": "local_cli",
+        }
 
     try:
         load_env_files()
-        from app.backend.external_data_client import ExternalDataClient
-        from app.backend.workflow_data import _api_client, source_spec
+        from app.backend.meta_analysis_service import lookup_dispatch_pallet_fields
 
         tenant = (
             str(getattr(args, "dispatch_tenant", "") or "").strip()
             or os.environ.get("META_ANALYSIS_DATA_SOURCE_TENANT", "").strip()
             or "frey"
         )
-        filters = [ExternalDataClient.eq("pick_pall_num", _pallet_filter_value(pallet))]
-        client = _api_client(tenant=tenant)
-        rows = client.fetch_data(source_spec("dispatch").view, filters=filters)
-        if not rows:
-            rows = client.fetch_data(DISPATCH_ARCHIVE_VIEW, filters=filters)
+        lookup = lookup_dispatch_pallet_fields(pallet, tenant=tenant)
     except Exception as exc:  # noqa: BLE001 - CLI ska rapportera felet utan hemliga detaljer.
         return {
             "matched": False,
@@ -734,13 +689,11 @@ def _local_dispatch_lookup(pallet_id: Any, args: argparse.Namespace) -> dict[str
             "source": "local_cli",
         }
 
-    if not rows:
-        return {
-            "matched": False,
-            "note": f"Dispatchpallar (inklusive arkivet) gav ingen traff for pall-id {pallet}.",
-            "source": "local_cli",
-        }
-    return _dispatch_lookup_from_row(rows[0])
+    return {
+        **lookup,
+        "matched": not bool(lookup.get("note")),
+        "source": "local_cli",
+    }
 
 
 def _patch_meta_dispatch_lookup(
@@ -1108,12 +1061,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     meta_process_queue.add_argument(
         "--local-dispatch-lookup",
         action="store_true",
-        help="Hamta Dispatchpallar fran lokal ASK-konfiguration och skriv tillbaka lookup-falt.",
+        help="Hamta Dispatchpallar och Plocklogg Full fran lokal ASK-konfiguration och skriv tillbaka lookup-falt.",
     )
     meta_process_queue.add_argument(
         "--dispatch-tenant",
         default="",
-        help="Tenant for lokalt Dispatchpallar-uppslag (default: META_ANALYSIS_DATA_SOURCE_TENANT eller frey).",
+        help="Tenant for lokalt palluppslag (default: META_ANALYSIS_DATA_SOURCE_TENANT eller frey).",
     )
     meta_process_queue.add_argument("--json", action="store_true", help="Skriv resultatet som JSON istallet for rader.")
     meta_process_queue.set_defaults(func=_run_meta_process_queue)
