@@ -43,8 +43,8 @@ _ANALYSIS_SEMAPHORE = threading.Semaphore(max(1, int(settings.META_ANALYSIS_MAX_
 class AudioFile:
     path: Path
     size_bytes: int
-    content_type: str = "audio/mpeg"
-    display_name: str = "meta-audio.mp3"
+    content_type: str = "audio/mp4"
+    display_name: str = "meta-audio.m4a"
 
 
 def _media_size(upload: MetaMediaUpload) -> int:
@@ -91,7 +91,7 @@ def _resolve_ffmpeg() -> str | None:
 
 def _audio_filename(upload: MetaMediaUpload) -> str:
     stem = Path(upload.stored_filename or upload.original_filename or f"meta-{upload.id}").stem[:180]
-    return f"{stem}_audio.mp3"[:255]
+    return f"{stem}_audio.m4a"[:255]
 
 
 @contextmanager
@@ -100,22 +100,25 @@ def extract_audio_file(upload: MetaMediaUpload) -> Iterator[AudioFile]:
     if not ffmpeg:
         raise MetaAnalysisFailed("ffmpeg saknas, sa ljudet kunde inte extraheras.")
     with _media_file(upload) as input_path, tempfile.TemporaryDirectory() as temp_dir:
-        output_path = Path(temp_dir) / "meta-audio.mp3"
+        output_path = Path(temp_dir) / "meta-audio.m4a"
         command = [
             ffmpeg,
             "-y",
-            "-threads", "1",  # ffmpeg default = alla karnor; trådtak haller subprocess-minnet lagt i podden
+            "-nostdin",
+            "-v",
+            "error",
+            # Extra guardrail if the command changes later; stream copy uses no decoder today.
+            "-threads",
+            "1",
             "-i",
             str(input_path),
+            "-map",
+            "0:a:0",
             "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-codec:a",
-            "libmp3lame",
-            "-b:a",
-            "32k",
+            "-c:a",
+            "copy",
+            "-f",
+            "mp4",
             str(output_path),
         ]
         try:

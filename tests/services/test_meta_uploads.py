@@ -822,16 +822,21 @@ def test_super_user_can_list_meta_uploads_and_stream_content(monkeypatch, tmp_pa
 
         @contextmanager
         def fake_extract(_row):
-            audio_path = tmp_path / "audio.mp3"
+            audio_path = tmp_path / "audio.m4a"
             audio_path.write_bytes(b"audio-only")
-            yield SimpleNamespace(path=audio_path)
+            yield SimpleNamespace(
+                path=audio_path,
+                display_name="audio.m4a",
+                content_type="audio/mp4",
+            )
 
         monkeypatch.setattr(meta_uploads, "extract_audio_file", fake_extract)
         audio = client.get(f"/api/meta/uploads/{row.id}/audio")
         assert audio.status_code == 200
         assert audio.content == b"audio-only"
-        assert audio.headers["content-type"].startswith("audio/mpeg")
+        assert audio.headers["content-type"].startswith("audio/mp4")
         assert audio.headers["content-disposition"].startswith("attachment;")
+        assert ".m4a" in audio.headers["content-disposition"]
         actions = [entry.action for entry in session.query(AuditLog).order_by(AuditLog.id).all()]
         assert "download_video" in actions
         assert "download_audio" in actions
@@ -1568,11 +1573,8 @@ def test_gemini_requests_put_api_key_in_header_not_url(monkeypatch):
     assert headers["Content-Type"] == "application/json"
 
 
-def test_ffmpeg_audio_command_caps_threads_and_download_has_no_transcoder(monkeypatch):
-    """ffmpeg default ar tradar for alla karnor; multitradad avkodning av
-    hogupplost h264 (Meta-glasogon: 1488x1984@120fps) tog ~254 MB och
-    grupp-OOM-dodade podden 2026-07-09. Ljudextraktionen ska kora
-    -threads 1 och request-driven videotranscodes far inte finnas."""
+def test_ffmpeg_audio_command_stream_copies_only_audio_and_download_has_no_transcoder(monkeypatch):
+    """Ljudhämtningen får aldrig avkoda video eller koda om ljud i webbpodden."""
     captured: list[list[str]] = []
 
     def fake_run(command, capture_output, timeout, check):
@@ -1602,7 +1604,12 @@ def test_ffmpeg_audio_command_caps_threads_and_download_has_no_transcoder(monkey
     [audio_cmd] = captured
     index = audio_cmd.index("-threads")
     assert audio_cmd[index + 1] == "1"
-    assert index < audio_cmd.index("-i"), "trådtaket ska sättas före -i (avkodaren)"
+    assert index < audio_cmd.index("-i"), "trådtaket ska sättas före inputen"
+    assert audio_cmd[audio_cmd.index("-map") + 1] == "0:a:0"
+    assert audio_cmd[audio_cmd.index("-c:a") + 1] == "copy"
+    assert audio_cmd[audio_cmd.index("-f") + 1] == "mp4"
+    assert audio_cmd[-1].endswith(".m4a")
+    assert "libmp3lame" not in audio_cmd
     assert not hasattr(meta_uploads_helpers, "_transcode_video_to_playable")
     helper_source = Path(meta_uploads_helpers.__file__).read_text(encoding="utf-8")
     assert "libx264" not in helper_source

@@ -787,15 +787,38 @@ def _run_local_meta_audio_analysis(
     from app.backend.meta_analysis_service import META_ANALYSIS_INSTRUCTIONS, normalize_meta_analysis
     from app.backend.meta_transcription import analyze_audio_with_openai
 
-    with tempfile.NamedTemporaryFile(prefix="flow-meta-cli-", suffix=".mp3") as audio_file:
-        audio_file.write(audio_response.content)
-        audio_file.flush()
+    content_type = audio_response.headers.get("content-type", "audio/mpeg").split(";", 1)[0].strip().lower()
+    suffix = {
+        "audio/mp4": ".m4a",
+        "video/mp4": ".m4a",
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/ogg": ".ogg",
+        "audio/webm": ".webm",
+        "video/webm": ".webm",
+        "audio/flac": ".flac",
+    }.get(content_type, ".mp3")
+    filename = f"meta-audio{suffix}"
+    audio_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="flow-meta-cli-",
+            suffix=suffix,
+            delete=False,
+        ) as audio_file:
+            audio_file.write(audio_response.content)
+            audio_path = Path(audio_file.name)
+
         raw = analyze_audio_with_openai(
-            audio_path=Path(audio_file.name),
-            filename="meta-audio.mp3",
-            content_type="audio/mpeg",
+            audio_path=audio_path,
+            filename=filename,
+            content_type=content_type,
             instructions=META_ANALYSIS_INSTRUCTIONS,
         )
+    finally:
+        if audio_path is not None:
+            audio_path.unlink(missing_ok=True)
     fields = normalize_meta_analysis(raw)
     return _request(
         session=session,
@@ -1080,7 +1103,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     meta_process_queue.add_argument(
         "--local-analysis",
         action="store_true",
-        help="Hamta MP3 fran Flow, kor GPT-4o Transcribe lokalt och skriv tillbaka analysfalten.",
+        help="Hamta ljud fran Flow, kor GPT-4o Transcribe lokalt och skriv tillbaka analysfalten.",
     )
     meta_process_queue.add_argument(
         "--local-dispatch-lookup",

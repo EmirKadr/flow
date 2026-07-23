@@ -60,9 +60,9 @@ class CliTestHandler(BaseHTTPRequestHandler):
             self._json({"count": 0, "items": []})
             return
         if self.path == "/api/meta/uploads/101/audio":
-            body = b"fake-mp3"
+            body = b"fake-m4a"
             self.send_response(200)
-            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Type", "audio/mp4")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -374,14 +374,28 @@ def test_cli_meta_process_queue_can_analyze_downloaded_audio_locally(tmp_path, c
     from app.backend import meta_transcription
 
     CliTestHandler.patch_requests = []
-    monkeypatch.setattr(
-        meta_transcription,
-        "analyze_audio_with_openai",
-        lambda **_kwargs: {
+    audio_calls = []
+
+    def analyze_audio(**kwargs):
+        audio_path = kwargs["audio_path"]
+        audio_calls.append(
+            (
+                audio_path,
+                audio_path.read_bytes(),
+                kwargs["filename"],
+                kwargs["content_type"],
+            )
+        )
+        return {
             "pallet_id": "8473877",
             "deviations": ["Fel på kartong"],
             "uncertainty_notes": None,
-        },
+        }
+
+    monkeypatch.setattr(
+        meta_transcription,
+        "analyze_audio_with_openai",
+        analyze_audio,
     )
     server, thread = start_cli_test_server()
     try:
@@ -395,6 +409,10 @@ def test_cli_meta_process_queue_can_analyze_downloaded_audio_locally(tmp_path, c
 
     output = json.loads(capsys.readouterr().out)
     assert result == 0
+    assert audio_calls[0][1] == b"fake-m4a"
+    assert not audio_calls[0][0].exists()
+    assert audio_calls[0][0].suffix == ".m4a"
+    assert audio_calls[0][2:] == ("meta-audio.m4a", "audio/mp4")
     assert output["results"][0]["new_status"] == "analyzed"
     path, payload = CliTestHandler.patch_requests[0]
     assert path == "/api/meta/shipment-observations/11/local-analysis"
