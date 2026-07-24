@@ -7,6 +7,21 @@ tags: [wiki, logg]
 
 # Wiki-logg
 
+## [2026-07-23] beteende | Meta visar plockaren fran Plocklogg Full
+
+Meta-kolumnen `Anvandarnamn` hamtas nu fran `user_id` i Plocklogg Full genom
+sokning pa `pick_pall_num`. Dispatchpallars `user_id` ignoreras, eftersom det
+kan visa personen som senast hanterade pallen i stallet for den som plockade
+den. Ordernummer, sandningsnummer och kund kommer fortsatt fran Dispatchpallar.
+Bada uppslagen har varsin arkivfallback och kan ge delresultat med en tydlig
+`Kontrollera`-orsak om bara ena kallan traffar.
+
+Samma delade uppslagskod anvands av serveranalysen och
+`flow_cli --local-dispatch-lookup`, sa webb- och Windows-flodet far samma
+beteende. Den befintliga lokala audit-actionen
+`meta_shipment_observation/local_dispatch_lookup` behalls och sparar inga
+externa rader eller anslutningsdetaljer.
+
 ## [2026-07-23] robusthet | Meta-ljud stream-kopieras utan videoavkodning
 
 Development-podden gav 502/503 vid lokal Meta-analys. Halsorapporten visade att

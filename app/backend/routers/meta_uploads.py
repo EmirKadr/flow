@@ -113,7 +113,12 @@ class ShipmentLocalAnalysisUpdate(BaseModel):
 
 DISPATCH_LOOKUP_NOTE_PREFIXES = (
     "Dispatchpallar kunde inte hamtas fran ASK",
+    "Dispatchpallar och Plocklogg Full kunde inte hamtas fran ASK",
     "Dispatchpallar (inklusive arkivet) gav ingen traff",
+    "Plocklogg Full kunde inte hamtas fran ASK",
+    "Plocklogg Full (inklusive arkivet) gav ingen traff",
+    "Plocklogg Full saknade anvandarnamn",
+    "Extern datakalla ar inte konfigurerad, sa Dispatchpallar",
 )
 
 
@@ -716,26 +721,23 @@ def update_meta_shipment_dispatch_lookup(
 
     before = _shipment_dispatch_lookup_audit_snapshot(row)
     matched = bool(payload.matched)
-    if matched:
-        updates = {
-            "order_number": _clean_dispatch_lookup_text(payload.order_number, 80),
-            "shipment_number": _clean_dispatch_lookup_text(payload.shipment_number, 120),
-            "username": _clean_dispatch_lookup_text(payload.username, 120),
-            "customer_name": _clean_dispatch_lookup_text(payload.customer_name, 200),
-        }
-        for key, value in updates.items():
-            if value:
-                setattr(row, key, value)
-        row.uncertainty_notes = _remove_dispatch_lookup_notes(row.uncertainty_notes)
-        if row.analysis_status == "manual_review" and not row.uncertainty_notes:
-            row.analysis_status = "analyzed"
-    else:
-        row.uncertainty_notes = _append_dispatch_lookup_note(
-            _remove_dispatch_lookup_notes(row.uncertainty_notes),
-            payload.note,
-        )
-        if row.uncertainty_notes and row.analysis_status == "analyzed":
-            row.analysis_status = "manual_review"
+    updates = {
+        "order_number": _clean_dispatch_lookup_text(payload.order_number, 80),
+        "shipment_number": _clean_dispatch_lookup_text(payload.shipment_number, 120),
+        "username": _clean_dispatch_lookup_text(payload.username, 120),
+        "customer_name": _clean_dispatch_lookup_text(payload.customer_name, 200),
+    }
+    for key, value in updates.items():
+        if value:
+            setattr(row, key, value)
+
+    row.uncertainty_notes = _remove_dispatch_lookup_notes(row.uncertainty_notes)
+    if payload.note:
+        row.uncertainty_notes = _append_dispatch_lookup_note(row.uncertainty_notes, payload.note)
+    if row.uncertainty_notes and row.analysis_status == "analyzed":
+        row.analysis_status = "manual_review"
+    elif row.analysis_status == "manual_review" and not row.uncertainty_notes:
+        row.analysis_status = "analyzed"
 
     refresh_record_hash(row)
     db.flush()
