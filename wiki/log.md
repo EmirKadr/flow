@@ -3543,3 +3543,15 @@ felskapad person att se ut att ha historik.
 Migration 0050 renderad mot MSSQL (offline-laget enligt testing-release.md).
 
 Sidor: `schema-historik-mutabilitet.md`, `data-model.md`.
+
+## [2026-07-26] ingest | Nattlig flake: dod knapp fore initPage-svar
+
+Nattliga flake-jakten (run 30185698035, issue #54) fallde
+`test_empty_input_warns_and_clear_resets_the_view`: `dubbletter.js` band
+knapplyssnarna forst efter `await initPage()`, sa ett klick under CI-last
+kunde landa pa en dod knapp innan auth-rundresan var klar. Fix: bind
+lyssnarna synkront fore await (verktyget ar helt klientsidigt) plus
+regressionstest som haller `/api/auth/me` oppet och klickar anda -
+testet failar deterministiskt pa gamla koden.
+
+Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).

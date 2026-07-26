@@ -1,7 +1,7 @@
 ---
 title: Test-strategi
 status: aktiv
-updated: 2026-07-06
+updated: 2026-07-26
 tags: [test, pytest, playwright, hypothesis, flake, ci]
 ---
 
@@ -51,7 +51,15 @@ samtidighets-smoke) skyddar det som exempeltester inte når.
    toast-expecten (5s default) täckte inte kopieringsflödets serverrundresa.
    Åtgärd: `wait_for_load_state("load")` + filens 15s-konvention - innehålls-
    kraven oförändrade. Härda testet, sänk aldrig ribban.
-3. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
+3. Rotorsaksexempel 2026-07-26 (`dedupe empty_input`): `dubbletter.js` band
+   knapplyssnarna först efter `await initPage()` (auth-rundresan), medan testet
+   bara väntade på att DOM fanns - klick under CI-last kunde landa på en död
+   knapp. Åtgärd: bind lyssnarna synkront före `await initPage()` (verktyget är
+   helt klientsidigt) plus ett regressionstest som håller `/api/auth/me` öppet
+   och klickar ändå. Mönstret "lyssnare efter await initPage" finns på fler
+   sidor - de flesta behöver användardata före interaktion, men rent
+   klientsidiga verktyg ska binda före await.
+4. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
    för expects vars väg innehåller en serverrundresa.
 
 ## Nya tester - var hör de hemma?
