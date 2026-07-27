@@ -311,18 +311,21 @@ function dedupeSetColumnsSelection(selected) {
 }
 
 async function initDedupePage() {
-  const user = await initPage("removeDuplicates");
-  if (!user) return;
-  dedupeState.user = user;
-
+  // Verktyget är helt klientsidigt, så knapparna binds synkront före
+  // auth-anropet i initPage - annars är sidan död tills nätverkssvaret
+  // kommit, vilket både drabbar snabba användare och gör browsertesterna
+  // beroende av tajming.
   document.getElementById("dedupeRun")?.addEventListener("click", dedupeRun);
   document.getElementById("dedupeClear")?.addEventListener("click", dedupeClear);
   document.getElementById("dedupeCopy")?.addEventListener("click", dedupeCopyResult);
   document.getElementById("dedupeColumnsAll")?.addEventListener("click", () => dedupeSetColumnsSelection(true));
   document.getElementById("dedupeColumnsNone")?.addEventListener("click", () => dedupeSetColumnsSelection(false));
   dedupeInputEl()?.addEventListener("input", dedupeSyncInput);
-
   dedupeSyncInput();
+
+  const user = await initPage("removeDuplicates");
+  if (!user) return;
+  dedupeState.user = user;
 }
 
 initDedupePage();

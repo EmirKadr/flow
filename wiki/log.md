@@ -3543,3 +3543,40 @@ felskapad person att se ut att ha historik.
 Migration 0050 renderad mot MSSQL (offline-laget enligt testing-release.md).
 
 Sidor: `schema-historik-mutabilitet.md`, `data-model.md`.
+
+## [2026-07-26] ingest | Nattlig flake: dod knapp fore initPage-svar
+
+Nattliga flake-jakten (run 30185698035, issue #54) fallde
+`test_empty_input_warns_and_clear_resets_the_view`: `dubbletter.js` band
+knapplyssnarna forst efter `await initPage()`, sa ett klick under CI-last
+kunde landa pa en dod knapp innan auth-rundresan var klar. Fix: bind
+lyssnarna synkront fore await (verktyget ar helt klientsidigt) plus
+regressionstest som haller `/api/auth/me` oppet och klickar anda -
+testet failar deterministiskt pa gamla koden.
+
+Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).
+
+## [2026-07-27] ingest | Mandagsbomb i person-delete-testet
+
+Pre-push blockerades av `test_leader_deleting_person_with_history_preserves_it`:
+testet skapar en mallrad med `iso.weekday` fran "for 7 dagar sedan" (= dagens
+veckodag) och en med hardkodad `weekday=1` - pa mandagar krockar de pa
+unikhetskravet (person_id, weekday). Rott varje mandag, gront alla andra
+dagar; CI:s senaste fulla korning var en torsdag. Fix: ledig-raden far
+`iso.weekday % 7 + 1` sa kollisionen ar omojlig oavsett veckodag.
+
+Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).
+
+## [2026-07-27] ingest | GIT_DIR-lacka: pre-push-sviten skrev i riktiga repot
+
+Pre-push kor pytest med GIT_DIR exporterad av git. agent_audit-testernas
+`git init` i tmp ateranvande darfor det riktiga repot: fran en worktree
+(absolut GIT_DIR) hamnade en "Initial commit" pa arbetsbranchen och
+user.name "Agent Test" i delade .git/config - forfattaridentiteten i
+huvudrepot fick aterstallas manuellt. I ett vanligt repo raddas man av att
+relativa `.git` rakar peka i tmp. Fix i tre lager: init_repo sanerar
+GIT_*-miljon, pre-push kor unset fore sviten, regressionstest simulerar
+hookmiljon mot ett offer-repo. Bonus-lardom: git stash ar delad mellan
+worktrees - en pop i en worktree kan dra in frammande stash-poster.
+
+Sidor: `test-strategi.md` (rotorsaksexempel 5 i flake-policyn).

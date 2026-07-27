@@ -1,7 +1,7 @@
 ---
 title: Test-strategi
 status: aktiv
-updated: 2026-07-06
+updated: 2026-07-27
 tags: [test, pytest, playwright, hypothesis, flake, ci]
 ---
 
@@ -51,7 +51,32 @@ samtidighets-smoke) skyddar det som exempeltester inte når.
    toast-expecten (5s default) täckte inte kopieringsflödets serverrundresa.
    Åtgärd: `wait_for_load_state("load")` + filens 15s-konvention - innehålls-
    kraven oförändrade. Härda testet, sänk aldrig ribban.
-3. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
+3. Rotorsaksexempel 2026-07-26 (`dedupe empty_input`): `dubbletter.js` band
+   knapplyssnarna först efter `await initPage()` (auth-rundresan), medan testet
+   bara väntade på att DOM fanns - klick under CI-last kunde landa på en död
+   knapp. Åtgärd: bind lyssnarna synkront före `await initPage()` (verktyget är
+   helt klientsidigt) plus ett regressionstest som håller `/api/auth/me` öppet
+   och klickar ändå. Mönstret "lyssnare efter await initPage" finns på fler
+   sidor - de flesta behöver användardata före interaktion, men rent
+   klientsidiga verktyg ska binda före await.
+4. Rotorsaksexempel 2026-07-27 (`gap_person_delete_scope`): testet blandade
+   `date.today()`-härledd veckodag ("för 7 dagar sedan" = samma veckodag som
+   idag) med en hårdkodad `weekday=1` för samma person - UNIQUE-krock i
+   `person_schedule_templates` varje måndag. Rött bara på måndagar, osynligt
+   för CI som senast körde en torsdag. Lärdom: härled aldrig testdata från
+   dagens datum tillsammans med hårdkodade kalendervärden - gör kollisionen
+   omöjlig (`iso.weekday % 7 + 1`) eller frys datumet.
+5. Rotorsaksexempel 2026-07-27 (`agent_audit` + pre-push): git exporterar
+   `GIT_DIR` m.fl. till hooks; pytest ärver dem och testers `git init` i tmp
+   återanvände då det RIKTIGA repot. Från en worktree (absolut `GIT_DIR`)
+   skrev sviten en "Initial commit" på arbetsbranchen och `user.name "Agent
+   Test"` i delade `.git/config`; i ett vanligt repo räddas man bara av att
+   relativa `.git` råkar peka i tmp. Åtgärd: `init_repo` sanerar
+   git-hookmiljön, pre-push-hooken kör `unset GIT_DIR ...` före sviten, och
+   ett regressionstest simulerar hookmiljön mot ett offer-repo. Lärdom:
+   tester som skapar git-repon MÅSTE sanera `GIT_*`-miljön; git stash är
+   dessutom delad mellan worktrees - stash:a inte i delade repon.
+6. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
    för expects vars väg innehåller en serverrundresa.
 
 ## Nya tester - var hör de hemma?

@@ -149,6 +149,32 @@ def test_empty_input_warns_and_clear_resets_the_view(local_server, chromium_brow
         context.close()
 
 
+def test_run_button_is_alive_before_auth_roundtrip_completes(local_server, chromium_browser):
+    """Verktyget ar klientsidigt: knapparna ska fungera aven innan /api/auth/me
+    hunnit svara. Skyddar mot init-racet fran nattliga flake-jakten 2026-07-26
+    dar ett klick fore lyssnarbindningen gav en dod knapp och ingen toast."""
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    held_auth_routes = []
+    try:
+        login(page, local_server)
+        # Hall auth-anropet oppet sa att sidan garanterat interageras med
+        # innan initPage fatt sitt svar - det varsta tanjbara racelaget.
+        page.route("**/api/auth/me", lambda route: held_auth_routes.append(route))
+        page.goto(f"{local_server}/dubbletter.html", wait_until="load")
+        page.wait_for_selector("#dedupeInput", timeout=15000)
+
+        page.click("#dedupeRun")
+        expect(page.locator(".toast.warn").last).to_contain_text("Klistra in värden först")
+    finally:
+        for route in held_auth_routes:
+            try:
+                route.continue_()
+            except PlaywrightError:
+                pass
+        context.close()
+
+
 def test_tools_tab_navigates_from_another_tool(local_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     page = context.new_page()

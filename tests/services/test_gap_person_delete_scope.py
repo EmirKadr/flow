@@ -77,11 +77,15 @@ def test_leader_deleting_person_with_history_preserves_it(client, db_session):
             ),
         ]
     )
-    # Schemamall-rader kopplade till personen.
+    # Schemamall-rader kopplade till personen. Ledig-raden får en annan
+    # veckodag än den historiska cellens: iso.weekday följer dagens datum
+    # (testet kördes "för 7 dagar sedan"), så en hårdkodad 1:a krockar med
+    # unikhetskravet (person_id, weekday) varje måndag.
+    off_weekday = iso.weekday % 7 + 1
     db_session.add_all(
         [
             PersonScheduleTemplate(person_id=person_id, weekday=iso.weekday, start_hour=6, end_hour=14),
-            PersonScheduleTemplate(person_id=person_id, weekday=1, is_off=True),
+            PersonScheduleTemplate(person_id=person_id, weekday=off_weekday, is_off=True),
         ]
     )
     db_session.commit()
