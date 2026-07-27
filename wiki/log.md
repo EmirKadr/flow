@@ -3566,3 +3566,17 @@ dagar; CI:s senaste fulla korning var en torsdag. Fix: ledig-raden far
 `iso.weekday % 7 + 1` sa kollisionen ar omojlig oavsett veckodag.
 
 Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).
+
+## [2026-07-27] ingest | GIT_DIR-lacka: pre-push-sviten skrev i riktiga repot
+
+Pre-push kor pytest med GIT_DIR exporterad av git. agent_audit-testernas
+`git init` i tmp ateranvande darfor det riktiga repot: fran en worktree
+(absolut GIT_DIR) hamnade en "Initial commit" pa arbetsbranchen och
+user.name "Agent Test" i delade .git/config - forfattaridentiteten i
+huvudrepot fick aterstallas manuellt. I ett vanligt repo raddas man av att
+relativa `.git` rakar peka i tmp. Fix i tre lager: init_repo sanerar
+GIT_*-miljon, pre-push kor unset fore sviten, regressionstest simulerar
+hookmiljon mot ett offer-repo. Bonus-lardom: git stash ar delad mellan
+worktrees - en pop i en worktree kan dra in frammande stash-poster.
+
+Sidor: `test-strategi.md` (rotorsaksexempel 5 i flake-policyn).

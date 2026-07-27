@@ -66,7 +66,17 @@ samtidighets-smoke) skyddar det som exempeltester inte når.
    för CI som senast körde en torsdag. Lärdom: härled aldrig testdata från
    dagens datum tillsammans med hårdkodade kalendervärden - gör kollisionen
    omöjlig (`iso.weekday % 7 + 1`) eller frys datumet.
-5. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
+5. Rotorsaksexempel 2026-07-27 (`agent_audit` + pre-push): git exporterar
+   `GIT_DIR` m.fl. till hooks; pytest ärver dem och testers `git init` i tmp
+   återanvände då det RIKTIGA repot. Från en worktree (absolut `GIT_DIR`)
+   skrev sviten en "Initial commit" på arbetsbranchen och `user.name "Agent
+   Test"` i delade `.git/config`; i ett vanligt repo räddas man bara av att
+   relativa `.git` råkar peka i tmp. Åtgärd: `init_repo` sanerar
+   git-hookmiljön, pre-push-hooken kör `unset GIT_DIR ...` före sviten, och
+   ett regressionstest simulerar hookmiljön mot ett offer-repo. Lärdom:
+   tester som skapar git-repon MÅSTE sanera `GIT_*`-miljön; git stash är
+   dessutom delad mellan worktrees - stash:a inte i delade repon.
+6. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
    för expects vars väg innehåller en serverrundresa.
 
 ## Nya tester - var hör de hemma?

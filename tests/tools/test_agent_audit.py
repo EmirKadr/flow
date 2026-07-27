@@ -16,7 +16,22 @@ def git(repo, *args):
     )
 
 
+# Miljovariabler som git exporterar till hooks (pre-push m.fl.). Arvs de av
+# testets git-kommandon ateranvander `git init` det RIKTIGA repot i stallet
+# for tmp-katalogen: fran en worktree ar GIT_DIR absolut och 2026-07-27 skrev
+# sviten en "Initial commit" plus user.name "Agent Test" i arbetsrepot.
+GIT_HOOK_ENV_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+)
+
+
 def init_repo(tmp_path, monkeypatch):
+    for var in GIT_HOOK_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
     git(tmp_path, "init")
     git(tmp_path, "config", "user.email", "agent@example.test")
     git(tmp_path, "config", "user.name", "Agent Test")
@@ -29,6 +44,39 @@ def init_repo(tmp_path, monkeypatch):
 
 def jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_init_repo_ignores_git_hook_environment(tmp_path, monkeypatch):
+    """Testriggen far inte lacka in i det repo som kor sviten.
+
+    Pre-push-hooken kor pytest med GIT_DIR exporterad av git. Utan sanering
+    ateranvander init_repos `git init` det repot: 2026-07-27 fick en worktree
+    en "Initial commit" pa sin branch och user.name "Agent Test" i delade
+    .git/config. Har simuleras hookmiljon mot ett offer-repo och riggen ska
+    anda skapa ett fristaende repo utan att rora offret."""
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    for var in GIT_HOOK_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    git(victim, "init")
+    git(victim, "config", "user.email", "owner@example.test")
+    git(victim, "config", "user.name", "Repo Owner")
+    (victim / "data.txt").write_text("viktigt\n", encoding="utf-8")
+    git(victim, "add", "data.txt")
+    git(victim, "commit", "-m", "Owner commit")
+    victim_head = git(victim, "rev-parse", "HEAD").stdout.strip()
+
+    monkeypatch.setenv("GIT_DIR", str(victim / ".git"))
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    repo = init_repo(sandbox, monkeypatch)
+
+    assert (repo / ".git").is_dir()
+    assert git(repo, "rev-parse", "HEAD").stdout.strip() != victim_head
+    assert git(victim, "rev-parse", "HEAD").stdout.strip() == victim_head
+    assert git(victim, "config", "user.name").stdout.strip() == "Repo Owner"
+    assert git(victim, "status", "--porcelain").stdout.strip() == ""
 
 
 def test_agent_run_records_untracked_diff_events_and_spans(tmp_path, monkeypatch):

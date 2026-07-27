@@ -75,6 +75,13 @@ fi
 # Browsertesterna (Playwright, -m browser) kors INTE har: de ar lastkansliga
 # pa utvecklarmaskinen (OneDrive-synk, CPU-konkurrens gav falska rod 2026-07-06)
 # och CI ar deras gate. Kor dem lokalt vid behov: python -m pytest -m browser
+#
+# Git exporterar GIT_DIR m.fl. till hooks. Arver pytest dem kan tester som
+# skapar egna git-repon (t.ex. agent_audit-sviten) rakt av aterancvanda det
+# RIKTIGA repot: fran en worktree ar GIT_DIR absolut och 2026-07-27 skrev
+# testet en "Initial commit" + user.name "Agent Test" i arbetsrepot. Rensa
+# innan sviten kors.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
 python -m pytest -x -q -m "not browser"
 status=$?
 if [ $status -ne 0 ]; then
