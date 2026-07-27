@@ -1,7 +1,7 @@
 ---
 title: Test-strategi
 status: aktiv
-updated: 2026-07-26
+updated: 2026-07-27
 tags: [test, pytest, playwright, hypothesis, flake, ci]
 ---
 
@@ -59,7 +59,14 @@ samtidighets-smoke) skyddar det som exempeltester inte når.
    och klickar ändå. Mönstret "lyssnare efter await initPage" finns på fler
    sidor - de flesta behöver användardata före interaktion, men rent
    klientsidiga verktyg ska binda före await.
-4. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
+4. Rotorsaksexempel 2026-07-27 (`gap_person_delete_scope`): testet blandade
+   `date.today()`-härledd veckodag ("för 7 dagar sedan" = samma veckodag som
+   idag) med en hårdkodad `weekday=1` för samma person - UNIQUE-krock i
+   `person_schedule_templates` varje måndag. Rött bara på måndagar, osynligt
+   för CI som senast körde en torsdag. Lärdom: härled aldrig testdata från
+   dagens datum tillsammans med hårdkodade kalendervärden - gör kollisionen
+   omöjlig (`iso.weekday % 7 + 1`) eller frys datumet.
+5. Playwright-väntetider: följ 15s-konventionen för selector-/URL-väntor och
    för expects vars väg innehåller en serverrundresa.
 
 ## Nya tester - var hör de hemma?

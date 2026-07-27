@@ -3555,3 +3555,14 @@ regressionstest som haller `/api/auth/me` oppet och klickar anda -
 testet failar deterministiskt pa gamla koden.
 
 Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).
+
+## [2026-07-27] ingest | Mandagsbomb i person-delete-testet
+
+Pre-push blockerades av `test_leader_deleting_person_with_history_preserves_it`:
+testet skapar en mallrad med `iso.weekday` fran "for 7 dagar sedan" (= dagens
+veckodag) och en med hardkodad `weekday=1` - pa mandagar krockar de pa
+unikhetskravet (person_id, weekday). Rott varje mandag, gront alla andra
+dagar; CI:s senaste fulla korning var en torsdag. Fix: ledig-raden far
+`iso.weekday % 7 + 1` sa kollisionen ar omojlig oavsett veckodag.
+
+Sidor: `test-strategi.md` (nytt rotorsaksexempel i flake-policyn).
