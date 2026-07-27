@@ -3580,3 +3580,14 @@ hookmiljon mot ett offer-repo. Bonus-lardom: git stash ar delad mellan
 worktrees - en pop i en worktree kan dra in frammande stash-poster.
 
 Sidor: `test-strategi.md` (rotorsaksexempel 5 i flake-policyn).
+
+## [2026-07-27] ingest | npm-audit-vakten rod av dagens advisory-batch
+
+Fyra nya high-advisories (brace-expansion DoS, postcss path traversal,
+js-yaml quadratic CPU, undici-serien) faller npm audit-vakten pa alla
+branchar. Fix: npm audit fix for postcss m.fl. plus scopade overrides i
+package.json for @redocly/openapi-core-undertradet (brace-expansion 5.0.8,
+js-yaml ^4.2.1) - openapi-typescript 6.x ar inget alternativ (sarbar
+undici). Verifierat: audit 0 fynd, npm ci, API-typgenerering byteidentisk,
+tsc + eslint grona. OBS: ta bort overrides nar @redocly/openapi-core
+slapper en version med patchade beroenden (>1.34.17).
