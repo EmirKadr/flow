@@ -303,20 +303,39 @@ def test_schedule_context_menu_opens_at_the_pointer_for_every_app_zoom(
         page.wait_for_selector("#scheduleBody tr", timeout=15000)
         page.evaluate("(percent) => applyAppZoom(percent, { persist: false })", app_zoom)
 
-        cell = page.locator("#scheduleBody td[data-hour][data-split='0']:not(.locked-cell)").filter(
+        cells = page.locator("#scheduleBody td[data-hour][data-split='0']:not(.locked-cell)").filter(
             has=page.locator("select.cell-select:not(:disabled)")
-        ).first
-        expect(cell).to_be_visible(timeout=15000)
-        box = cell.bounding_box()
-        click_x = box["x"] + box["width"] / 2
-        click_y = box["y"] + box["height"] / 2
+        )
+        expect(cells.first).to_be_visible(timeout=15000)
+
+        # Zoomen flyttar cellerna: schemats etikettkolumner ar breda, sa vid 140 %
+        # borjar forsta timcellen redan runt x=1000 och tabellen scrollar ut langt
+        # till hoger. Blint .first gav da en cell sa nara hogerkanten att menyn inte
+        # fick plats, och guarden nedan foll innan placeringen ens mattes. Valj
+        # darfor cellen langst upp till vanster - den som lamnar mest rum - och lat
+        # guarden med den uppmatta menyn avgora om marginalen racker.
+        viewport = page.viewport_size
+
+        cell = None
+        click_x = click_y = 0.0
+        for candidate in cells.all():
+            box = candidate.bounding_box()
+            if not box:
+                continue
+            center_x = box["x"] + box["width"] / 2
+            center_y = box["y"] + box["height"] / 2
+            if cell is None or (center_x, center_y) < (click_x, click_y):
+                cell, click_x, click_y = candidate, center_x, center_y
+
+        assert cell is not None, (
+            f"zoom {app_zoom}%: hittade ingen klickbar schemacell i viewport {viewport}"
+        )
         page.mouse.click(click_x, click_y, button="right")
 
         menu = page.locator(".schedule-cell-context-menu")
         expect(menu).to_be_visible(timeout=15000)
         menu_box = menu.bounding_box()
 
-        viewport = page.viewport_size
         clamped_x = click_x + menu_box["width"] + 8 > viewport["width"]
         clamped_y = click_y + menu_box["height"] + 8 > viewport["height"]
         assert not clamped_x and not clamped_y, (
