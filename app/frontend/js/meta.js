@@ -156,8 +156,6 @@ function showReviewReasonMenu(event, item) {
   const menu = document.createElement("div");
   menu.id = "metaReviewReasonMenu";
   menu.className = "meta-review-reason-menu";
-  menu.style.left = `${event.clientX}px`;
-  menu.style.top = `${event.clientY}px`;
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "Visa orsak";
@@ -167,6 +165,7 @@ function showReviewReasonMenu(event, item) {
   });
   menu.appendChild(button);
   document.body.appendChild(menu);
+  positionElementAtViewportPoint(menu, event.clientX, event.clientY);
   const close = (closeEvent) => {
     if (!(closeEvent.target instanceof Node) || !menu.contains(closeEvent.target)) menu.remove();
   };

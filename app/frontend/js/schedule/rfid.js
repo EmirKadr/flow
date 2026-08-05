@@ -140,10 +140,10 @@ function openScheduleRfidPopover(event, anchor) {
     ` : ""}
   `;
   document.body.appendChild(popover);
-  const left = Math.min(window.innerWidth - popover.offsetWidth - 12, Math.max(12, rect.left));
-  const top = Math.min(window.innerHeight - popover.offsetHeight - 12, rect.bottom + 8);
-  popover.style.left = `${left}px`;
-  popover.style.top = `${top}px`;
+  const popoverRect = popover.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - popoverRect.width - 12, Math.max(12, rect.left));
+  const top = Math.min(window.innerHeight - popoverRect.height - 12, rect.bottom + 8);
+  positionElementAtViewportPoint(popover, left, top);
   popover.querySelector("[data-rfid-apply]")?.addEventListener("click", () => {
     void applyScheduleRfidEvent(event.id).catch((error) => showToast(error.message || "Kunde inte applicera RFID-stämpeln.", "error", 6000));
   });

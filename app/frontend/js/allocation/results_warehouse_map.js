@@ -699,8 +699,7 @@ function setupAllocationWarehouseMap(host, entry) {
     ghost.className = "allocation-map-drag-ghost";
     ghost.textContent = assignment.shipment || assignment.carrier || assignment.location;
     document.body.appendChild(ghost);
-    ghost.style.left = `${event.clientX + 14}px`;
-    ghost.style.top = `${event.clientY + 14}px`;
+    positionElementAtViewportPoint(ghost, event.clientX + 14, event.clientY + 14);
     return ghost;
   }
 
@@ -890,8 +889,7 @@ function setupAllocationWarehouseMap(host, entry) {
         state.drag.ghost = createGhost(state.drag.assignment, event);
       }
       if (state.drag.ghost) {
-        state.drag.ghost.style.left = `${event.clientX + 14}px`;
-        state.drag.ghost.style.top = `${event.clientY + 14}px`;
+        positionElementAtViewportPoint(state.drag.ghost, event.clientX + 14, event.clientY + 14);
         const targetEl = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-map-location]");
         const target = /** @type {HTMLElement} */ (targetEl)?.dataset.mapLocation || "";
         setDragTarget(target && target !== state.drag.source ? target : "");

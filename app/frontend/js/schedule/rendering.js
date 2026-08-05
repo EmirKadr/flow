@@ -454,8 +454,7 @@ function positionScheduleCellContextMenu(menu, event, td) {
   const clientY = Number.isFinite(rawY) ? rawY : (anchorRect ? anchorRect.bottom : 8);
   const left = Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 8));
   const top = Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 8));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  positionElementAtViewportPoint(menu, left, top);
 }
 
 function openScheduleCellContextMenu(event, td, part = null) {

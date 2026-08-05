@@ -157,6 +157,92 @@ def test_normalize_app_zoom_clamps_steps_and_survives_garbage(theme_page):
     )
 
 
+def _place_at(page, percent, left, top):
+    """Placera ett fixed-element på (left, top) i viewport-px vid given zoom."""
+    return page.evaluate(
+        """({ percent, left, top }) => {
+             applyAppZoom(percent, { persist: false });
+             const el = document.createElement("div");
+             el.style.position = "fixed";
+             el.style.width = "150px";
+             el.style.height = "80px";
+             document.body.appendChild(el);
+             positionElementAtViewportPoint(el, left, top);
+             const viaHelper = el.getBoundingClientRect();
+             el.style.left = `${left}px`;
+             el.style.top = `${top}px`;
+             const naive = el.getBoundingClientRect();
+             const zoom = effectiveCssZoom(el);
+             el.remove();
+             return {
+               helper: [viaHelper.left, viaHelper.top],
+               naive: [naive.left, naive.top],
+               zoom,
+             };
+           }""",
+        {"percent": percent, "left": left, "top": top},
+    )
+
+
+def test_position_element_at_viewport_point_lands_on_the_point_at_every_zoom(theme_page):
+    """Menyn ska hamna vid pekaren oavsett appzoom.
+
+    Appzoomen är `zoom` på <body> och ärvs av fixed-ättlingar: `style.left`
+    tolkas i den zoomade skalan medan clientX/getBoundingClientRect mäter i
+    viewporten. Vid 70 % dök bemanningsvyns högerklicksmeny därför upp uppe
+    till vänster om pekaren (rapporterat 2026-08-04).
+    """
+    try:
+        for percent in (70, 100, 140):
+            result = _place_at(theme_page, percent, 640, 420)
+            assert abs(result["helper"][0] - 640) <= 1, f"{percent}%: {result}"
+            assert abs(result["helper"][1] - 420) <= 1, f"{percent}%: {result}"
+    finally:
+        theme_page.evaluate("() => applyAppZoom(100, { persist: false })")
+
+
+def test_naive_position_assignment_misses_the_point_when_zoomed(theme_page):
+    """Beviskrav: utan omräkning är felet verkligt och skalar med zoomen, så
+    testet ovan hade fångat regressionen i stället för att alltid vara grönt."""
+    try:
+        neutral = _place_at(theme_page, 100, 640, 420)
+        assert neutral["naive"] == neutral["helper"]  # 100 % ska vara oförändrat
+
+        zoomed_out = _place_at(theme_page, 70, 640, 420)
+        assert zoomed_out["naive"][0] < 500  # ~448 px: menyn hamnar långt till vänster
+        assert zoomed_out["naive"][1] < 330  # ~294 px: och för högt upp
+
+        zoomed_in = _place_at(theme_page, 140, 640, 420)
+        assert zoomed_in["naive"][0] > 800  # åt andra hållet vid inzoomning
+    finally:
+        theme_page.evaluate("() => applyAppZoom(100, { persist: false })")
+
+
+def test_effective_css_zoom_falls_back_when_currentcsszoom_saknas(theme_page):
+    """Äldre motorer (t.ex. desktopens inbäddade webbvy) saknar currentCSSZoom —
+    då ska rect/offsetWidth-kvoten ge samma svar."""
+    try:
+        result = theme_page.evaluate(
+            """() => {
+                 applyAppZoom(70, { persist: false });
+                 const el = document.createElement("div");
+                 el.style.position = "fixed";
+                 el.style.width = "150px";
+                 el.style.height = "80px";
+                 document.body.appendChild(el);
+                 const real = effectiveCssZoom(el);
+                 Object.defineProperty(el, "currentCSSZoom", { value: undefined });
+                 const fallback = effectiveCssZoom(el);
+                 el.remove();
+                 return { real, fallback };
+               }"""
+        )
+        assert abs(result["real"] - 0.7) < 0.01
+        assert abs(result["fallback"] - 0.7) < 0.01
+    finally:
+        theme_page.evaluate("() => applyAppZoom(100, { persist: false })")
+
+
 # ---------------------------------------------------------------------------
 # Tabellsorteringens tokenlogik (table_sort.js): svenska tal (mellanslag +
 # decimalkomma) sorterar numeriskt, tomma celler sist, ISO-datum kronologiskt

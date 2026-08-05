@@ -179,8 +179,7 @@ function openScheduleLoanMenu(event, person) {
   const rect = menu.getBoundingClientRect();
   const left = Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8));
   const top = Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  positionElementAtViewportPoint(menu, left, top);
 
   window.setTimeout(() => {
     document.addEventListener("pointerdown", handleScheduleLoanMenuPointerDown);
