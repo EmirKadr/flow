@@ -8,6 +8,11 @@ app_icon_ico = project_root / "desktop" / "assets" / "flow_icon.ico"
 app_icon_svg = project_root / "desktop" / "assets" / "flow_icon.svg"
 frontend_dir = project_root / "app" / "frontend"
 warehouse_vendor_dir = project_root / "warehouse_tools" / "vendor"
+# allocation_bridge.py läser de här .py-filerna som text och exec:ar dem i stället
+# för att importera dem, så PyInstaller kan inte spåra dem via importgrafen. Utan
+# den här raden saknas de i bygget och appen kraschar direkt vid start med
+# FileNotFoundError på allocation_bridge_parts/registry.py.
+allocation_bridge_parts_dir = project_root / "app" / "backend" / "allocation_bridge_parts"
 forecast_training = project_root / "warehouse_tools" / "mg_forecast" / "training.parquet"
 
 # Träningscachen är lokal utvecklardata och inte committad. Inkludera den
@@ -26,6 +31,7 @@ a = Analysis(
         (str(app_icon_svg), "desktop/assets"),
         (str(frontend_dir), "app/frontend"),
         (str(warehouse_vendor_dir), "warehouse_tools/vendor"),
+        (str(allocation_bridge_parts_dir), "app/backend/allocation_bridge_parts"),
         *_optional_datas,
     ],
     hiddenimports=[
@@ -39,6 +45,11 @@ a = Analysis(
         "pyarrow",
         "pyarrow.parquet",
         "xgboost",
+        # SQLAlchemy laddar DBAPI-drivrutinen dynamiskt utifran URL-schemat
+        # (mssql+pyodbc, postgresql+psycopg), sa den syns inte i importgrafen.
+        # Utan de har raderna kraschar appen vid start i create_engine.
+        "pyodbc",
+        "psycopg",
     ],
     hookspath=[],
     hooksconfig={},
