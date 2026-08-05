@@ -3591,3 +3591,26 @@ js-yaml ^4.2.1) - openapi-typescript 6.x ar inget alternativ (sarbar
 undici). Verifierat: audit 0 fynd, npm ci, API-typgenerering byteidentisk,
 tsc + eslint grona. OBS: ta bort overrides nar @redocly/openapi-core
 slapper en version med patchade beroenden (>1.34.17).
+
+## [2026-08-04] ingest | Snabbmenyer hamnade fel nar appzoomen inte var 100 %
+
+Hogerklick i Bemanning oppnade `Dela`/`Anmarkning` langt upp till vanster om
+pekaren. Orsak: appzoomen ar `zoom` pa `<body>` och arvs av alla attlingar,
+aven `position: fixed`-menyer som ligger direkt under body. `clientX/clientY`
+och `getBoundingClientRect()` mater i viewportens skala, medan `style.left/top`
+tolkas i elementets egen (zoomade) skala - ett viewport-varde skrivet rakt in i
+`style.left` hamnar darfor `zoom` ganger for nara origo (vid 70 % ca 30 % fel,
+vid 140 % at andra hallet). Buggen fanns i alla flytande ytor, inte bara
+schemats cellmeny: sidebarens gruppmenyer, omrades-/verksamhetsfokus,
+lanemenyn, summeringsmenyn, uppladdningsmenyn, arsvaljaren, RFID-popovern,
+kapacitets-tooltipen, Meta-orsaksmenyn, produktivitets- och finansmenyerna samt
+ytkartans dragspoke. Fix: `effectiveCssZoom`/`viewportPxToElementPx`/
+`positionElementAtViewportPoint` i `common/theme.js` (currentCSSZoom med
+rect/offsetWidth-fallback for aldre motorer), och alla placerare gar via dem.
+Tester: statiskt kontrakt i `test_frontend_zoom_contracts.py` (snabbsviten),
+JS-enhetstest i `test_js_unit_harness.py` inkl. beviskrav att naiv skrivning
+missar, och E2E-hogerklick vid 70/100/140 % i `test_allocation_split_browser.py`.
+Ytkartans egen meny ratt sedan tidigare - den raknar om med
+`workspace.clientWidth`/rect-kvoten.
+
+Sidor: `ui-map.md` (Appzoom-raden).

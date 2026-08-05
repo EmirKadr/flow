@@ -286,6 +286,53 @@ def test_schedule_cell_right_click_splits_and_double_click_opens_activity_picker
         context.close()
 
 
+@pytest.mark.parametrize("app_zoom", [70, 100, 140])
+def test_schedule_context_menu_opens_at_the_pointer_for_every_app_zoom(
+    local_allocation_server, chromium_browser, app_zoom
+):
+    """Menyn ska dyka upp vid högerklicket, inte förskjuten av appzoomen.
+
+    Zoomen ligger som `zoom` på <body> och ärvs av fixed-menyn: skrivs ett
+    viewport-värde rakt in i style.left hamnar menyn `zoom` gånger för nära
+    origo. Vid 70 % dök menyn upp uppe till vänster om pekaren (2026-08-04).
+    """
+    context = chromium_browser.new_context(locale="sv-SE")
+    page = context.new_page()
+    try:
+        login_admin(page, local_allocation_server)
+        page.wait_for_selector("#scheduleBody tr", timeout=15000)
+        page.evaluate("(percent) => applyAppZoom(percent, { persist: false })", app_zoom)
+
+        cell = page.locator("#scheduleBody td[data-hour][data-split='0']:not(.locked-cell)").filter(
+            has=page.locator("select.cell-select:not(:disabled)")
+        ).first
+        expect(cell).to_be_visible(timeout=15000)
+        box = cell.bounding_box()
+        click_x = box["x"] + box["width"] / 2
+        click_y = box["y"] + box["height"] / 2
+        page.mouse.click(click_x, click_y, button="right")
+
+        menu = page.locator(".schedule-cell-context-menu")
+        expect(menu).to_be_visible(timeout=15000)
+        menu_box = menu.bounding_box()
+
+        viewport = page.viewport_size
+        clamped_x = click_x + menu_box["width"] + 8 > viewport["width"]
+        clamped_y = click_y + menu_box["height"] + 8 > viewport["height"]
+        assert not clamped_x and not clamped_y, (
+            "Testcellen ligger for nara kanten for att sarskilja placering fran klampning: "
+            f"klick=({click_x:.0f}, {click_y:.0f}) meny={menu_box} viewport={viewport}"
+        )
+        assert abs(menu_box["x"] - click_x) <= 2, (
+            f"zoom {app_zoom}%: menyn hamnade pa x={menu_box['x']:.0f}, klicket var pa {click_x:.0f}"
+        )
+        assert abs(menu_box["y"] - click_y) <= 2, (
+            f"zoom {app_zoom}%: menyn hamnade pa y={menu_box['y']:.0f}, klicket var pa {click_y:.0f}"
+        )
+    finally:
+        context.close()
+
+
 def test_split_values_result_headers_copy_whole_columns(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     context.grant_permissions(["clipboard-read", "clipboard-write"], origin=local_allocation_server)

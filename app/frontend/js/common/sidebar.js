@@ -34,8 +34,7 @@ function positionSidebarContextMenu(menu, x, y) {
   const rect = menu.getBoundingClientRect();
   const left = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
   const top = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  positionElementAtViewportPoint(menu, left, top);
 }
 
 function openSidebarContextMenu(event, user, activePage, pageId) {
@@ -116,8 +115,7 @@ function positionSidebarProductivityContextMenu(menu, x, y) {
   const rect = menu.getBoundingClientRect();
   const left = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
   const top = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  positionElementAtViewportPoint(menu, left, top);
 }
 
 function sidebarTodayIsoDate() {

@@ -316,10 +316,10 @@ function positionAreaFocusMenu(menu, event, anchor) {
   const fallbackY = rect ? rect.top : 8;
   const x = Number(event?.clientX) || fallbackX;
   const y = Number(event?.clientY) || fallbackY;
-  const left = Math.min(x, window.innerWidth - menu.offsetWidth - 8);
-  const top = Math.min(y, window.innerHeight - menu.offsetHeight - 8);
-  menu.style.left = `${Math.max(8, left)}px`;
-  menu.style.top = `${Math.max(8, top)}px`;
+  const menuRect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - menuRect.width - 8);
+  const top = Math.min(y, window.innerHeight - menuRect.height - 8);
+  positionElementAtViewportPoint(menu, Math.max(8, left), Math.max(8, top));
 }
 
 function renderAreaFocusMenuItems(menu, options = [], state = "ready") {

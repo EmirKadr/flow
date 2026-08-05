@@ -73,8 +73,7 @@ function positionActivityCapacityTooltip(target) {
   );
   const preferTop = rect.bottom + 10 + tooltipRect.height > viewportHeight && rect.top - tooltipRect.height - 10 > 0;
   const top = preferTop ? rect.top - tooltipRect.height - 10 : rect.bottom + 10;
-  tooltip.style.left = `${left}px`;
-  tooltip.style.top = `${Math.max(8, top)}px`;
+  positionElementAtViewportPoint(tooltip, left, Math.max(8, top));
 }
 
 function renderActivityCapacityTooltip(target, payload) {

@@ -52,9 +52,9 @@
       .join("");
     document.body.appendChild(menu);
     const rect = anchorEl.getBoundingClientRect();
-    const left = Math.min(Math.round(rect.left), window.innerWidth - menu.offsetWidth - 8);
-    menu.style.left = `${Math.max(8, left)}px`;
-    menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+    const menuRect = menu.getBoundingClientRect();
+    const left = Math.min(Math.round(rect.left), window.innerWidth - menuRect.width - 8);
+    positionElementAtViewportPoint(menu, Math.max(8, left), Math.round(rect.bottom + 4));
     menu.querySelectorAll("[data-year]").forEach((button) => {
       button.addEventListener("click", () => {
         const year = Number(button.getAttribute("data-year"));

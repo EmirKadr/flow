@@ -321,8 +321,7 @@ function positionProductivityFinanceContextMenu(menu, x, y) {
   const rect = menu.getBoundingClientRect();
   const left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth - rect.width - 8));
   const top = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - rect.height - 8));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+  positionElementAtViewportPoint(menu, left, top);
 }
 
 function openProductivityFinanceContextMenu(event, row) {
