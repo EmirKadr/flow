@@ -295,8 +295,17 @@ def test_schedule_context_menu_opens_at_the_pointer_for_every_app_zoom(
     Zoomen ligger som `zoom` på <body> och ärvs av fixed-menyn: skrivs ett
     viewport-värde rakt in i style.left hamnar menyn `zoom` gånger för nära
     origo. Vid 70 % dök menyn upp uppe till vänster om pekaren (2026-08-04).
+
+    Bredare viewport än standard: schemats etikettkolumner är breda, och vid
+    140 % ligger även den vänstraste timcellen så långt in att en 215 px bred
+    meny inte får plats på de 1280 px Playwright ger som standard. Då mäter
+    testet klampning mot kanten i stället för placering vid pekaren. Bredden
+    är alltså en förutsättning för att kunna mäta det testet handlar om.
     """
-    context = chromium_browser.new_context(locale="sv-SE")
+    context = chromium_browser.new_context(
+        locale="sv-SE",
+        viewport={"width": 1600, "height": 1000},
+    )
     page = context.new_page()
     try:
         login_admin(page, local_allocation_server)
