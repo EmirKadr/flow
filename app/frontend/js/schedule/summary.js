@@ -345,17 +345,24 @@ function positionSummaryContextMenu(menu, event, anchor, host = summaryContextMe
   const clientX = Number.isFinite(rawClientX)
     ? rawClientX
     : (anchorRect ? anchorRect.left + 16 : hostRect.left + padding);
-  const hostScrollLeft = host === document.body ? window.scrollX : (host.scrollLeft || 0);
-  const hostScrollTop = host === document.body ? window.scrollY : (host.scrollTop || 0);
+  // Appzoomen skalar menyns egna px, medan rect/clientX mäts i viewporten.
+  // Scrollvärden är redan i elementets egen skala för en scrollbar host, men i
+  // viewportskala för sidscrollen - därför räknas bara den om.
+  const hostScrollLeft = host === document.body
+    ? viewportPxToElementPx(menu, window.scrollX)
+    : (host.scrollLeft || 0);
+  const hostScrollTop = host === document.body
+    ? viewportPxToElementPx(menu, window.scrollY)
+    : (host.scrollTop || 0);
   const hostWidth = host === document.body
-    ? (document.documentElement.clientWidth || window.innerWidth)
-    : (host.clientWidth || hostRect.width);
+    ? viewportPxToElementPx(menu, document.documentElement.clientWidth || window.innerWidth)
+    : (host.clientWidth || viewportPxToElementPx(menu, hostRect.width));
 
-  const localX = clientX - hostRect.left + hostScrollLeft;
+  const localX = viewportPxToElementPx(menu, clientX - hostRect.left) + hostScrollLeft;
   const localY = anchorRect
-    ? anchorRect.bottom - hostRect.top + hostScrollTop + 4
-    : (Number(event?.clientY) - hostRect.top + hostScrollTop);
-  const maxLeft = Math.max(padding, hostWidth - menuRect.width - padding);
+    ? viewportPxToElementPx(menu, anchorRect.bottom - hostRect.top) + hostScrollTop + 4
+    : viewportPxToElementPx(menu, Number(event?.clientY) - hostRect.top) + hostScrollTop;
+  const maxLeft = Math.max(padding, hostWidth - viewportPxToElementPx(menu, menuRect.width) - padding);
   menu.style.left = `${Math.max(padding, Math.min(localX, maxLeft))}px`;
   menu.style.top = `${Math.max(padding, localY)}px`;
 }

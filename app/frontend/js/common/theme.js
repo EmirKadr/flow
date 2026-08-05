@@ -95,6 +95,64 @@ function resetAppZoom() {
   applyAppZoom(APP_ZOOM_DEFAULT);
 }
 
+/**
+ * Effektiv CSS-zoom för ett element.
+ *
+ * Appzoomen sätts som `zoom` på <body> och ärvs av alla ättlingar - även
+ * `position: fixed`-menyer som ligger direkt under body. Musens
+ * `clientX/clientY` och `getBoundingClientRect()` mäts i viewportens skala,
+ * medan `style.left/top` tolkas i elementets egen (zoomade) skala. Skriver man
+ * ett viewport-värde rakt in i `style.left` hamnar elementet därför `zoom`
+ * gånger för nära origo - vid 70 % dök schemats högerklicksmeny upp uppe till
+ * vänster om pekaren i stället för vid den.
+ *
+ * @param {HTMLElement | null | undefined} el
+ * @returns {number} Positiv skalfaktor; 1 när ingen zoom är aktiv.
+ */
+function effectiveCssZoom(el) {
+  const direct = Number(el?.currentCSSZoom);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  // Fallback för motorer utan currentCSSZoom: rect är viewport-px medan
+  // offsetWidth är elementets egna px, så kvoten är den effektiva zoomen.
+  const rect = el?.getBoundingClientRect?.();
+  const ownWidth = Number(el?.offsetWidth);
+  if (rect && rect.width > 0 && Number.isFinite(ownWidth) && ownWidth > 0) {
+    return rect.width / ownWidth;
+  }
+  const bodyZoom = Number.parseFloat(String(document.body?.style?.zoom || ""));
+  if (Number.isFinite(bodyZoom) && bodyZoom > 0) return bodyZoom;
+  return 1;
+}
+
+/**
+ * Räkna om en längd i viewport-px till elementets egna CSS-px.
+ *
+ * @param {HTMLElement | null | undefined} el
+ * @param {number} length
+ * @returns {number}
+ */
+function viewportPxToElementPx(el, length) {
+  const zoom = effectiveCssZoom(el);
+  return zoom > 0 ? length / zoom : length;
+}
+
+/**
+ * Placera ett element på en punkt uttryckt i viewport-px (där `clientX/clientY`
+ * och `getBoundingClientRect()` mäter). Elementet måste vara inlagt i DOM:en
+ * innan anropet, annars går zoomen inte att läsa ut.
+ *
+ * @param {HTMLElement | null | undefined} el
+ * @param {number} left
+ * @param {number} top
+ */
+function positionElementAtViewportPoint(el, left, top) {
+  if (!el) return;
+  const zoom = effectiveCssZoom(el);
+  const factor = zoom > 0 ? zoom : 1;
+  el.style.left = `${left / factor}px`;
+  el.style.top = `${top / factor}px`;
+}
+
 function renderAppZoomControls() {
   return `
       <div class="app-zoom-control" id="app-zoom-control" role="group" aria-label="Appzoom">

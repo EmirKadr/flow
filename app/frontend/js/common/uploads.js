@@ -314,10 +314,10 @@ function openUploadContextMenu(event) {
   menu.innerHTML = '<button type="button" role="menuitem">Rensa filer</button>';
   document.body.appendChild(menu);
 
-  const left = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8);
-  const top = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8);
-  menu.style.left = `${Math.max(8, left)}px`;
-  menu.style.top = `${Math.max(8, top)}px`;
+  const menuRect = menu.getBoundingClientRect();
+  const left = Math.min(event.clientX, window.innerWidth - menuRect.width - 8);
+  const top = Math.min(event.clientY, window.innerHeight - menuRect.height - 8);
+  positionElementAtViewportPoint(menu, Math.max(8, left), Math.max(8, top));
 
   menu.querySelector("button").addEventListener("click", async () => {
     closeUploadContextMenu();

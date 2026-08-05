@@ -286,6 +286,81 @@ def test_schedule_cell_right_click_splits_and_double_click_opens_activity_picker
         context.close()
 
 
+@pytest.mark.parametrize("app_zoom", [70, 100, 140])
+def test_schedule_context_menu_opens_at_the_pointer_for_every_app_zoom(
+    local_allocation_server, chromium_browser, app_zoom
+):
+    """Menyn ska dyka upp vid högerklicket, inte förskjuten av appzoomen.
+
+    Zoomen ligger som `zoom` på <body> och ärvs av fixed-menyn: skrivs ett
+    viewport-värde rakt in i style.left hamnar menyn `zoom` gånger för nära
+    origo. Vid 70 % dök menyn upp uppe till vänster om pekaren (2026-08-04).
+
+    Bredare viewport än standard: schemats etikettkolumner är breda, och vid
+    140 % ligger även den vänstraste timcellen så långt in att en 215 px bred
+    meny inte får plats på de 1280 px Playwright ger som standard. Då mäter
+    testet klampning mot kanten i stället för placering vid pekaren. Bredden
+    är alltså en förutsättning för att kunna mäta det testet handlar om.
+    """
+    context = chromium_browser.new_context(
+        locale="sv-SE",
+        viewport={"width": 1600, "height": 1000},
+    )
+    page = context.new_page()
+    try:
+        login_admin(page, local_allocation_server)
+        page.wait_for_selector("#scheduleBody tr", timeout=15000)
+        page.evaluate("(percent) => applyAppZoom(percent, { persist: false })", app_zoom)
+
+        cells = page.locator("#scheduleBody td[data-hour][data-split='0']:not(.locked-cell)").filter(
+            has=page.locator("select.cell-select:not(:disabled)")
+        )
+        expect(cells.first).to_be_visible(timeout=15000)
+
+        # Zoomen flyttar cellerna: schemats etikettkolumner ar breda, sa vid 140 %
+        # borjar forsta timcellen redan runt x=1000 och tabellen scrollar ut langt
+        # till hoger. Blint .first gav da en cell sa nara hogerkanten att menyn inte
+        # fick plats, och guarden nedan foll innan placeringen ens mattes. Valj
+        # darfor cellen langst upp till vanster - den som lamnar mest rum - och lat
+        # guarden med den uppmatta menyn avgora om marginalen racker.
+        viewport = page.viewport_size
+
+        cell = None
+        click_x = click_y = 0.0
+        for candidate in cells.all():
+            box = candidate.bounding_box()
+            if not box:
+                continue
+            center_x = box["x"] + box["width"] / 2
+            center_y = box["y"] + box["height"] / 2
+            if cell is None or (center_x, center_y) < (click_x, click_y):
+                cell, click_x, click_y = candidate, center_x, center_y
+
+        assert cell is not None, (
+            f"zoom {app_zoom}%: hittade ingen klickbar schemacell i viewport {viewport}"
+        )
+        page.mouse.click(click_x, click_y, button="right")
+
+        menu = page.locator(".schedule-cell-context-menu")
+        expect(menu).to_be_visible(timeout=15000)
+        menu_box = menu.bounding_box()
+
+        clamped_x = click_x + menu_box["width"] + 8 > viewport["width"]
+        clamped_y = click_y + menu_box["height"] + 8 > viewport["height"]
+        assert not clamped_x and not clamped_y, (
+            "Testcellen ligger for nara kanten for att sarskilja placering fran klampning: "
+            f"klick=({click_x:.0f}, {click_y:.0f}) meny={menu_box} viewport={viewport}"
+        )
+        assert abs(menu_box["x"] - click_x) <= 2, (
+            f"zoom {app_zoom}%: menyn hamnade pa x={menu_box['x']:.0f}, klicket var pa {click_x:.0f}"
+        )
+        assert abs(menu_box["y"] - click_y) <= 2, (
+            f"zoom {app_zoom}%: menyn hamnade pa y={menu_box['y']:.0f}, klicket var pa {click_y:.0f}"
+        )
+    finally:
+        context.close()
+
+
 def test_split_values_result_headers_copy_whole_columns(local_allocation_server, chromium_browser):
     context = chromium_browser.new_context(locale="sv-SE")
     context.grant_permissions(["clipboard-read", "clipboard-write"], origin=local_allocation_server)

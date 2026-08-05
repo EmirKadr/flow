@@ -31,13 +31,109 @@ from .constants import (
     SALDO_SCHEMA,
 )
 
+PROGNOS_OUT_COLUMNS: List[str] = [
+    "Artikelnummer",
+    "Beskrivning",
+    "Antal styck",
+    "Antal rader",
+    "Antal butiker",
+]
+
+# Kandidatnamn per utkolumn. Ordningen styr prioritet. Står samma rubrik flera gånger
+# (kundens kampanjprognos har "Projicerat antal" en gång per dag) vinner den vänstraste
+# kolumnen - det är totalkolumnen, inte sista dagskolumnen.
+PROGNOS_COLUMN_CANDIDATES: Dict[str, List[str]] = {
+    "Artikelnummer": ["Product code", "Produktkod", "SKU", "Artikelnr", "Artikelnummer"],
+    "Beskrivning":   ["Product name", "Produktnamn", "Produktnam", "Name", "Benämning", "Beskrivning"],
+    "Antal styck":   ["Antal styck", "Antal stycken", "Projicerat antal", "Qty", "Quantity"],
+    "Antal rader":   ["Antal rader", "Rows", "Number of rows"],
+    "Antal butiker": ["Antal butiker", "Stores", "Butiker", "Number of stores"],
+}
+
+# Celler som betyder "tomt". "#" används både i totalraden och i celler utan värde.
+PROGNOS_PLACEHOLDERS: set[str] = {"", "#", "nan", "none", "nat", "-"}
+
+
+def _empty_prognos_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=PROGNOS_OUT_COLUMNS)
+
+
+def _prognos_key(value) -> str:
+    return "".join(c.lower() for c in str(value).strip() if c.isalnum())
+
+
+def _find_prognos_header_row(df: pd.DataFrame, max_scan: int = 10) -> Optional[int]:
+    """
+    Leta upp rubrikraden istället för att lita på fasta radnummer. Kundens export flyttar
+    rubrikerna mellan versioner (rad 2 -> rad 1 när en datumrad lades till överst), så vi
+    tar första raden som innehåller både en artikel- och en antalskolumn.
+    """
+    art_keys = {_prognos_key(c) for c in PROGNOS_COLUMN_CANDIDATES["Artikelnummer"]}
+    qty_keys = {_prognos_key(c) for c in PROGNOS_COLUMN_CANDIDATES["Antal styck"]}
+    for row_idx in range(min(max_scan, len(df.index))):
+        row_keys = {_prognos_key(v) for v in df.iloc[row_idx].tolist()}
+        if (row_keys & art_keys) and (row_keys & qty_keys):
+            return row_idx
+    return None
+
+
+def _prognos_pick_positions(header: List[str]) -> Dict[str, int]:
+    picked: Dict[str, int] = {}
+    for out_name, candidates in PROGNOS_COLUMN_CANDIDATES.items():
+        for cand in candidates:
+            key = _prognos_key(cand)
+            if key in header:
+                picked[out_name] = header.index(key)  # vänstraste träffen vinner
+                break
+    return picked
+
+
+def _prognos_frame_from_body(body: pd.DataFrame, picked: Dict[str, int]) -> pd.DataFrame:
+    if body.empty:
+        return _empty_prognos_frame()
+    data: Dict[str, pd.Series] = {}
+    for out_name in PROGNOS_OUT_COLUMNS:
+        pos = picked.get(out_name)
+        if pos is None or pos >= body.shape[1]:
+            data[out_name] = pd.Series([None] * len(body), dtype=object)
+        else:
+            data[out_name] = body.iloc[:, pos].reset_index(drop=True)
+    out = pd.DataFrame(data)
+    for text_col in ["Artikelnummer", "Beskrivning"]:
+        out[text_col] = out[text_col].astype(str).str.strip()
+        out.loc[out[text_col].map(lambda v: _prognos_key(v) in PROGNOS_PLACEHOLDERS), text_col] = ""
+    for num_col in ["Antal styck", "Antal rader", "Antal butiker"]:
+        out[num_col] = pd.to_numeric(out[num_col], errors="coerce").fillna(0).astype(int)
+    mask_keep = out["Artikelnummer"].str.len().gt(0) | out["Beskrivning"].str.len().gt(0)
+    return out.loc[mask_keep].reset_index(drop=True)
+
+
+def _read_prognos_xlsx_legacy(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gamla fasta radlogiken: slopp rad 0,1,3 och kolumn A, använd nästa rad som rubriker.
+    Behålls som fallback för exportvarianter där rubrikraden inte går att känna igen.
+    """
+    drop_idx = [i for i in (0, 1, 3) if i < len(df.index)]
+    df = df.drop(index=drop_idx, errors="ignore").reset_index(drop=True)
+    if df.shape[1] > 0:
+        df = df.drop(columns=[df.columns[0]]).reset_index(drop=True)
+    if df.empty:
+        return _empty_prognos_frame()
+    header = [_prognos_key(v) for v in df.iloc[0].tolist()]
+    body = df.iloc[1:].reset_index(drop=True)
+    return _prognos_frame_from_body(body, _prognos_pick_positions(header))
+
+
 def read_prognos_xlsx(path: str) -> pd.DataFrame:
     """
     Läser en prognos (XLSX) och returnerar ett normaliserat DataFrame.
-    Steg:
-      1) Ta bort de tre första raderna (index 0,1,3) om de finns.
-      2) Ta bort kolumn A (första kolumnen).
-      3) Använd första kvarvarande rad som rubriker och plocka ut relevanta kolumner.
+
+    Rubrikraden letas upp dynamiskt - första raden som har både en artikel- och en
+    antalskolumn - istället för att slopa fasta radnummer. Det gör läsaren okänslig för
+    att kunden lägger till eller tar bort inledande rader, t.ex. datumraden överst i
+    kampanjprognosen. Raden direkt under rubrikerna kan vara en totalrad
+    ("# # # # 65344 ..."); den faller bort eftersom artikelnummer och beskrivning bara
+    innehåller platshållare.
 
     Returnerar DataFrame med kolumner:
       - Artikelnummer (str)
@@ -48,50 +144,15 @@ def read_prognos_xlsx(path: str) -> pd.DataFrame:
     """
     df = pd.read_excel(path, header=None, dtype=str, engine="openpyxl")
     if df.empty:
-        return pd.DataFrame(columns=["Artikelnummer", "Beskrivning", "Antal styck", "Antal rader", "Antal butiker"])
-    drop_idx = [i for i in (0, 1, 3) if i < len(df.index)]
-    df = df.drop(index=drop_idx, errors="ignore").reset_index(drop=True)
-    if df.shape[1] > 0:
-        df = df.drop(columns=[df.columns[0]]).reset_index(drop=True)
-    if df.empty:
-        return pd.DataFrame(columns=["Artikelnummer", "Beskrivning", "Antal styck", "Antal rader", "Antal butiker"])
-    header = df.iloc[0].astype(str).str.strip().tolist()
-    df = df.iloc[1:].reset_index(drop=True)
-    df.columns = header
-    def _ci_match(name: str) -> str:
-        return "".join(c.lower() for c in str(name).strip() if c.isalnum())
-    def _pick_col(cols: List[str], candidates: List[str]) -> str | None:
-        s_cols = { _ci_match(c): c for c in cols }
-        for cand in candidates:
-            key = _ci_match(cand)
-            if key in s_cols:
-                return s_cols[key]
-        return None
-    need_map: Dict[str, List[str]] = {
-        "Artikelnummer": ["Product code", "SKU", "Artikelnr", "Artikelnummer"],
-        "Beskrivning":   ["Product name", "Name", "Benämning", "Beskrivning"],
-        "Antal styck":   ["Antal styck", "Antal stycken", "Qty", "Quantity"],
-        "Antal rader":   ["Antal rader", "Rows", "Number of rows"],
-        "Antal butiker": ["Antal butiker", "Stores", "Butiker", "Number of stores"],
-    }
-    picked: Dict[str, str] = {}
-    for out_name, candidates in need_map.items():
-        col = _pick_col(list(df.columns), candidates)
-        if col:
-            picked[out_name] = col
-    out = pd.DataFrame()
-    for out_name in ["Artikelnummer", "Beskrivning", "Antal styck", "Antal rader", "Antal butiker"]:
-        if out_name in picked:
-            out[out_name] = df[picked[out_name]]
-        else:
-            out[out_name] = pd.Series([None] * len(df), dtype=object)
-    out["Artikelnummer"] = out["Artikelnummer"].astype(str).str.strip()
-    out["Beskrivning"]   = out["Beskrivning"].astype(str).str.strip()
-    for num_col in ["Antal styck", "Antal rader", "Antal butiker"]:
-        out[num_col] = pd.to_numeric(out[num_col], errors="coerce").fillna(0).astype(int)
-    mask_keep = out["Artikelnummer"].str.len().gt(0) | out["Beskrivning"].str.len().gt(0)
-    out = out.loc[mask_keep].reset_index(drop=True)
-    return out
+        return _empty_prognos_frame()
+    header_row = _find_prognos_header_row(df)
+    if header_row is not None:
+        header = [_prognos_key(v) for v in df.iloc[header_row].tolist()]
+        body = df.iloc[header_row + 1:].reset_index(drop=True)
+        out = _prognos_frame_from_body(body, _prognos_pick_positions(header))
+        if not out.empty:
+            return out
+    return _read_prognos_xlsx_legacy(df)
 
 def read_campaign_xlsx(path: str) -> pd.DataFrame:
     """

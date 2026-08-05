@@ -215,11 +215,11 @@ def _normalize_prognos_cli_table(df: pd.DataFrame) -> pd.DataFrame:
     col_map: dict[str, str] = {}
     for col in work.columns:
         col_norm = str(col).strip().lower()
-        if col_norm in {"product code", "artikelnummer", "artikelnr", "artnr", "sku", "article"}:
+        if col_norm in {"product code", "produktkod", "artikelnummer", "artikelnr", "artnr", "sku", "article"}:
             col_map[col] = "Artikelnummer"
-        elif col_norm in {"product name", "name", "benämning", "benamning", "beskrivning"}:
+        elif col_norm in {"product name", "produktnamn", "produktnam", "name", "benämning", "benamning", "beskrivning"}:
             col_map[col] = "Beskrivning"
-        elif col_norm in {"antal styck", "antal", "qty", "quantity"}:
+        elif col_norm in {"antal styck", "antal", "projicerat antal", "qty", "quantity"}:
             col_map[col] = "Antal styck"
         elif col_norm in {"antal rader", "rows", "number of rows"}:
             col_map[col] = "Antal rader"
