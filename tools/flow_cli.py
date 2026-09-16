@@ -691,7 +691,7 @@ def _add_request_options(parser: argparse.ArgumentParser) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv = _normalize_global_options(argv)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=SERVER_BASE_URL, help="API-bas, t.ex. https://stigamo.nu eller lokal proxy.")
+    parser.add_argument("--base-url", default=SERVER_BASE_URL, help="API-bas, t.ex. https://flow.nowastelogistics.com eller lokal proxy.")
     parser.add_argument("--cookie-jar", type=Path, default=DEFAULT_COOKIE_JAR, help="Cookiefil för inloggad session.")
     sub = parser.add_subparsers(dest="command", required=True)
 

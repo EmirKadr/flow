@@ -12,7 +12,7 @@ GITHUB_REPO = "EmirKadr/flow"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 UPDATE_DISABLED_ENV = "FLOW_DISABLE_UPDATE_CHECK"
 
-DEFAULT_SERVER_BASE_URL = "https://stigamo.nu"
+DEFAULT_SERVER_BASE_URL = "https://flow.nowastelogistics.com"
 SERVER_BASE_URL = os.environ.get(
     "FLOW_SERVER_BASE_URL",
     DEFAULT_SERVER_BASE_URL,

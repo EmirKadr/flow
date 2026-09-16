@@ -1149,3 +1149,7 @@ D-pak-agentens driftkonfiguration är förenklad: om `DEEPSEEK_API_KEY` finns an
 ## [2026-07-14] fix | D-pak-chatten visar inget språkkrav
 
 Den tomma publika D-pak-chatten uppmanar nu användaren att fråga om D-pak och leverantörspridning i stället för att kräva svenska. Skrivna frågor språkvalideras inte; svensk inställning gäller fortsatt för rösttolkningen och agentens svar.
+
+## [2026-09-16] feature | Omedelbar flytt till nya flow-adressen med D-pak-undantag
+
+Gamla domänens vyer omdirigeras till `flow.nowastelogistics.com` med bibehållen sökväg/query. Övriga gamla API-anrop och skrivningar stoppas med 410 och begripligt flyttbesked, även från redan öppna flikar. D-paks sida, resurser och chatt-API fortsätter fungera; `/d-pak` och `/d-pak/` serverar nu chatten direkt i båda klienterna. Windows-standardserver och hjälplänkar använder nya domänen. Arkitektur, API-karta, användarhändelser, D-pak och testinstruktioner beskriver flytten, cachebeteendet och begränsningen för redan installerade Windows-versioner. D-pak-wikin rättar också tidigare påstående om tokenkontroll efter kontroll av befintlig kod. Regressionstester täcker serverns stopp/undantag, webbläsarflöden och desktop-paritet.

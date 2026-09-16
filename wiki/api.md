@@ -1,7 +1,7 @@
 ---
 title: API-karta
 status: aktiv
-updated: 2026-06-08
+updated: 2026-09-16
 tags: [api, backend]
 ---
 
@@ -12,6 +12,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 ## Auth och halsa
 
 - `GET /api/health` - serverstatus.
+- `GET /api/site-migration` - publik adresskontroll i middleware: `active` och `target_origin`, alltid `no-store`. På gamla domänen svarar övriga API:er med 410/`site_moved`, utom D-paks status och meddelande. Se [adressbyte](architecture.md#byte-av-publik-adress).
 - `POST /api/auth/login` - logga in.
 - `POST /api/auth/logout` - logga ut.
 - `GET /api/auth/me` - aktuell anvandare, roller, Super User-status och verksamhet.

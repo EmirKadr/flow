@@ -149,7 +149,10 @@ def make_handler(
 
         def _serve_static(self, raw_path: str, *, head_only: bool = False) -> None:
             path = unquote(raw_path or "/")
-            relative = "index.html" if path in ("", "/") else path.lstrip("/")
+            if path in {"/d-pak", "/d-pak/"}:
+                relative = "dpak-fraga.html"
+            else:
+                relative = "index.html" if path in ("", "/") else path.lstrip("/")
             target = (frontend_root / relative).resolve()
             if not target.is_file() or not target.is_relative_to(frontend_root):
                 self._send_text(404, "Sidan hittades inte.")

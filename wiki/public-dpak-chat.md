@@ -1,13 +1,18 @@
 ---
 title: Publik D-pak-chatt
 status: aktiv
-updated: 2026-07-14
+updated: 2026-09-16
 tags: [publik, dpak, chat, postgres]
 ---
 
 # Publik D-pak-chatt
 
-`/dpak-fraga.html` är en fristående chatvy för kundfrågor om D-pak, zon R, AUTOSTORE, leverantörer och lådor. Sidan kräver inte inloggning och läggs inte i sidomenyn; den nås bara via direktlänk. Om `PUBLIC_DPAK_LINK_TOKEN` är satt måste både status- och meddelandeendpointen få samma token.
+`/d-pak`, `/d-pak/` och `/dpak-fraga.html` öppnar samma fristående chatvy för kundfrågor om D-pak, zon R, AUTOSTORE, leverantörer och lådor i webb och Windows. Sidan kräver inte inloggning och läggs inte i sidomenyn; den nås bara via direktlänk. Klienten skickar eventuell token i länken till status- och meddelandeendpointen, men nuvarande backend validerar den inte.
+
+Vid [bytet av publik adress](architecture.md#byte-av-publik-adress) stannar D-pak
+kvar på `stigamo.nu`. Både sidalias, chattens två API-endpoints och alla resurser
+som sidan laddar undantas från omdirigeringen. Undantaget ger ingen åtkomst till
+övriga appvyer eller API:er.
 
 ## Användarflöde
 

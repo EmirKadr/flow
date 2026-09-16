@@ -7,6 +7,7 @@ import requests
 from desktop import local_runtime
 from desktop.local_app_server import LocalAppServer, localize_set_cookie
 from desktop.local_runtime import LOCAL_REF_PREFIX, DesktopLocalRuntime
+from core.app_info import DEFAULT_SERVER_BASE_URL
 
 
 class FakeUpstreamHandler(BaseHTTPRequestHandler):
@@ -78,6 +79,19 @@ def test_localize_set_cookie_removes_remote_only_attributes():
     assert "Secure" not in cookie
     assert "Domain=" not in cookie
     assert "flow_session=abc" in cookie
+
+
+def test_desktop_uses_new_origin_and_serves_dpak_aliases():
+    assert DEFAULT_SERVER_BASE_URL == "https://flow.nowastelogistics.com"
+    local = LocalAppServer(preferred_port=0)
+    try:
+        base_url = local.start()
+        for path in ["d-pak", "d-pak/", "dpak-fraga.html"]:
+            response = requests.get(base_url + path, timeout=5)
+            assert response.status_code == 200
+            assert 'id="publicDpakForm"' in response.text
+    finally:
+        local.stop()
 
 
 def test_local_app_server_serves_frontend_and_proxies_api(tmp_path):

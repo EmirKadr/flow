@@ -4,7 +4,7 @@ import threading
 import time
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -13,6 +13,7 @@ from .business_scope import DEFAULT_BUSINESS_CODE, normalize_business_code
 from .config import settings
 from .database import SessionLocal
 from .models import Business
+from .site_migration import enforce_site_migration
 from .routers import (
     activities,
     allocation,
@@ -77,9 +78,18 @@ async def demo_session_context_middleware(request: Request, call_next):
         demo_session.demo_data_root_var.reset(token)
 
 
+app.middleware("http")(enforce_site_migration)
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "environment": settings.ENVIRONMENT}
+
+
+@app.api_route("/d-pak", methods=["GET", "HEAD"], include_in_schema=False)
+@app.api_route("/d-pak/", methods=["GET", "HEAD"], include_in_schema=False)
+def public_dpak_page() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "dpak-fraga.html")
 
 
 @app.get("/stallen.html", include_in_schema=False)

@@ -1,7 +1,7 @@
 ---
 title: Anvandarhandelser
 status: aktiv
-updated: 2026-06-03
+updated: 2026-09-16
 tags: [anvandare, handelser, toast, state, chat]
 ---
 
@@ -13,6 +13,8 @@ Kort svar: denna sida listar vad anvandaren kan se eller raka ut for: redirect, 
 
 | Handelse | Anvandaren ser | Orsak | Ratt svar |
 | --- | --- | --- | --- |
+| Gammal webbadress | Samma vy öppnas på `flow.nowastelogistics.com` | Gamla domänen är avstängd för appen | Använd nya adressen. `/d-pak` stannar kvar. Se [adressbyte](architecture.md#byte-av-publik-adress). |
+| Gammal öppen flik eller Windows-klient | API-fel: `flow har flyttat. Öppna https://flow.nowastelogistics.com för att fortsätta.` | Gamla API-anrop stoppas med 410 före läsning/skrivning | Öppna nya adressen; äldre installerade Windows-versioner behöver ny serverkonfiguration eller uppdatering. Inget nytt sparas på gamla domänen. |
 | Inte inloggad | Skickas till login | API svarar 401 pa skyddad sida | Logga in igen. Sessionen saknas eller har gatt forlorad. |
 | Forsta losenord kravs | Skickas till `Skapa losenord` | API svarar 403 `password_setup_required` | Skapa losenord minst 8 tecken. |
 | Saknar vybehorighet | Toast "Sidan kraver behorighet" och redirect | Rollen har inte `view` pa vyn | Be admin/Super User andra Vybehorigheter. Vanlig anvandare kan normalt inte gora det sjalv. |

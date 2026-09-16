@@ -1,7 +1,7 @@
 ---
 title: Arkitektur
 status: aktiv
-updated: 2026-06-09
+updated: 2026-09-16
 tags: [arkitektur, backend, frontend, desktop]
 ---
 
@@ -53,7 +53,44 @@ Kort svar: `app/` ar FastAPI + statisk vanilla JS. `desktop/` ar ett PyQt6-skal 
 - `start_local.bat` startar lokal SQLite-baserad testmiljo och kan kopiera live-data till lokal DB om `LIVE_DATABASE_URL` finns.
 - `tools.visual_smoke`, `tools.interactive_e2e` och desktop-prober skapar temporara databaser for tester.
 
+## Byte av publik adress
+
+Från driftsättningen den 16 september 2026 skickas besök på `stigamo.nu` och
+`www.stigamo.nu` direkt till `https://flow.nowastelogistics.com` med samma sökväg
+och query. Omdirigeringen är HTTP 302 med `Cache-Control: no-store`. Regeln
+ligger före autentisering och gäller samtliga roller och vyer, även login,
+Meta-uppladdning, gamla alias och okända sidlänkar. Den nya domänen och lokal
+utveckling omdirigeras inte.
+
+Undantaget är D-pak: `/d-pak`, `/d-pak/`, `/dpak-fraga.html`, chattens exakta
+status-/meddelandeendpoints och dess statiska resurser stannar kvar.
+`/api/health` och `/api/site-migration` är också tillgängliga för drift respektive
+klientens adresskontroll. Andra API-anrop och alla övriga skrivningar mot den
+gamla domänen stoppas före handlern med HTTP 410, `code: site_moved` och den nya
+adressen i feltexten. Detta gäller även integrationer och tidigare öppnade flikar.
+Skrivningar, lösenord och uppladdningar skickas aldrig vidare automatiskt.
+
+Alla appvyer laddar `site_migration.js`, som flyttar även cachad HTML och
+kontrollerar adressen igen när fliken visas. En flik som laddades före deploy
+saknar denna kod men kan inte läsa/spara via det gamla API:t; dess befintliga
+felhantering visar flyttbeskedet. Vid klientstyrd flytt visas en blockerande
+länk till den nya adressen medan navigationen pågår. Ingen ny auditmutation
+görs på den avstängda domänen.
+
+Windows-klientens standardserver är den nya domänen. `FLOW_SERVER_BASE_URL`
+kan fortsatt ange en lokal testserver. Den delade frontendkontrollen fungerar
+även genom desktop-proxyn när den är konfigurerad mot gamla domänen. Redan
+installerade äldre Windows-versioner får samma 410-besked tills de uppdateras
+eller konfigureras för den nya servern; en kodpush publicerar ingen installerare.
+Cookies och lokalt lagrade filer/inställningar flyttas inte mellan domäner;
+användaren kan behöva logga in och välja lokala filer igen.
+
+Källor: `../app/backend/site_migration.py`, `../app/frontend/js/site_migration.js`,
+`../core/app_info.py` och `../desktop/local_app_server.py`.
+
 ## Kallor
+
+Se även [adressbytet](#byte-av-publik-adress) nedan.
 
 - `../app/backend/main.py`
 - `../desktop/app.py`
