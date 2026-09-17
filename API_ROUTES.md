@@ -57,6 +57,7 @@ verksamheter.
 | Namn | Metod | Väg | Beskrivning |
 | --- | --- | --- | --- |
 | `health` | `GET` | `/api/health` | Server health |
+| `site_migration.status` | `GET` | `/api/site-migration` | Migrationsstatus för redan laddade klienter (alltid inaktiv) |
 | `healthcheck.report` | `GET` | `/api/healthcheck` | Server-, Render- och databashalsa |
 | `healthcheck.wait_metrics` | `POST` | `/api/healthcheck/wait-metrics` | Samla vantetidsmatningar |
 | `healthcheck.wait_summary` | `GET` | `/api/healthcheck/wait-metrics/summary` | Analysera anvandarvantetider |
