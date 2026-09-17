@@ -12,7 +12,7 @@ Kort svar: `API_ROUTES.md` ar kontraktslistan och testas mot FastAPI-appen via `
 ## Auth och halsa
 
 - `GET /api/health` - serverstatus.
-- `GET /api/site-migration` - kompatibilitet för redan laddade migrationsklienter: alltid `active: false`, `target_origin: https://stigamo.nu` och `no-store`. Även HEAD stöds. Appens vanliga API:er är åter tillgängliga utan 410-spärr. Se [återställningen](architecture.md#byte-av-publik-adress).
+- `GET /api/site-migration` - publik, registrerad adresskontroll: `active` och `target_origin`, alltid `no-store`. Även HEAD stöds. Aktiv på stigamo.nu och www.stigamo.nu; övriga värdnamn är inaktiva. På gamla domänen svarar övriga API:er med 410/`site_moved`, utom D-paks status och meddelande samt `/api/health`. Se [adressbyte](architecture.md#byte-av-publik-adress).
 - `POST /api/auth/login` - logga in.
 - `POST /api/auth/logout` - logga ut.
 - `GET /api/auth/me` - aktuell anvandare, roller, Super User-status och verksamhet.

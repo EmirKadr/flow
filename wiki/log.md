@@ -1157,3 +1157,7 @@ Gamla domänens vyer omdirigeras till `flow.nowastelogistics.com` med bibehålle
 ## [2026-09-17] fix | Stigamo.nu återställs som huvudadress
 
 Domänomdirigeringen och API-spärren tas bort. Alla appvyer, inloggning och skrivningar på stigamo.nu följer åter sina vanliga regler. Windows-standardserver och hjälplänkar återställs också. D-pak-aliasen behålls. Migrationsendpointen svarar alltid inaktivt och den gamla JS-filen finns kvar utan beteende för cachade klienter, medan nya sidor inte laddar den. Tester för den borttagna spärren ersätts med återställningstester för vyer, auth, en sparning i testdatabas, cachade klienter och D-pak; berörda wikisidor uppdateras. Återställningen flyttar inga data mellan domänerna.
+
+## [2026-09-17] fix | Omdirigeringen till flow aktiveras igen
+
+På Emirs begäran går alla appvyer på stigamo.nu och www.stigamo.nu åter till flow.nowastelogistics.com med bibehållen sökväg/query. D-pak inklusive alias, resurser och chatt-API fungerar kvar. Övriga gamla API-anrop stoppas åter med 410 och begriplig flytttext. Windows-standardserver och hjälplänkar pekar på flow igen. Migrationsstatus förblir en registrerad GET/HEAD-route med aktivt svar bara för gamla domänen; det nyligen rättade CLI-registret och Super User-testinställningen behålls. Återställningstester ersätts med migrationstester för vyer, cache, spärrade skrivningar, D-pak och klientparitet.

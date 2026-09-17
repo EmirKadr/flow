@@ -42,7 +42,7 @@ class ApiRoute:
 
 ROUTES: tuple[ApiRoute, ...] = (
     ApiRoute("health", "GET", "/api/health", "Server health"),
-    ApiRoute("site_migration.status", "GET", "/api/site-migration", "Migrationsstatus för redan laddade klienter (alltid inaktiv)"),
+    ApiRoute("site_migration.status", "GET", "/api/site-migration", "Migrationsstatus för redan laddade klienter (aktiv på gamla domänen)"),
     ApiRoute("healthcheck.report", "GET", "/api/healthcheck", "Server-, Render- och databashalsa"),
     ApiRoute("healthcheck.wait_metrics", "POST", "/api/healthcheck/wait-metrics", "Samla vantetidsmatningar"),
     ApiRoute("healthcheck.wait_summary", "GET", "/api/healthcheck/wait-metrics/summary", "Analysera anvandarvantetider"),
@@ -692,7 +692,7 @@ def _add_request_options(parser: argparse.ArgumentParser) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     argv = _normalize_global_options(argv)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=SERVER_BASE_URL, help="API-bas, t.ex. https://stigamo.nu eller lokal proxy.")
+    parser.add_argument("--base-url", default=SERVER_BASE_URL, help="API-bas, t.ex. https://flow.nowastelogistics.com eller lokal proxy.")
     parser.add_argument("--cookie-jar", type=Path, default=DEFAULT_COOKIE_JAR, help="Cookiefil för inloggad session.")
     sub = parser.add_subparsers(dest="command", required=True)
 

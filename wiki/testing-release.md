@@ -36,7 +36,7 @@ python -m tools.desktop_app_probe
 | Andring | Minsta rimliga verifiering |
 | --- | --- |
 | Backendregel/API | Relevant `pytest` + `flow_cli routes` om API-vag andras |
-| Publik domän/återställning | `tests/services/test_site_migration.py` för alla vyer, värdnamn, inloggning/session/skrivning med testdatabas, inaktiv migrationsstatus och D-pak-resurser; `tests/tools/test_site_migration_browser.py` för cachade vyer, gamla migrationsklienter, login och en komplett D-pak-fråga; `tests/desktop/test_local_app_server.py` för standardserver och D-pak-alias. Efter deploy: kontrollera stigamo.nu, API-auth och `/d-pak`. |
+| Publik domän/omdirigering | `tests/services/test_site_migration.py` för alla vyer, värdnamn, stoppade skrivningar och D-pak-resurser; `tests/tools/test_site_migration_browser.py` för cachade vyer, gamla flikars felbesked och en komplett D-pak-fråga; `tests/desktop/test_local_app_server.py` för standardserver och D-pak-alias. Efter deploy: kontrollera båda domänerna och `/d-pak`. |
 | Frontend-JS | `node --check`, visuell smoke eller interaktiv E2E beroende pa risk |
 | Laddning/cache/UX-hastighet | `tools.performance_benchmark` for kall/varm navigation, bakgrundsladdning, toggle, import, drag och copy |
 | Anvandarsynlig loggning | `tests/tools/test_sidebar_user_browser.py` for dokumentlogg i browser + `tests/tools/test_visual_tools.py` for global logg-/API-wiring |
