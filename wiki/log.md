@@ -1153,3 +1153,7 @@ Den tomma publika D-pak-chatten uppmanar nu användaren att fråga om D-pak och 
 ## [2026-09-16] feature | Omedelbar flytt till nya flow-adressen med D-pak-undantag
 
 Gamla domänens vyer omdirigeras till `flow.nowastelogistics.com` med bibehållen sökväg/query. Övriga gamla API-anrop och skrivningar stoppas med 410 och begripligt flyttbesked, även från redan öppna flikar. D-paks sida, resurser och chatt-API fortsätter fungera; `/d-pak` och `/d-pak/` serverar nu chatten direkt i båda klienterna. Windows-standardserver och hjälplänkar använder nya domänen. Arkitektur, API-karta, användarhändelser, D-pak och testinstruktioner beskriver flytten, cachebeteendet och begränsningen för redan installerade Windows-versioner. D-pak-wikin rättar också tidigare påstående om tokenkontroll efter kontroll av befintlig kod. Regressionstester täcker serverns stopp/undantag, webbläsarflöden och desktop-paritet.
+
+## [2026-09-17] fix | Stigamo.nu återställs som huvudadress
+
+Domänomdirigeringen och API-spärren tas bort. Alla appvyer, inloggning och skrivningar på stigamo.nu följer åter sina vanliga regler. Windows-standardserver och hjälplänkar återställs också. D-pak-aliasen behålls. Migrationsendpointen svarar alltid inaktivt och den gamla JS-filen finns kvar utan beteende för cachade klienter, medan nya sidor inte laddar den. Tester för den borttagna spärren ersätts med återställningstester för vyer, auth, en sparning i testdatabas, cachade klienter och D-pak; berörda wikisidor uppdateras. Återställningen flyttar inga data mellan domänerna.

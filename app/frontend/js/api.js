@@ -12,7 +12,7 @@ function isAuthPath(path) {
 function connectionError(path, originalError) {
   const protocol = window.location?.protocol || "";
   const message = protocol === "file:"
-    ? "Appen måste öppnas via servern, inte direkt från fil. Öppna https://flow.nowastelogistics.com eller starta lokal testmiljö."
+    ? "Appen måste öppnas via servern, inte direkt från fil. Öppna https://stigamo.nu eller starta lokal testmiljö."
     : "Kunde inte ansluta till servern. Kontrollera att appen öppnas via rätt adress och att backend är igång.";
   const err = new Error(message);
   err.status = 0;

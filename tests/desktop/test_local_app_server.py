@@ -81,8 +81,8 @@ def test_localize_set_cookie_removes_remote_only_attributes():
     assert "flow_session=abc" in cookie
 
 
-def test_desktop_uses_new_origin_and_serves_dpak_aliases():
-    assert DEFAULT_SERVER_BASE_URL == "https://flow.nowastelogistics.com"
+def test_desktop_uses_stigamo_and_serves_dpak_aliases():
+    assert DEFAULT_SERVER_BASE_URL == "https://stigamo.nu"
     local = LocalAppServer(preferred_port=0)
     try:
         base_url = local.start()

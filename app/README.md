@@ -174,7 +174,7 @@ I produktion kör Render inte seed. Live-data är användarstyrd och första adm
 2. På [render.com](https://render.com): **New → Blueprint** → välj GitHub-repot. Render läser `app/render.yaml` automatiskt.
 3. Render skapar databasen `flow-db` och web-servicen `flow-web`, sätter `DATABASE_URL` och auto-genererar `SECRET_KEY`.
 4. Build-steget kör `pip install` och `alembic upgrade head`. Seed körs inte i produktion, så raderade verksamheter, områden, aktiviteter, personer eller användare återskapas inte av deployen.
-5. När deploy är klar: öppna `https://flow.nowastelogistics.com` och logga in.
+5. När deploy är klar: öppna `https://stigamo.nu` och logga in.
 
 **Kostnad:** Starter web (~7 USD/mån) + PostgreSQL free 90 dagar → basic-256mb (~7 USD/mån).
 

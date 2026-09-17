@@ -4,7 +4,7 @@ Examples:
   python -m tools.healthcheck report --local
   python -m tools.healthcheck report --local --skip-db
   python -m tools.healthcheck waits --local --period 24h
-  python -m tools.healthcheck report --base-url https://flow.nowastelogistics.com --username admin --password ***
+  python -m tools.healthcheck report --base-url https://stigamo.nu --username admin --password ***
 """
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("report", "waits"), nargs="?", default="report")
     parser.add_argument("--local", action="store_true", help="Kor mot lokal databas direkt.")
-    parser.add_argument("--base-url", help="Remote flow-bas-URL, t.ex. https://flow.nowastelogistics.com.")
+    parser.add_argument("--base-url", help="Remote flow-bas-URL, t.ex. https://stigamo.nu.")
     parser.add_argument("--cookie-jar", type=Path, default=DEFAULT_COOKIE_JAR)
     parser.add_argument("--username", help="Logga in innan remote-anrop.")
     parser.add_argument("--password", help="Losenord for --username.")

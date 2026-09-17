@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
@@ -7,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from app.backend.main import app
 from app.backend.routers import public_dpak
-from app.backend.site_migration import TARGET_ORIGIN
 
 
 playwright_api = pytest.importorskip("playwright.sync_api")
@@ -38,8 +36,8 @@ def page(browser, monkeypatch):
 
     def route_request(route):
         request = route.request
-        if request.url.startswith(TARGET_ORIGIN + "/"):
-            route.fulfill(status=200, content_type="text/html", body="<h1>Nya flow</h1>")
+        if urlsplit(request.url).hostname not in {"stigamo.nu", "127.0.0.1"}:
+            route.abort()
             return
         response = client.request(request.method, request.url, content=request.post_data_buffer, headers=request.headers)
         route.fulfill(status=response.status_code, headers=dict(response.headers), body=response.content)
@@ -51,38 +49,43 @@ def page(browser, monkeypatch):
     client.close()
 
 
-def test_cached_page_uses_migration_guard_to_move_with_query_and_fragment(page):
+def test_cached_page_stays_on_stigamo_with_query_and_fragment(page):
     def cached_page(route):
-        route.fulfill(status=200, content_type="text/html", body='''
+        route.fulfill(status=200, content_type="text/html; charset=utf-8", body='''
             <html><head><script src="/js/site_migration.js" defer></script></head>
             <body>Gammal cachad vy</body></html>
         ''')
 
     page.route("**/historik.html?tab=health", cached_page)
     page.goto("https://stigamo.nu/historik.html?tab=health#waits")
-    expect(page).to_have_url(TARGET_ORIGIN + "/historik.html?tab=health#waits")
+    expect(page).to_have_url("https://stigamo.nu/historik.html?tab=health#waits")
+    expect(page.locator("body")).to_have_text("Gammal cachad vy")
 
 
-def test_previously_open_tab_cannot_save_after_migration(page):
-    # Simulate HTML loaded before deployment, with the existing shared API wrapper.
+def test_previously_loaded_migration_client_receives_inactive_status(page):
+    # Simulate the previous bundle's status contract, even when that JS is cached.
     def old_page(route):
-        route.fulfill(status=200, content_type="text/html", body='''
-            <html><body><button id="save">Spara</button><p id="result"></p>
-            <script src="/js/api.js"></script><script>
-              document.querySelector('#save').onclick = async () => {
-                try { await api.post('/api/schedule/cells', {}); }
-                catch (error) { document.querySelector('#result').textContent = error.message; }
-              };
+        route.fulfill(status=200, content_type="text/html; charset=utf-8", body='''
+            <html><body><p id="result"></p><script>
+              fetch('/api/site-migration', {cache: 'no-store'})
+                .then(response => response.json()).then(state => {
+                  if (state.active) window.location.replace(state.target_origin);
+                  else document.querySelector('#result').textContent = 'Appen kan användas';
+                });
             </script></body></html>
         ''')
 
-    api_source = (Path(__file__).resolve().parents[2] / "app/frontend/js/api.js").read_text(encoding="utf-8")
     page.route("**/old-tab.html", old_page)
-    page.route("**/js/api.js", lambda route: route.fulfill(status=200, content_type="text/javascript", body=api_source))
     page.goto("https://stigamo.nu/old-tab.html")
-    page.click("#save")
-    expect(page.locator("#result")).to_contain_text(TARGET_ORIGIN)
-    expect(page.locator("#result")).to_contain_text("flow har flyttat")
+    expect(page.locator("#result")).to_have_text("Appen kan användas")
+    expect(page).to_have_url("https://stigamo.nu/old-tab.html")
+
+
+def test_login_page_remains_on_stigamo(page):
+    page.goto("https://stigamo.nu/login.html", wait_until="networkidle")
+    expect(page.locator("#login-form")).to_be_visible()
+    expect(page.locator("#login-form button[type=submit]")).to_be_enabled()
+    expect(page).to_have_url("https://stigamo.nu/login.html")
 
 
 @pytest.mark.parametrize("path", ["/d-pak", "/d-pak/", "/dpak-fraga.html"])
@@ -95,11 +98,10 @@ def test_dpak_chat_remains_usable_on_the_old_domain(page, path):
     assert urlsplit(page.url).hostname == "stigamo.nu"
 
 
-def test_guard_leaves_local_development_on_its_own_origin(page):
-    page.route("**/local-test.html", lambda route: route.fulfill(status=200, content_type="text/html", body='''
+def test_cached_script_leaves_local_development_on_its_own_origin(page):
+    page.route("**/local-test.html", lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body='''
         <html><head><script src="/js/site_migration.js" defer></script></head><body>Lokal app</body></html>
     '''))
-    with page.expect_response("**/api/site-migration") as response:
-        page.goto("http://127.0.0.1/local-test.html")
-    assert response.value.json()["active"] is False
+    page.goto("http://127.0.0.1/local-test.html")
+    expect(page.locator("body")).to_have_text("Lokal app")
     expect(page).to_have_url("http://127.0.0.1/local-test.html")
